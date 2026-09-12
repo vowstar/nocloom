@@ -1,0 +1,6 @@
+/build/
+/build-*/
+__pycache__/
+/formal/lean/.lake/
+/formal/lean/probe/
+*.local/

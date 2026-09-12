@@ -1,0 +1,44 @@
+NocLoom Output Permission 1.0
+
+Covered Material means only the NocLoom logic and fixed content that this
+release supplies for incorporation into normally generated RTL, models,
+wrappers, metadata and constraints through its CLI or C++ generation API.
+It includes modifications and implementations of that material in netlists,
+layouts, mask works, bitstreams and chips. Only the NocLoom supplied portion
+of a mixed result is covered. User material and third party material,
+including third party IP, cell models and process libraries, are excluded.
+
+The Covered Material supplied by this release constitutes one Covered Work,
+separate from the generator. Each Contributor licenses its contributions to
+the Covered Work under the Apache License, Version 2.0, whose unchanged text
+is in Apache-2.0.txt in this directory. Capitalized terms not defined here
+have the meanings given in that license.
+
+For Covered Material only, each Contributor waives all requirements of
+Section 4. You may use, modify, reproduce and distribute Covered Material
+and its implementations under terms of your choice, including proprietary
+terms, without attribution, notices, license copies, modification notices
+or disclosure of source. Retaining a generated header is not a condition
+of this permission.
+
+Each Contributor also permits exercise of design, database and semiconductor
+topography rights that it controls in its Covered Material. This permission
+is perpetual, worldwide and royalty free. It permits use, modification,
+reproduction, manufacture, manufacture by others and distribution of that
+material and its implementations, including as part of a larger design.
+It grants no independent rights in user additions or third party material.
+
+Section 3 governs patents for the Covered Work, including its hardware
+implementations, with its limited scope and patent litigation termination
+rule. No other patent rights or trademark rights are granted. Sections 7,
+8 and 9 continue to apply to Covered Material and its implementations,
+including their warranty disclaimer and limitation of liability. Except
+for the permissions stated here, the Apache License remains unchanged.
+
+The generator source, executable code and C++ libraries are excluded, even
+when copied or dumped into output files. Only their designated output
+content is Covered Material. This permission does not relicense the
+generator, transfer ownership of user material or override third party
+terms. Recipients of Covered Material receive this permission directly
+from its Contributors. Distributors cannot withdraw that permission for
+material already received under it.
