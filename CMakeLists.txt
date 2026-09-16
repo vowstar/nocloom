@@ -103,3 +103,5 @@ if(NOCLOOM_BUILD_TESTS AND BUILD_TESTING)
 endif()
 
 target_sources(nocloom_core PRIVATE src/core/ir_component.cpp)
+
+target_sources(nocloom_core PRIVATE src/core/cross_domain.cpp)
