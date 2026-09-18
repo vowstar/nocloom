@@ -105,3 +105,6 @@ endif()
 target_sources(nocloom_core PRIVATE src/core/ir_component.cpp)
 
 target_sources(nocloom_core PRIVATE src/core/cross_domain.cpp)
+
+
+target_sources(nocloom_core PRIVATE src/core/switch_graph.cpp src/core/tree_topology.cpp)
