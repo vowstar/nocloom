@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "daily": [
+    {
+      "purpose": "Model, validation, address/layout boundaries and deterministic structure",
+      "tests": [
+        "unit",
+        "switch_graph",
+        "message_layout",
+        "simulation_engine_contract",
+        "simulation_process_contract"
+      ]
+    },
+    {
+      "purpose": "Simulation adapter and comparison negative controls",
+      "tests": [
+        "message_contract_mutations",
+        "library_boundary_facilities"
+      ]
+    },
+    {
+      "purpose": "Public configuration rejection, CLI, API and artifact generation",
+      "tests": [
+        "cli",
+        "verif_examples",
+        "api_example"
+      ]
+    },
+    {
+      "purpose": "Request/response arbitration and representative topology traffic",
+      "tests": [
+        "verif_exchange_exchange32_negative"
+      ]
+    }
+  ],
+  "full": "Every test in the current configured CTest inventory, including new tests.",
+  "new_tests": "Full by default until daily inclusion is reviewed.",
+  "daily_claim": "Representative development feedback, not full contract acceptance or maximum-scale/performance coverage."
+}
