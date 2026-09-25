@@ -3,6 +3,7 @@ find_package(Threads REQUIRED)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 add_executable(nocloom_unit unit/core.cpp unit/message.cpp)
 target_sources(nocloom_unit PRIVATE unit/switch_graph.cpp)
+target_sources(nocloom_unit PRIVATE unit/width_adapter.cpp)
 target_include_directories(nocloom_unit PRIVATE ${PROJECT_SOURCE_DIR}/cli)
 target_compile_definitions(nocloom_unit PRIVATE NOCLOOM_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 target_link_libraries(nocloom_unit PRIVATE nocloom_io Catch2::Catch2WithMain Threads::Threads nlohmann_json::nlohmann_json)
@@ -19,6 +20,9 @@ set_tests_properties(unit PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DI
 add_test(NAME switch_graph COMMAND nocloom_unit "[switch-graph]")
 set_tests_properties(switch_graph PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
   TIMEOUT 30 LABELS "unit;switch-graph")
+add_test(NAME width_adapter COMMAND nocloom_unit "[width-adapter]")
+set_tests_properties(width_adapter PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
+  TIMEOUT 30 LABELS "unit;width-adapter")
 add_test(NAME message_layout COMMAND nocloom_unit "[message]")
 set_tests_properties(message_layout PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
   TIMEOUT 30 LABELS "unit;message")
