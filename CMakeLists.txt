@@ -108,3 +108,6 @@ target_sources(nocloom_core PRIVATE src/core/cross_domain.cpp)
 
 
 target_sources(nocloom_core PRIVATE src/core/switch_graph.cpp src/core/tree_topology.cpp)
+
+
+target_sources(nocloom_core PRIVATE src/core/width_adapter.cpp)
