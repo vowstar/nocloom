@@ -30,3 +30,6 @@ set_tests_properties(width_adapter PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_
 add_test(NAME message_layout COMMAND nocloom_unit "[message]")
 set_tests_properties(message_layout PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
   TIMEOUT 30 LABELS "unit;message")
+target_sources(nocloom_unit PRIVATE unit/axi4_outlet.cpp)
+add_test(NAME axi4_outlet_structure COMMAND nocloom_unit "[axi4-outlet]")
+set_tests_properties(axi4_outlet_structure PROPERTIES TIMEOUT 60 LABELS "unit;quick")
