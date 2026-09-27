@@ -30,6 +30,33 @@ set_tests_properties(width_adapter PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_
 add_test(NAME message_layout COMMAND nocloom_unit "[message]")
 set_tests_properties(message_layout PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
   TIMEOUT 30 LABELS "unit;message")
+target_sources(nocloom_unit PRIVATE unit/async_fifo.cpp)
+add_test(NAME async_fifo_structure COMMAND nocloom_unit "[async_fifo]")
+set_tests_properties(async_fifo_structure PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
+  TIMEOUT 120 LABELS "unit;cdc")
+target_sources(nocloom_unit PRIVATE unit/related_clock.cpp unit/related_clock_public.cpp)
+add_test(NAME related_clock_structure COMMAND nocloom_unit "[related-clock]")
+set_tests_properties(related_clock_structure PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
+  TIMEOUT 120 LABELS "unit;quick;cdc")
+add_test(NAME related_clock_public_structure COMMAND nocloom_unit "[related-clock-public]")
+set_tests_properties(related_clock_public_structure PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
+  TIMEOUT 180 LABELS "unit;quick;cdc")
 target_sources(nocloom_unit PRIVATE unit/axi4_outlet.cpp)
+target_sources(nocloom_unit PRIVATE unit/converter_stages.cpp)
+add_test(NAME converter_stages_structure COMMAND nocloom_unit "[converter-stages]")
+set_tests_properties(converter_stages_structure PROPERTIES TIMEOUT 60 LABELS "unit;quick")
 add_test(NAME axi4_outlet_structure COMMAND nocloom_unit "[axi4-outlet]")
 set_tests_properties(axi4_outlet_structure PROPERTIES TIMEOUT 60 LABELS "unit;quick")
+target_sources(nocloom_unit PRIVATE unit/ahb_outlet.cpp)
+add_test(NAME ahb_outlet_structure COMMAND nocloom_unit "[ahb-outlet]")
+set_tests_properties(ahb_outlet_structure PROPERTIES TIMEOUT 60 LABELS "unit;quick")
+target_sources(nocloom_unit PRIVATE unit/register_bank.cpp unit/service_target.cpp
+  unit/fault_monitor.cpp)
+add_test(NAME register_bank_plan COMMAND nocloom_unit "[register-bank]")
+set_tests_properties(register_bank_plan PROPERTIES TIMEOUT 120 LABELS "unit;focused")
+add_test(NAME service_target_plan COMMAND nocloom_unit "[service]")
+set_tests_properties(service_target_plan PROPERTIES TIMEOUT 120 LABELS "unit;focused")
+add_test(NAME fault_monitor_plan COMMAND nocloom_unit "[observer]")
+set_tests_properties(fault_monitor_plan PROPERTIES TIMEOUT 120 LABELS "unit;focused")
+add_test(NAME upsize_context_structure COMMAND nocloom_unit "[upsize-context]")
+set_tests_properties(upsize_context_structure PROPERTIES TIMEOUT 60 LABELS "unit;quick")
