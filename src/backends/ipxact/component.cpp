@@ -1,4 +1,5 @@
 #include "backends/clock_period_json.hpp"
+#include "backends/optional_outputs.hpp"
 #include "backends/output_license.hpp"
 #include "core/diagnostic.hpp"
 #include "nocloom/ipxact.hpp"
@@ -170,7 +171,7 @@ std::optional<Map> read_map(const Json &map) {
       if (clocks == definition.end())
         continue;
       for (const auto &clock : *clocks) {
-        if (clock.contains("clock_root"))
+        if (clock.contains("clock_root") || clock.contains("enable_port"))
           continue;
         if (const auto period = read_clock_period(clock)) {
           const auto ratio = clock.value("ratio", std::uint64_t{1});
@@ -575,7 +576,52 @@ private:
 Diagnostic failure(std::string field, std::string message) {
   return detail::error(std::string(code), std::move(field), std::move(message));
 }
+
+Status prepare_component(const Definition &definition, Map &map) {
+  // The registers of error logging have no bus interface for their window to belong to.
+  std::erase_if(map.windows, [&](const Window &w) {
+    const auto at = std::ranges::find(definition.targets, w.target, &Target::name);
+    return at != definition.targets.end() && at->log_registers;
+  });
+  // Every endpoint in the map must be one of the definition's, with the same direction.
+  std::set<std::string> endpoints;
+  for (const auto &i : definition.initiators)
+    endpoints.insert("initiator:" + i.name);
+  for (const auto &t : definition.targets)
+    endpoints.insert("target:" + t.name);
+  const auto stranger = std::ranges::find_if(map.ports, [&](const Port &p) {
+    return (p.endpoint.starts_with("initiator:") || p.endpoint.starts_with("target:")) &&
+           !endpoints.contains(p.endpoint);
+  });
+  if (stranger != map.ports.end())
+    return Status::failure(failure("artifacts", "The map endpoint " + stranger->endpoint +
+                                                    " is not in the definition"));
+  // Every mode condition must map onto a remap state.
+  for (std::size_t i = 0; i < definition.targets.size(); ++i)
+    for (std::size_t k = 0; k < definition.targets[i].mappings.size(); ++k)
+      if (const auto &when = definition.targets[i].mappings[k].when;
+          !when.empty() && !remap_state(definition, when))
+        return Status::failure(detail::error(
+            "NCL_ADDRESS_CONDITION",
+            "targets[" + std::to_string(i) + "].mappings[" + std::to_string(k) + "].when",
+            "An IP-XACT remap state holds address input values: a false selector needs one one-bit "
+            "input, and the selectors of a condition must not require two values of one input"));
+  return Status::success({});
+}
 } // namespace
+
+Status detail::process_ipxact(const Definition &definition, const Json &json, OutputFiles *output) {
+  auto map = read_map(json);
+  if (!map || map->module != "nocloom_" + definition.name)
+    return Status::failure(failure(
+        "artifacts", "Expected the artifacts generated for this definition, with its map and "
+                     "bundle"));
+  auto status = prepare_component(definition, *map);
+  if (status && output)
+    output->add(map->module + ".ipxact.xml", "ipxact_component",
+                Component(definition, *map, IpxactOptions{}).text());
+  return status;
+}
 
 Result<ArtifactSet> add_ipxact(const Definition &definition, const ArtifactSet &artifacts,
                                const IpxactOptions &options) {
@@ -609,34 +655,8 @@ Result<ArtifactSet> add_ipxact(const Definition &definition, const ArtifactSet &
   const auto path = map->module + ".ipxact.xml";
   if (std::ranges::any_of(artifacts, [&](const Artifact &a) { return a.path == path; }))
     return Result<ArtifactSet>::failure(failure("artifacts", "The artifacts already hold " + path));
-  // The registers of error logging have no bus interface for their window to belong to.
-  std::erase_if(map->windows, [&](const Window &w) {
-    const auto at = std::ranges::find(definition.targets, w.target, &Target::name);
-    return at != definition.targets.end() && at->log_registers;
-  });
-  // Every endpoint in the map must be one of the definition's, with the same direction.
-  std::set<std::string> endpoints;
-  for (const auto &i : definition.initiators)
-    endpoints.insert("initiator:" + i.name);
-  for (const auto &t : definition.targets)
-    endpoints.insert("target:" + t.name);
-  const auto stranger = std::ranges::find_if(map->ports, [&](const Port &p) {
-    return (p.endpoint.starts_with("initiator:") || p.endpoint.starts_with("target:")) &&
-           !endpoints.contains(p.endpoint);
-  });
-  if (stranger != map->ports.end())
-    return Result<ArtifactSet>::failure(failure(
-        "artifacts", "The map endpoint " + stranger->endpoint + " is not in the definition"));
-  // Every mode condition must map onto a remap state.
-  for (std::size_t i = 0; i < definition.targets.size(); ++i)
-    for (std::size_t k = 0; k < definition.targets[i].mappings.size(); ++k)
-      if (const auto &when = definition.targets[i].mappings[k].when;
-          !when.empty() && !remap_state(definition, when))
-        return Result<ArtifactSet>::failure(detail::error(
-            "NCL_ADDRESS_CONDITION",
-            "targets[" + std::to_string(i) + "].mappings[" + std::to_string(k) + "].when",
-            "An IP-XACT remap state holds address input values: a false selector needs one one-bit "
-            "input, and the selectors of a condition must not require two values of one input"));
+  if (auto status = prepare_component(definition, *map); !status)
+    return Result<ArtifactSet>::failure(status.diagnostics());
   ArtifactSet out = artifacts;
   out.push_back({path, Component(definition, *map, options).text()});
   bundle["files"].push_back({{"path", path}, {"role", "ipxact_component"}});

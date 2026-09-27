@@ -57,6 +57,13 @@ if(NOCLOOM_BUILD_CONFIG)
   install(TARGETS nocloom_config nocloom_io EXPORT nocloomConfigTargets ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
   install(EXPORT nocloomConfigTargets NAMESPACE nocloom:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/nocloom)
 endif()
+if(NOCLOOM_BUILD_CLI)
+  find_package(CLI11 2.4.1 CONFIG REQUIRED)
+  add_executable(nocloom_cli cli/main.cpp cli/diff.cpp)
+  set_target_properties(nocloom_cli PROPERTIES OUTPUT_NAME nocloom)
+  target_link_libraries(nocloom_cli PRIVATE nocloom_io CLI11::CLI11 nlohmann_json::nlohmann_json)
+  install(TARGETS nocloom_cli RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
 if(NOCLOOM_BUILD_EXAMPLES)
 endif()
 foreach(target IN ITEMS nocloom_core nocloom_config nocloom_io nocloom_cli nocloom_api_example)
@@ -68,6 +75,8 @@ foreach(target IN ITEMS nocloom_core nocloom_config nocloom_io nocloom_cli noclo
   endif()
 endforeach()
 if(NOCLOOM_BUILD_CONFIG)
+endif()
+if(NOCLOOM_BUILD_CLI)
 endif()
 install(DIRECTORY include/nocloom DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 configure_package_config_file(cmake/nocloomConfig.cmake.in
@@ -106,12 +115,23 @@ target_sources(nocloom_core PRIVATE src/core/ir_component.cpp)
 
 target_sources(nocloom_core PRIVATE src/core/cross_domain.cpp)
 
+target_sources(nocloom_core PRIVATE src/core/async_fifo.cpp src/core/related_clock.cpp)
 
 target_sources(nocloom_core PRIVATE src/core/switch_graph.cpp src/core/tree_topology.cpp)
 
+target_sources(nocloom_core PRIVATE src/core/exchange_composition.cpp src/core/exchange_clocking.cpp
+  src/core/dependency_graph.cpp src/core/network_plan.cpp src/core/network_plan_profiles.cpp src/core/plan_obligations.cpp
+  src/core/compose_checks.cpp src/core/capability.cpp)
+target_sources(nocloom_core PRIVATE src/core/treadle.cpp)
+target_sources(nocloom_core PRIVATE src/core/register_bank.cpp src/core/service_outlet.cpp
+                                     src/core/error_logger.cpp)
 
 target_sources(nocloom_core PRIVATE src/core/width_adapter.cpp)
 
 target_sources(nocloom_core PRIVATE src/core/axi4_initiator.cpp src/core/axi4_output.cpp)
 target_sources(nocloom_core PRIVATE src/core/axi4_outlet.cpp)
+target_sources(nocloom_core PRIVATE src/core/ahb_outlet.cpp)
 target_sources(nocloom_core PRIVATE src/core/exclusive_monitor.cpp)
+target_sources(nocloom_core PRIVATE src/core/axi4_width_clamp.cpp)
+target_sources(nocloom_core PRIVATE src/core/axi4_packetizer.cpp)
+target_sources(nocloom_core PRIVATE src/core/axi4_upsize.cpp)

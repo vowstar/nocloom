@@ -1,6 +1,7 @@
 #include "axi4_output.hpp"
 #include "ahb_outlet.hpp"
 #include "backends/clock_period_json.hpp"
+#include "backends/optional_outputs.hpp"
 #include "backends/output_license.hpp"
 #include "cone_walk.hpp"
 #include "diagnostic.hpp"
@@ -2054,6 +2055,17 @@ private:
   }
 };
 } // namespace
+
+Status check_axi4_network(const NetworkPlan &p, const Definition &definition,
+                          const GenerationOptions &options) {
+  auto lowered = lower_axi4_exchange_composition(p, options.register_reset);
+  if (!lowered)
+    return Status::failure(lowered.diagnostics());
+  auto map = MapWriter(p, lowered.value()).checked_map();
+  if (!map)
+    return Status::failure(map.diagnostics());
+  return process_optional_outputs(definition, options, map.value());
+}
 
 Result<ArtifactSet> emit_axi4_network(const NetworkPlan &p, RegisterReset register_reset,
                                       Json *output_map) {

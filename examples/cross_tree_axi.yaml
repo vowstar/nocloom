@@ -1,0 +1,47 @@
+schema_version: 10
+name: cross_tree_axi
+address_width: 32
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains:
+  - {name: alpha, clock_port: clk_alpha, reset_port: reset_n, test_port: test}
+  - {name: beta, clock_port: clk_beta, reset_port: reset_n, test_port: test}
+synchronizer_stages: 2
+clock_crossings:
+  - {from_domain: beta, to_domain: alpha, synchronizer_stages: 4}
+initiators:
+  - {name: host0, clock_domain: alpha, protocol: axi4_lite, data_width: 32}
+  - {name: host1, clock_domain: alpha, protocol: axi4_lite, data_width: 32}
+targets:
+  - {name: bank0, clock_domain: alpha, protocol: apb4, data_width: 32, mappings: [{base: '0x0000', size: '0x1000'}], attributes: amba}
+  - {name: bank1, clock_domain: beta, protocol: apb4, data_width: 32, mappings: [{base: '0x1000', size: '0x1000'}], attributes: amba}
+transport:
+  max_outstanding: 1
+  transport_word_bytes: 4
+connectivity: all
+topology:
+  request:
+    nodes:
+      - {name: root, clock_domain: alpha}
+      - {name: leaf, clock_domain: beta}
+    links:
+      - {from: root, to: leaf}
+    entries:
+      - {endpoint: host0, node: root}
+      - {endpoint: host1, node: root}
+    exits:
+      - {endpoint: bank0, node: root}
+      - {endpoint: bank1, node: leaf}
+  response:
+    nodes:
+      - {name: root, clock_domain: alpha}
+      - {name: leaf, clock_domain: beta}
+    links:
+      - {from: leaf, to: root}
+    entries:
+      - {endpoint: bank0, node: root}
+      - {endpoint: bank1, node: leaf}
+    exits:
+      - {endpoint: host0, node: root}
+      - {endpoint: host1, node: root}
+output: {backend: verilog, language: verilog_2001}

@@ -3,8 +3,12 @@
 #include "backends/output_license.hpp"
 #include "core/diagnostic.hpp"
 #include <algorithm>
+#include <charconv>
+#include <cmath>
+#include <limits>
 #include <map>
 #include <nlohmann/json.hpp>
+#include <numeric>
 #include <optional>
 #include <set>
 #include <stdexcept>
@@ -12,6 +16,10 @@
 namespace nocloom::detail {
 namespace {
 using Json = nlohmann::json;
+constexpr ClockPeriod::Numerator fs_per_ns = 1000000;
+constexpr std::uint64_t whole_ns_threshold_ps = (std::uint64_t{1} << 32) * 1000;
+constexpr auto double_digits = std::numeric_limits<double>::digits;
+static_assert(std::numeric_limits<double>::radix == 2 && double_digits == 53);
 
 // One exception pair (set_max_delay and set_min_delay 0) from cells to the endpoints of a clock.
 struct Exception {
@@ -25,8 +33,38 @@ std::string period(const std::string &domain) { return "$nocloom_period_" + doma
 std::string nanoseconds(ClockPeriod ps) { return ps.decimal(1000, ps.denominator() == 1 ? 3 : 6); }
 
 std::string max_delay(ClockPeriod ps) {
-  constexpr std::uint64_t whole_ns_threshold_ps = (std::uint64_t{1} << 32) * 1000;
-  return ps > ClockPeriod{whole_ns_threshold_ps} ? ps.decimal(1000, 0) : nanoseconds(ps);
+  if (ps <= ClockPeriod{whole_ns_threshold_ps})
+    return nanoseconds(ps);
+  const auto whole_ns = ps.whole() / 1000;
+  auto rounded = static_cast<double>(whole_ns);
+  if (static_cast<ClockPeriod::Numerator>(rounded) > whole_ns)
+    rounded = std::nextafter(rounded, 0.0);
+  return ClockPeriod{static_cast<ClockPeriod::Numerator>(rounded)}.text();
+}
+
+std::string bounded_period(ClockPeriod ps) {
+  if (ps > ClockPeriod{whole_ns_threshold_ps})
+    return max_delay(ps);
+  const auto fs = (ps * 1000).whole();
+  if (fs == 0)
+    return nanoseconds(ps);
+  const auto rounded = static_cast<double>(fs) / static_cast<double>(fs_per_ns);
+  int exponent = 0;
+  const auto fraction = std::frexp(rounded, &exponent);
+  // Compare the reader's binary value with the truncated decimal in integer arithmetic.
+  const auto significand = static_cast<std::uint64_t>(std::ldexp(fraction, double_digits));
+  if (significand * fs_per_ns <= (fs << (double_digits - exponent)))
+    return nanoseconds(ps);
+  const auto lower = std::nextafter(rounded, 0.0);
+  // At most 72 places for a nonzero femtosecond value. Print the binary value exactly.
+  char decimal[80];
+  const auto places = double_digits - 1 - std::ilogb(lower);
+  const auto result =
+      std::to_chars(decimal, decimal + sizeof(decimal), lower, std::chars_format::fixed, places);
+  auto end = result.ptr;
+  while (*(end - 1) == '0')
+    --end;
+  return std::string(decimal, end);
 }
 
 class CdcConstraints {
@@ -45,9 +83,10 @@ public:
   std::string sdc() const {
     std::vector<std::string> body;
     std::set<std::string> crossing_domains;
+    std::set<std::string> mixed_periods;
     std::set<std::string> related_roots;
     std::set<std::pair<std::string, std::string>> async_pairs;
-    bool related = false;
+    bool related = false, related_log = false;
     for (const auto &cut : cdc().at("cuts")) {
       const auto from = cut.at("from_domain").get<std::string>();
       const auto to = cut.at("to_domain").get<std::string>();
@@ -57,8 +96,15 @@ public:
         related = true;
         const auto root = domains_.at(from)->at("clock_root").get<std::string>();
         related_roots.insert(root);
-        const auto spacing = edge_spacing(from, to);
         const auto input = physical_root_period(root);
+        if (kind == "related_log") {
+          // The probe uses every root edge. The target and log select from those
+          // edges, including when their dividers open. Promises size storage.
+          related_log = true;
+          log_paths(body, cut, input ? bounded_period(*input) : root_period(root));
+          continue;
+        }
+        const auto spacing = edge_spacing(from, to);
         const auto bound =
             input ? max_delay(*input * spacing)
                   : "[expr {" + root_period(root) + " * " + std::to_string(spacing) + "}]";
@@ -95,8 +141,10 @@ public:
       const auto stages = cut.at("synchronizer_stages").get<unsigned>();
       body.push_back("\n# " + cut.at("name").get<std::string>() + ": " + from + " to " + to + ", " +
                      std::to_string(stages) + " synchronizer stages");
-      const auto sender = read_clock_period(*domains_.at(from));
-      const auto receiver = read_clock_period(*domains_.at(to));
+      const auto sender = timing_period(from);
+      const auto receiver = timing_period(to);
+      if (sender.has_value() != receiver.has_value())
+        mixed_periods.insert(sender ? from : to);
       const auto gray = sender && receiver
                             ? max_delay(std::min(*sender, *receiver))
                             : "[expr {min(" + period(from) + ", " + period(to) + ")}]";
@@ -150,7 +198,7 @@ public:
       const auto name = domain.at("name").get<std::string>();
       if (!crossing_domains.contains(name))
         continue;
-      out += domain_period_setting(domain);
+      out += domain_period_setting(domain, mixed_periods.contains(name));
       if (!related)
         groups += " -group [get_clocks {" + name + "}]";
     }
@@ -162,6 +210,9 @@ public:
     }
     out += "# Crossing paths stay timed; the exceptions below replace their clock relation.\n" +
            groups + "\n";
+    if (related_log)
+      out += "set nocloom_data_pins [all_registers -data_pins]\n"
+             "set nocloom_async_pins [all_registers -async_pins]\n";
     for (const auto &line : body)
       out += line + "\n";
     return output_license_comment("#") + out;
@@ -192,6 +243,36 @@ public:
   }
 
 private:
+  void log_paths(std::vector<std::string> &body, const Json &cut, const std::string &bound) const {
+    body.push_back("\n# " + cut.at("name").get<std::string>() + ": related log handover");
+    for (const auto &path : cut.at("paths")) {
+      std::vector<std::string> from, to;
+      for (const auto &source : path.at("sources")) {
+        const auto names = cells(source);
+        from.insert(from.end(), names.begin(), names.end());
+      }
+      for (const auto &destination : path.at("destinations")) {
+        const auto names = cells(destination);
+        to.insert(to.end(), names.begin(), names.end());
+      }
+      if (to.empty())
+        continue;
+      const std::string pins =
+          path.at("pin") == "async_reset" ? "$nocloom_async_pins" : "$nocloom_data_pins";
+      const auto ends = " -to [remove_from_collection " + pins + " [remove_from_collection " +
+                        pins + " [get_pins -of_objects [get_cells {" + join(to) + "}]]]]";
+      const auto delay = [&](const std::string &start) {
+        body.push_back("set_max_delay " + bound + " -ignore_clock_latency" + start + ends);
+        body.push_back("set_min_delay 0 -ignore_clock_latency" + start + ends);
+      };
+      body.push_back("# " + path.at("pin").get<std::string>() + " pins");
+      if (!from.empty())
+        delay(" -from [get_cells {" + join(from) + "}]");
+      if (path.contains("input_ports") && !path.at("input_ports").empty())
+        delay(" -from [get_ports {" + join(path.at("input_ports").get<std::vector<std::string>>()) +
+              "}]");
+    }
+  }
   static std::string root_period(const std::string &root) { return "$nocloom_root_period_" + root; }
 
   std::vector<const Json *> clock_path(const std::string &name) const {
@@ -202,18 +283,19 @@ private:
     return path;
   }
 
+  bool variable_edges(const Json &d) const {
+    return d.contains("enable_port") ||
+           (d.value("ratio", std::uint64_t{1}) > 1 &&
+            (d.contains("test_port") || d.contains("ungate_port") ||
+             map_.at("definition").value("register_reset", "") == "synchronous"));
+  }
+
   std::uint64_t edge_spacing(const std::string &from, const std::string &to) const {
     const auto a = clock_path(from), z = clock_path(to);
-    const auto sync_reset = map_.at("definition").value("register_reset", "") == "synchronous";
-    const auto variable = [&](const Json *d) {
-      return d->contains("enable_port") ||
-             (d->value("ratio", std::uint64_t{1}) > 1 &&
-              (d->contains("test_port") || d->contains("ungate_port") || sync_reset));
-    };
     std::uint64_t common = 1;
     std::size_t shared = 0;
     while (shared < a.size() && shared < z.size() && a[shared] == z[shared] &&
-           !variable(a[shared])) {
+           !variable_edges(*a[shared])) {
       common *= a[shared]->value("ratio", std::uint64_t{1});
       ++shared;
     }
@@ -223,7 +305,7 @@ private:
       auto ratio = common;
       for (std::size_t i = shared; i < path.size(); ++i) {
         const auto *d = path[i];
-        if (variable(d))
+        if (variable_edges(*d))
           return std::nullopt;
         const auto level = d->value("ratio", std::uint64_t{1});
         if (level > 1)
@@ -254,11 +336,34 @@ private:
     return "# Set " + variable + " (physical root period in ns) before reading this file.\n";
   }
 
-  std::string domain_period_setting(const Json &d) const {
+  std::optional<ClockPeriod> timing_period(const std::string &name) const {
+    const auto path = clock_path(name);
+    const auto &domain = *path.back();
+    if (std::ranges::none_of(path, [&](const Json *d) { return variable_edges(*d); }))
+      return read_clock_period(domain);
+    const auto root_name = domain.value("clock_root", std::string{});
+    if (root_name.empty() && !domain.contains("enable_port")) {
+      // An independent divider's declaration gives its nominal output period.
+      if (const auto nominal = read_clock_period(domain))
+        return ClockPeriod{nominal->whole(), domain.at("ratio").get<std::uint64_t>()};
+    }
+    const auto root = physical_root_period(root_name);
+    if (!root)
+      return std::nullopt;
+    const auto ratio = std::accumulate(
+        path.begin(), path.end(), std::uint64_t{1}, [&](auto product, const Json *d) {
+          return variable_edges(*d) ? product : product * d->value("ratio", std::uint64_t{1});
+        });
+    return *root * ratio;
+  }
+
+  std::string domain_period_setting(const Json &d, bool mixed) const {
     const auto name = d.at("name").get<std::string>();
     const auto variable = "nocloom_period_" + name;
-    if (const auto ps = read_clock_period(d))
-      return "set " + variable + " " + nanoseconds(*ps) + "\n";
+    if (const auto ps = timing_period(name))
+      return "set " + variable + " " + (mixed ? bounded_period(*ps) : nanoseconds(*ps)) + "\n";
+    if (d.contains("period_ps"))
+      return "# Set " + variable + " (minimum possible period in ns) before reading this file.\n";
     return "# " + name + " has no period_ps: set " + variable + " (ns) before reading this file.\n";
   }
 
@@ -300,35 +405,24 @@ Diagnostic internal(const std::string &message) {
 }
 } // namespace
 
-Result<ArtifactSet> add_cdc_constraints(ArtifactSet artifacts) {
-  auto bundle = std::ranges::find_if(
-      artifacts, [](const Artifact &a) { return a.path.ends_with(".bundle.json"); });
-  if (bundle == artifacts.end())
-    return Result<ArtifactSet>::failure(internal("The artifacts have no bundle"));
+Status process_cdc_constraints(const Json &map, OutputFiles *output) {
   try {
-    auto manifest = Json::parse(bundle->text);
-    const auto top = manifest.at("top").get<std::string>();
-    const auto mapping = std::ranges::find(artifacts, top + ".map.json", &Artifact::path);
-    if (mapping == artifacts.end())
-      return Result<ArtifactSet>::failure(internal("The artifacts have no map"));
-    const auto map = Json::parse(mapping->text);
     const auto *network = map.contains("network") ? &map.at("network") : nullptr;
     if (!network || !network->contains("cdc") || network->at("cdc").at("cuts").empty())
-      return Result<ArtifactSet>::failure(
+      return Status::failure(
           error("NCL_UNSUPPORTED_BACKEND", "output.cdc_constraints",
                 "CDC constraints require a clocked network with at least one crossing"));
+    const auto top = map.at("module").get<std::string>();
     CdcConstraints constraints(map, top);
-    const std::string sdc = top + ".cdc.sdc", keep = top + ".cdc_preserve.txt";
-    manifest.at("files").push_back({{"path", sdc}, {"role", "cdc_constraints"}});
-    manifest.at("files").push_back({{"path", keep}, {"role", "cdc_preserve_list"}});
-    bundle->text = manifest.dump(2) + "\n";
-    artifacts.push_back({sdc, constraints.sdc()});
-    artifacts.push_back({keep, constraints.preserve()});
+    const auto add = [&](std::string_view suffix, std::string_view role, std::string text) {
+      if (output)
+        output->add(top + std::string(suffix), role, std::move(text));
+    };
+    add(".cdc.sdc", "cdc_constraints", constraints.sdc());
+    add(".cdc_preserve.txt", "cdc_preserve_list", constraints.preserve());
   } catch (const std::exception &e) {
-    return Result<ArtifactSet>::failure(
-        internal(std::string("Malformed CDC records: ") + e.what()));
+    return Status::failure(internal(std::string("Malformed CDC records: ") + e.what()));
   }
-  std::ranges::sort(artifacts, {}, &Artifact::path);
-  return Result<ArtifactSet>::success(std::move(artifacts));
+  return Status::success({});
 }
 } // namespace nocloom::detail

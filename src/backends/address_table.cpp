@@ -1,4 +1,5 @@
 // The address table: each initiator's routing windows, read back from the interface map.
+#include "backends/address_table.hpp"
 #include "backends/output_license.hpp"
 #include "core/diagnostic.hpp"
 #include "core/network_plan_profiles.hpp"
@@ -161,7 +162,7 @@ std::string default_target(const Json &d, const std::string &source,
   const auto best = detail::select_default_mapping(candidates, address_bits);
   return best ? mappings[best->mapping].target : "";
 }
-Table build(const Json &map) {
+Table build(const Json &map, bool csv) {
   const auto &d = map.at("definition");
   const auto width = d.at("address_width").get<unsigned>();
   const auto digits = (width + 3) / 4;
@@ -210,9 +211,10 @@ Table build(const Json &map) {
               {"module", map.at("module")},
               {"address_width", width},
               {"initiators", Json::array()}};
-  out.csv = std::string("initiator,base,size,target,local_base,access,exclusive,default_target") +
-            (modes ? ",when" : "") + (flows ? ",flow" : "") +
-            (restricted ? ",source_paths\n" : "\n");
+  if (csv)
+    out.csv = std::string("initiator,base,size,target,local_base,access,exclusive,default_target") +
+              (modes ? ",when" : "") + (flows ? ",flow" : "") +
+              (restricted ? ",source_paths\n" : "\n");
   for (const auto &item : d.at("initiators")) {
     const auto source = item.get<std::string>();
     const auto &targets = reached[source];
@@ -258,17 +260,19 @@ Table build(const Json &map) {
         row["when"] = w.mapping->when;
       if (flows)
         row["flow"] = w.mapping->flow;
-      std::string listed;
-      for (const auto f : from)
-        listed += (listed.empty() ? "" : " ") + std::to_string(f);
       if (restricted)
         row["source_paths"] = from;
       entry["windows"].push_back(std::move(row));
-      out.csv += source + "," + hex(w.base, digits) + "," + hex(end - w.base, digits) + "," + t +
-                 "," + hex(local, digits) + "," + access + "," + mode + "," +
-                 (miss ? "true" : "false") + (modes ? "," + condition(w.mapping->when) : "") +
-                 (flows ? "," + std::to_string(w.mapping->flow) : "") +
-                 (restricted ? "," + listed : "") + "\n";
+      if (csv) {
+        std::string listed;
+        for (const auto f : from)
+          listed += (listed.empty() ? "" : " ") + std::to_string(f);
+        out.csv += source + "," + hex(w.base, digits) + "," + hex(end - w.base, digits) + "," + t +
+                   "," + hex(local, digits) + "," + access + "," + mode + "," +
+                   (miss ? "true" : "false") + (modes ? "," + condition(w.mapping->when) : "") +
+                   (flows ? "," + std::to_string(w.mapping->flow) : "") +
+                   (restricted ? "," + listed : "") + "\n";
+      }
     }
     out.json["initiators"].push_back(std::move(entry));
   }
@@ -277,7 +281,30 @@ Table build(const Json &map) {
 Diagnostic input_error(const std::string &message) {
   return detail::error("NCL_ADDRESS_TABLE_INPUT", "artifacts", message);
 }
+void write_table(const Table &table, detail::OutputFiles &output) {
+  const auto module = table.json.at("module").get<std::string>();
+  output.add(module + ".address_table.json", "address_table",
+             detail::output_license_json(table.json.dump(2)));
+  output.add(module + ".address_table.csv", "address_table",
+             detail::output_license_comment("#") + table.csv);
+}
 } // namespace
+
+namespace detail {
+Json address_table(const Json &map) { return build(map, false).json; }
+
+Status process_address_table(const Json &map, OutputFiles *output) {
+  try {
+    const auto table = build(map, output != nullptr);
+    if (output)
+      write_table(table, *output);
+    return Status::success({});
+  } catch (const std::exception &e) {
+    return Status::failure(
+        input_error(std::string("The map cannot be read as a NocLoom map: ") + e.what()));
+  }
+}
+} // namespace detail
 
 Result<ArtifactSet> add_address_table(ArtifactSet artifacts) {
   const auto with = [&](std::string_view suffix) {
@@ -293,16 +320,12 @@ Result<ArtifactSet> add_address_table(ArtifactSet artifacts) {
     return Result<ArtifactSet>::failure(input_error(
         "An address table needs one generated map and bundle and no address table yet"));
   try {
-    const auto table = build(Json::parse(maps.front()->text));
-    const auto module = table.json.at("module").get<std::string>();
+    const auto table = build(Json::parse(maps.front()->text), true);
     auto bundle = Json::parse(bundles.front()->text);
-    for (const auto *suffix : {".address_table.json", ".address_table.csv"})
-      bundle.at("files").push_back({{"path", module + suffix}, {"role", "address_table"}});
-    bundles.front()->text = bundle.dump(2) + "\n";
-    artifacts.push_back(
-        {module + ".address_table.json", detail::output_license_json(table.json.dump(2))});
-    artifacts.push_back(
-        {module + ".address_table.csv", detail::output_license_comment("#") + table.csv});
+    const auto bundle_path = bundles.front()->path;
+    detail::OutputFiles output{bundle, artifacts};
+    write_table(table, output);
+    std::ranges::find(artifacts, bundle_path, &Artifact::path)->text = bundle.dump(2) + "\n";
   } catch (const std::exception &e) {
     return Result<ArtifactSet>::failure(
         input_error(std::string("The map cannot be read as a NocLoom map: ") + e.what()));

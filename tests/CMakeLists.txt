@@ -30,6 +30,48 @@ set_tests_properties(width_adapter PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_
 add_test(NAME message_layout COMMAND nocloom_unit "[message]")
 set_tests_properties(message_layout PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
   TIMEOUT 30 LABELS "unit;message")
+target_sources(nocloom_unit PRIVATE unit/async_fifo.cpp)
+add_test(NAME async_fifo_structure COMMAND nocloom_unit "[async_fifo]")
+set_tests_properties(async_fifo_structure PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
+  TIMEOUT 120 LABELS "unit;cdc")
+target_sources(nocloom_unit PRIVATE unit/related_clock.cpp unit/related_clock_public.cpp)
+add_test(NAME related_clock_structure COMMAND nocloom_unit "[related-clock]")
+set_tests_properties(related_clock_structure PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
+  TIMEOUT 120 LABELS "unit;quick;cdc")
+add_test(NAME related_clock_public_structure COMMAND nocloom_unit "[related-clock-public]")
+set_tests_properties(related_clock_public_structure PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
+  TIMEOUT 180 LABELS "unit;quick;cdc")
 target_sources(nocloom_unit PRIVATE unit/axi4_outlet.cpp)
+target_sources(nocloom_unit PRIVATE unit/target_id.cpp)
+target_sources(nocloom_unit PRIVATE unit/converter_stages.cpp)
+add_test(NAME converter_stages_structure COMMAND nocloom_unit "[converter-stages]")
+set_tests_properties(converter_stages_structure PROPERTIES TIMEOUT 60 LABELS "unit;quick")
 add_test(NAME axi4_outlet_structure COMMAND nocloom_unit "[axi4-outlet]")
 set_tests_properties(axi4_outlet_structure PROPERTIES TIMEOUT 60 LABELS "unit;quick")
+target_sources(nocloom_unit PRIVATE unit/ahb_outlet.cpp)
+add_test(NAME ahb_outlet_structure COMMAND nocloom_unit "[ahb-outlet]")
+set_tests_properties(ahb_outlet_structure PROPERTIES TIMEOUT 60 LABELS "unit;quick")
+target_sources(nocloom_unit PRIVATE unit/register_bank.cpp unit/service_target.cpp
+  unit/error_log.cpp)
+add_test(NAME log_bank_access
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/log_bank_access.py
+    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/log_bank_access
+    --case single --case parts --case audit32 --case sparse --case crossed)
+set_tests_properties(log_bank_access PROPERTIES TIMEOUT 60
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} LABELS "rtl;focused;ci" PROCESSORS 1
+  ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+add_test(NAME log_bank_access_large
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/log_bank_access.py
+    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/log_bank_access_large
+    --case chain32 --case chains --case logs64 --case domains)
+set_tests_properties(log_bank_access_large PROPERTIES TIMEOUT 300
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} LABELS "rtl;release" PROCESSORS 1
+  ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+add_test(NAME register_bank_plan COMMAND nocloom_unit "[register-bank]")
+set_tests_properties(register_bank_plan PROPERTIES TIMEOUT 120 LABELS "unit;focused")
+add_test(NAME service_target_plan COMMAND nocloom_unit "[service]")
+set_tests_properties(service_target_plan PROPERTIES TIMEOUT 120 LABELS "unit;focused")
+add_test(NAME error_log_plan COMMAND nocloom_unit "[error-log]")
+set_tests_properties(error_log_plan PROPERTIES TIMEOUT 120 LABELS "unit;focused")
+add_test(NAME upsize_context_structure COMMAND nocloom_unit "[upsize-context]")
+set_tests_properties(upsize_context_structure PROPERTIES TIMEOUT 60 LABELS "unit;quick")
