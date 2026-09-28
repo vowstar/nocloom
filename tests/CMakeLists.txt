@@ -57,6 +57,12 @@ set_tests_properties(ahb_public_structure PROPERTIES TIMEOUT 120 LABELS "unit;qu
 target_sources(nocloom_unit PRIVATE unit/exchange_clocking.cpp)
 add_test(NAME exchange_clocking COMMAND nocloom_unit "[exchange-clocking]")
 set_tests_properties(exchange_clocking PROPERTIES TIMEOUT 180 LABELS "unit;quick;cdc")
+target_sources(nocloom_unit PRIVATE unit/apb_burst_outlet.cpp)
+add_test(NAME apb_burst_outlet_structure COMMAND nocloom_unit "[apb-burst-outlet]")
+set_tests_properties(apb_burst_outlet_structure PROPERTIES TIMEOUT 60 LABELS "unit;quick")
+target_sources(nocloom_unit PRIVATE unit/apb_burst_example.cpp)
+add_test(NAME apb_burst_example_structure COMMAND nocloom_unit "[apb-burst-example]")
+set_tests_properties(apb_burst_example_structure PROPERTIES TIMEOUT 120 LABELS "unit;quick")
 target_sources(nocloom_unit PRIVATE unit/register_bank.cpp unit/service_target.cpp
   unit/error_log.cpp)
 add_test(NAME log_bank_access
@@ -81,3 +87,5 @@ add_test(NAME error_log_plan COMMAND nocloom_unit "[error-log]")
 set_tests_properties(error_log_plan PROPERTIES TIMEOUT 120 LABELS "unit;focused")
 add_test(NAME upsize_context_structure COMMAND nocloom_unit "[upsize-context]")
 set_tests_properties(upsize_context_structure PROPERTIES TIMEOUT 60 LABELS "unit;quick")
+add_test(NAME apb_cadence_structure COMMAND nocloom_unit "[apb-cadence]")
+set_tests_properties(apb_cadence_structure PROPERTIES TIMEOUT 120 LABELS "unit;quick")
