@@ -53,6 +53,9 @@ set_tests_properties(ahb_outlet_structure PROPERTIES TIMEOUT 60 LABELS "unit;qui
 target_sources(nocloom_unit PRIVATE unit/ahb_public.cpp)
 add_test(NAME ahb_public_structure COMMAND nocloom_unit "[ahb-public]")
 set_tests_properties(ahb_public_structure PROPERTIES TIMEOUT 120 LABELS "unit;quick")
+target_sources(nocloom_unit PRIVATE unit/exchange_clocking.cpp)
+add_test(NAME exchange_clocking COMMAND nocloom_unit "[exchange-clocking]")
+set_tests_properties(exchange_clocking PROPERTIES TIMEOUT 180 LABELS "unit;quick;cdc")
 target_sources(nocloom_unit PRIVATE unit/register_bank.cpp unit/service_target.cpp
   unit/fault_monitor.cpp)
 add_test(NAME register_bank_plan COMMAND nocloom_unit "[register-bank]")
