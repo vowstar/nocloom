@@ -50,6 +50,9 @@ set_tests_properties(axi4_outlet_structure PROPERTIES TIMEOUT 60 LABELS "unit;qu
 target_sources(nocloom_unit PRIVATE unit/ahb_outlet.cpp)
 add_test(NAME ahb_outlet_structure COMMAND nocloom_unit "[ahb-outlet]")
 set_tests_properties(ahb_outlet_structure PROPERTIES TIMEOUT 60 LABELS "unit;quick")
+target_sources(nocloom_unit PRIVATE unit/ahb_public.cpp)
+add_test(NAME ahb_public_structure COMMAND nocloom_unit "[ahb-public]")
+set_tests_properties(ahb_public_structure PROPERTIES TIMEOUT 120 LABELS "unit;quick")
 target_sources(nocloom_unit PRIVATE unit/register_bank.cpp unit/service_target.cpp
   unit/fault_monitor.cpp)
 add_test(NAME register_bank_plan COMMAND nocloom_unit "[register-bank]")
