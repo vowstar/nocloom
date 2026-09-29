@@ -42,6 +42,9 @@ add_test(NAME related_clock_public_structure COMMAND nocloom_unit "[related-cloc
 set_tests_properties(related_clock_public_structure PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
   TIMEOUT 180 LABELS "unit;quick;cdc")
 target_sources(nocloom_unit PRIVATE unit/axi4_outlet.cpp)
+target_sources(nocloom_unit PRIVATE unit/axi4_width_cut.cpp)
+add_test(NAME axi4_width_cut_structure COMMAND nocloom_unit "[axi4-width-cut]")
+set_tests_properties(axi4_width_cut_structure PROPERTIES TIMEOUT 60 LABELS "unit;quick")
 target_sources(nocloom_unit PRIVATE unit/converter_stages.cpp)
 add_test(NAME converter_stages_structure COMMAND nocloom_unit "[converter-stages]")
 set_tests_properties(converter_stages_structure PROPERTIES TIMEOUT 60 LABELS "unit;quick")
