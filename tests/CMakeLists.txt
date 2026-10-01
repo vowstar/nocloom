@@ -6,6 +6,19 @@ target_sources(nocloom_unit PRIVATE unit/switch_graph.cpp)
 target_sources(nocloom_unit PRIVATE unit/width_adapter.cpp)
 target_include_directories(nocloom_unit PRIVATE ${PROJECT_SOURCE_DIR}/cli)
 target_compile_definitions(nocloom_unit PRIVATE NOCLOOM_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+target_sources(nocloom_unit PRIVATE unit/multi_outstanding.cpp)
+target_sources(nocloom_unit PRIVATE unit/target_id.cpp)
+target_sources(nocloom_unit PRIVATE unit/exclusive.cpp)
+add_test(NAME exclusive_structure COMMAND nocloom_unit "[exclusive]")
+set_tests_properties(exclusive_structure PROPERTIES
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit TIMEOUT 120 LABELS "unit;axi4")
+add_test(NAME multi_outstanding_structure COMMAND nocloom_unit "[multi-outstanding]")
+set_tests_properties(multi_outstanding_structure PROPERTIES
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit TIMEOUT 120 LABELS "unit;axi4")
+target_sources(nocloom_unit PRIVATE unit/lite_outstanding.cpp)
+add_test(NAME lite_outstanding_structure COMMAND nocloom_unit "[lite-outstanding]")
+set_tests_properties(lite_outstanding_structure PROPERTIES
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit TIMEOUT 120 LABELS "unit;axi4")
 target_sources(nocloom_unit PRIVATE unit/axi4_initiator.cpp)
 add_test(NAME axi4_initiator_structure COMMAND nocloom_unit "[axi4-initiator]")
 set_tests_properties(axi4_initiator_structure PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
@@ -42,7 +55,6 @@ add_test(NAME related_clock_public_structure COMMAND nocloom_unit "[related-cloc
 set_tests_properties(related_clock_public_structure PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
   TIMEOUT 180 LABELS "unit;quick;cdc")
 target_sources(nocloom_unit PRIVATE unit/axi4_outlet.cpp)
-target_sources(nocloom_unit PRIVATE unit/target_id.cpp)
 target_sources(nocloom_unit PRIVATE unit/axi4_width_cut.cpp)
 add_test(NAME axi4_width_cut_structure COMMAND nocloom_unit "[axi4-width-cut]")
 set_tests_properties(axi4_width_cut_structure PROPERTIES TIMEOUT 60 LABELS "unit;quick")
