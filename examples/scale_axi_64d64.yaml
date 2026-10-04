@@ -1,0 +1,1497 @@
+schema_version: 10
+name: scale_axi_n32_s64_balanced
+address_width: 32
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains:
+- name: main
+  clock_port: clk_main
+  reset_port: reset_n
+  test_port: test
+initiators:
+- name: src00
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src01
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src02
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src03
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src04
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src05
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src06
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src07
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src08
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src09
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src10
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src11
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src12
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src13
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src14
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src15
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src16
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src17
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src18
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src19
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src20
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src21
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src22
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src23
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src24
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src25
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src26
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src27
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src28
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src29
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src30
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src31
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src32
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src33
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src34
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src35
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src36
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src37
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src38
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src39
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src40
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src41
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src42
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src43
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src44
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src45
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src46
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src47
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src48
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src49
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src50
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src51
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src52
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src53
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src54
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src55
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src56
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src57
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src58
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src59
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src60
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src61
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src62
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+- name: src63
+  clock_domain: main
+  protocol: axi4_lite
+  data_width: 32
+arbitration:
+  policy: round_robin
+targets:
+- name: bank00
+  clock_domain: main
+  mappings:
+    - base: '0'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank01
+  clock_domain: main
+  mappings:
+    - base: '4096'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank02
+  clock_domain: main
+  mappings:
+    - base: '8192'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank03
+  clock_domain: main
+  mappings:
+    - base: '12288'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank04
+  clock_domain: main
+  mappings:
+    - base: '16384'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank05
+  clock_domain: main
+  mappings:
+    - base: '20480'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank06
+  clock_domain: main
+  mappings:
+    - base: '24576'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank07
+  clock_domain: main
+  mappings:
+    - base: '28672'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank08
+  clock_domain: main
+  mappings:
+    - base: '32768'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank09
+  clock_domain: main
+  mappings:
+    - base: '36864'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank10
+  clock_domain: main
+  mappings:
+    - base: '40960'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank11
+  clock_domain: main
+  mappings:
+    - base: '45056'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank12
+  clock_domain: main
+  mappings:
+    - base: '49152'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank13
+  clock_domain: main
+  mappings:
+    - base: '53248'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank14
+  clock_domain: main
+  mappings:
+    - base: '57344'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank15
+  clock_domain: main
+  mappings:
+    - base: '61440'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank16
+  clock_domain: main
+  mappings:
+    - base: '65536'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank17
+  clock_domain: main
+  mappings:
+    - base: '69632'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank18
+  clock_domain: main
+  mappings:
+    - base: '73728'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank19
+  clock_domain: main
+  mappings:
+    - base: '77824'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank20
+  clock_domain: main
+  mappings:
+    - base: '81920'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank21
+  clock_domain: main
+  mappings:
+    - base: '86016'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank22
+  clock_domain: main
+  mappings:
+    - base: '90112'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank23
+  clock_domain: main
+  mappings:
+    - base: '94208'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank24
+  clock_domain: main
+  mappings:
+    - base: '98304'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank25
+  clock_domain: main
+  mappings:
+    - base: '102400'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank26
+  clock_domain: main
+  mappings:
+    - base: '106496'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank27
+  clock_domain: main
+  mappings:
+    - base: '110592'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank28
+  clock_domain: main
+  mappings:
+    - base: '114688'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank29
+  clock_domain: main
+  mappings:
+    - base: '118784'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank30
+  clock_domain: main
+  mappings:
+    - base: '122880'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank31
+  clock_domain: main
+  mappings:
+    - base: '126976'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank32
+  clock_domain: main
+  mappings:
+    - base: '131072'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank33
+  clock_domain: main
+  mappings:
+    - base: '135168'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank34
+  clock_domain: main
+  mappings:
+    - base: '139264'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank35
+  clock_domain: main
+  mappings:
+    - base: '143360'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank36
+  clock_domain: main
+  mappings:
+    - base: '147456'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank37
+  clock_domain: main
+  mappings:
+    - base: '151552'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank38
+  clock_domain: main
+  mappings:
+    - base: '155648'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank39
+  clock_domain: main
+  mappings:
+    - base: '159744'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank40
+  clock_domain: main
+  mappings:
+    - base: '163840'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank41
+  clock_domain: main
+  mappings:
+    - base: '167936'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank42
+  clock_domain: main
+  mappings:
+    - base: '172032'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank43
+  clock_domain: main
+  mappings:
+    - base: '176128'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank44
+  clock_domain: main
+  mappings:
+    - base: '180224'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank45
+  clock_domain: main
+  mappings:
+    - base: '184320'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank46
+  clock_domain: main
+  mappings:
+    - base: '188416'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank47
+  clock_domain: main
+  mappings:
+    - base: '192512'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank48
+  clock_domain: main
+  mappings:
+    - base: '196608'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank49
+  clock_domain: main
+  mappings:
+    - base: '200704'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank50
+  clock_domain: main
+  mappings:
+    - base: '204800'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank51
+  clock_domain: main
+  mappings:
+    - base: '208896'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank52
+  clock_domain: main
+  mappings:
+    - base: '212992'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank53
+  clock_domain: main
+  mappings:
+    - base: '217088'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank54
+  clock_domain: main
+  mappings:
+    - base: '221184'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank55
+  clock_domain: main
+  mappings:
+    - base: '225280'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank56
+  clock_domain: main
+  mappings:
+    - base: '229376'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank57
+  clock_domain: main
+  mappings:
+    - base: '233472'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank58
+  clock_domain: main
+  mappings:
+    - base: '237568'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank59
+  clock_domain: main
+  mappings:
+    - base: '241664'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank60
+  clock_domain: main
+  mappings:
+    - base: '245760'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank61
+  clock_domain: main
+  mappings:
+    - base: '249856'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank62
+  clock_domain: main
+  mappings:
+    - base: '253952'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank63
+  clock_domain: main
+  mappings:
+    - base: '258048'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+output:
+  backend: verilog
+  language: verilog_2001
+topology:
+  request:
+    nodes:
+    - name: node00
+    - name: node01
+    - name: node02
+    - name: node03
+    - name: node04
+    - name: node05
+    - name: node06
+    - name: node07
+    - name: node08
+    - name: node09
+    - name: node10
+    - name: node11
+    - name: node12
+    - name: node13
+    - name: node14
+    - name: node15
+    - name: node16
+    - name: node17
+    - name: node18
+    - name: node19
+    - name: node20
+    - name: node21
+    - name: node22
+    - name: node23
+    - name: node24
+    - name: node25
+    - name: node26
+    - name: node27
+    - name: node28
+    - name: node29
+    - name: node30
+    - name: node31
+    links:
+    - from: node00
+      to: node01
+    - from: node00
+      to: node02
+    - from: node01
+      to: node03
+    - from: node01
+      to: node04
+    - from: node02
+      to: node05
+    - from: node02
+      to: node06
+    - from: node03
+      to: node07
+    - from: node03
+      to: node08
+    - from: node04
+      to: node09
+    - from: node04
+      to: node10
+    - from: node05
+      to: node11
+    - from: node05
+      to: node12
+    - from: node06
+      to: node13
+    - from: node06
+      to: node14
+    - from: node07
+      to: node15
+    - from: node07
+      to: node16
+    - from: node08
+      to: node17
+    - from: node08
+      to: node18
+    - from: node09
+      to: node19
+    - from: node09
+      to: node20
+    - from: node10
+      to: node21
+    - from: node10
+      to: node22
+    - from: node11
+      to: node23
+    - from: node11
+      to: node24
+    - from: node12
+      to: node25
+    - from: node12
+      to: node26
+    - from: node13
+      to: node27
+    - from: node13
+      to: node28
+    - from: node14
+      to: node29
+    - from: node14
+      to: node30
+    - from: node15
+      to: node31
+    entries:
+    - endpoint: src00
+      node: node00
+    - endpoint: src01
+      node: node00
+    - endpoint: src02
+      node: node00
+    - endpoint: src03
+      node: node00
+    - endpoint: src04
+      node: node00
+    - endpoint: src05
+      node: node00
+    - endpoint: src06
+      node: node00
+    - endpoint: src07
+      node: node00
+    - endpoint: src08
+      node: node00
+    - endpoint: src09
+      node: node00
+    - endpoint: src10
+      node: node00
+    - endpoint: src11
+      node: node00
+    - endpoint: src12
+      node: node00
+    - endpoint: src13
+      node: node00
+    - endpoint: src14
+      node: node00
+    - endpoint: src15
+      node: node00
+    - endpoint: src16
+      node: node00
+    - endpoint: src17
+      node: node00
+    - endpoint: src18
+      node: node00
+    - endpoint: src19
+      node: node00
+    - endpoint: src20
+      node: node00
+    - endpoint: src21
+      node: node00
+    - endpoint: src22
+      node: node00
+    - endpoint: src23
+      node: node00
+    - endpoint: src24
+      node: node00
+    - endpoint: src25
+      node: node00
+    - endpoint: src26
+      node: node00
+    - endpoint: src27
+      node: node00
+    - endpoint: src28
+      node: node00
+    - endpoint: src29
+      node: node00
+    - endpoint: src30
+      node: node00
+    - endpoint: src31
+      node: node00
+    - endpoint: src32
+      node: node00
+    - endpoint: src33
+      node: node00
+    - endpoint: src34
+      node: node00
+    - endpoint: src35
+      node: node00
+    - endpoint: src36
+      node: node00
+    - endpoint: src37
+      node: node00
+    - endpoint: src38
+      node: node00
+    - endpoint: src39
+      node: node00
+    - endpoint: src40
+      node: node00
+    - endpoint: src41
+      node: node00
+    - endpoint: src42
+      node: node00
+    - endpoint: src43
+      node: node00
+    - endpoint: src44
+      node: node00
+    - endpoint: src45
+      node: node00
+    - endpoint: src46
+      node: node00
+    - endpoint: src47
+      node: node00
+    - endpoint: src48
+      node: node00
+    - endpoint: src49
+      node: node00
+    - endpoint: src50
+      node: node00
+    - endpoint: src51
+      node: node00
+    - endpoint: src52
+      node: node00
+    - endpoint: src53
+      node: node00
+    - endpoint: src54
+      node: node00
+    - endpoint: src55
+      node: node00
+    - endpoint: src56
+      node: node00
+    - endpoint: src57
+      node: node00
+    - endpoint: src58
+      node: node00
+    - endpoint: src59
+      node: node00
+    - endpoint: src60
+      node: node00
+    - endpoint: src61
+      node: node00
+    - endpoint: src62
+      node: node00
+    - endpoint: src63
+      node: node00
+    exits:
+    - endpoint: bank00
+      node: node01
+    - endpoint: bank31
+      node: node01
+    - endpoint: bank62
+      node: node01
+    - endpoint: bank01
+      node: node02
+    - endpoint: bank32
+      node: node02
+    - endpoint: bank63
+      node: node02
+    - endpoint: bank02
+      node: node03
+    - endpoint: bank33
+      node: node03
+    - endpoint: bank03
+      node: node04
+    - endpoint: bank34
+      node: node04
+    - endpoint: bank04
+      node: node05
+    - endpoint: bank35
+      node: node05
+    - endpoint: bank05
+      node: node06
+    - endpoint: bank36
+      node: node06
+    - endpoint: bank06
+      node: node07
+    - endpoint: bank37
+      node: node07
+    - endpoint: bank07
+      node: node08
+    - endpoint: bank38
+      node: node08
+    - endpoint: bank08
+      node: node09
+    - endpoint: bank39
+      node: node09
+    - endpoint: bank09
+      node: node10
+    - endpoint: bank40
+      node: node10
+    - endpoint: bank10
+      node: node11
+    - endpoint: bank41
+      node: node11
+    - endpoint: bank11
+      node: node12
+    - endpoint: bank42
+      node: node12
+    - endpoint: bank12
+      node: node13
+    - endpoint: bank43
+      node: node13
+    - endpoint: bank13
+      node: node14
+    - endpoint: bank44
+      node: node14
+    - endpoint: bank14
+      node: node15
+    - endpoint: bank45
+      node: node15
+    - endpoint: bank15
+      node: node16
+    - endpoint: bank46
+      node: node16
+    - endpoint: bank16
+      node: node17
+    - endpoint: bank47
+      node: node17
+    - endpoint: bank17
+      node: node18
+    - endpoint: bank48
+      node: node18
+    - endpoint: bank18
+      node: node19
+    - endpoint: bank49
+      node: node19
+    - endpoint: bank19
+      node: node20
+    - endpoint: bank50
+      node: node20
+    - endpoint: bank20
+      node: node21
+    - endpoint: bank51
+      node: node21
+    - endpoint: bank21
+      node: node22
+    - endpoint: bank52
+      node: node22
+    - endpoint: bank22
+      node: node23
+    - endpoint: bank53
+      node: node23
+    - endpoint: bank23
+      node: node24
+    - endpoint: bank54
+      node: node24
+    - endpoint: bank24
+      node: node25
+    - endpoint: bank55
+      node: node25
+    - endpoint: bank25
+      node: node26
+    - endpoint: bank56
+      node: node26
+    - endpoint: bank26
+      node: node27
+    - endpoint: bank57
+      node: node27
+    - endpoint: bank27
+      node: node28
+    - endpoint: bank58
+      node: node28
+    - endpoint: bank28
+      node: node29
+    - endpoint: bank59
+      node: node29
+    - endpoint: bank29
+      node: node30
+    - endpoint: bank60
+      node: node30
+    - endpoint: bank30
+      node: node31
+    - endpoint: bank61
+      node: node31
+  response:
+    nodes:
+    - name: node00
+    - name: node01
+    - name: node02
+    - name: node03
+    - name: node04
+    - name: node05
+    - name: node06
+    - name: node07
+    - name: node08
+    - name: node09
+    - name: node10
+    - name: node11
+    - name: node12
+    - name: node13
+    - name: node14
+    - name: node15
+    - name: node16
+    - name: node17
+    - name: node18
+    - name: node19
+    - name: node20
+    - name: node21
+    - name: node22
+    - name: node23
+    - name: node24
+    - name: node25
+    - name: node26
+    - name: node27
+    - name: node28
+    - name: node29
+    - name: node30
+    - name: node31
+    links:
+    - from: node01
+      to: node00
+    - from: node02
+      to: node00
+    - from: node03
+      to: node01
+    - from: node04
+      to: node01
+    - from: node05
+      to: node02
+    - from: node06
+      to: node02
+    - from: node07
+      to: node03
+    - from: node08
+      to: node03
+    - from: node09
+      to: node04
+    - from: node10
+      to: node04
+    - from: node11
+      to: node05
+    - from: node12
+      to: node05
+    - from: node13
+      to: node06
+    - from: node14
+      to: node06
+    - from: node15
+      to: node07
+    - from: node16
+      to: node07
+    - from: node17
+      to: node08
+    - from: node18
+      to: node08
+    - from: node19
+      to: node09
+    - from: node20
+      to: node09
+    - from: node21
+      to: node10
+    - from: node22
+      to: node10
+    - from: node23
+      to: node11
+    - from: node24
+      to: node11
+    - from: node25
+      to: node12
+    - from: node26
+      to: node12
+    - from: node27
+      to: node13
+    - from: node28
+      to: node13
+    - from: node29
+      to: node14
+    - from: node30
+      to: node14
+    - from: node31
+      to: node15
+    entries:
+    - endpoint: bank00
+      node: node01
+    - endpoint: bank31
+      node: node01
+    - endpoint: bank62
+      node: node01
+    - endpoint: bank01
+      node: node02
+    - endpoint: bank32
+      node: node02
+    - endpoint: bank63
+      node: node02
+    - endpoint: bank02
+      node: node03
+    - endpoint: bank33
+      node: node03
+    - endpoint: bank03
+      node: node04
+    - endpoint: bank34
+      node: node04
+    - endpoint: bank04
+      node: node05
+    - endpoint: bank35
+      node: node05
+    - endpoint: bank05
+      node: node06
+    - endpoint: bank36
+      node: node06
+    - endpoint: bank06
+      node: node07
+    - endpoint: bank37
+      node: node07
+    - endpoint: bank07
+      node: node08
+    - endpoint: bank38
+      node: node08
+    - endpoint: bank08
+      node: node09
+    - endpoint: bank39
+      node: node09
+    - endpoint: bank09
+      node: node10
+    - endpoint: bank40
+      node: node10
+    - endpoint: bank10
+      node: node11
+    - endpoint: bank41
+      node: node11
+    - endpoint: bank11
+      node: node12
+    - endpoint: bank42
+      node: node12
+    - endpoint: bank12
+      node: node13
+    - endpoint: bank43
+      node: node13
+    - endpoint: bank13
+      node: node14
+    - endpoint: bank44
+      node: node14
+    - endpoint: bank14
+      node: node15
+    - endpoint: bank45
+      node: node15
+    - endpoint: bank15
+      node: node16
+    - endpoint: bank46
+      node: node16
+    - endpoint: bank16
+      node: node17
+    - endpoint: bank47
+      node: node17
+    - endpoint: bank17
+      node: node18
+    - endpoint: bank48
+      node: node18
+    - endpoint: bank18
+      node: node19
+    - endpoint: bank49
+      node: node19
+    - endpoint: bank19
+      node: node20
+    - endpoint: bank50
+      node: node20
+    - endpoint: bank20
+      node: node21
+    - endpoint: bank51
+      node: node21
+    - endpoint: bank21
+      node: node22
+    - endpoint: bank52
+      node: node22
+    - endpoint: bank22
+      node: node23
+    - endpoint: bank53
+      node: node23
+    - endpoint: bank23
+      node: node24
+    - endpoint: bank54
+      node: node24
+    - endpoint: bank24
+      node: node25
+    - endpoint: bank55
+      node: node25
+    - endpoint: bank25
+      node: node26
+    - endpoint: bank56
+      node: node26
+    - endpoint: bank26
+      node: node27
+    - endpoint: bank57
+      node: node27
+    - endpoint: bank27
+      node: node28
+    - endpoint: bank58
+      node: node28
+    - endpoint: bank28
+      node: node29
+    - endpoint: bank59
+      node: node29
+    - endpoint: bank29
+      node: node30
+    - endpoint: bank60
+      node: node30
+    - endpoint: bank30
+      node: node31
+    - endpoint: bank61
+      node: node31
+    exits:
+    - endpoint: src00
+      node: node00
+    - endpoint: src01
+      node: node00
+    - endpoint: src02
+      node: node00
+    - endpoint: src03
+      node: node00
+    - endpoint: src04
+      node: node00
+    - endpoint: src05
+      node: node00
+    - endpoint: src06
+      node: node00
+    - endpoint: src07
+      node: node00
+    - endpoint: src08
+      node: node00
+    - endpoint: src09
+      node: node00
+    - endpoint: src10
+      node: node00
+    - endpoint: src11
+      node: node00
+    - endpoint: src12
+      node: node00
+    - endpoint: src13
+      node: node00
+    - endpoint: src14
+      node: node00
+    - endpoint: src15
+      node: node00
+    - endpoint: src16
+      node: node00
+    - endpoint: src17
+      node: node00
+    - endpoint: src18
+      node: node00
+    - endpoint: src19
+      node: node00
+    - endpoint: src20
+      node: node00
+    - endpoint: src21
+      node: node00
+    - endpoint: src22
+      node: node00
+    - endpoint: src23
+      node: node00
+    - endpoint: src24
+      node: node00
+    - endpoint: src25
+      node: node00
+    - endpoint: src26
+      node: node00
+    - endpoint: src27
+      node: node00
+    - endpoint: src28
+      node: node00
+    - endpoint: src29
+      node: node00
+    - endpoint: src30
+      node: node00
+    - endpoint: src31
+      node: node00
+    - endpoint: src32
+      node: node00
+    - endpoint: src33
+      node: node00
+    - endpoint: src34
+      node: node00
+    - endpoint: src35
+      node: node00
+    - endpoint: src36
+      node: node00
+    - endpoint: src37
+      node: node00
+    - endpoint: src38
+      node: node00
+    - endpoint: src39
+      node: node00
+    - endpoint: src40
+      node: node00
+    - endpoint: src41
+      node: node00
+    - endpoint: src42
+      node: node00
+    - endpoint: src43
+      node: node00
+    - endpoint: src44
+      node: node00
+    - endpoint: src45
+      node: node00
+    - endpoint: src46
+      node: node00
+    - endpoint: src47
+      node: node00
+    - endpoint: src48
+      node: node00
+    - endpoint: src49
+      node: node00
+    - endpoint: src50
+      node: node00
+    - endpoint: src51
+      node: node00
+    - endpoint: src52
+      node: node00
+    - endpoint: src53
+      node: node00
+    - endpoint: src54
+      node: node00
+    - endpoint: src55
+      node: node00
+    - endpoint: src56
+      node: node00
+    - endpoint: src57
+      node: node00
+    - endpoint: src58
+      node: node00
+    - endpoint: src59
+      node: node00
+    - endpoint: src60
+      node: node00
+    - endpoint: src61
+      node: node00
+    - endpoint: src62
+      node: node00
+    - endpoint: src63
+      node: node00
+connectivity: all
