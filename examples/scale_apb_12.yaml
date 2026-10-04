@@ -1,0 +1,853 @@
+schema_version: 10
+name: scale_apb_n16_s12_balanced
+address_width: 32
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains:
+- name: main
+  clock_port: clk_main
+  reset_port: reset_n
+  test_port: test
+initiators:
+- name: src00
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src01
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src02
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src03
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src04
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src05
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src06
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src07
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src08
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src09
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src10
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src11
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+arbitration:
+  policy: round_robin
+targets:
+- name: bank00
+  clock_domain: main
+  mappings:
+    - base: '0x00000000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank01
+  clock_domain: main
+  mappings:
+    - base: '0x00001000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank02
+  clock_domain: main
+  mappings:
+    - base: '0x00002000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank03
+  clock_domain: main
+  mappings:
+    - base: '0x00003000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank04
+  clock_domain: main
+  mappings:
+    - base: '0x00004000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank05
+  clock_domain: main
+  mappings:
+    - base: '0x00005000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank06
+  clock_domain: main
+  mappings:
+    - base: '0x00006000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank07
+  clock_domain: main
+  mappings:
+    - base: '0x00007000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank08
+  clock_domain: main
+  mappings:
+    - base: '0x00008000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank09
+  clock_domain: main
+  mappings:
+    - base: '0x00009000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank10
+  clock_domain: main
+  mappings:
+    - base: '0x0000a000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank11
+  clock_domain: main
+  mappings:
+    - base: '0x0000b000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank12
+  clock_domain: main
+  mappings:
+    - base: '0x0000c000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank13
+  clock_domain: main
+  mappings:
+    - base: '0x0000d000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank14
+  clock_domain: main
+  mappings:
+    - base: '0x0000e000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank15
+  clock_domain: main
+  mappings:
+    - base: '0x0000f000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank16
+  clock_domain: main
+  mappings:
+    - base: '0x00010000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank17
+  clock_domain: main
+  mappings:
+    - base: '0x00011000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank18
+  clock_domain: main
+  mappings:
+    - base: '0x00012000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank19
+  clock_domain: main
+  mappings:
+    - base: '0x00013000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank20
+  clock_domain: main
+  mappings:
+    - base: '0x00014000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank21
+  clock_domain: main
+  mappings:
+    - base: '0x00015000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank22
+  clock_domain: main
+  mappings:
+    - base: '0x00016000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank23
+  clock_domain: main
+  mappings:
+    - base: '0x00017000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank24
+  clock_domain: main
+  mappings:
+    - base: '0x00018000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank25
+  clock_domain: main
+  mappings:
+    - base: '0x00019000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank26
+  clock_domain: main
+  mappings:
+    - base: '0x0001a000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank27
+  clock_domain: main
+  mappings:
+    - base: '0x0001b000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank28
+  clock_domain: main
+  mappings:
+    - base: '0x0001c000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank29
+  clock_domain: main
+  mappings:
+    - base: '0x0001d000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank30
+  clock_domain: main
+  mappings:
+    - base: '0x0001e000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank31
+  clock_domain: main
+  mappings:
+    - base: '0x0001f000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank32
+  clock_domain: main
+  mappings:
+    - base: '0x00020000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank33
+  clock_domain: main
+  mappings:
+    - base: '0x00021000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank34
+  clock_domain: main
+  mappings:
+    - base: '0x00022000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank35
+  clock_domain: main
+  mappings:
+    - base: '0x00023000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank36
+  clock_domain: main
+  mappings:
+    - base: '0x00024000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank37
+  clock_domain: main
+  mappings:
+    - base: '0x00025000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank38
+  clock_domain: main
+  mappings:
+    - base: '0x00026000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank39
+  clock_domain: main
+  mappings:
+    - base: '0x00027000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank40
+  clock_domain: main
+  mappings:
+    - base: '0x00028000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank41
+  clock_domain: main
+  mappings:
+    - base: '0x00029000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank42
+  clock_domain: main
+  mappings:
+    - base: '0x0002a000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank43
+  clock_domain: main
+  mappings:
+    - base: '0x0002b000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank44
+  clock_domain: main
+  mappings:
+    - base: '0x0002c000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank45
+  clock_domain: main
+  mappings:
+    - base: '0x0002d000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank46
+  clock_domain: main
+  mappings:
+    - base: '0x0002e000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank47
+  clock_domain: main
+  mappings:
+    - base: '0x0002f000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank48
+  clock_domain: main
+  mappings:
+    - base: '0x00030000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank49
+  clock_domain: main
+  mappings:
+    - base: '0x00031000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank50
+  clock_domain: main
+  mappings:
+    - base: '0x00032000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank51
+  clock_domain: main
+  mappings:
+    - base: '0x00033000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+- name: bank52
+  clock_domain: main
+  mappings:
+    - base: '0x00034000'
+      size: '0x1000'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+output:
+  backend: verilog
+  language: verilog_2001
+topology:
+  request:
+    nodes:
+    - name: node00
+    - name: node01
+    - name: node02
+    - name: node03
+    - name: node04
+    - name: node05
+    - name: node06
+    - name: node07
+    - name: node08
+    - name: node09
+    - name: node10
+    - name: node11
+    - name: node12
+    - name: node13
+    - name: node14
+    - name: node15
+    links:
+    - from: node00
+      to: node01
+    - from: node00
+      to: node02
+    - from: node01
+      to: node03
+    - from: node01
+      to: node04
+    - from: node02
+      to: node05
+    - from: node02
+      to: node06
+    - from: node03
+      to: node07
+    - from: node03
+      to: node08
+    - from: node04
+      to: node09
+    - from: node04
+      to: node10
+    - from: node05
+      to: node11
+    - from: node05
+      to: node12
+    - from: node06
+      to: node13
+    - from: node06
+      to: node14
+    - from: node07
+      to: node15
+    entries:
+    - endpoint: src00
+      node: node00
+    - endpoint: src01
+      node: node00
+    - endpoint: src02
+      node: node00
+    - endpoint: src03
+      node: node00
+    - endpoint: src04
+      node: node00
+    - endpoint: src05
+      node: node00
+    - endpoint: src06
+      node: node00
+    - endpoint: src07
+      node: node00
+    - endpoint: src08
+      node: node00
+    - endpoint: src09
+      node: node00
+    - endpoint: src10
+      node: node00
+    - endpoint: src11
+      node: node00
+    exits:
+    - endpoint: bank00
+      node: node01
+    - endpoint: bank15
+      node: node01
+    - endpoint: bank30
+      node: node01
+    - endpoint: bank45
+      node: node01
+    - endpoint: bank01
+      node: node02
+    - endpoint: bank16
+      node: node02
+    - endpoint: bank31
+      node: node02
+    - endpoint: bank46
+      node: node02
+    - endpoint: bank02
+      node: node03
+    - endpoint: bank17
+      node: node03
+    - endpoint: bank32
+      node: node03
+    - endpoint: bank47
+      node: node03
+    - endpoint: bank03
+      node: node04
+    - endpoint: bank18
+      node: node04
+    - endpoint: bank33
+      node: node04
+    - endpoint: bank48
+      node: node04
+    - endpoint: bank04
+      node: node05
+    - endpoint: bank19
+      node: node05
+    - endpoint: bank34
+      node: node05
+    - endpoint: bank49
+      node: node05
+    - endpoint: bank05
+      node: node06
+    - endpoint: bank20
+      node: node06
+    - endpoint: bank35
+      node: node06
+    - endpoint: bank50
+      node: node06
+    - endpoint: bank06
+      node: node07
+    - endpoint: bank21
+      node: node07
+    - endpoint: bank36
+      node: node07
+    - endpoint: bank51
+      node: node07
+    - endpoint: bank07
+      node: node08
+    - endpoint: bank22
+      node: node08
+    - endpoint: bank37
+      node: node08
+    - endpoint: bank52
+      node: node08
+    - endpoint: bank08
+      node: node09
+    - endpoint: bank23
+      node: node09
+    - endpoint: bank38
+      node: node09
+    - endpoint: bank09
+      node: node10
+    - endpoint: bank24
+      node: node10
+    - endpoint: bank39
+      node: node10
+    - endpoint: bank10
+      node: node11
+    - endpoint: bank25
+      node: node11
+    - endpoint: bank40
+      node: node11
+    - endpoint: bank11
+      node: node12
+    - endpoint: bank26
+      node: node12
+    - endpoint: bank41
+      node: node12
+    - endpoint: bank12
+      node: node13
+    - endpoint: bank27
+      node: node13
+    - endpoint: bank42
+      node: node13
+    - endpoint: bank13
+      node: node14
+    - endpoint: bank28
+      node: node14
+    - endpoint: bank43
+      node: node14
+    - endpoint: bank14
+      node: node15
+    - endpoint: bank29
+      node: node15
+    - endpoint: bank44
+      node: node15
+  response:
+    nodes:
+    - name: node00
+    - name: node01
+    - name: node02
+    - name: node03
+    - name: node04
+    - name: node05
+    - name: node06
+    - name: node07
+    - name: node08
+    - name: node09
+    - name: node10
+    - name: node11
+    - name: node12
+    - name: node13
+    - name: node14
+    - name: node15
+    links:
+    - from: node01
+      to: node00
+    - from: node02
+      to: node00
+    - from: node03
+      to: node01
+    - from: node04
+      to: node01
+    - from: node05
+      to: node02
+    - from: node06
+      to: node02
+    - from: node07
+      to: node03
+    - from: node08
+      to: node03
+    - from: node09
+      to: node04
+    - from: node10
+      to: node04
+    - from: node11
+      to: node05
+    - from: node12
+      to: node05
+    - from: node13
+      to: node06
+    - from: node14
+      to: node06
+    - from: node15
+      to: node07
+    entries:
+    - endpoint: bank00
+      node: node01
+    - endpoint: bank15
+      node: node01
+    - endpoint: bank30
+      node: node01
+    - endpoint: bank45
+      node: node01
+    - endpoint: bank01
+      node: node02
+    - endpoint: bank16
+      node: node02
+    - endpoint: bank31
+      node: node02
+    - endpoint: bank46
+      node: node02
+    - endpoint: bank02
+      node: node03
+    - endpoint: bank17
+      node: node03
+    - endpoint: bank32
+      node: node03
+    - endpoint: bank47
+      node: node03
+    - endpoint: bank03
+      node: node04
+    - endpoint: bank18
+      node: node04
+    - endpoint: bank33
+      node: node04
+    - endpoint: bank48
+      node: node04
+    - endpoint: bank04
+      node: node05
+    - endpoint: bank19
+      node: node05
+    - endpoint: bank34
+      node: node05
+    - endpoint: bank49
+      node: node05
+    - endpoint: bank05
+      node: node06
+    - endpoint: bank20
+      node: node06
+    - endpoint: bank35
+      node: node06
+    - endpoint: bank50
+      node: node06
+    - endpoint: bank06
+      node: node07
+    - endpoint: bank21
+      node: node07
+    - endpoint: bank36
+      node: node07
+    - endpoint: bank51
+      node: node07
+    - endpoint: bank07
+      node: node08
+    - endpoint: bank22
+      node: node08
+    - endpoint: bank37
+      node: node08
+    - endpoint: bank52
+      node: node08
+    - endpoint: bank08
+      node: node09
+    - endpoint: bank23
+      node: node09
+    - endpoint: bank38
+      node: node09
+    - endpoint: bank09
+      node: node10
+    - endpoint: bank24
+      node: node10
+    - endpoint: bank39
+      node: node10
+    - endpoint: bank10
+      node: node11
+    - endpoint: bank25
+      node: node11
+    - endpoint: bank40
+      node: node11
+    - endpoint: bank11
+      node: node12
+    - endpoint: bank26
+      node: node12
+    - endpoint: bank41
+      node: node12
+    - endpoint: bank12
+      node: node13
+    - endpoint: bank27
+      node: node13
+    - endpoint: bank42
+      node: node13
+    - endpoint: bank13
+      node: node14
+    - endpoint: bank28
+      node: node14
+    - endpoint: bank43
+      node: node14
+    - endpoint: bank14
+      node: node15
+    - endpoint: bank29
+      node: node15
+    - endpoint: bank44
+      node: node15
+    exits:
+    - endpoint: src00
+      node: node00
+    - endpoint: src01
+      node: node00
+    - endpoint: src02
+      node: node00
+    - endpoint: src03
+      node: node00
+    - endpoint: src04
+      node: node00
+    - endpoint: src05
+      node: node00
+    - endpoint: src06
+      node: node00
+    - endpoint: src07
+      node: node00
+    - endpoint: src08
+      node: node00
+    - endpoint: src09
+      node: node00
+    - endpoint: src10
+      node: node00
+    - endpoint: src11
+      node: node00
+connectivity: all

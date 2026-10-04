@@ -1,0 +1,741 @@
+schema_version: 10
+name: scale_apb_n32_s64_chain
+address_width: 32
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains:
+- name: main
+  clock_port: clk_main
+  reset_port: reset_n
+  test_port: test
+initiators:
+- name: src00
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src01
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src02
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src03
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src04
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src05
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src06
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src07
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src08
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src09
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src10
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src11
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src12
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src13
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src14
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src15
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src16
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src17
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src18
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src19
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src20
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src21
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src22
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src23
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src24
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src25
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src26
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src27
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src28
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src29
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src30
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src31
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src32
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src33
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src34
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src35
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src36
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src37
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src38
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src39
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src40
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src41
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src42
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src43
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src44
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src45
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src46
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src47
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src48
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src49
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src50
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src51
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src52
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src53
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src54
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src55
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src56
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src57
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src58
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src59
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src60
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src61
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src62
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+- name: src63
+  clock_domain: main
+  protocol: apb4
+  data_width: 32
+arbitration:
+  policy: round_robin
+targets:
+- name: bank00
+  clock_domain: main
+  mappings:
+    - base: '0'
+      size: '4096'
+  protocol: apb4
+  attributes: amba
+  data_width: 32
+output:
+  backend: verilog
+  language: verilog_2001
+topology:
+  request:
+    nodes:
+    - name: node00
+    - name: node01
+    - name: node02
+    - name: node03
+    - name: node04
+    - name: node05
+    - name: node06
+    - name: node07
+    - name: node08
+    - name: node09
+    - name: node10
+    - name: node11
+    - name: node12
+    - name: node13
+    - name: node14
+    - name: node15
+    - name: node16
+    - name: node17
+    - name: node18
+    - name: node19
+    - name: node20
+    - name: node21
+    - name: node22
+    - name: node23
+    - name: node24
+    - name: node25
+    - name: node26
+    - name: node27
+    - name: node28
+    - name: node29
+    - name: node30
+    - name: node31
+    links:
+    - from: node00
+      to: node01
+    - from: node01
+      to: node02
+    - from: node02
+      to: node03
+    - from: node03
+      to: node04
+    - from: node04
+      to: node05
+    - from: node05
+      to: node06
+    - from: node06
+      to: node07
+    - from: node07
+      to: node08
+    - from: node08
+      to: node09
+    - from: node09
+      to: node10
+    - from: node10
+      to: node11
+    - from: node11
+      to: node12
+    - from: node12
+      to: node13
+    - from: node13
+      to: node14
+    - from: node14
+      to: node15
+    - from: node15
+      to: node16
+    - from: node16
+      to: node17
+    - from: node17
+      to: node18
+    - from: node18
+      to: node19
+    - from: node19
+      to: node20
+    - from: node20
+      to: node21
+    - from: node21
+      to: node22
+    - from: node22
+      to: node23
+    - from: node23
+      to: node24
+    - from: node24
+      to: node25
+    - from: node25
+      to: node26
+    - from: node26
+      to: node27
+    - from: node27
+      to: node28
+    - from: node28
+      to: node29
+    - from: node29
+      to: node30
+    - from: node30
+      to: node31
+    entries:
+    - endpoint: src00
+      node: node00
+    - endpoint: src01
+      node: node00
+    - endpoint: src02
+      node: node00
+    - endpoint: src03
+      node: node00
+    - endpoint: src04
+      node: node00
+    - endpoint: src05
+      node: node00
+    - endpoint: src06
+      node: node00
+    - endpoint: src07
+      node: node00
+    - endpoint: src08
+      node: node00
+    - endpoint: src09
+      node: node00
+    - endpoint: src10
+      node: node00
+    - endpoint: src11
+      node: node00
+    - endpoint: src12
+      node: node00
+    - endpoint: src13
+      node: node00
+    - endpoint: src14
+      node: node00
+    - endpoint: src15
+      node: node00
+    - endpoint: src16
+      node: node00
+    - endpoint: src17
+      node: node00
+    - endpoint: src18
+      node: node00
+    - endpoint: src19
+      node: node00
+    - endpoint: src20
+      node: node00
+    - endpoint: src21
+      node: node00
+    - endpoint: src22
+      node: node00
+    - endpoint: src23
+      node: node00
+    - endpoint: src24
+      node: node00
+    - endpoint: src25
+      node: node00
+    - endpoint: src26
+      node: node00
+    - endpoint: src27
+      node: node00
+    - endpoint: src28
+      node: node00
+    - endpoint: src29
+      node: node00
+    - endpoint: src30
+      node: node00
+    - endpoint: src31
+      node: node00
+    - endpoint: src32
+      node: node00
+    - endpoint: src33
+      node: node00
+    - endpoint: src34
+      node: node00
+    - endpoint: src35
+      node: node00
+    - endpoint: src36
+      node: node00
+    - endpoint: src37
+      node: node00
+    - endpoint: src38
+      node: node00
+    - endpoint: src39
+      node: node00
+    - endpoint: src40
+      node: node00
+    - endpoint: src41
+      node: node00
+    - endpoint: src42
+      node: node00
+    - endpoint: src43
+      node: node00
+    - endpoint: src44
+      node: node00
+    - endpoint: src45
+      node: node00
+    - endpoint: src46
+      node: node00
+    - endpoint: src47
+      node: node00
+    - endpoint: src48
+      node: node00
+    - endpoint: src49
+      node: node00
+    - endpoint: src50
+      node: node00
+    - endpoint: src51
+      node: node00
+    - endpoint: src52
+      node: node00
+    - endpoint: src53
+      node: node00
+    - endpoint: src54
+      node: node00
+    - endpoint: src55
+      node: node00
+    - endpoint: src56
+      node: node00
+    - endpoint: src57
+      node: node00
+    - endpoint: src58
+      node: node00
+    - endpoint: src59
+      node: node00
+    - endpoint: src60
+      node: node00
+    - endpoint: src61
+      node: node00
+    - endpoint: src62
+      node: node00
+    - endpoint: src63
+      node: node00
+    exits:
+    - endpoint: bank00
+      node: node31
+  response:
+    nodes:
+    - name: node00
+    - name: node01
+    - name: node02
+    - name: node03
+    - name: node04
+    - name: node05
+    - name: node06
+    - name: node07
+    - name: node08
+    - name: node09
+    - name: node10
+    - name: node11
+    - name: node12
+    - name: node13
+    - name: node14
+    - name: node15
+    - name: node16
+    - name: node17
+    - name: node18
+    - name: node19
+    - name: node20
+    - name: node21
+    - name: node22
+    - name: node23
+    - name: node24
+    - name: node25
+    - name: node26
+    - name: node27
+    - name: node28
+    - name: node29
+    - name: node30
+    - name: node31
+    links:
+    - from: node01
+      to: node00
+    - from: node02
+      to: node01
+    - from: node03
+      to: node02
+    - from: node04
+      to: node03
+    - from: node05
+      to: node04
+    - from: node06
+      to: node05
+    - from: node07
+      to: node06
+    - from: node08
+      to: node07
+    - from: node09
+      to: node08
+    - from: node10
+      to: node09
+    - from: node11
+      to: node10
+    - from: node12
+      to: node11
+    - from: node13
+      to: node12
+    - from: node14
+      to: node13
+    - from: node15
+      to: node14
+    - from: node16
+      to: node15
+    - from: node17
+      to: node16
+    - from: node18
+      to: node17
+    - from: node19
+      to: node18
+    - from: node20
+      to: node19
+    - from: node21
+      to: node20
+    - from: node22
+      to: node21
+    - from: node23
+      to: node22
+    - from: node24
+      to: node23
+    - from: node25
+      to: node24
+    - from: node26
+      to: node25
+    - from: node27
+      to: node26
+    - from: node28
+      to: node27
+    - from: node29
+      to: node28
+    - from: node30
+      to: node29
+    - from: node31
+      to: node30
+    entries:
+    - endpoint: bank00
+      node: node31
+    exits:
+    - endpoint: src00
+      node: node00
+    - endpoint: src01
+      node: node00
+    - endpoint: src02
+      node: node00
+    - endpoint: src03
+      node: node00
+    - endpoint: src04
+      node: node00
+    - endpoint: src05
+      node: node00
+    - endpoint: src06
+      node: node00
+    - endpoint: src07
+      node: node00
+    - endpoint: src08
+      node: node00
+    - endpoint: src09
+      node: node00
+    - endpoint: src10
+      node: node00
+    - endpoint: src11
+      node: node00
+    - endpoint: src12
+      node: node00
+    - endpoint: src13
+      node: node00
+    - endpoint: src14
+      node: node00
+    - endpoint: src15
+      node: node00
+    - endpoint: src16
+      node: node00
+    - endpoint: src17
+      node: node00
+    - endpoint: src18
+      node: node00
+    - endpoint: src19
+      node: node00
+    - endpoint: src20
+      node: node00
+    - endpoint: src21
+      node: node00
+    - endpoint: src22
+      node: node00
+    - endpoint: src23
+      node: node00
+    - endpoint: src24
+      node: node00
+    - endpoint: src25
+      node: node00
+    - endpoint: src26
+      node: node00
+    - endpoint: src27
+      node: node00
+    - endpoint: src28
+      node: node00
+    - endpoint: src29
+      node: node00
+    - endpoint: src30
+      node: node00
+    - endpoint: src31
+      node: node00
+    - endpoint: src32
+      node: node00
+    - endpoint: src33
+      node: node00
+    - endpoint: src34
+      node: node00
+    - endpoint: src35
+      node: node00
+    - endpoint: src36
+      node: node00
+    - endpoint: src37
+      node: node00
+    - endpoint: src38
+      node: node00
+    - endpoint: src39
+      node: node00
+    - endpoint: src40
+      node: node00
+    - endpoint: src41
+      node: node00
+    - endpoint: src42
+      node: node00
+    - endpoint: src43
+      node: node00
+    - endpoint: src44
+      node: node00
+    - endpoint: src45
+      node: node00
+    - endpoint: src46
+      node: node00
+    - endpoint: src47
+      node: node00
+    - endpoint: src48
+      node: node00
+    - endpoint: src49
+      node: node00
+    - endpoint: src50
+      node: node00
+    - endpoint: src51
+      node: node00
+    - endpoint: src52
+      node: node00
+    - endpoint: src53
+      node: node00
+    - endpoint: src54
+      node: node00
+    - endpoint: src55
+      node: node00
+    - endpoint: src56
+      node: node00
+    - endpoint: src57
+      node: node00
+    - endpoint: src58
+      node: node00
+    - endpoint: src59
+      node: node00
+    - endpoint: src60
+      node: node00
+    - endpoint: src61
+      node: node00
+    - endpoint: src62
+      node: node00
+    - endpoint: src63
+      node: node00
+connectivity: all
