@@ -1,0 +1,45 @@
+schema_version: 10
+name: control_tree_axi64
+address_width: 32
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains:
+  - {name: main, clock_port: clk_main, reset_port: reset_n, test_port: test}
+initiators:
+  - {name: cpu, clock_domain: main, protocol: axi4_lite, data_width: 64}
+  - {name: dma, clock_domain: main, protocol: axi4_lite, data_width: 64}
+targets:
+  - {name: bank00, clock_domain: main, protocol: axi4_lite, data_width: 64, mappings: [{base: "0x0", size: "0x1000"}], attributes: amba}
+  - {name: bank01, clock_domain: main, protocol: axi4_lite, data_width: 64, mappings: [{base: "0x1000", size: "0x1000"}], attributes: amba}
+arbitration: {policy: round_robin}
+topology:
+  request:
+    nodes:
+      - {name: entry}
+      - {name: control}
+      - {name: leaf}
+    links:
+      - {from: entry, to: control}
+      - {from: entry, to: leaf}
+    entries:
+      - {endpoint: cpu, node: entry}
+      - {endpoint: dma, node: entry}
+    exits:
+      - {endpoint: bank00, node: control}
+      - {endpoint: bank01, node: leaf}
+  response:
+    nodes:
+      - {name: entry}
+      - {name: control}
+      - {name: leaf}
+    links:
+      - {from: control, to: entry}
+      - {from: leaf, to: entry}
+    entries:
+      - {endpoint: bank00, node: control}
+      - {endpoint: bank01, node: leaf}
+    exits:
+      - {endpoint: cpu, node: entry}
+      - {endpoint: dma, node: entry}
+connectivity: all
+output: {backend: verilog, language: verilog_2001}
