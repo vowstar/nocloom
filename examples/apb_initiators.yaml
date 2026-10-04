@@ -1,0 +1,51 @@
+schema_version: 10
+name: apb_initiators
+address_width: 32
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains: [{name: main, clock_port: clk_main, reset_port: reset_n, test_port: test}]
+initiators:
+  - {name: cpu, clock_domain: main, protocol: axi4, data_width: 32, len_width: 8, id_width: 2}
+  - {name: dbg, clock_domain: main, protocol: apb4, data_width: 32}
+  - {name: cfg, clock_domain: main, protocol: apb3, data_width: 32, address_width: 16}
+  - {name: dma, clock_domain: main, protocol: axi4_lite, data_width: 32}
+targets:
+  - {name: ram, clock_domain: main, protocol: axi4, data_width: 32, mappings: [{base: '0x0', size: '0x10000'}], len_width: 8, attributes: amba}
+  - {name: uart, clock_domain: main, protocol: apb4, data_width: 32, address_width: 12, mappings: [{base: '0x10000', size: '0x1000'}], attributes: amba}
+  - {name: gpio, clock_domain: main, protocol: apb3, data_width: 32, address_width: 12, mappings: [{base: '0x11000', size: '0x1000'}]}
+  - {name: regs, clock_domain: main, protocol: axi4_lite, data_width: 32, address_width: 12, mappings: [{base: '0x12000', size: '0x1000'}], attributes: amba}
+transport: {max_outstanding: 1, transport_word_bytes: 4}
+topology:
+  request:
+    nodes: [{name: root}, {name: periph}]
+    links: [{from: root, to: periph}]
+    entries:
+      - {endpoint: cpu, node: root}
+      - {endpoint: dbg, node: root}
+      - {endpoint: cfg, node: root}
+      - {endpoint: dma, node: root}
+    exits:
+      - {endpoint: ram, node: root}
+      - {endpoint: uart, node: periph}
+      - {endpoint: gpio, node: periph}
+      - {endpoint: regs, node: periph}
+  response:
+    nodes: [{name: periph}, {name: root}]
+    links: [{from: periph, to: root}]
+    entries:
+      - {endpoint: ram, node: root}
+      - {endpoint: uart, node: periph}
+      - {endpoint: gpio, node: periph}
+      - {endpoint: regs, node: periph}
+    exits:
+      - {endpoint: cpu, node: root}
+      - {endpoint: dbg, node: root}
+      - {endpoint: cfg, node: root}
+      - {endpoint: dma, node: root}
+# cfg addresses 16 bits: only ram has a mapping below its address limit.
+connectivity:
+  cpu: [ram, uart, gpio, regs]
+  dbg: [ram, uart, gpio, regs]
+  cfg: [ram]
+  dma: [ram, uart, gpio, regs]
+output: {backend: verilog, language: verilog_2001}

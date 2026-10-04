@@ -1,0 +1,19 @@
+schema_version: 10
+name: axi4_axqos_map
+address_width: 32
+arbitration: {policy: level_round_robin}
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains: [{name: main, clock_port: clk_main, reset_port: reset_n, test_port: test}]
+initiators:
+  - {name: s0, clock_domain: main, protocol: axi4, data_width: 32, id_width: 2, len_width: 8,
+     max_outstanding: 4, qos: {axqos_map: [0, 0, 1, 1, 2, 2, 3, 3]}}
+  - {name: s1, clock_domain: main, protocol: axi4, data_width: 32, id_width: 2, len_width: 8,
+     max_outstanding: 4, qos: {levels: {read: 1, write: 1}}}
+  - {name: s2, clock_domain: main, protocol: axi4, data_width: 32, id_width: 2, len_width: 8,
+     max_outstanding: 4, qos: {levels: {read: 2, write: 2}}}
+targets:
+  - {name: t0, clock_domain: main, protocol: axi4, data_width: 32, len_width: 8, attributes: amba,
+     max_outstanding: 4, mappings: [{base: '0x0', size: '0x10000'}]}
+connectivity: all
+output: {backend: verilog, language: verilog_2001}

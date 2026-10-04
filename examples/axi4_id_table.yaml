@@ -1,0 +1,15 @@
+schema_version: 10
+name: axi4_id_table
+address_width: 32
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains: [{name: main, clock_port: clk_main, reset_port: reset_n, test_port: test}]
+initiators:
+  - {name: s0, clock_domain: main, protocol: axi4, data_width: 32, id_width: 2, len_width: 8,
+     max_outstanding: 4, id_table_entries: 2}
+targets:
+  - {name: t0, clock_domain: main, protocol: axi4, data_width: 32, len_width: 8, attributes: amba,
+     max_outstanding: 4, mappings: [{base: '0x0', size: '0x10000'}]}
+transport: {max_outstanding: 4, transport_word_bytes: 4}
+connectivity: all
+output: {backend: verilog, language: verilog_2001}
