@@ -1,0 +1,17 @@
+schema_version: 10
+name: burst_apb
+address_width: 32
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains: [{name: main, clock_port: clk_main, reset_port: reset_n, test_port: test}]
+initiators:
+  - {name: cpu0, clock_domain: main, data_width: 32, protocol: axi4, len_width: 8}
+  - {name: cpu1, clock_domain: main, data_width: 32, protocol: axi4, len_width: 8}
+targets:
+  - {name: bank0, clock_domain: main, data_width: 32, protocol: axi4, mappings: [{base: '0x1000', size: '0x1000'}], len_width: 8, attributes: amba}
+  - {name: bank1, clock_domain: main, data_width: 32, protocol: apb4, mappings: [{base: '0x5000', size: '0x1000'}], attributes: amba}
+transport:
+  max_outstanding: 1
+  transport_word_bytes: 4
+connectivity: all
+output: {backend: verilog, language: verilog_2001}

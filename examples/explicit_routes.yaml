@@ -1,0 +1,34 @@
+schema_version: 10
+name: explicit_routes
+address_width: 32
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains: [{name: main, clock_port: clk_main, reset_port: reset_n, test_port: test}]
+initiators:
+  - {name: i0, clock_domain: main, protocol: axi4, data_width: 32, id_width: 2, len_width: 8}
+  - {name: i1, clock_domain: main, protocol: axi4, data_width: 32, id_width: 2, len_width: 8}
+targets:
+  - {name: t0, clock_domain: main, protocol: apb4, data_width: 32, address_width: 16,
+     attributes: amba, mappings: [{base: '0x0', size: '0x1000'}]}
+  - {name: t1, clock_domain: main, protocol: apb4, data_width: 32, address_width: 16,
+     attributes: amba, mappings: [{base: '0x1000', size: '0x1000'}]}
+connectivity: all
+topology:
+  request:
+    nodes: [{name: qa}, {name: qb}, {name: qc}, {name: qd}]
+    links: [{from: qa, to: qb}, {from: qa, to: qc}, {from: qc, to: qb},
+            {from: qb, to: qd}, {from: qc, to: qd}, {from: qb, to: qc}]
+    entries: [{endpoint: i0, node: qa}, {endpoint: i1, node: qa}]
+    exits: [{endpoint: t0, node: qd}, {endpoint: t1, node: qd}]
+  response:
+    nodes: [{name: ra}, {name: rb}, {name: rc}, {name: rd}]
+    links: [{from: ra, to: rb}, {from: ra, to: rc}, {from: rb, to: rd},
+            {from: rc, to: rd}, {from: rc, to: rb}]
+    entries: [{endpoint: t0, node: ra}, {endpoint: t1, node: ra}]
+    exits: [{endpoint: i0, node: rd}, {endpoint: i1, node: rd}]
+  routes:
+    - {initiator: i0, target: t0, request: [qa, qb, qd], response: [ra, rc, rd]}
+    - {initiator: i0, target: t1, request: [qa, qc, qd], response: [ra, rb, rd]}
+    - {initiator: i1, target: t0, request: [qa, qc, qb, qd], response: [ra, rb, rd]}
+    - {initiator: i1, target: t1, request: [qa, qb, qc, qd], response: [ra, rc, rb, rd]}
+output: {backend: verilog, language: verilog_2001}

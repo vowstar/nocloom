@@ -1,0 +1,37 @@
+schema_version: 10
+name: peripheral_bus
+address_width: 32
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains:
+  - {name: main, clock_port: clk_main, reset_port: reset_n, test_port: test}
+initiators:
+  - {name: control, clock_domain: main, protocol: apb4, data_width: 32}
+targets:
+  - {name: registers, clock_domain: main, protocol: apb4, data_width: 32, mappings: [{base: "0x1000", size: "0x100"}], attributes: amba}
+  - {name: counters, clock_domain: main, protocol: apb4, data_width: 32, mappings: [{base: "0x2000", size: "0x100"}], attributes: amba}
+  - {name: scratch, clock_domain: main, protocol: apb4, data_width: 32, mappings: [{base: "0xfffff000", size: "0x1000"}], attributes: amba}
+arbitration: {policy: round_robin}
+connectivity: all
+topology:
+  request:
+    nodes:
+      - {name: entry, clock_domain: main}
+    links: []
+    entries:
+      - {endpoint: control, node: entry}
+    exits:
+      - {endpoint: registers, node: entry}
+      - {endpoint: counters, node: entry}
+      - {endpoint: scratch, node: entry}
+  response:
+    nodes:
+      - {name: entry, clock_domain: main}
+    links: []
+    entries:
+      - {endpoint: registers, node: entry}
+      - {endpoint: counters, node: entry}
+      - {endpoint: scratch, node: entry}
+    exits:
+      - {endpoint: control, node: entry}
+output: {backend: verilog, language: verilog_2001}

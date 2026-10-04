@@ -1,0 +1,32 @@
+schema_version: 10
+name: axi4_qos_profiles
+address_width: 32
+arbitration: {policy: level_round_robin}
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains: [{name: main, clock_port: clk_main, reset_port: reset_n, test_port: test}]
+initiators:
+  - {name: s0, clock_domain: main, protocol: axi4, data_width: 32, id_width: 2, len_width: 8,
+     max_outstanding: 4, qos: {levels: {read: 1, write: 1}, shaper: {bytes_per_1024_cycles: 64, burst_bytes: 64}}}
+  - {name: s1, clock_domain: main, protocol: axi4, data_width: 32, id_width: 2, len_width: 8,
+     max_outstanding: 4, qos: {shaper: {bytes_per_1024_cycles: 260, burst_bytes: 64},
+          scheduler: {under_level: 3, over_level: 0, threshold_percent: 50}}}
+  - {name: s2, clock_domain: main, protocol: axi4, data_width: 32, id_width: 2, len_width: 8,
+     max_outstanding: 4, qos: {levels: {read: 2, write: 2}}}
+targets:
+  - {name: t0, clock_domain: main, protocol: axi4, data_width: 32, len_width: 8, attributes: amba,
+     max_outstanding: 4, pipes: {arrival: {forward: true}, response: {forward: true}},
+     mappings: [{base: '0x0', size: '0x10000'}]}
+connectivity: all
+topology:
+  request:
+    nodes: [{name: q0}, {name: q1}]
+    links: [{from: q0, to: q1, pipeline: {forward: true, backward: true}}]
+    entries: [{endpoint: s0, node: q0}, {endpoint: s1, node: q0}, {endpoint: s2, node: q0}]
+    exits: [{endpoint: t0, node: q1}]
+  response:
+    nodes: [{name: p0}, {name: p1}]
+    links: [{from: p0, to: p1, pipeline: {forward: true, backward: true}}]
+    entries: [{endpoint: t0, node: p0}]
+    exits: [{endpoint: s0, node: p1}, {endpoint: s1, node: p1}, {endpoint: s2, node: p1}]
+output: {backend: verilog, language: verilog_2001}

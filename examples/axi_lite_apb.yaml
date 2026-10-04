@@ -1,0 +1,37 @@
+schema_version: 10
+name: control_bridge
+address_width: 32
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains:
+  - {name: main, clock_port: clk_main, reset_port: reset_n, test_port: test}
+initiators:
+  - {name: cpu, clock_domain: main, protocol: axi4_lite, data_width: 32}
+  - {name: dma, clock_domain: main, protocol: axi4_lite, data_width: 32}
+targets:
+  - {name: bank0, clock_domain: main, protocol: apb4, data_width: 32, mappings: [{base: "0x0", size: "0x1000"}], attributes: amba}
+  - {name: bank1, clock_domain: main, protocol: apb4, data_width: 32, mappings: [{base: "0x1000", size: "0x1000"}], attributes: amba}
+arbitration: {policy: round_robin}
+connectivity: all
+topology:
+  request:
+    nodes:
+      - {name: entry, clock_domain: main}
+    links: []
+    entries:
+      - {endpoint: cpu, node: entry}
+      - {endpoint: dma, node: entry}
+    exits:
+      - {endpoint: bank0, node: entry}
+      - {endpoint: bank1, node: entry}
+  response:
+    nodes:
+      - {name: entry, clock_domain: main}
+    links: []
+    entries:
+      - {endpoint: bank0, node: entry}
+      - {endpoint: bank1, node: entry}
+    exits:
+      - {endpoint: cpu, node: entry}
+      - {endpoint: dma, node: entry}
+output: {backend: verilog, language: verilog_2001}

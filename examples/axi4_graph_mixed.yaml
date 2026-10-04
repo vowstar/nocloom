@@ -1,0 +1,59 @@
+schema_version: 10
+name: graph
+address_width: 32
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains: [{name: main, clock_port: clk_main, reset_port: reset_n, test_port: test}]
+initiators:
+  - {name: s0, clock_domain: main, protocol: axi4, data_width: 128, len_width: 8}
+  - {name: s1, clock_domain: main, data_width: 32, protocol: axi4_lite}
+  - {name: s2, clock_domain: main, protocol: axi4, data_width: 256, len_width: 8}
+targets:
+  - {name: t0, clock_domain: main, data_width: 32, protocol: axi4, mappings: [{base: '0x0', size: '0x10000'}], len_width: 8, attributes: amba}
+  - {name: t1, clock_domain: main, data_width: 32, protocol: axi4, mappings: [{base: '0x10000', size: '0x10000'}], len_width: 8, attributes: amba}
+  - {name: t2, clock_domain: main, data_width: 32, protocol: axi4, mappings: [{base: '0x20000', size: '0x10000'}], len_width: 8, attributes: amba}
+transport:
+  max_outstanding: 1
+  transport_word_bytes: 4
+connectivity:
+  s0: [t0, t1]
+  s1: [t1, t2]
+  s2: [t2, t0]
+topology:
+  request:
+    nodes:
+      - {name: leaf0}
+      - {name: leaf1}
+      - {name: leaf2}
+      - {name: merge, transport_word_bytes: 32}
+      - {name: branch, transport_word_bytes: 16}
+      - {name: tail, transport_word_bytes: 8}
+    links:
+      - {from: leaf0, to: merge}
+      - {from: leaf1, to: merge}
+      - {from: leaf2, to: merge}
+      - {from: merge, to: branch, transport_word_bytes: 4}
+      - {from: branch, to: tail}
+    entries:
+      - {endpoint: s0, node: leaf0}
+      - {endpoint: s1, node: leaf1}
+      - {endpoint: s2, node: leaf2}
+    exits:
+      - {endpoint: t0, node: branch}
+      - {endpoint: t1, node: tail}
+      - {endpoint: t2, node: tail}
+  response:
+    nodes:
+      - {name: merge, transport_word_bytes: 8}
+      - {name: branch, transport_word_bytes: 32}
+    links:
+      - {from: merge, to: branch, transport_word_bytes: 16}
+    entries:
+      - {endpoint: t0, node: merge}
+      - {endpoint: t1, node: merge}
+      - {endpoint: t2, node: merge}
+    exits:
+      - {endpoint: s0, node: branch}
+      - {endpoint: s1, node: branch}
+      - {endpoint: s2, node: branch}
+output: {backend: verilog, language: verilog_2001}
