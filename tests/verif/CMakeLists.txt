@@ -1,0 +1,127 @@
+# Unified transaction-level verification environment (tests/verif).
+#
+# Every case registers through nocloom_verif_case(), which enforces exactly one
+# layer label and one tier label, a bounded TIMEOUT, a MEMORY_MB estimate and
+# a private working directory per case. The registry is written to
+# verif-registry.json for the coverage map, tier selection and the registry
+# gate (registry.py), which also reads the tests/verif files each case uses
+# from its COMMAND. New tests enter here only; see README.md.
+
+set(NOCLOOM_VERIF_LAYERS unit config structure rtl negative formal install measure)
+set(NOCLOOM_VERIF_TIERS quick focused release full characterization formal)
+set(NOCLOOM_VERIF_WORK ${CMAKE_BINARY_DIR}/tests/verif-work)
+set_property(GLOBAL PROPERTY NOCLOOM_VERIF_REGISTRY "")
+
+add_executable(nocloom_verif_fixture fixture/nlv_fixture.cpp)
+target_link_libraries(nocloom_verif_fixture PRIVATE nocloom_core nocloom_config nlohmann_json::nlohmann_json)
+target_include_directories(nocloom_verif_fixture PRIVATE ${PROJECT_SOURCE_DIR}/src
+  ${PROJECT_SOURCE_DIR}/tests)
+# C++ definitions built through the public Core library in the build tree:
+# their artifacts must equal the CLI's (config.py "api").
+foreach(tool IN ITEMS axi4_endpoint_data axi4_public timeout_public)
+  add_executable(nocloom_verif_api_${tool} ${PROJECT_SOURCE_DIR}/tests/${tool}_consumer.cpp)
+  target_link_libraries(nocloom_verif_api_${tool} PRIVATE nocloom_core)
+  target_include_directories(nocloom_verif_api_${tool} PRIVATE ${PROJECT_SOURCE_DIR}/tests)
+endforeach()
+
+function(nocloom_verif_case)
+  cmake_parse_arguments(V "" "NAME;LAYER;TIER;TIMEOUT;TIMEOUT_REASON;PROCESSORS;MEMORY_MB"
+    "FEATURES;CONTRACTS;COMMAND" ${ARGN})
+  if(V_UNPARSED_ARGUMENTS)
+    message(FATAL_ERROR "nocloom_verif_case: unknown arguments ${V_UNPARSED_ARGUMENTS}")
+  endif()
+  foreach(required NAME LAYER TIER TIMEOUT MEMORY_MB COMMAND)
+    if(NOT DEFINED V_${required} OR "${V_${required}}" STREQUAL "")
+      message(FATAL_ERROR "nocloom_verif_case: ${required} is required")
+    endif()
+  endforeach()
+  if(NOT V_NAME MATCHES "^[a-z][a-z0-9_]*$")
+    message(FATAL_ERROR "nocloom_verif_case: invalid NAME ${V_NAME}")
+  endif()
+  list(FIND NOCLOOM_VERIF_LAYERS "${V_LAYER}" layer_index)
+  list(FIND NOCLOOM_VERIF_TIERS "${V_TIER}" tier_index)
+  if(layer_index LESS 0)
+    message(FATAL_ERROR "nocloom_verif_case(${V_NAME}): LAYER must be one of ${NOCLOOM_VERIF_LAYERS}")
+  endif()
+  if(tier_index LESS 0)
+    message(FATAL_ERROR "nocloom_verif_case(${V_NAME}): TIER must be one of ${NOCLOOM_VERIF_TIERS}")
+  endif()
+  if(V_LAYER MATCHES "^(rtl|negative|formal)$" AND V_TIER STREQUAL "quick")
+    message(FATAL_ERROR "nocloom_verif_case(${V_NAME}): ${V_LAYER} cases cannot be quick")
+  endif()
+  if(V_LAYER STREQUAL "measure" AND NOT V_TIER STREQUAL "characterization")
+    message(FATAL_ERROR "nocloom_verif_case(${V_NAME}): measure cases are characterization only")
+  endif()
+  if(V_TIER STREQUAL "characterization" AND NOT V_LAYER STREQUAL "measure")
+    message(FATAL_ERROR "nocloom_verif_case(${V_NAME}): characterization holds measure cases only")
+  endif()
+  if(NOT V_MEMORY_MB MATCHES "^[1-9][0-9]*$")
+    message(FATAL_ERROR "nocloom_verif_case(${V_NAME}): MEMORY_MB must be a positive integer")
+  endif()
+  if(NOT V_TIMEOUT MATCHES "^[1-9][0-9]*$")
+    message(FATAL_ERROR "nocloom_verif_case(${V_NAME}): TIMEOUT must be a positive integer")
+  endif()
+  if(V_TIMEOUT GREATER 600 AND NOT V_TIMEOUT_REASON)
+    message(FATAL_ERROR "nocloom_verif_case(${V_NAME}): TIMEOUT above 600 needs TIMEOUT_REASON")
+  endif()
+  if(V_LAYER MATCHES "^(rtl|negative)$" AND NOT V_CONTRACTS)
+    message(FATAL_ERROR "nocloom_verif_case(${V_NAME}): ${V_LAYER} cases must name CONTRACTS")
+  endif()
+  get_property(names GLOBAL PROPERTY NOCLOOM_VERIF_NAMES)
+  if("${V_NAME}" IN_LIST names)
+    message(FATAL_ERROR "nocloom_verif_case: duplicate NAME ${V_NAME}")
+  endif()
+  set_property(GLOBAL APPEND PROPERTY NOCLOOM_VERIF_NAMES "${V_NAME}")
+  if(NOT V_PROCESSORS)
+    set(V_PROCESSORS 1)
+  endif()
+  set(work ${NOCLOOM_VERIF_WORK}/${V_NAME})
+  file(MAKE_DIRECTORY ${work})
+  add_test(NAME ${V_NAME} COMMAND ${V_COMMAND} --work ${work})
+  set(labels ${V_LAYER} ${V_TIER} ${V_FEATURES})
+  set_tests_properties(${V_NAME} PROPERTIES
+    LABELS "${labels}" TIMEOUT ${V_TIMEOUT} PROCESSORS ${V_PROCESSORS}
+    WORKING_DIRECTORY ${work})
+  set_property(TEST ${V_NAME} PROPERTY NOCLOOM_MEMORY_MB ${V_MEMORY_MB})
+  # The tests/verif sources named on the command line (case files, drivers,
+  # stubs): the registry gate's orphan check works from this list.
+  set(files "")
+  set(params "")
+  set(param_next FALSE)
+  foreach(arg IN LISTS V_COMMAND)
+    string(FIND "${arg}" "${CMAKE_CURRENT_SOURCE_DIR}/" at)
+    if(at EQUAL 0)
+      file(RELATIVE_PATH rel ${CMAKE_CURRENT_SOURCE_DIR} ${arg})
+      list(APPEND files "\"${rel}\"")
+    endif()
+    # The --param values a case file is loaded with (registry checks).
+    if(param_next)
+      list(APPEND params "\"${arg}\"")
+    endif()
+    if(arg STREQUAL "--param")
+      set(param_next TRUE)
+    else()
+      set(param_next FALSE)
+    endif()
+  endforeach()
+  list(JOIN files "," files_json)
+  list(JOIN params "," params_json)
+  string(REPLACE ";" "\",\"" features_json "${V_FEATURES}")
+  string(REPLACE ";" "\",\"" contracts_json "${V_CONTRACTS}")
+  if(V_FEATURES)
+    set(features_json "\"${features_json}\"")
+  endif()
+  if(V_CONTRACTS)
+    set(contracts_json "\"${contracts_json}\"")
+  endif()
+  set_property(GLOBAL APPEND_STRING PROPERTY NOCLOOM_VERIF_REGISTRY
+    "{\"name\":\"${V_NAME}\",\"layer\":\"${V_LAYER}\",\"tier\":\"${V_TIER}\",\"timeout\":${V_TIMEOUT},\"memory_mb\":${V_MEMORY_MB},\"features\":[${features_json}],\"contracts\":[${contracts_json}],\"files\":[${files_json}],\"params\":[${params_json}]},\n")
+endfunction()
+
+include(${CMAKE_CURRENT_SOURCE_DIR}/cases.cmake)
+nocloom_label_ci_sample()
+
+get_property(registry GLOBAL PROPERTY NOCLOOM_VERIF_REGISTRY)
+string(REGEX REPLACE ",\n$" "\n" registry "${registry}")
+file(GENERATE OUTPUT ${CMAKE_BINARY_DIR}/tests/verif-registry.json
+  CONTENT "{\"schema\":1,\"cases\":[\n${registry}]}\n")
