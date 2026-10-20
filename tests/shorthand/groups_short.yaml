@@ -1,0 +1,35 @@
+# Connectivity groups: a row names an initiator or an initiator group and maps
+# it to all, to all_except or to a list of targets and target groups.
+schema_version: 10
+name: groups_pair
+address_width: 32
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains: [{name: main, clock_port: clk_main, reset_port: reset_n, test_port: test}]
+initiators:
+  - {name: cpu0, clock_domain: main, protocol: axi4, data_width: 32, len_width: 8}
+  - {name: cpu1, clock_domain: main, protocol: axi4, data_width: 32, len_width: 8}
+  - {name: dma, clock_domain: main, protocol: axi4, data_width: 32, len_width: 8}
+  - {name: dbg, clock_domain: main, protocol: axi4_lite, data_width: 32}
+targets:
+  - {name: ram, clock_domain: main, protocol: axi4, data_width: 32, len_width: 8, attributes: amba,
+     mappings: [{base: '0x0', size: '0x10000'}]}
+  - {name: rom, clock_domain: main, protocol: axi4, data_width: 32, len_width: 8, attributes: amba,
+     mappings: [{base: '0x10000', size: '0x10000'}]}
+  - {name: uart, clock_domain: main, protocol: apb4, data_width: 32, attributes: amba,
+     mappings: [{base: '0x20000', size: '0x1000'}]}
+  - {name: timer, clock_domain: main, protocol: apb4, data_width: 32, attributes: amba,
+     mappings: [{base: '0x21000', size: '0x1000'}]}
+  - {name: boot, clock_domain: main, protocol: axi4_lite, data_width: 32, attributes: amba,
+     mappings: [{base: '0x30000', size: '0x1000'}]}
+groups:
+  initiators:
+    cores: [cpu0, cpu1]
+  targets:
+    peripherals: [uart, timer]
+    memory: [ram, rom]
+connectivity:
+  cores: all
+  dma: {all_except: [peripherals, boot]}
+  dbg: [peripherals, memory]
+output: {backend: verilog, language: verilog_2001}
