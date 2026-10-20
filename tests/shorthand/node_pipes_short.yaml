@@ -1,0 +1,53 @@
+# Node pipe defaults: output_links and input_links give each link leaving or
+# entering the node a pipe that the link does not set itself.
+schema_version: 10
+name: node_pipes_pair
+address_width: 32
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains: [{name: main, clock_port: clk_main, reset_port: reset_n, test_port: test}]
+initiators:
+  - {name: s0, clock_domain: main, protocol: axi4, data_width: 32, len_width: 8}
+  - {name: s1, clock_domain: main, protocol: axi4_lite, data_width: 32}
+targets:
+  - {name: t0, clock_domain: main, protocol: axi4, data_width: 32, len_width: 8, attributes: amba,
+     mappings: [{base: '0x0', size: '0x10000'}]}
+  - {name: t1, clock_domain: main, protocol: axi4, data_width: 32, len_width: 8, attributes: amba,
+     mappings: [{base: '0x10000', size: '0x10000'}]}
+connectivity: all
+topology:
+  request:
+    nodes:
+      - {name: in0}
+      - {name: in1}
+      - name: hub
+        output_links: {pipeline: {forward: true, backward: true}}
+        input_links: {sender_pipeline: {forward: true}}
+      - {name: leaf0}
+      - {name: leaf1}
+    links:
+      - {from: in0, to: hub}
+      - {from: in1, to: hub, sender_pipeline: {backward: true}}
+      - {from: hub, to: leaf0}
+      - {from: hub, to: leaf1, pipeline: {forward: true}}
+    entries:
+      - {endpoint: s0, node: in0}
+      - {endpoint: s1, node: in1}
+    exits:
+      - {endpoint: t0, node: leaf0}
+      - {endpoint: t1, node: leaf1}
+  response:
+    nodes:
+      - {name: hub, input_links: {pipeline: {backward: true}}}
+      - {name: leaf0}
+      - {name: leaf1}
+    links:
+      - {from: leaf0, to: hub}
+      - {from: leaf1, to: hub}
+    entries:
+      - {endpoint: t0, node: leaf0}
+      - {endpoint: t1, node: leaf1}
+    exits:
+      - {endpoint: s0, node: hub}
+      - {endpoint: s1, node: hub}
+output: {backend: verilog, language: verilog_2001}

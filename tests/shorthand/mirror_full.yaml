@@ -1,0 +1,53 @@
+# mirror_short.yaml written out.
+schema_version: 10
+name: mirror_pair
+address_width: 32
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains:
+  - {name: main, clock_port: clk_main, reset_port: reset_n, test_port: test, period_ps: 10000}
+  - {name: periph, clock_port: clk_periph, reset_port: reset_n, test_port: test, period_ps: 20000}
+initiators:
+  - {name: cpu, clock_domain: main, protocol: axi4, data_width: 64, len_width: 8}
+  - {name: dma, clock_domain: main, protocol: axi4, data_width: 32, len_width: 8}
+targets:
+  - {name: ram, clock_domain: main, protocol: axi4, data_width: 32, len_width: 8, attributes: amba,
+     mappings: [{base: '0x0', size: '0x10000'}]}
+  - {name: uart, clock_domain: periph, protocol: apb4, data_width: 32, attributes: amba,
+     mappings: [{base: '0x20000', size: '0x1000'}]}
+  - {name: timer, clock_domain: periph, protocol: apb4, data_width: 32, attributes: amba,
+     mappings: [{base: '0x21000', size: '0x1000'}]}
+connectivity: all
+topology:
+  request:
+    nodes:
+      - {name: cpu_req, clock_domain: main, transport_word_bytes: 8}
+      - {name: core_req, clock_domain: main}
+      - {name: periph_req, clock_domain: periph, transport_word_bytes: 4}
+    links:
+      - {from: cpu_req, to: core_req, sender_pipeline: {forward: true}}
+      - {from: core_req, to: periph_req, transport_word_bytes: 4,
+         pipeline: {forward: true, backward: true}}
+    entries:
+      - {endpoint: cpu, node: cpu_req, pipeline: {forward: true}}
+      - {endpoint: dma, node: core_req}
+    exits:
+      - {endpoint: ram, node: core_req}
+      - {endpoint: uart, node: periph_req}
+      - {endpoint: timer, node: periph_req, pipeline: {backward: true}}
+  response:
+    nodes:
+      - {name: cpu_rsp, clock_domain: main, transport_word_bytes: 8}
+      - {name: core_rsp, clock_domain: main}
+      - {name: periph_rsp, clock_domain: periph, transport_word_bytes: 4}
+    links:
+      - {from: core_rsp, to: cpu_rsp, pipeline: {forward: true}}
+      - {from: periph_rsp, to: core_rsp, transport_word_bytes: 4, sender_pipeline: {forward: true}}
+    entries:
+      - {endpoint: ram, node: core_rsp}
+      - {endpoint: uart, node: periph_rsp}
+      - {endpoint: timer, node: periph_rsp, pipeline: {backward: true}}
+    exits:
+      - {endpoint: cpu, node: cpu_rsp, pipeline: {forward: true}}
+      - {endpoint: dma, node: core_rsp}
+output: {backend: verilog, language: verilog_2001}

@@ -1,0 +1,26 @@
+# templates_short.yaml written out.
+schema_version: 10
+name: templates_pair
+address_width: 32
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains:
+  - {name: main, clock_port: clk_main, reset_port: reset_n, test_port: test}
+initiators:
+  - {name: cpu0, clock_domain: main, protocol: axi4, data_width: 64, len_width: 8, id_width: 4,
+     pipes: {packets: {forward: true}, issue: true}}
+  - {name: cpu1, clock_domain: main, protocol: axi4, data_width: 64, len_width: 8, id_width: 4,
+     max_outstanding: 2}
+  - {name: dbg, clock_domain: main, protocol: axi4_lite, data_width: 32}
+targets:
+  - {name: ram, clock_domain: main, protocol: axi4, data_width: 64, len_width: 8, attributes: amba,
+     pipes: {arrival: {forward: true}, dispatch: true}, mappings: [{base: '0x0', size: '0x10000'}]}
+  - {name: uart, clock_domain: main, protocol: apb4, data_width: 32, attributes: zero,
+     address_width: 12, mappings: [{base: '0x10000', size: '0x1000'}]}
+  - {name: timer, clock_domain: main, protocol: apb4, data_width: 32, attributes: zero,
+     address_width: 12, mappings: [{base: '0x11000', size: '0x1000'}]}
+  - {name: rom, clock_domain: main, protocol: axi4, data_width: 64, len_width: 8, attributes: amba,
+     pipes: {arrival: {forward: true}, dispatch: true}, access: read_only,
+     mappings: [{base: '0x20000', size: '0x10000'}]}
+connectivity: all
+output: {backend: verilog, language: verilog_2001}
