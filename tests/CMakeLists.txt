@@ -5,6 +5,7 @@ add_executable(nocloom_unit unit/core.cpp unit/message.cpp)
 target_sources(nocloom_unit PRIVATE unit/switch_graph.cpp)
 target_sources(nocloom_unit PRIVATE unit/connectivity.cpp)
 target_sources(nocloom_unit PRIVATE unit/canonical.cpp)
+target_sources(nocloom_unit PRIVATE unit/address_table.cpp unit/modes.cpp unit/routes.cpp)
 add_test(NAME canonical_ir COMMAND nocloom_unit "[canonical]")
 set_tests_properties(canonical_ir PROPERTIES TIMEOUT 60 LABELS "unit;quick")
 add_test(NAME connectivity_structure COMMAND nocloom_unit "[connectivity]")
@@ -48,6 +49,9 @@ set_tests_properties(width_adapter PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_
 add_test(NAME message_layout COMMAND nocloom_unit "[message]")
 set_tests_properties(message_layout PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
   TIMEOUT 30 LABELS "unit;message")
+target_sources(nocloom_unit PRIVATE unit/ipxact.cpp)
+add_test(NAME ipxact_structure COMMAND nocloom_unit "[ipxact]")
+set_tests_properties(ipxact_structure PROPERTIES TIMEOUT 60 LABELS "unit;quick")
 target_sources(nocloom_unit PRIVATE unit/async_fifo.cpp)
 add_test(NAME async_fifo_structure COMMAND nocloom_unit "[async_fifo]")
 set_tests_properties(async_fifo_structure PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
