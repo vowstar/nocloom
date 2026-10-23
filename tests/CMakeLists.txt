@@ -11,6 +11,7 @@ set_tests_properties(canonical_ir PROPERTIES TIMEOUT 60 LABELS "unit;quick")
 add_test(NAME connectivity_structure COMMAND nocloom_unit "[connectivity]")
 set_tests_properties(connectivity_structure PROPERTIES TIMEOUT 120 LABELS "unit;quick")
 target_sources(nocloom_unit PRIVATE unit/width_adapter.cpp)
+target_sources(nocloom_unit PRIVATE unit/axi4_config.cpp unit/axi3.cpp)
 target_sources(nocloom_unit PRIVATE unit/shorthand.cpp ${PROJECT_SOURCE_DIR}/cli/diff.cpp)
 target_include_directories(nocloom_unit PRIVATE ${PROJECT_SOURCE_DIR}/cli)
 target_compile_definitions(nocloom_unit PRIVATE NOCLOOM_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
@@ -26,6 +27,8 @@ target_sources(nocloom_unit PRIVATE unit/lite_outstanding.cpp)
 add_test(NAME lite_outstanding_structure COMMAND nocloom_unit "[lite-outstanding]")
 set_tests_properties(lite_outstanding_structure PROPERTIES
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit TIMEOUT 120 LABELS "unit;axi4")
+add_test(NAME axi4_config COMMAND nocloom_unit "[axi4-config]")
+set_tests_properties(axi4_config PROPERTIES TIMEOUT 180 LABELS "unit;config")
 target_sources(nocloom_unit PRIVATE unit/axi4_initiator.cpp)
 add_test(NAME axi4_initiator_structure COMMAND nocloom_unit "[axi4-initiator]")
 set_tests_properties(axi4_initiator_structure PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
@@ -64,6 +67,10 @@ set_tests_properties(related_clock_structure PROPERTIES WORKING_DIRECTORY ${CMAK
 add_test(NAME related_clock_public_structure COMMAND nocloom_unit "[related-clock-public]")
 set_tests_properties(related_clock_public_structure PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
   TIMEOUT 180 LABELS "unit;quick;cdc")
+target_sources(nocloom_unit PRIVATE unit/axi4_exchange.cpp)
+add_test(NAME axi4_exchange_structure COMMAND nocloom_unit "[axi4-exchange]")
+set_tests_properties(axi4_exchange_structure PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
+  TIMEOUT 60 LABELS "unit;axi4-exchange")
 target_sources(nocloom_unit PRIVATE unit/axi4_outlet.cpp)
 target_sources(nocloom_unit PRIVATE unit/axi4_width_cut.cpp)
 add_test(NAME axi4_width_cut_structure COMMAND nocloom_unit "[axi4-width-cut]")
