@@ -1,0 +1,156 @@
+{
+ "schema_version": 10,
+ "name": "qos_registered_chain_network",
+ "address_width": 32,
+ "reset_ports": [
+  {
+   "name": "reset_n"
+  }
+ ],
+ "test_ports": [
+  {
+   "name": "test"
+  }
+ ],
+ "clock_domains": [
+  {
+   "name": "main",
+   "clock_port": "clk",
+   "reset_port": "reset_n",
+   "test_port": "test"
+  }
+ ],
+ "initiators": [
+  {
+   "name": "s0",
+   "clock_domain": "main",
+   "protocol": "axi4",
+   "data_width": 32,
+   "id_width": 2,
+   "len_width": 8,
+   "max_outstanding": 4,
+   "qos": {
+    "levels": {"read": 1, "write": 1}
+   }
+  },
+  {
+   "name": "s1",
+   "clock_domain": "main",
+   "protocol": "axi4",
+   "data_width": 32,
+   "id_width": 2,
+   "len_width": 8,
+   "max_outstanding": 4,
+   "qos": {
+    "levels": {"read": 3, "write": 3}
+   }
+  },
+  {
+   "name": "s2",
+   "clock_domain": "main",
+   "protocol": "axi4",
+   "data_width": 32,
+   "id_width": 2,
+   "len_width": 8,
+   "max_outstanding": 4,
+   "qos": {
+    "levels": {"read": 2, "write": 2}
+   }
+  }
+ ],
+ "targets": [
+  {
+   "name": "t0",
+   "clock_domain": "main",
+   "protocol": "axi4",
+   "data_width": 32,
+   "len_width": 8,
+   "attributes": "amba",
+   "max_outstanding": 2,
+   "mappings": [
+    {
+     "base": "0x0",
+     "size": "0x10000"
+    }
+   ]
+  }
+ ],
+ "connectivity": "all",
+ "arbitration": {
+  "policy": "round_robin"
+ },
+ "output": {
+  "backend": "verilog",
+  "language": "verilog_2001"
+ },
+ "topology": {
+  "request": {
+   "nodes": [
+    {
+     "name": "A"
+    },
+    {
+     "name": "B"
+    }
+   ],
+   "links": [
+    {
+     "from": "A",
+     "to": "B",
+     "pipeline": {
+      "forward": true,
+      "backward": true
+     }
+    }
+   ],
+   "entries": [
+    {
+     "endpoint": "s0",
+     "node": "A"
+    },
+    {
+     "endpoint": "s1",
+     "node": "A"
+    },
+    {
+     "endpoint": "s2",
+     "node": "B"
+    }
+   ],
+   "exits": [
+    {
+     "endpoint": "t0",
+     "node": "B"
+    }
+   ]
+  },
+  "response": {
+   "nodes": [
+    {
+     "name": "R"
+    }
+   ],
+   "links": [],
+   "entries": [
+    {
+     "endpoint": "t0",
+     "node": "R"
+    }
+   ],
+   "exits": [
+    {
+     "endpoint": "s0",
+     "node": "R"
+    },
+    {
+     "endpoint": "s1",
+     "node": "R"
+    },
+    {
+     "endpoint": "s2",
+     "node": "R"
+    }
+   ]
+  }
+ }
+}
