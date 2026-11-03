@@ -1,0 +1,71 @@
+{
+ "edges": [
+  [
+   4,
+   2,
+   "M1",
+   0
+  ],
+  [
+   7,
+   1,
+   "M1",
+   0
+  ],
+  [
+   6,
+   3,
+   "M1",
+   0
+  ]
+ ],
+ "format": "nocloom.dependency",
+ "format_version": 1,
+ "groups": [],
+ "nodes": [
+  {
+   "key": "0/0",
+   "kind": "target.head",
+   "rank": 1
+  },
+  {
+   "key": "0/1",
+   "kind": "target.head",
+   "rank": 1
+  },
+  {
+   "key": "1/0",
+   "kind": "target.head",
+   "rank": 1
+  },
+  {
+   "key": "1/1",
+   "kind": "target.head",
+   "rank": 1
+  },
+  {
+   "key": "0/0",
+   "kind": "grant.held",
+   "rank": 0
+  },
+  {
+   "key": "0/1",
+   "kind": "grant.held",
+   "rank": 0
+  },
+  {
+   "key": "1/0",
+   "kind": "grant.held",
+   "rank": 0
+  },
+  {
+   "key": "1/1",
+   "kind": "grant.held",
+   "rank": 0
+  }
+ ],
+ "orientation": "blocker_to_blocked",
+ "result": {
+  "status": "no_cycle"
+ }
+}

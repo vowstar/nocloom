@@ -1,0 +1,70 @@
+{
+ "definition": {
+  "endpoint_transactions": {
+   "initiators": {
+    "s0": {
+     "id_width": 0,
+     "len_width": 4
+    },
+    "s1": {
+     "id_width": 0,
+     "len_width": 4
+    }
+   }
+  },
+  "outstanding": {
+   "initiator_id_tables": {
+    "s0": 2,
+    "s1": 2
+   },
+   "initiators": {
+    "s0": 2,
+    "s1": 2
+   },
+   "targets": {
+    "t0": 2,
+    "t1": 2
+   }
+  }
+ },
+ "network": {
+  "interleaved_targets": [
+   "t0",
+   "t1"
+  ]
+ },
+ "ports": [
+  {
+   "endpoint": "initiator:s0",
+   "signal": "awvalid"
+  },
+  {
+   "endpoint": "initiator:s0",
+   "signal": "arvalid"
+  },
+  {
+   "endpoint": "initiator:s1",
+   "signal": "awvalid"
+  },
+  {
+   "endpoint": "initiator:s1",
+   "signal": "arvalid"
+  },
+  {
+   "endpoint": "target:t0",
+   "signal": "awvalid"
+  },
+  {
+   "endpoint": "target:t0",
+   "signal": "arvalid"
+  },
+  {
+   "endpoint": "target:t1",
+   "signal": "awvalid"
+  },
+  {
+   "endpoint": "target:t1",
+   "signal": "arvalid"
+  }
+ ]
+}
