@@ -1,0 +1,1183 @@
+{
+ "edges": [
+  [
+   88,
+   46,
+   "M1",
+   0
+  ],
+  [
+   88,
+   47,
+   "M1",
+   0
+  ],
+  [
+   88,
+   72,
+   "M1",
+   0
+  ],
+  [
+   88,
+   73,
+   "M1",
+   0
+  ],
+  [
+   89,
+   46,
+   "M1",
+   0
+  ],
+  [
+   89,
+   47,
+   "M1",
+   0
+  ],
+  [
+   89,
+   72,
+   "M1",
+   0
+  ],
+  [
+   89,
+   73,
+   "M1",
+   0
+  ],
+  [
+   90,
+   48,
+   "M1",
+   0
+  ],
+  [
+   90,
+   49,
+   "M1",
+   0
+  ],
+  [
+   90,
+   72,
+   "M1",
+   0
+  ],
+  [
+   90,
+   73,
+   "M1",
+   0
+  ],
+  [
+   91,
+   48,
+   "M1",
+   0
+  ],
+  [
+   91,
+   49,
+   "M1",
+   0
+  ],
+  [
+   91,
+   72,
+   "M1",
+   0
+  ],
+  [
+   91,
+   73,
+   "M1",
+   0
+  ]
+ ],
+ "environment": [
+  {
+   "assumption": "F1",
+   "node": 20
+  },
+  {
+   "assumption": "F1",
+   "node": 21
+  },
+  {
+   "assumption": "F2",
+   "node": 22
+  },
+  {
+   "assumption": "F2",
+   "node": 23
+  },
+  {
+   "assumption": "F3",
+   "node": 24
+  },
+  {
+   "assumption": "F3",
+   "node": 25
+  },
+  {
+   "assumption": "F4",
+   "node": 26
+  },
+  {
+   "assumption": "F4",
+   "node": 27
+  }
+ ],
+ "excluded": [
+  {
+   "edges": 0,
+   "liveness": "L2_read_write",
+   "rule": "X2",
+   "subject": "target/t0"
+  },
+  {
+   "edges": 0,
+   "liveness": "L2_read_write",
+   "rule": "X2",
+   "subject": "target/t1"
+  },
+  {
+   "edges": 0,
+   "liveness": "L2_read_write",
+   "rule": "X3",
+   "subject": "source/s0"
+  },
+  {
+   "edges": 0,
+   "liveness": "L2_read_write",
+   "rule": "X3",
+   "subject": "source/s1"
+  },
+  {
+   "edges": 0,
+   "liveness": "L4_gated_merge",
+   "rule": "X7",
+   "subject": "network"
+  }
+ ],
+ "fingerprints": {
+  "plan": "fnv1a64:076fcef2b8e7db8b",
+  "rtl": "fnv1a64:df6b6c474ad1c604"
+ },
+ "format": "nocloom.dependency",
+ "format_version": 1,
+ "generator": "NocLoom",
+ "model": {
+  "ahead": [],
+  "answers": [
+   [
+    0,
+    2
+   ],
+   [
+    1,
+    3
+   ]
+  ],
+  "bound": [],
+  "cap": 1,
+  "contention": [],
+  "contig": [
+   0,
+   1
+  ],
+  "cross": [
+   2,
+   3
+  ],
+  "destinations": [
+   "target/t0",
+   "target/t1",
+   "source/s0",
+   "source/s1"
+  ],
+  "endpoints": [
+   0,
+   0,
+   1,
+   1,
+   2,
+   2,
+   3,
+   3
+  ],
+  "hints": [],
+  "holds": [
+   {
+    "head": [
+     0,
+     0
+    ],
+    "node": 72
+   },
+   {
+    "head": [
+     0,
+     1
+    ],
+    "node": 72
+   },
+   {
+    "head": [
+     1,
+     0
+    ],
+    "node": 73
+   },
+   {
+    "head": [
+     1,
+     1
+    ],
+    "node": 73
+   },
+   {
+    "head": [
+     2,
+     2
+    ],
+    "node": 88
+   },
+   {
+    "head": [
+     2,
+     3
+    ],
+    "node": 89
+   },
+   {
+    "head": [
+     3,
+     2
+    ],
+    "node": 90
+   },
+   {
+    "head": [
+     3,
+     3
+    ],
+    "node": 91
+   },
+   {
+    "grant": [
+     0,
+     0
+    ],
+    "node": 46
+   },
+   {
+    "grant": [
+     0,
+     1
+    ],
+    "node": 47
+   },
+   {
+    "grant": [
+     1,
+     0
+    ],
+    "node": 48
+   },
+   {
+    "grant": [
+     1,
+     1
+    ],
+    "node": 49
+   },
+   {
+    "grant": [
+     2,
+     2
+    ],
+    "node": 50
+   },
+   {
+    "grant": [
+     2,
+     3
+    ],
+    "node": 51
+   },
+   {
+    "grant": [
+     3,
+     2
+    ],
+    "node": 52
+   },
+   {
+    "grant": [
+     3,
+     3
+    ],
+    "node": 53
+   }
+  ],
+  "may_hold": [
+   [
+    0,
+    0
+   ],
+   [
+    0,
+    1
+   ],
+   [
+    1,
+    0
+   ],
+   [
+    1,
+    1
+   ]
+  ],
+  "nexts": [],
+  "outputs": [
+   "req/req_node0>t0",
+   "req/req_node0>t1",
+   "rsp/rsp_node0>s0",
+   "rsp/rsp_node0>s1"
+  ],
+  "pool_cap": 4,
+  "pools": [
+   [
+    0,
+    0,
+    2
+   ],
+   [
+    1,
+    1,
+    3
+   ]
+  ],
+  "routes": [
+   [
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    1,
+    1
+   ],
+   [
+    1,
+    0,
+    0
+   ],
+   [
+    1,
+    1,
+    1
+   ],
+   [
+    2,
+    2,
+    2
+   ],
+   [
+    2,
+    3,
+    3
+   ],
+   [
+    3,
+    2,
+    2
+   ],
+   [
+    3,
+    3,
+    3
+   ]
+  ],
+  "slots": [
+   "source/s0",
+   "source/s1",
+   "target/t0",
+   "target/t1"
+  ]
+ },
+ "module": "nocloom_Z2_oneid",
+ "nodes": [
+  {
+   "domain": "main",
+   "key": "req/req_node0>t0",
+   "kind": "endpoint.link",
+   "rank": 0
+  },
+  {
+   "domain": "main",
+   "key": "req/req_node0>t1",
+   "kind": "endpoint.link",
+   "rank": 0
+  },
+  {
+   "domain": "main",
+   "key": "req/s0>req_node0",
+   "kind": "endpoint.link",
+   "rank": 0
+  },
+  {
+   "domain": "main",
+   "key": "req/s1>req_node0",
+   "kind": "endpoint.link",
+   "rank": 0
+  },
+  {
+   "domain": "main",
+   "key": "rsp/rsp_node0>s0",
+   "kind": "endpoint.link",
+   "rank": 0
+  },
+  {
+   "domain": "main",
+   "key": "rsp/rsp_node0>s1",
+   "kind": "endpoint.link",
+   "rank": 0
+  },
+  {
+   "domain": "main",
+   "key": "rsp/t0>rsp_node0",
+   "kind": "endpoint.link",
+   "rank": 0
+  },
+  {
+   "domain": "main",
+   "key": "rsp/t1>rsp_node0",
+   "kind": "endpoint.link",
+   "rank": 0
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t0",
+   "kind": "endpoint.output",
+   "rank": 0
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t1",
+   "kind": "endpoint.output",
+   "rank": 0
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s0",
+   "kind": "endpoint.output",
+   "rank": 0
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s1",
+   "kind": "endpoint.output",
+   "rank": 0
+  },
+  {
+   "component": "source/s0",
+   "domain": "main",
+   "key": "s0",
+   "kind": "endpoint.source.req",
+   "rank": 0
+  },
+  {
+   "component": "source/s1",
+   "domain": "main",
+   "key": "s1",
+   "kind": "endpoint.source.req",
+   "rank": 0
+  },
+  {
+   "component": "source/s0",
+   "domain": "main",
+   "key": "s0",
+   "kind": "endpoint.source.rsp",
+   "rank": 0
+  },
+  {
+   "component": "source/s1",
+   "domain": "main",
+   "key": "s1",
+   "kind": "endpoint.source.rsp",
+   "rank": 0
+  },
+  {
+   "component": "target/t0",
+   "domain": "main",
+   "key": "t0",
+   "kind": "endpoint.target.req",
+   "rank": 0
+  },
+  {
+   "component": "target/t1",
+   "domain": "main",
+   "key": "t1",
+   "kind": "endpoint.target.req",
+   "rank": 0
+  },
+  {
+   "component": "target/t0",
+   "domain": "main",
+   "key": "t0",
+   "kind": "endpoint.target.rsp",
+   "rank": 0
+  },
+  {
+   "component": "target/t1",
+   "domain": "main",
+   "key": "t1",
+   "kind": "endpoint.target.rsp",
+   "rank": 0
+  },
+  {
+   "component": "source/s0",
+   "domain": "main",
+   "key": "s0",
+   "kind": "env.consumer",
+   "rank": 0
+  },
+  {
+   "component": "source/s1",
+   "domain": "main",
+   "key": "s1",
+   "kind": "env.consumer",
+   "rank": 0
+  },
+  {
+   "component": "source/s0",
+   "domain": "main",
+   "key": "s0",
+   "kind": "env.source_data",
+   "rank": 0
+  },
+  {
+   "component": "source/s1",
+   "domain": "main",
+   "key": "s1",
+   "kind": "env.source_data",
+   "rank": 0
+  },
+  {
+   "component": "target/t0",
+   "domain": "main",
+   "key": "t0",
+   "kind": "env.target_request",
+   "rank": 0
+  },
+  {
+   "component": "target/t1",
+   "domain": "main",
+   "key": "t1",
+   "kind": "env.target_request",
+   "rank": 0
+  },
+  {
+   "component": "target/t0",
+   "domain": "main",
+   "key": "t0",
+   "kind": "env.target_response",
+   "rank": 0
+  },
+  {
+   "component": "target/t1",
+   "domain": "main",
+   "key": "t1",
+   "kind": "env.target_response",
+   "rank": 0
+  },
+  {
+   "component": "source/s0",
+   "domain": "main",
+   "key": "s0",
+   "kind": "gather.single",
+   "rank": 0
+  },
+  {
+   "component": "source/s1",
+   "domain": "main",
+   "key": "s1",
+   "kind": "gather.single",
+   "rank": 0
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t0/endpoint/s0",
+   "kind": "grant.after",
+   "rank": 0
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t0/endpoint/s1",
+   "kind": "grant.after",
+   "rank": 0
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t1/endpoint/s0",
+   "kind": "grant.after",
+   "rank": 0
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t1/endpoint/s1",
+   "kind": "grant.after",
+   "rank": 0
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s0/endpoint/t0",
+   "kind": "grant.after",
+   "rank": 0
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s0/endpoint/t1",
+   "kind": "grant.after",
+   "rank": 0
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s1/endpoint/t0",
+   "kind": "grant.after",
+   "rank": 0
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s1/endpoint/t1",
+   "kind": "grant.after",
+   "rank": 0
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t0/endpoint/s0",
+   "kind": "grant.before",
+   "rank": 0
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t0/endpoint/s1",
+   "kind": "grant.before",
+   "rank": 0
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t1/endpoint/s0",
+   "kind": "grant.before",
+   "rank": 0
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t1/endpoint/s1",
+   "kind": "grant.before",
+   "rank": 0
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s0/endpoint/t0",
+   "kind": "grant.before",
+   "rank": 0
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s0/endpoint/t1",
+   "kind": "grant.before",
+   "rank": 0
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s1/endpoint/t0",
+   "kind": "grant.before",
+   "rank": 0
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s1/endpoint/t1",
+   "kind": "grant.before",
+   "rank": 0
+  },
+  {
+   "binding": "graph/req/req_node0>endpoint/t0",
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t0/endpoint/s0",
+   "kind": "grant.held",
+   "rank": 1
+  },
+  {
+   "binding": "graph/req/req_node0>endpoint/t0",
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t0/endpoint/s1",
+   "kind": "grant.held",
+   "rank": 1
+  },
+  {
+   "binding": "graph/req/req_node0>endpoint/t1",
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t1/endpoint/s0",
+   "kind": "grant.held",
+   "rank": 1
+  },
+  {
+   "binding": "graph/req/req_node0>endpoint/t1",
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t1/endpoint/s1",
+   "kind": "grant.held",
+   "rank": 1
+  },
+  {
+   "binding": "graph/rsp/rsp_node0>endpoint/s0",
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s0/endpoint/t0",
+   "kind": "grant.held",
+   "rank": 0
+  },
+  {
+   "binding": "graph/rsp/rsp_node0>endpoint/s0",
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s0/endpoint/t1",
+   "kind": "grant.held",
+   "rank": 0
+  },
+  {
+   "binding": "graph/rsp/rsp_node0>endpoint/s1",
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s1/endpoint/t0",
+   "kind": "grant.held",
+   "rank": 0
+  },
+  {
+   "binding": "graph/rsp/rsp_node0>endpoint/s1",
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s1/endpoint/t1",
+   "kind": "grant.held",
+   "rank": 0
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t0/endpoint/s0",
+   "kind": "grant.other",
+   "rank": 0
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t0/endpoint/s1",
+   "kind": "grant.other",
+   "rank": 0
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t1/endpoint/s0",
+   "kind": "grant.other",
+   "rank": 0
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t1/endpoint/s1",
+   "kind": "grant.other",
+   "rank": 0
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s0/endpoint/t0",
+   "kind": "grant.other",
+   "rank": 0
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s0/endpoint/t1",
+   "kind": "grant.other",
+   "rank": 0
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s1/endpoint/t0",
+   "kind": "grant.other",
+   "rank": 0
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s1/endpoint/t1",
+   "kind": "grant.other",
+   "rank": 0
+  },
+  {
+   "binding": "adapter/req/s0>req_node0/0",
+   "component": "req/main",
+   "domain": "main",
+   "key": "adapter/req/s0>req_node0/0",
+   "kind": "occupancy.adapter",
+   "rank": 0
+  },
+  {
+   "binding": "adapter/req/s1>req_node0/0",
+   "component": "req/main",
+   "domain": "main",
+   "key": "adapter/req/s1>req_node0/0",
+   "kind": "occupancy.adapter",
+   "rank": 0
+  },
+  {
+   "binding": "adapter/rsp/rsp_node0>s0/link-out/0",
+   "component": "rsp/main",
+   "domain": "main",
+   "key": "adapter/rsp/rsp_node0>s0/link-out/0",
+   "kind": "occupancy.adapter",
+   "rank": 0
+  },
+  {
+   "binding": "adapter/rsp/rsp_node0>s1/link-out/0",
+   "component": "rsp/main",
+   "domain": "main",
+   "key": "adapter/rsp/rsp_node0>s1/link-out/0",
+   "kind": "occupancy.adapter",
+   "rank": 0
+  },
+  {
+   "binding": "source/s0/pipe/ar",
+   "component": "source/s0",
+   "domain": "main",
+   "key": "source/s0/pipe/ar",
+   "kind": "occupancy.endpoint_pipe",
+   "rank": 0
+  },
+  {
+   "binding": "source/s0/pipe/aw",
+   "component": "source/s0",
+   "domain": "main",
+   "key": "source/s0/pipe/aw",
+   "kind": "occupancy.endpoint_pipe",
+   "rank": 0
+  },
+  {
+   "binding": "source/s0/pipe/w",
+   "component": "source/s0",
+   "domain": "main",
+   "key": "source/s0/pipe/w",
+   "kind": "occupancy.endpoint_pipe",
+   "rank": 0
+  },
+  {
+   "binding": "source/s1/pipe/ar",
+   "component": "source/s1",
+   "domain": "main",
+   "key": "source/s1/pipe/ar",
+   "kind": "occupancy.endpoint_pipe",
+   "rank": 0
+  },
+  {
+   "binding": "source/s1/pipe/aw",
+   "component": "source/s1",
+   "domain": "main",
+   "key": "source/s1/pipe/aw",
+   "kind": "occupancy.endpoint_pipe",
+   "rank": 0
+  },
+  {
+   "binding": "source/s1/pipe/w",
+   "component": "source/s1",
+   "domain": "main",
+   "key": "source/s1/pipe/w",
+   "kind": "occupancy.endpoint_pipe",
+   "rank": 0
+  },
+  {
+   "component": "source/s0",
+   "domain": "main",
+   "key": "s0",
+   "kind": "source.merge",
+   "rank": 1
+  },
+  {
+   "component": "source/s1",
+   "domain": "main",
+   "key": "s1",
+   "kind": "source.merge",
+   "rank": 1
+  },
+  {
+   "component": "source/s0",
+   "domain": "main",
+   "key": "s0",
+   "kind": "source.pool",
+   "rank": 0
+  },
+  {
+   "component": "source/s1",
+   "domain": "main",
+   "key": "s1",
+   "kind": "source.pool",
+   "rank": 0
+  },
+  {
+   "component": "source/s0",
+   "domain": "main",
+   "key": "s0",
+   "kind": "source.return",
+   "rank": 0
+  },
+  {
+   "component": "source/s1",
+   "domain": "main",
+   "key": "s1",
+   "kind": "source.return",
+   "rank": 0
+  },
+  {
+   "component": "source/s0",
+   "domain": "main",
+   "key": "s0",
+   "kind": "source.staging",
+   "rank": 0
+  },
+  {
+   "component": "source/s1",
+   "domain": "main",
+   "key": "s1",
+   "kind": "source.staging",
+   "rank": 0
+  },
+  {
+   "component": "target/t0",
+   "domain": "main",
+   "key": "t0/after/s0",
+   "kind": "target.behind",
+   "rank": 0
+  },
+  {
+   "component": "target/t0",
+   "domain": "main",
+   "key": "t0/after/s1",
+   "kind": "target.behind",
+   "rank": 0
+  },
+  {
+   "component": "target/t0",
+   "domain": "main",
+   "key": "t0/before/s0",
+   "kind": "target.behind",
+   "rank": 0
+  },
+  {
+   "component": "target/t0",
+   "domain": "main",
+   "key": "t0/before/s1",
+   "kind": "target.behind",
+   "rank": 0
+  },
+  {
+   "component": "target/t1",
+   "domain": "main",
+   "key": "t1/after/s0",
+   "kind": "target.behind",
+   "rank": 0
+  },
+  {
+   "component": "target/t1",
+   "domain": "main",
+   "key": "t1/after/s1",
+   "kind": "target.behind",
+   "rank": 0
+  },
+  {
+   "component": "target/t1",
+   "domain": "main",
+   "key": "t1/before/s0",
+   "kind": "target.behind",
+   "rank": 0
+  },
+  {
+   "component": "target/t1",
+   "domain": "main",
+   "key": "t1/before/s1",
+   "kind": "target.behind",
+   "rank": 0
+  },
+  {
+   "component": "target/t0",
+   "domain": "main",
+   "key": "t0/s0",
+   "kind": "target.head",
+   "rank": 0
+  },
+  {
+   "component": "target/t0",
+   "domain": "main",
+   "key": "t0/s1",
+   "kind": "target.head",
+   "rank": 0
+  },
+  {
+   "component": "target/t1",
+   "domain": "main",
+   "key": "t1/s0",
+   "kind": "target.head",
+   "rank": 0
+  },
+  {
+   "component": "target/t1",
+   "domain": "main",
+   "key": "t1/s1",
+   "kind": "target.head",
+   "rank": 0
+  },
+  {
+   "component": "target/t0",
+   "domain": "main",
+   "key": "t0",
+   "kind": "target.pool",
+   "rank": 0
+  },
+  {
+   "component": "target/t1",
+   "domain": "main",
+   "key": "t1",
+   "kind": "target.pool",
+   "rank": 0
+  }
+ ],
+ "orientation": "blocker_to_blocked",
+ "result": {
+  "cycle_sets": 0,
+  "findings": [],
+  "status": "no_cycle"
+ },
+ "rules": [
+  {
+   "id": "S1",
+   "level": "endpoint",
+   "name": "target.blocks_source"
+  },
+  {
+   "id": "S2",
+   "level": "endpoint",
+   "name": "response.blocks_accept"
+  },
+  {
+   "id": "S3",
+   "level": "endpoint",
+   "name": "target.blocks_return"
+  },
+  {
+   "id": "S4",
+   "level": "endpoint",
+   "name": "request.path"
+  },
+  {
+   "id": "S5",
+   "level": "endpoint",
+   "name": "response.path"
+  },
+  {
+   "id": "S6",
+   "level": "endpoint",
+   "name": "external"
+  },
+  {
+   "id": "M1",
+   "level": "micro",
+   "name": "grant.contention"
+  },
+  {
+   "id": "M2",
+   "level": "micro",
+   "name": "grant.downstream"
+  },
+  {
+   "id": "M3",
+   "level": "micro",
+   "name": "grant.continuation"
+  },
+  {
+   "id": "M4",
+   "level": "micro",
+   "name": "target.queue_order"
+  },
+  {
+   "id": "M6",
+   "level": "micro",
+   "name": "target.pool"
+  },
+  {
+   "id": "M7",
+   "level": "micro",
+   "name": "source.write_data"
+  },
+  {
+   "id": "M8",
+   "level": "micro",
+   "name": "source.unit"
+  },
+  {
+   "id": "M11",
+   "level": "micro",
+   "name": "source.return"
+  },
+  {
+   "id": "M14",
+   "level": "micro",
+   "name": "merge.order"
+  },
+  {
+   "id": "M15",
+   "level": "micro",
+   "name": "stage.occupancy"
+  },
+  {
+   "id": "M16",
+   "level": "micro",
+   "name": "environment"
+  },
+  {
+   "id": "E0",
+   "level": "micro",
+   "name": "escape"
+  }
+ ]
+}

@@ -1,0 +1,1986 @@
+{
+ "edges": [
+  [
+   0,
+   8,
+   "S4",
+   0
+  ],
+  [
+   1,
+   9,
+   "S4",
+   0
+  ],
+  [
+   2,
+   12,
+   "S4",
+   0
+  ],
+  [
+   3,
+   13,
+   "S4",
+   0
+  ],
+  [
+   4,
+   10,
+   "S5",
+   0
+  ],
+  [
+   5,
+   11,
+   "S5",
+   0
+  ],
+  [
+   6,
+   18,
+   "S5",
+   0
+  ],
+  [
+   7,
+   19,
+   "S5",
+   0
+  ],
+  [
+   8,
+   2,
+   "S4",
+   0
+  ],
+  [
+   8,
+   3,
+   "S4",
+   0
+  ],
+  [
+   9,
+   2,
+   "S4",
+   0
+  ],
+  [
+   9,
+   3,
+   "S4",
+   0
+  ],
+  [
+   10,
+   6,
+   "S5",
+   0
+  ],
+  [
+   10,
+   7,
+   "S5",
+   0
+  ],
+  [
+   11,
+   6,
+   "S5",
+   0
+  ],
+  [
+   11,
+   7,
+   "S5",
+   0
+  ],
+  [
+   14,
+   4,
+   "S5",
+   0
+  ],
+  [
+   14,
+   18,
+   "S3",
+   0
+  ],
+  [
+   14,
+   19,
+   "S3",
+   0
+  ],
+  [
+   15,
+   5,
+   "S5",
+   0
+  ],
+  [
+   15,
+   18,
+   "S3",
+   0
+  ],
+  [
+   15,
+   19,
+   "S3",
+   0
+  ],
+  [
+   16,
+   0,
+   "S4",
+   0
+  ],
+  [
+   16,
+   12,
+   "S1",
+   0
+  ],
+  [
+   16,
+   13,
+   "S1",
+   0
+  ],
+  [
+   17,
+   1,
+   "S4",
+   0
+  ],
+  [
+   17,
+   12,
+   "S1",
+   0
+  ],
+  [
+   17,
+   13,
+   "S1",
+   0
+  ],
+  [
+   18,
+   16,
+   "S2",
+   0
+  ],
+  [
+   19,
+   17,
+   "S2",
+   0
+  ],
+  [
+   20,
+   78,
+   "M16",
+   0
+  ],
+  [
+   21,
+   79,
+   "M16",
+   0
+  ],
+  [
+   22,
+   46,
+   "M7",
+   0
+  ],
+  [
+   22,
+   48,
+   "M7",
+   0
+  ],
+  [
+   22,
+   72,
+   "M16",
+   0
+  ],
+  [
+   23,
+   47,
+   "M7",
+   0
+  ],
+  [
+   23,
+   49,
+   "M7",
+   0
+  ],
+  [
+   23,
+   73,
+   "M16",
+   0
+  ],
+  [
+   24,
+   84,
+   "M16",
+   0
+  ],
+  [
+   25,
+   85,
+   "M16",
+   0
+  ],
+  [
+   26,
+   80,
+   "M16",
+   0
+  ],
+  [
+   26,
+   81,
+   "M16",
+   0
+  ],
+  [
+   27,
+   82,
+   "M16",
+   0
+  ],
+  [
+   27,
+   83,
+   "M16",
+   0
+  ],
+  [
+   28,
+   50,
+   "M2",
+   0
+  ],
+  [
+   28,
+   51,
+   "M2",
+   0
+  ],
+  [
+   28,
+   64,
+   "M2",
+   0
+  ],
+  [
+   28,
+   80,
+   "M2",
+   0
+  ],
+  [
+   28,
+   82,
+   "M2",
+   0
+  ],
+  [
+   29,
+   52,
+   "M2",
+   0
+  ],
+  [
+   29,
+   53,
+   "M2",
+   0
+  ],
+  [
+   29,
+   65,
+   "M2",
+   0
+  ],
+  [
+   29,
+   81,
+   "M2",
+   0
+  ],
+  [
+   29,
+   83,
+   "M2",
+   0
+  ],
+  [
+   31,
+   30,
+   "M1",
+   0
+  ],
+  [
+   31,
+   54,
+   "M1",
+   0
+  ],
+  [
+   33,
+   32,
+   "M1",
+   0
+  ],
+  [
+   33,
+   56,
+   "M1",
+   0
+  ],
+  [
+   35,
+   34,
+   "M1",
+   0
+  ],
+  [
+   35,
+   58,
+   "M1",
+   0
+  ],
+  [
+   37,
+   36,
+   "M1",
+   0
+  ],
+  [
+   37,
+   60,
+   "M1",
+   0
+  ],
+  [
+   38,
+   39,
+   "M1",
+   0
+  ],
+  [
+   38,
+   55,
+   "M1",
+   0
+  ],
+  [
+   40,
+   41,
+   "M1",
+   0
+  ],
+  [
+   40,
+   57,
+   "M1",
+   0
+  ],
+  [
+   42,
+   43,
+   "M1",
+   0
+  ],
+  [
+   42,
+   59,
+   "M1",
+   0
+  ],
+  [
+   44,
+   45,
+   "M1",
+   0
+  ],
+  [
+   44,
+   61,
+   "M1",
+   0
+  ],
+  [
+   46,
+   30,
+   "M1",
+   0
+  ],
+  [
+   46,
+   38,
+   "M1",
+   0
+  ],
+  [
+   47,
+   31,
+   "M1",
+   0
+  ],
+  [
+   47,
+   39,
+   "M1",
+   0
+  ],
+  [
+   48,
+   32,
+   "M1",
+   0
+  ],
+  [
+   48,
+   40,
+   "M1",
+   0
+  ],
+  [
+   49,
+   33,
+   "M1",
+   0
+  ],
+  [
+   49,
+   41,
+   "M1",
+   0
+  ],
+  [
+   50,
+   34,
+   "M1",
+   0
+  ],
+  [
+   50,
+   42,
+   "M1",
+   0
+  ],
+  [
+   51,
+   35,
+   "M1",
+   0
+  ],
+  [
+   51,
+   43,
+   "M1",
+   0
+  ],
+  [
+   52,
+   36,
+   "M1",
+   0
+  ],
+  [
+   52,
+   44,
+   "M1",
+   0
+  ],
+  [
+   53,
+   37,
+   "M1",
+   0
+  ],
+  [
+   53,
+   45,
+   "M1",
+   0
+  ],
+  [
+   54,
+   62,
+   "M1",
+   0
+  ],
+  [
+   54,
+   72,
+   "M1",
+   0
+  ],
+  [
+   55,
+   63,
+   "M1",
+   0
+  ],
+  [
+   55,
+   73,
+   "M1",
+   0
+  ],
+  [
+   56,
+   62,
+   "M1",
+   0
+  ],
+  [
+   56,
+   72,
+   "M1",
+   0
+  ],
+  [
+   57,
+   63,
+   "M1",
+   0
+  ],
+  [
+   57,
+   73,
+   "M1",
+   0
+  ],
+  [
+   58,
+   80,
+   "M1",
+   0
+  ],
+  [
+   59,
+   82,
+   "M1",
+   0
+  ],
+  [
+   60,
+   81,
+   "M1",
+   0
+  ],
+  [
+   61,
+   83,
+   "M1",
+   0
+  ],
+  [
+   62,
+   72,
+   "M15",
+   0
+  ],
+  [
+   63,
+   73,
+   "M15",
+   0
+  ],
+  [
+   64,
+   50,
+   "M15",
+   0
+  ],
+  [
+   64,
+   51,
+   "M15",
+   0
+  ],
+  [
+   65,
+   52,
+   "M15",
+   0
+  ],
+  [
+   65,
+   53,
+   "M15",
+   0
+  ],
+  [
+   72,
+   66,
+   "M15",
+   0
+  ],
+  [
+   72,
+   67,
+   "M15",
+   0
+  ],
+  [
+   72,
+   68,
+   "M15",
+   0
+  ],
+  [
+   73,
+   69,
+   "M15",
+   0
+  ],
+  [
+   73,
+   70,
+   "M15",
+   0
+  ],
+  [
+   73,
+   71,
+   "M15",
+   0
+  ],
+  [
+   74,
+   72,
+   "M8",
+   0
+  ],
+  [
+   75,
+   73,
+   "M8",
+   0
+  ],
+  [
+   76,
+   74,
+   "M8",
+   0
+  ],
+  [
+   77,
+   75,
+   "M8",
+   0
+  ],
+  [
+   78,
+   28,
+   "M11",
+   0
+  ],
+  [
+   79,
+   29,
+   "M11",
+   0
+  ],
+  [
+   80,
+   46,
+   "M6",
+   0
+  ],
+  [
+   80,
+   47,
+   "M6",
+   0
+  ],
+  [
+   80,
+   72,
+   "M6",
+   0
+  ],
+  [
+   80,
+   73,
+   "M6",
+   0
+  ],
+  [
+   80,
+   76,
+   "M8",
+   0
+  ],
+  [
+   80,
+   84,
+   "M6",
+   0
+  ],
+  [
+   81,
+   46,
+   "M6",
+   0
+  ],
+  [
+   81,
+   47,
+   "M6",
+   0
+  ],
+  [
+   81,
+   72,
+   "M6",
+   0
+  ],
+  [
+   81,
+   73,
+   "M6",
+   0
+  ],
+  [
+   81,
+   77,
+   "M8",
+   0
+  ],
+  [
+   81,
+   84,
+   "M6",
+   0
+  ],
+  [
+   82,
+   48,
+   "M6",
+   0
+  ],
+  [
+   82,
+   49,
+   "M6",
+   0
+  ],
+  [
+   82,
+   72,
+   "M6",
+   0
+  ],
+  [
+   82,
+   73,
+   "M6",
+   0
+  ],
+  [
+   82,
+   76,
+   "M8",
+   0
+  ],
+  [
+   82,
+   85,
+   "M6",
+   0
+  ],
+  [
+   83,
+   48,
+   "M6",
+   0
+  ],
+  [
+   83,
+   49,
+   "M6",
+   0
+  ],
+  [
+   83,
+   72,
+   "M6",
+   0
+  ],
+  [
+   83,
+   73,
+   "M6",
+   0
+  ],
+  [
+   83,
+   77,
+   "M8",
+   0
+  ],
+  [
+   83,
+   85,
+   "M6",
+   0
+  ],
+  [
+   84,
+   46,
+   "M2",
+   0
+  ],
+  [
+   84,
+   47,
+   "M2",
+   0
+  ],
+  [
+   84,
+   72,
+   "M2",
+   0
+  ],
+  [
+   84,
+   73,
+   "M2",
+   0
+  ],
+  [
+   85,
+   48,
+   "M2",
+   0
+  ],
+  [
+   85,
+   49,
+   "M2",
+   0
+  ],
+  [
+   85,
+   72,
+   "M2",
+   0
+  ],
+  [
+   85,
+   73,
+   "M2",
+   0
+  ]
+ ],
+ "environment": [
+  {
+   "assumption": "F1",
+   "node": 20
+  },
+  {
+   "assumption": "F1",
+   "node": 21
+  },
+  {
+   "assumption": "F2",
+   "node": 22
+  },
+  {
+   "assumption": "F2",
+   "node": 23
+  },
+  {
+   "assumption": "F3",
+   "node": 24
+  },
+  {
+   "assumption": "F3",
+   "node": 25
+  },
+  {
+   "assumption": "F4",
+   "node": 26
+  },
+  {
+   "assumption": "F4",
+   "node": 27
+  }
+ ],
+ "excluded": [
+  {
+   "edges": 0,
+   "liveness": "L2_read_write",
+   "rule": "X2",
+   "subject": "target/t0"
+  },
+  {
+   "edges": 0,
+   "liveness": "L2_read_write",
+   "rule": "X2",
+   "subject": "target/t1"
+  },
+  {
+   "edges": 0,
+   "liveness": "L2_read_write",
+   "rule": "X3",
+   "subject": "source/s0"
+  },
+  {
+   "edges": 0,
+   "liveness": "L2_read_write",
+   "rule": "X3",
+   "subject": "source/s1"
+  },
+  {
+   "edges": 0,
+   "liveness": "L4_gated_merge",
+   "rule": "X7",
+   "subject": "network"
+  }
+ ],
+ "fingerprints": {
+  "plan": "fnv1a64:5742da4d1b60e7fa",
+  "rtl": "fnv1a64:c0107301cd780403"
+ },
+ "format": "nocloom.dependency",
+ "format_version": 1,
+ "generator": "NocLoom",
+ "model": {
+  "ahead": [
+   [
+    2,
+    2
+   ],
+   [
+    2,
+    3
+   ],
+   [
+    3,
+    2
+   ],
+   [
+    3,
+    3
+   ]
+  ],
+  "answers": [
+   [
+    0,
+    2
+   ]
+  ],
+  "bound": [],
+  "cap": 1,
+  "contention": [
+   [
+    0,
+    0,
+    38,
+    30,
+    54
+   ],
+   [
+    0,
+    1,
+    39,
+    31,
+    55
+   ],
+   [
+    1,
+    0,
+    40,
+    32,
+    56
+   ],
+   [
+    1,
+    1,
+    41,
+    33,
+    57
+   ],
+   [
+    2,
+    2,
+    42,
+    34,
+    58
+   ],
+   [
+    2,
+    3,
+    43,
+    35,
+    59
+   ],
+   [
+    3,
+    2,
+    44,
+    36,
+    60
+   ],
+   [
+    3,
+    3,
+    45,
+    37,
+    61
+   ]
+  ],
+  "contig": [
+   0,
+   1
+  ],
+  "cross": [],
+  "destinations": [
+   "target/t0",
+   "target/t1",
+   "source/s0",
+   "source/s1"
+  ],
+  "endpoints": [
+   0,
+   0,
+   1,
+   1,
+   2,
+   2,
+   3,
+   3
+  ],
+  "hints": [],
+  "holds": [
+   {
+    "head": [
+     0,
+     0
+    ],
+    "node": 72
+   },
+   {
+    "head": [
+     0,
+     1
+    ],
+    "node": 72
+   },
+   {
+    "head": [
+     1,
+     0
+    ],
+    "node": 73
+   },
+   {
+    "head": [
+     1,
+     1
+    ],
+    "node": 73
+   },
+   {
+    "head": [
+     2,
+     2
+    ],
+    "node": 80
+   },
+   {
+    "head": [
+     2,
+     3
+    ],
+    "node": 81
+   },
+   {
+    "head": [
+     3,
+     2
+    ],
+    "node": 82
+   },
+   {
+    "head": [
+     3,
+     3
+    ],
+    "node": 83
+   },
+   {
+    "grant": [
+     0,
+     0
+    ],
+    "node": 46
+   },
+   {
+    "grant": [
+     0,
+     1
+    ],
+    "node": 47
+   },
+   {
+    "grant": [
+     1,
+     0
+    ],
+    "node": 48
+   },
+   {
+    "grant": [
+     1,
+     1
+    ],
+    "node": 49
+   },
+   {
+    "grant": [
+     2,
+     2
+    ],
+    "node": 50
+   },
+   {
+    "grant": [
+     2,
+     3
+    ],
+    "node": 51
+   },
+   {
+    "grant": [
+     3,
+     2
+    ],
+    "node": 52
+   },
+   {
+    "grant": [
+     3,
+     3
+    ],
+    "node": 53
+   }
+  ],
+  "may_hold": [
+   [
+    0,
+    0
+   ],
+   [
+    0,
+    1
+   ],
+   [
+    1,
+    0
+   ],
+   [
+    1,
+    1
+   ]
+  ],
+  "nexts": [],
+  "outputs": [
+   "req/req_node0>t0",
+   "req/req_node0>t1",
+   "rsp/rsp_node0>s0",
+   "rsp/rsp_node0>s1"
+  ],
+  "pool_cap": 4,
+  "pools": [
+   [
+    0,
+    0,
+    2
+   ],
+   [
+    1,
+    1,
+    3
+   ]
+  ],
+  "routes": [
+   [
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    1,
+    1
+   ],
+   [
+    1,
+    0,
+    0
+   ],
+   [
+    1,
+    1,
+    1
+   ],
+   [
+    2,
+    2,
+    2
+   ],
+   [
+    2,
+    3,
+    3
+   ],
+   [
+    3,
+    2,
+    2
+   ],
+   [
+    3,
+    3,
+    3
+   ]
+  ],
+  "slots": [
+   "source/s0",
+   "source/s1",
+   "target/t0",
+   "target/t1"
+  ]
+ },
+ "module": "nocloom_A_two_t",
+ "nodes": [
+  {
+   "domain": "main",
+   "key": "req/req_node0>t0",
+   "kind": "endpoint.link",
+   "rank": 6
+  },
+  {
+   "domain": "main",
+   "key": "req/req_node0>t1",
+   "kind": "endpoint.link",
+   "rank": 6
+  },
+  {
+   "domain": "main",
+   "key": "req/s0>req_node0",
+   "kind": "endpoint.link",
+   "rank": 8
+  },
+  {
+   "domain": "main",
+   "key": "req/s1>req_node0",
+   "kind": "endpoint.link",
+   "rank": 8
+  },
+  {
+   "domain": "main",
+   "key": "rsp/rsp_node0>s0",
+   "kind": "endpoint.link",
+   "rank": 1
+  },
+  {
+   "domain": "main",
+   "key": "rsp/rsp_node0>s1",
+   "kind": "endpoint.link",
+   "rank": 1
+  },
+  {
+   "domain": "main",
+   "key": "rsp/t0>rsp_node0",
+   "kind": "endpoint.link",
+   "rank": 3
+  },
+  {
+   "domain": "main",
+   "key": "rsp/t1>rsp_node0",
+   "kind": "endpoint.link",
+   "rank": 3
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t0",
+   "kind": "endpoint.output",
+   "rank": 7
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t1",
+   "kind": "endpoint.output",
+   "rank": 7
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s0",
+   "kind": "endpoint.output",
+   "rank": 2
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s1",
+   "kind": "endpoint.output",
+   "rank": 2
+  },
+  {
+   "component": "source/s0",
+   "domain": "main",
+   "key": "s0",
+   "kind": "endpoint.source.req",
+   "rank": 9
+  },
+  {
+   "component": "source/s1",
+   "domain": "main",
+   "key": "s1",
+   "kind": "endpoint.source.req",
+   "rank": 9
+  },
+  {
+   "component": "source/s0",
+   "domain": "main",
+   "key": "s0",
+   "kind": "endpoint.source.rsp",
+   "rank": 0
+  },
+  {
+   "component": "source/s1",
+   "domain": "main",
+   "key": "s1",
+   "kind": "endpoint.source.rsp",
+   "rank": 0
+  },
+  {
+   "component": "target/t0",
+   "domain": "main",
+   "key": "t0",
+   "kind": "endpoint.target.req",
+   "rank": 5
+  },
+  {
+   "component": "target/t1",
+   "domain": "main",
+   "key": "t1",
+   "kind": "endpoint.target.req",
+   "rank": 5
+  },
+  {
+   "component": "target/t0",
+   "domain": "main",
+   "key": "t0",
+   "kind": "endpoint.target.rsp",
+   "rank": 4
+  },
+  {
+   "component": "target/t1",
+   "domain": "main",
+   "key": "t1",
+   "kind": "endpoint.target.rsp",
+   "rank": 4
+  },
+  {
+   "component": "source/s0",
+   "domain": "main",
+   "key": "s0",
+   "kind": "env.consumer",
+   "rank": 0
+  },
+  {
+   "component": "source/s1",
+   "domain": "main",
+   "key": "s1",
+   "kind": "env.consumer",
+   "rank": 0
+  },
+  {
+   "component": "source/s0",
+   "domain": "main",
+   "key": "s0",
+   "kind": "env.source_data",
+   "rank": 0
+  },
+  {
+   "component": "source/s1",
+   "domain": "main",
+   "key": "s1",
+   "kind": "env.source_data",
+   "rank": 0
+  },
+  {
+   "component": "target/t0",
+   "domain": "main",
+   "key": "t0",
+   "kind": "env.target_request",
+   "rank": 0
+  },
+  {
+   "component": "target/t1",
+   "domain": "main",
+   "key": "t1",
+   "kind": "env.target_request",
+   "rank": 0
+  },
+  {
+   "component": "target/t0",
+   "domain": "main",
+   "key": "t0",
+   "kind": "env.target_response",
+   "rank": 0
+  },
+  {
+   "component": "target/t1",
+   "domain": "main",
+   "key": "t1",
+   "kind": "env.target_response",
+   "rank": 0
+  },
+  {
+   "component": "source/s0",
+   "domain": "main",
+   "key": "s0",
+   "kind": "gather.tag",
+   "rank": 2
+  },
+  {
+   "component": "source/s1",
+   "domain": "main",
+   "key": "s1",
+   "kind": "gather.tag",
+   "rank": 2
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t0/endpoint/s0",
+   "kind": "grant.after",
+   "rank": 11
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t0/endpoint/s1",
+   "kind": "grant.after",
+   "rank": 10
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t1/endpoint/s0",
+   "kind": "grant.after",
+   "rank": 11
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t1/endpoint/s1",
+   "kind": "grant.after",
+   "rank": 10
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s0/endpoint/t0",
+   "kind": "grant.after",
+   "rank": 6
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s0/endpoint/t1",
+   "kind": "grant.after",
+   "rank": 5
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s1/endpoint/t0",
+   "kind": "grant.after",
+   "rank": 6
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s1/endpoint/t1",
+   "kind": "grant.after",
+   "rank": 5
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t0/endpoint/s0",
+   "kind": "grant.before",
+   "rank": 10
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t0/endpoint/s1",
+   "kind": "grant.before",
+   "rank": 11
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t1/endpoint/s0",
+   "kind": "grant.before",
+   "rank": 10
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t1/endpoint/s1",
+   "kind": "grant.before",
+   "rank": 11
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s0/endpoint/t0",
+   "kind": "grant.before",
+   "rank": 5
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s0/endpoint/t1",
+   "kind": "grant.before",
+   "rank": 6
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s1/endpoint/t0",
+   "kind": "grant.before",
+   "rank": 5
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s1/endpoint/t1",
+   "kind": "grant.before",
+   "rank": 6
+  },
+  {
+   "binding": "graph/req/req_node0>endpoint/t0",
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t0/endpoint/s0",
+   "kind": "grant.held",
+   "rank": 9
+  },
+  {
+   "binding": "graph/req/req_node0>endpoint/t0",
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t0/endpoint/s1",
+   "kind": "grant.held",
+   "rank": 9
+  },
+  {
+   "binding": "graph/req/req_node0>endpoint/t1",
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t1/endpoint/s0",
+   "kind": "grant.held",
+   "rank": 9
+  },
+  {
+   "binding": "graph/req/req_node0>endpoint/t1",
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t1/endpoint/s1",
+   "kind": "grant.held",
+   "rank": 9
+  },
+  {
+   "binding": "graph/rsp/rsp_node0>endpoint/s0",
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s0/endpoint/t0",
+   "kind": "grant.held",
+   "rank": 4
+  },
+  {
+   "binding": "graph/rsp/rsp_node0>endpoint/s0",
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s0/endpoint/t1",
+   "kind": "grant.held",
+   "rank": 4
+  },
+  {
+   "binding": "graph/rsp/rsp_node0>endpoint/s1",
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s1/endpoint/t0",
+   "kind": "grant.held",
+   "rank": 4
+  },
+  {
+   "binding": "graph/rsp/rsp_node0>endpoint/s1",
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s1/endpoint/t1",
+   "kind": "grant.held",
+   "rank": 4
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t0/endpoint/s0",
+   "kind": "grant.other",
+   "rank": 11
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t0/endpoint/s1",
+   "kind": "grant.other",
+   "rank": 11
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t1/endpoint/s0",
+   "kind": "grant.other",
+   "rank": 11
+  },
+  {
+   "component": "req/req_node0",
+   "domain": "main",
+   "key": "req/req_node0>t1/endpoint/s1",
+   "kind": "grant.other",
+   "rank": 11
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s0/endpoint/t0",
+   "kind": "grant.other",
+   "rank": 6
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s0/endpoint/t1",
+   "kind": "grant.other",
+   "rank": 6
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s1/endpoint/t0",
+   "kind": "grant.other",
+   "rank": 6
+  },
+  {
+   "component": "rsp/rsp_node0",
+   "domain": "main",
+   "key": "rsp/rsp_node0>s1/endpoint/t1",
+   "kind": "grant.other",
+   "rank": 6
+  },
+  {
+   "binding": "adapter/req/s0>req_node0/0",
+   "component": "req/main",
+   "domain": "main",
+   "key": "adapter/req/s0>req_node0/0",
+   "kind": "occupancy.adapter",
+   "rank": 12
+  },
+  {
+   "binding": "adapter/req/s1>req_node0/0",
+   "component": "req/main",
+   "domain": "main",
+   "key": "adapter/req/s1>req_node0/0",
+   "kind": "occupancy.adapter",
+   "rank": 12
+  },
+  {
+   "binding": "adapter/rsp/rsp_node0>s0/link-out/0",
+   "component": "rsp/main",
+   "domain": "main",
+   "key": "adapter/rsp/rsp_node0>s0/link-out/0",
+   "kind": "occupancy.adapter",
+   "rank": 3
+  },
+  {
+   "binding": "adapter/rsp/rsp_node0>s1/link-out/0",
+   "component": "rsp/main",
+   "domain": "main",
+   "key": "adapter/rsp/rsp_node0>s1/link-out/0",
+   "kind": "occupancy.adapter",
+   "rank": 3
+  },
+  {
+   "binding": "source/s0/pipe/ar",
+   "component": "source/s0",
+   "domain": "main",
+   "key": "source/s0/pipe/ar",
+   "kind": "occupancy.endpoint_pipe",
+   "rank": 14
+  },
+  {
+   "binding": "source/s0/pipe/aw",
+   "component": "source/s0",
+   "domain": "main",
+   "key": "source/s0/pipe/aw",
+   "kind": "occupancy.endpoint_pipe",
+   "rank": 14
+  },
+  {
+   "binding": "source/s0/pipe/w",
+   "component": "source/s0",
+   "domain": "main",
+   "key": "source/s0/pipe/w",
+   "kind": "occupancy.endpoint_pipe",
+   "rank": 14
+  },
+  {
+   "binding": "source/s1/pipe/ar",
+   "component": "source/s1",
+   "domain": "main",
+   "key": "source/s1/pipe/ar",
+   "kind": "occupancy.endpoint_pipe",
+   "rank": 14
+  },
+  {
+   "binding": "source/s1/pipe/aw",
+   "component": "source/s1",
+   "domain": "main",
+   "key": "source/s1/pipe/aw",
+   "kind": "occupancy.endpoint_pipe",
+   "rank": 14
+  },
+  {
+   "binding": "source/s1/pipe/w",
+   "component": "source/s1",
+   "domain": "main",
+   "key": "source/s1/pipe/w",
+   "kind": "occupancy.endpoint_pipe",
+   "rank": 14
+  },
+  {
+   "component": "source/s0",
+   "domain": "main",
+   "key": "s0",
+   "kind": "source.merge",
+   "rank": 13
+  },
+  {
+   "component": "source/s1",
+   "domain": "main",
+   "key": "s1",
+   "kind": "source.merge",
+   "rank": 13
+  },
+  {
+   "component": "source/s0",
+   "domain": "main",
+   "key": "s0",
+   "kind": "source.pool",
+   "rank": 9
+  },
+  {
+   "component": "source/s1",
+   "domain": "main",
+   "key": "s1",
+   "kind": "source.pool",
+   "rank": 9
+  },
+  {
+   "component": "source/s0",
+   "domain": "main",
+   "key": "s0",
+   "kind": "source.return",
+   "rank": 8
+  },
+  {
+   "component": "source/s1",
+   "domain": "main",
+   "key": "s1",
+   "kind": "source.return",
+   "rank": 8
+  },
+  {
+   "component": "source/s0",
+   "domain": "main",
+   "key": "s0",
+   "kind": "source.staging",
+   "rank": 1
+  },
+  {
+   "component": "source/s1",
+   "domain": "main",
+   "key": "s1",
+   "kind": "source.staging",
+   "rank": 1
+  },
+  {
+   "component": "target/t0",
+   "domain": "main",
+   "key": "t0/s0",
+   "kind": "target.head",
+   "rank": 7
+  },
+  {
+   "component": "target/t0",
+   "domain": "main",
+   "key": "t0/s1",
+   "kind": "target.head",
+   "rank": 7
+  },
+  {
+   "component": "target/t1",
+   "domain": "main",
+   "key": "t1/s0",
+   "kind": "target.head",
+   "rank": 7
+  },
+  {
+   "component": "target/t1",
+   "domain": "main",
+   "key": "t1/s1",
+   "kind": "target.head",
+   "rank": 7
+  },
+  {
+   "component": "target/t0",
+   "domain": "main",
+   "key": "t0",
+   "kind": "target.pool",
+   "rank": 8
+  },
+  {
+   "component": "target/t1",
+   "domain": "main",
+   "key": "t1",
+   "kind": "target.pool",
+   "rank": 8
+  }
+ ],
+ "orientation": "blocker_to_blocked",
+ "result": {
+  "cycle_sets": 0,
+  "findings": [],
+  "status": "no_cycle"
+ },
+ "rules": [
+  {
+   "id": "S1",
+   "level": "endpoint",
+   "name": "target.blocks_source"
+  },
+  {
+   "id": "S2",
+   "level": "endpoint",
+   "name": "response.blocks_accept"
+  },
+  {
+   "id": "S3",
+   "level": "endpoint",
+   "name": "target.blocks_return"
+  },
+  {
+   "id": "S4",
+   "level": "endpoint",
+   "name": "request.path"
+  },
+  {
+   "id": "S5",
+   "level": "endpoint",
+   "name": "response.path"
+  },
+  {
+   "id": "S6",
+   "level": "endpoint",
+   "name": "external"
+  },
+  {
+   "id": "M1",
+   "level": "micro",
+   "name": "grant.contention"
+  },
+  {
+   "id": "M2",
+   "level": "micro",
+   "name": "grant.downstream"
+  },
+  {
+   "id": "M3",
+   "level": "micro",
+   "name": "grant.continuation"
+  },
+  {
+   "id": "M4",
+   "level": "micro",
+   "name": "target.queue_order"
+  },
+  {
+   "id": "M6",
+   "level": "micro",
+   "name": "target.pool"
+  },
+  {
+   "id": "M7",
+   "level": "micro",
+   "name": "source.write_data"
+  },
+  {
+   "id": "M8",
+   "level": "micro",
+   "name": "source.unit"
+  },
+  {
+   "id": "M11",
+   "level": "micro",
+   "name": "source.return"
+  },
+  {
+   "id": "M14",
+   "level": "micro",
+   "name": "merge.order"
+  },
+  {
+   "id": "M15",
+   "level": "micro",
+   "name": "stage.occupancy"
+  },
+  {
+   "id": "M16",
+   "level": "micro",
+   "name": "environment"
+  },
+  {
+   "id": "E0",
+   "level": "micro",
+   "name": "escape"
+  }
+ ]
+}
