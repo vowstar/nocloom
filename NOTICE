@@ -1,0 +1,12 @@
+NocLoom
+Copyright 2026 Huang Rui and NocLoom contributors
+
+NocLoom is distributed under the Apache License, Version 2.0. See LICENSE.
+The content that NocLoom supplies in the output files has the permission in
+LICENSES/LicenseRef-NocLoom-Output-1.0.txt.
+Dependency attribution and package contents are described in docs/attribution.md.
+Dependency license texts are in third_party/licenses.
+
+Arm and AMBA are registered trademarks of Arm Limited (or its subsidiaries
+or affiliates) in the US and/or elsewhere. These names identify protocols.
+NocLoom does not claim Arm certification or endorsement.
