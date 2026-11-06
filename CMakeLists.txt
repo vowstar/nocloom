@@ -82,9 +82,17 @@ foreach(target IN ITEMS nocloom_core nocloom_config nocloom_io nocloom_cli noclo
     endif()
   endif()
 endforeach()
+install(FILES LICENSE NOTICE DESTINATION ${CMAKE_INSTALL_DATADIR}/nocloom)
+install(FILES docs/attribution.md DESTINATION ${CMAKE_INSTALL_DATADIR}/nocloom/docs)
+install(FILES third_party/licenses/nlohmann_json.txt third_party/licenses/Catch2.txt
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/nocloom/third_party/licenses)
 if(NOCLOOM_BUILD_CONFIG)
+  install(FILES third_party/licenses/yaml-cpp.txt
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/nocloom/third_party/licenses)
 endif()
 if(NOCLOOM_BUILD_CLI)
+  install(FILES third_party/licenses/CLI11.txt
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/nocloom/third_party/licenses)
 endif()
 install(DIRECTORY include/nocloom DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 configure_package_config_file(cmake/nocloomConfig.cmake.in
