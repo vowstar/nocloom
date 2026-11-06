@@ -43,7 +43,7 @@ Status verify_axi4_exchange_obligations(const NetworkPlan &plan, bool clocked = 
 // {source, AxID}). AXI4-Lite targets keep up to 256 packets per direction. Bounded packets use
 // independent target slots; the source packetizer retains original-burst boundaries. Each source
 // keeps at most four counted packets in flight per direction: the bursts that it splits, folds or
-// packs from several beats share that count. Per-target
+// packs from several beats share that count (docs/packets.md). Per-target
 // merges retain K packet contexts per direction; B restores the oldest matching key and R holds
 // its FIFO head through the last upstream beat.
 // A multi-burst source decodes at most 256 routing windows (validation.cpp). Clocked graphs carry
