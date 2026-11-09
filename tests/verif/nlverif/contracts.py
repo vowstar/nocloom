@@ -12,6 +12,11 @@ OKAY, EXOKAY, SLVERR, DECERR = 0, 1, 2, 3
 SEVERITY = {OKAY: 0, EXOKAY: 0, SLVERR: 1, DECERR: 2}
 
 CONTRACTS = {
+    "FABRIC.ERR.DECODE_MISS": dict(
+        text="A decode miss preserves transaction framing, identity and response order, returns "
+             "zero read data, and makes no target access. AXI returns DECERR by default and "
+             "SLVERR with slverr_only. APB and AHB report their protocol errors",
+        source="docs/address-map.md#decode-misses"),
     "AXI.ROUTE.LOCAL_OFFSET": dict(
         text="A target receives the source address minus its window base, once",
         source="map contract address_transform=target_local_byte_offset_once"),

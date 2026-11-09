@@ -71,6 +71,17 @@ nocloom_verif_case(NAME verif_rw_merge_negative LAYER negative TIER focused TIME
 # with the named code, artifact set, determinism across working directories).
 set(NLV_CONFIG ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/config.py
   --cli $<TARGET_FILE:nocloom_cli>)
+if(UNIX)
+  nocloom_verif_case(NAME address_selectors_scale LAYER config TIER focused TIMEOUT 50
+    FEATURES ci MEMORY_MB 512
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/address_selectors.py
+      --cli $<TARGET_FILE:nocloom_cli>)
+  nocloom_verif_case(NAME address_selectors_decode LAYER unit TIER focused TIMEOUT 60
+    FEATURES ci MEMORY_MB 512 CONTRACTS APB.TARGET.ACCESS AXI.ROUTE.MODE
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/address_selectors.py
+      --cli $<TARGET_FILE:nocloom_cli> --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_address_selectors_tb.sv)
+endif()
+
 nocloom_verif_case(NAME verif_config LAYER config TIER quick TIMEOUT 600 FEATURES config
   MEMORY_MB 512
   COMMAND ${NLV_CONFIG} --case ${NLV_CASES}/config_axi4.py --case ${NLV_CASES}/config_widths.py
@@ -576,6 +587,20 @@ foreach(bits IN ITEMS 32 64 128 256 512 1024)
     COMMAND ${NLV_RUN} --case ${NLV_CASES}/ahb_outlet.py --param data_bits=${bits} ${NLV_FIXTURE}
       --negative)
 endforeach()
+# All 4-byte masks and seeded 8- and 16-byte masks with readback.
+foreach(bits IN ITEMS 32 64 128)
+  set(mask_layer rtl)
+  set(mask_args "")
+  if(bits EQUAL 32)
+    set(mask_layer negative)
+    set(mask_args --negative)
+  endif()
+  nocloom_verif_case(NAME verif_ahb_write_masks_${bits} LAYER ${mask_layer} TIER focused
+    TIMEOUT 45 FEATURES ahb outlet MEMORY_MB 1024 CONTRACTS APB.TARGET.ACCESS
+    COMMAND ${NLV_RUN} --case ${NLV_CASES}/ahb_write_masks.py --param data_bits=${bits}
+      ${NLV_FIXTURE} ${mask_args})
+  set_property(TEST verif_ahb_write_masks_${bits} APPEND PROPERTY LABELS ci)
+endforeach()
 # Wide AHB targets in an explicit graph through the CLI (64 and 256 bits): a
 # source of the target width, one twice as wide and a 32-bit one merged; the
 # same networks with an idle 1024-bit target that makes every source cut its
@@ -591,8 +616,8 @@ nocloom_verif_case(NAME verif_ahb_overlap_negative LAYER negative TIER focused T
   FEATURES ahb outlet MEMORY_MB 3072 CONTRACTS AXI.ID.RETURN APB.TARGET.ACCESS
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/ahb_overlap.py ${NLV_FIXTURE} --negative)
 
-# The service target on the network (not reachable from a configuration yet): the unmodified
-# netlist against the bench, then each designated fault against the check that names it.
+# The service target on the network: the unmodified netlist against the bench,
+# then each designated fault against the check that names it.
 nocloom_verif_case(NAME verif_error_logger LAYER unit TIER focused TIMEOUT 600 FEATURES verif
   MEMORY_MB 1024
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/error_logger.py ${NLV_FIXTURE}
@@ -605,9 +630,64 @@ nocloom_verif_case(NAME verif_service_target LAYER unit TIER focused TIMEOUT 600
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/service_target.py ${NLV_FIXTURE}
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_service_tb.sv)
 
-# Register banks at their serial port (not reachable from a configuration yet): the unmodified
-# netlist against the bench, then each designated fault against the check that names it.
+nocloom_verif_case(NAME log_clock_binding LAYER unit TIER focused TIMEOUT 45
+  FEATURES cdc ci MEMORY_MB 512
+  COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/log_clock.py
+    --cli $<TARGET_FILE:nocloom_cli>
+    --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_log_clock_tb.sv)
+nocloom_verif_case(NAME log_related_clocks LAYER unit TIER focused TIMEOUT 45
+  FEATURES cdc ci MEMORY_MB 512
+  COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/log_clock.py
+    --cli $<TARGET_FILE:nocloom_cli> --related
+    --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_log_clock_tb.sv)
+nocloom_verif_case(NAME log_related_reset LAYER unit TIER focused TIMEOUT 45
+  FEATURES cdc ci MEMORY_MB 512
+  COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/log_clock.py
+    --cli $<TARGET_FILE:nocloom_cli> --split-reset
+    --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_log_clock_tb.sv)
+nocloom_verif_case(NAME log_related_overflow LAYER unit TIER focused TIMEOUT 20
+  FEATURES cdc ci MEMORY_MB 512
+  COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/log_clock.py
+    --cli $<TARGET_FILE:nocloom_cli> --wait-overflow
+    --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_log_clock_tb.sv)
+
+nocloom_verif_case(NAME log_bank_atomic LAYER unit TIER focused TIMEOUT 30 FEATURES verif ci
+  MEMORY_MB 512
+  COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/log_bank_atomic.py
+    --cli $<TARGET_FILE:nocloom_cli>
+    --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_log_bank_atomic_tb.sv)
+
+# Register banks at their serial port: the unmodified netlist against the bench,
+# then each designated fault against the check that names it.
 nocloom_verif_case(NAME verif_register_bank LAYER unit TIER focused TIMEOUT 300 FEATURES verif
   MEMORY_MB 512
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/register_bank.py ${NLV_FIXTURE}
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_register_bank_tb.sv)
+
+# Chains of 9, 16, 17 and 32 register banks at the serial port, a register stage after every
+# eighth bank, random accesses while the answer stalls at random: the unmodified netlist against
+# the bench, the same netlist without stalls against the stall checks, then each designated fault
+# on each stage against the checks of that stage that name it.
+nocloom_verif_case(NAME verif_register_chain LAYER unit TIER focused TIMEOUT 300 FEATURES verif
+  MEMORY_MB 512
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/register_chain.py ${NLV_FIXTURE}
+    --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_register_chain_tb.sv)
+
+# The outlet of a register window at its faces, three banks behind it, words of four sources one
+# under way at a time as the network admits them, both response faces stalled at random: the
+# unmodified netlist against the bench, the same netlist without stalls against the stall checks,
+# the same netlist with a word offered while another is under way against the check of the
+# admission, then each designated fault of the outlet against the check that names it.
+nocloom_verif_case(NAME verif_service_outlet LAYER unit TIER focused TIMEOUT 300 FEATURES verif
+  MEMORY_MB 512
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/service_outlet.py ${NLV_FIXTURE}
+    --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_service_outlet_tb.sv)
+
+foreach(protocol IN ITEMS axi4 axi3 axi4_lite apb4 logged axi4_folded axi4_compact)
+  nocloom_verif_case(NAME verif_initiator_error_responses_${protocol} LAYER negative TIER focused
+    TIMEOUT 60 FEATURES errors MEMORY_MB 1024
+    CONTRACTS FABRIC.ERR.DECODE_MISS
+    COMMAND ${NLV_RUN} --case ${NLV_CASES}/initiator_error_responses.py
+      --param protocol=${protocol} --cli $<TARGET_FILE:nocloom_cli> --negative)
+  set_property(TEST verif_initiator_error_responses_${protocol} APPEND PROPERTY LABELS ci)
+endforeach()
