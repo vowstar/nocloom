@@ -83,6 +83,7 @@ foreach(target IN ITEMS nocloom_core nocloom_config nocloom_io nocloom_cli noclo
   endif()
 endforeach()
 install(FILES LICENSE NOTICE DESTINATION ${CMAKE_INSTALL_DATADIR}/nocloom)
+install(DIRECTORY LICENSES DESTINATION ${CMAKE_INSTALL_DATADIR}/nocloom)
 install(FILES docs/attribution.md DESTINATION ${CMAKE_INSTALL_DATADIR}/nocloom/docs)
 install(FILES third_party/licenses/nlohmann_json.txt third_party/licenses/Catch2.txt
   DESTINATION ${CMAKE_INSTALL_DATADIR}/nocloom/third_party/licenses)
