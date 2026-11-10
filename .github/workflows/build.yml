@@ -1,0 +1,131 @@
+name: Build
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+# A newer push to a pull request cancels its running checks. A push to main
+# gets a group of its own, so it is never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  # Ubuntu 24.04 packages. A build with tests requires every tool: configure
+  # fails when one is missing.
+  PACKAGES: >-
+    catch2 clang clang-format cmake cppcheck g++ iverilog libcli11-dev
+    libyaml-cpp-dev make ninja-build nlohmann-json3-dev python3 verilator yosys
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - name: Markdown
+      uses: DavidAnson/markdownlint-cli2-action@696eb3f2509270d7b882d2aa68347bc676e7af34 # v25.0.0
+      with:
+        config: .markdownlint.yaml
+        globs: |
+          README.md
+          docs/**/*.md
+          .github/**/*.md
+    # The distribution's clang-format 18 breaks some lines differently, so the
+    # check runs the version the project is developed with.
+    - name: Format
+      run: |
+        git ls-files 'include/*.hpp' 'src/*.hpp' 'src/*.cpp' 'cli/*.cpp' \
+          'tests/*.cpp' 'examples/*.cpp' > "$RUNNER_TEMP/sources.txt"
+        test -s "$RUNNER_TEMP/sources.txt"
+        pipx run --spec clang-format==23.1.5 clang-format --version
+        xargs pipx run --spec clang-format==23.1.5 clang-format \
+          --dry-run -Werror < "$RUNNER_TEMP/sources.txt"
+
+  # The full regression needs a many-core server. This job runs the sample
+  # labelled ci in tests/CMakeLists.txt: the unit and quick tests, and RTL
+  # simulation, structure and install cases of every protocol family.
+  test:
+    name: test (${{ matrix.compiler }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - compiler: gcc
+          cxx: g++
+        - compiler: clang
+          cxx: clang++
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends $PACKAGES
+    - name: Tool versions
+      run: |
+        ${{ matrix.cxx }} --version
+        cmake --version
+        iverilog -V | head -n 1
+        yosys -V
+        verilator --version
+    - name: Configure
+      run: cmake -S . -B build -G Ninja -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
+    - name: Build
+      run: cmake --build build
+    # A skipped or not run test is a failure here: the tools are installed.
+    - name: Test
+      run: |
+        set -o pipefail
+        ctest --test-dir build -L '^ci$' -j 4 --no-tests=error \
+          --output-on-failure 2>&1 | tee "$RUNNER_TEMP/ctest.log"
+        if grep -E '\*\*\*(Skipped|Not Run)' "$RUNNER_TEMP/ctest.log"; then
+          echo "::error::a test of the sample did not run"
+          exit 1
+        fi
+
+  # The distribution's cppcheck 2.13 reports findings that 2.21 does not, so
+  # the job builds the version the project is developed with. That one comes
+  # first on PATH.
+  cppcheck:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends $PACKAGES
+    - name: Install cppcheck
+      run: |
+        archive="$RUNNER_TEMP/cppcheck.tar.gz"
+        curl --fail --location --retry 3 \
+          https://github.com/cppcheck-opensource/cppcheck/archive/refs/tags/2.21.0.tar.gz \
+          --output "$archive"
+        echo "f028ff75ca5372738f3737c8b3e8611426a6526b6aea2ef01301ab0f5902f044  $archive" |
+          sha256sum --check
+        tar -xzf "$archive" -C "$RUNNER_TEMP"
+        cmake -S "$RUNNER_TEMP/cppcheck-2.21.0" -B "$RUNNER_TEMP/cppcheck-build" -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release -DUSE_MATCHCOMPILER=ON \
+          -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/cppcheck"
+        cmake --build "$RUNNER_TEMP/cppcheck-build"
+        cmake --install "$RUNNER_TEMP/cppcheck-build"
+        echo "$RUNNER_TEMP/cppcheck/bin" >> "$GITHUB_PATH"
+    - name: Configure
+      run: cmake -S . -B build -G Ninja
+    - name: Static analysis
+      run: |
+        cppcheck --version
+        cmake --build build --target cppcheck
