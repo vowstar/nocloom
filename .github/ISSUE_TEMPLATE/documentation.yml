@@ -1,0 +1,29 @@
+name: Documentation Issue
+description: Report a fault or a gap in the documentation
+title: "[Docs] "
+labels: ["documentation"]
+assignees: []
+
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What is the issue?
+      description: What is wrong, missing or unclear?
+      placeholder: The documentation for X is unclear because...
+    validations:
+      required: true
+
+  - type: input
+    id: location
+    attributes:
+      label: Where?
+      description: Which file or section?
+      placeholder: README.md, docs/network.md, or the help text of `nocloom generate`
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: How can we improve it?
+      description: The text or the change that you propose.
+      placeholder: It is clearer if...

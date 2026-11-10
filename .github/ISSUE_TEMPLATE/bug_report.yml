@@ -1,0 +1,62 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+title: "[Bug] "
+labels: ["bug"]
+assignees: []
+
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: What went wrong, and what you expected instead.
+      placeholder: Describe the bug...
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce
+      description: The failing command and its output, with the diagnostic code if there is one.
+      placeholder: |
+        nocloom generate soc_fabric.yaml --out-dir out
+        soc_fabric.yaml:8:47: NCL_UNSUPPORTED_PROTOCOL [initiators[0].protocol]: ...
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: definition
+    attributes:
+      label: Definition file
+      description: >-
+        The YAML definition, or the smallest part of it that shows the problem.
+        Do not paste confidential address maps or names. Replace them with
+        synthetic values first.
+      render: yaml
+
+  - type: input
+    id: version
+    attributes:
+      label: NocLoom version
+      description: The output of `nocloom --version`, or the commit you built.
+      placeholder: 0.1.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, compiler and the tool that reads the output files.
+      placeholder: |
+        OS: Ubuntu 24.04
+        Compiler: GCC 13
+        Simulator or synthesis tool: Verilator 5.030
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional information
+      description: Anything else that helps, for example logs or waveforms.
