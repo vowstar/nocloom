@@ -1,0 +1,3 @@
+# The pull request template has no title heading.
+extends: ../.markdownlint.yaml
+MD041: false
