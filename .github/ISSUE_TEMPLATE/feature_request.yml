@@ -1,0 +1,31 @@
+name: Feature Request
+description: Suggest a new feature
+title: "[Feature] "
+labels: ["enhancement"]
+assignees: []
+
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Which feature do you want?
+      description: The behavior that you want from NocLoom.
+      placeholder: I want...
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Why do you need this?
+      description: The network or design flow that needs it.
+      placeholder: This helps me...
+    validations:
+      required: true
+
+  - type: textarea
+    id: example
+    attributes:
+      label: Example usage
+      description: The YAML fields or the command that you want to write.
+      render: yaml
