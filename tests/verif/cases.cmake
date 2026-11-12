@@ -593,3 +593,21 @@ nocloom_verif_case(NAME verif_register_bank LAYER unit TIER focused TIMEOUT 300 
   MEMORY_MB 512
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/register_bank.py ${NLV_FIXTURE}
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_register_bank_tb.sv)
+
+
+nocloom_verif_case(NAME mesh_topology_structure LAYER unit TIER quick TIMEOUT 120
+  FEATURES topology MEMORY_MB 1024
+  COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/run_mesh_topology.py
+    --unit $<TARGET_FILE:nocloom_mesh_topology_unit>)
+if(TARGET nocloom_mesh_example)
+  nocloom_verif_case(NAME mesh_topology_example LAYER structure TIER quick TIMEOUT 120
+    FEATURES topology MEMORY_MB 1024
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/run_mesh_topology.py
+      --example $<TARGET_FILE:nocloom_mesh_example> --cli $<TARGET_FILE:nocloom_cli>)
+  nocloom_verif_case(NAME mesh_topology_transactions LAYER rtl TIER focused TIMEOUT 600
+    FEATURES topology axi4 MEMORY_MB 4096 PROCESSORS 4
+    CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.W.UNSTROBED_ZERO
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/run_mesh_topology.py
+      --example $<TARGET_FILE:nocloom_mesh_example> --cli $<TARGET_FILE:nocloom_cli> --transactions
+      --case ${NLV_CASES}/mesh_topology.py)
+endif()

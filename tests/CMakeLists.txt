@@ -627,6 +627,11 @@ add_test(NAME conversion_configuration
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/conversion_configuration)
 set_tests_properties(conversion_configuration PROPERTIES TIMEOUT 180 LABELS "unit;quick")
 
+add_executable(nocloom_mesh_topology_unit unit/mesh_topology.cpp)
+target_include_directories(nocloom_mesh_topology_unit PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(nocloom_mesh_topology_unit PRIVATE nocloom_core Catch2::Catch2WithMain)
+target_compile_options(nocloom_mesh_topology_unit PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>)
+
 add_executable(nocloom_tree_topology_unit unit/tree_topology.cpp)
 target_include_directories(nocloom_tree_topology_unit PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(nocloom_tree_topology_unit PRIVATE nocloom_core Catch2::Catch2WithMain)
@@ -747,7 +752,7 @@ set(NOCLOOM_CI_CASES cli install verif_examples
   async_fifo_ratios related_clock_transactions graph_clocked_installed_endpoints)
 # Two cases are registered on a condition.
 if(TARGET nocloom_api_example)
-  list(APPEND NOCLOOM_CI_CASES api_example)
+  list(APPEND NOCLOOM_CI_CASES api_example mesh_topology_transactions)
 endif()
 if(NOCLOOM_DETERMINISM_COMPILERS)
   list(APPEND NOCLOOM_CI_CASES verif_determinism_compilers)
