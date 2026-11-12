@@ -78,6 +78,22 @@ TEST_CASE("A service outlet carries its target mapping", "[service]") {
   CHECK(lower_service_outlet(profile));
 }
 
+TEST_CASE("A service window retains every bank address bit", "[service]") {
+  auto d = definition();
+  const auto size = GENERATE(0x3000U, 0x5000U, 0x8000U);
+  const auto local = GENERATE(0U, 0x1000U);
+  d.targets.back().mappings = {{size * 257ULL, size, local}};
+  d.targets.back().log_registers = true;
+  d.error_logging.logs = {
+      {"errors", {"ram"}, std::nullopt, false, {{.offset = local}, {.offset = size - 256}}}};
+  const auto plan = build_network_plan(d);
+  REQUIRE(plan);
+  const auto profile = service_outlet_profile(plan.value(), plan.value().target_index("service"));
+  CHECK(profile.window_bits == (size == 0x3000 ? 14 : 15));
+  CHECK(profile.places.back().base == size - 256);
+  CHECK(lower_service_outlet(profile));
+}
+
 TEST_CASE("A service target serves one packet from APB4 sources", "[service]") {
   auto cases = logger();
   SECTION("an unknown name") {

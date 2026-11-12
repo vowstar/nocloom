@@ -120,7 +120,7 @@ def main():
     work = Path(tempfile.mkdtemp(prefix="run-", dir=args.work))
     print(f"Work directory: {work}", flush=True)
     results = []
-    for size in (0x4000,):
+    for size in (0x3000,):
         for shift, local in ((0, 0), (size, 0), (size, 0x1000)):
             base = size * 256 + shift
             banks = [local, 0x1800 if local else 0x1000, 0x2000, size - 0x100]
