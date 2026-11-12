@@ -683,6 +683,24 @@ nocloom_verif_case(NAME verif_service_outlet LAYER unit TIER focused TIMEOUT 300
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/service_outlet.py ${NLV_FIXTURE}
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_service_outlet_tb.sv)
 
+
+nocloom_verif_case(NAME mesh_topology_structure LAYER unit TIER quick TIMEOUT 120
+  FEATURES topology MEMORY_MB 1024
+  COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/run_mesh_topology.py
+    --unit $<TARGET_FILE:nocloom_mesh_topology_unit>)
+if(TARGET nocloom_mesh_example)
+  nocloom_verif_case(NAME mesh_topology_example LAYER structure TIER quick TIMEOUT 120
+    FEATURES topology MEMORY_MB 1024
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/run_mesh_topology.py
+      --example $<TARGET_FILE:nocloom_mesh_example> --cli $<TARGET_FILE:nocloom_cli>)
+  nocloom_verif_case(NAME mesh_topology_transactions LAYER rtl TIER focused TIMEOUT 600
+    FEATURES topology axi4 MEMORY_MB 4096 PROCESSORS 4
+    CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.W.UNSTROBED_ZERO
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/run_mesh_topology.py
+      --example $<TARGET_FILE:nocloom_mesh_example> --cli $<TARGET_FILE:nocloom_cli> --transactions
+      --case ${NLV_CASES}/mesh_topology.py)
+endif()
+
 foreach(protocol IN ITEMS axi4 axi3 axi4_lite apb4 logged axi4_folded axi4_compact)
   nocloom_verif_case(NAME verif_initiator_error_responses_${protocol} LAYER negative TIER focused
     TIMEOUT 60 FEATURES errors MEMORY_MB 1024
