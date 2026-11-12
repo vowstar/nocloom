@@ -4,6 +4,9 @@ Requests and responses travel through separate directed graphs. Without
 `topology`, NocLoom generates one switch per direction from connectivity. With
 `topology`, you declare the physical graphs and their endpoint attachments.
 
+The C++ [mesh helper](library.md#mesh-topology-helper) builds these graphs and
+explicit X-then-Y routes from grid dimensions and endpoint coordinates.
+
 Related manuals: [Arbitration](arbitration.md), [Pipes](pipes.md).
 
 ## Connectivity
