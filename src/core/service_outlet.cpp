@@ -1,6 +1,7 @@
 #include "service_outlet.hpp"
 #include "diagnostic.hpp"
 #include "logic.hpp"
+#include "mapping_decode.hpp"
 #include "message.hpp"
 #include <algorithm>
 #include <array>
@@ -48,10 +49,13 @@ Result<NodeHardware> lower_service_outlet(const ServiceOutletProfile &p) {
   const auto offered = l.active(l.either(writing, r.at("valid")));
   const auto address = l.pick(writing, w.at("address"), r.at("address"));
   const auto miss = l.bind("bus.miss", l.pick(writing, w.at("error"), r.at("error")));
-  const auto offset = l.fit(b.slice(address, 0, p.window_bits), 20);
+  const auto offset = p.mapping.local_address
+                          ? mapping_decode::local(l, address, p.transport_address_bits, {p.mapping})
+                          : l.fit(b.slice(address, 0, p.window_bits), 20);
   // The bank a word is for, with several: its key and its offset in it.
   std::vector<ValueId> hits;
-  const auto offset_bank = b.slice(offset, p.bank_bits, 20 - p.bank_bits);
+  const auto offset_bits = p.mapping.local_address ? p.transport_address_bits : 20;
+  const auto offset_bank = b.slice(offset, p.bank_bits, offset_bits - p.bank_bits);
   std::ranges::transform(p.places, std::back_inserter(hits),
                          [&](const ServiceOutletProfile::Place &at) {
                            return l.eq(offset_bank, at.base >> p.bank_bits);

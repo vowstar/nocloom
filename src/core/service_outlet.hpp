@@ -27,6 +27,7 @@ struct ServiceOutletProfile {
   // Offset bits of the target's window (at most 20) and of the bank in it.
   unsigned window_bits = 20, bank_bits = 8;
   unsigned route = 0; // the bank's key
+  AddressMapping mapping{};
   // Several banks: where each sits and its branch of the service switch. The window's bank bits
   // choose; an address of no bank goes out on branch 0.
   struct Place {

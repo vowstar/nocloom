@@ -589,6 +589,17 @@ add_test(NAME arbitration_config COMMAND nocloom_unit "[arbitration-config]")
 set_tests_properties(arbitration_config PROPERTIES TIMEOUT 120 LABELS "unit;config;arbiter")
 target_sources(nocloom_unit PRIVATE unit/register_bank.cpp unit/service_target.cpp
   unit/fault_monitor.cpp)
+add_executable(nocloom_register_window_definition register_window_definition.cpp)
+target_link_libraries(nocloom_register_window_definition PRIVATE nocloom_core)
+target_compile_options(nocloom_register_window_definition PRIVATE
+  $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>)
+add_test(NAME register_window_transactions
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/register_window.py
+    --fixture $<TARGET_FILE:nocloom_register_window_definition>
+    --work ${CMAKE_CURRENT_BINARY_DIR}/register_window)
+set_tests_properties(register_window_transactions PROPERTIES TIMEOUT 180
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} LABELS "rtl;focused;ci" PROCESSORS 1
+  RESOURCE_LOCK register_window_simulation)
 add_test(NAME register_bank_plan COMMAND nocloom_unit "[register-bank]")
 set_tests_properties(register_bank_plan PROPERTIES TIMEOUT 120 LABELS "unit;focused")
 add_test(NAME service_target_plan COMMAND nocloom_unit "[service]")

@@ -5,6 +5,7 @@
 #include "core/register_bank.hpp"
 #include "nocloom/config.hpp"
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <sstream>
 
 using namespace nocloom;
@@ -54,6 +55,27 @@ TEST_CASE("A service target takes the numbers an APB4 target of its shape takes"
   CHECK(ids.targets.at("service") == 1);
   CHECK(served.value().target("service").service.has_value());
   CHECK_FALSE(plain.value().target("service").service.has_value());
+}
+
+TEST_CASE("A service outlet carries its target mapping", "[service]") {
+  auto d = definition();
+  const auto local = GENERATE(0, 0x1000);
+  d.targets.back().mappings.front().local_address = local;
+  SECTION("an unobstructed mapping") {}
+  SECTION("a smaller target covers the first page") {
+    d.targets.front().mappings = {{0x100000, 0x1000}};
+  }
+  SECTION("smaller targets split the mapping") {
+    d.targets.front().mappings = {{0x100000, 0x1000}, {0x108000, 0x1000}};
+  }
+  auto internal = logger();
+  const auto plan = build_network_plan(d, internal);
+  REQUIRE(plan);
+  const auto &p = plan.value();
+  const auto index = p.target_index("service");
+  const auto profile = service_outlet_profile(p, index);
+  CHECK(profile.mapping == d.targets.back().mappings.front());
+  CHECK(lower_service_outlet(profile));
 }
 
 TEST_CASE("A service target serves one packet from APB4 sources", "[service]") {
