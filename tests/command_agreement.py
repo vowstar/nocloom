@@ -86,6 +86,7 @@ def check(cli, work, name, config, diagnostic=None, flags=()):
 
 OUTPUTS = {
     "--cdc-constraints": (".cdc.sdc", ".cdc_preserve.txt"),
+    "--c-header": (".addresses.h",),
     "--address-table": (".address_table.json", ".address_table.csv"),
     "--ipxact": (".ipxact.xml",),
 }

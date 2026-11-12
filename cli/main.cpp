@@ -31,6 +31,7 @@ int run(int argc, char **argv) {
   bool ipxact = false;
   bool address_table = false;
   bool cdc_constraints = false;
+  bool c_header = false;
   auto *validate = app.add_subcommand("validate", "Validate an interconnect definition");
   validate->add_option("input", input, "YAML definition")->required();
   auto *generate = app.add_subcommand("generate", "Generate Verilog-2001 and metadata");
@@ -43,6 +44,8 @@ int run(int argc, char **argv) {
                       "Request each initiator's address windows as JSON and CSV");
     command->add_flag("--cdc-constraints", cdc_constraints,
                       "Request CDC timing exceptions and a synthesis preserve list");
+    command->add_flag("--c-header", c_header,
+                      "Request C headers for address windows and error log registers");
   }
   std::string before;
   std::string after;
@@ -86,6 +89,7 @@ int run(int argc, char **argv) {
   const auto &definition = parsed.value();
   auto options = definition.options;
   options.cdc_constraints = cdc_constraints;
+  options.c_header = c_header;
   options.address_table = address_table;
   options.ipxact = ipxact;
   if (*validate) {

@@ -109,7 +109,7 @@ both. A parent CMake project can use `add_subdirectory` and link
 `ArtifactSet` contains `Artifact` values with relative `path` and `text` fields.
 Failed results contain diagnostics without a value.
 
-`GenerationOptions` has three output flags. Each defaults to `false`.
+`GenerationOptions` has four output flags. Each defaults to `false`.
 `validate` runs the same checks as `generate` for the flags you set.
 `generate` and `emit` add the requested artifacts in memory and list them in
 the bundle.
@@ -117,10 +117,12 @@ the bundle.
 | Flag | Artifacts |
 | --- | --- |
 | `cdc_constraints` | [CDC timing constraints and preserve list](timing-constraints.md#cdc-constraints) |
+| `c_header` | C headers for address windows and error log registers |
 | `address_table` | [Address tables](outputs.md#address-table) in JSON and CSV |
 | `ipxact` | [IP-XACT component](outputs.md#ip-xact) with the default component identifier |
 
-Use `add_ipxact` with `IpxactOptions` to set the component
+C headers need no address table output. A macro name conflict produces
+`NCL_C_HEADER_NAME`. Use `add_ipxact` with `IpxactOptions` to set the component
 identifier.
 
 Configuration errors and expected file errors return diagnostics. Allocation

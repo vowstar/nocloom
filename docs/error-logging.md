@@ -54,6 +54,7 @@ crossing bindings.
 | Object | Fields |
 | --- | --- |
 | `error_logging.registers` | `name`, `base`, `size`, `clock_domain` |
+| `error_logging.registers.local_address` | Optional target local byte address at `base`, default zero |
 | `error_logging.audit_flags` | Named request bits recorded with errors |
 | `error_logging.logs` | Log definitions in declaration order |
 | `error_logging.revision` | Optional unquoted decimal integer from 0 to 4294967295 for the revision register |
@@ -141,28 +142,32 @@ each class. If class B has too few positions, the default placement applies.
 The generator gives those addresses in ascending order to banks without
 offsets in declaration order.
 
-The map uses these bank names.
-
 | Bank | Name |
 | --- | --- |
 | First logger of the first log | The name of the register window |
 | First logger of a later log | The name of the log |
 | A later logger of a log, with `logger_index` `n` | `<log>_<n>` |
 
-In C++, set `AddressMapping::local_address` to the local byte address at the
-mapping base. Its default is zero.
-The mapped interval must fit the target address width, which is the
+`registers.local_address` is the target local byte address at the mapping base.
+It uses an [address string](address-map.md#target-mappings) and defaults to
+zero. The mapped interval must fit the target address width, which is the
 network address width for the register window. Whole-page mappings require
 4 KiB alignment. A sub-page mapping requires alignment to its size.
 
 Each piece uses `local = global - base + local_address`. Only the mapped interval
 is reachable. Each bank must fit in the window.
+The C headers give offsets from each address window.
 
-The local base leaves bank addresses unchanged. Only the mapped local interval
-is reachable. Each bank must fit in the register window.
+For `base: "0x100000"`, `local_address: "0x1000"` and `offset: "0x1000"`,
+register offset `0x10` is at global address `0x100010`. The C++ field
+`AddressMapping::local_address` has the same checks.
 
-With global base `0x100000`, local base `0x1000`, and bank
-base `0x1000`, register offset `0x10` is at global address `0x100010`.
+| Invalid `local_address` | Diagnostic |
+| --- | --- |
+| Unquoted value or a value other than a single-line string | `NCL_SCHEMA_TYPE` |
+| Invalid address string or an integer above the `uint64_t` range | `NCL_ADDRESS_RANGE` |
+| Misaligned local start | `NCL_ADDRESS_RANGE` |
+| Local start or mapped interval outside the target address width | `NCL_ENDPOINT_ADDRESS_WIDTH` |
 
 ## Filters and forwarding
 

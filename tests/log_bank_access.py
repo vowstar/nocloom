@@ -3,7 +3,8 @@
 One APB4 initiator reads and writes the registers of every bank, makes records by failed accesses
 to the watched targets, clears them, and reads addresses outside every bank and outside every
 mapping. The expected values come from the definition and from the table in log_bank_layout.py;
-the generated map must state the same before a simulation runs.
+the generated map and the C header must state the same before a simulation runs, and the header
+words are read once more at the addresses and with the values the C header gives.
 
   python3 tests/log_bank_access.py --cli CLI --work DIR [--case NAME ...]
 """
@@ -218,7 +219,7 @@ class Run:
         root.mkdir(parents=True, exist_ok=True)
         source = root / (name + ".yaml")
         source.write_text(text)
-        subprocess.run([cli, "generate", str(source), "--out-dir", str(self.folder)],
+        subprocess.run([cli, "generate", str(source), "--out-dir", str(self.folder), "--c-header"],
                        check=True, timeout=300, stdout=subprocess.DEVNULL)
         self.top, self.banks, self.clocks, self.wait = "nocloom_" + name, banks, clocks, wait
         self.classes = classes
@@ -567,7 +568,9 @@ class Run:
 
 def full(run, beats=False, records=True):
     run.check_map()
+    run.check_c_header()
     run.headers()
+    run.by_c_header()
     run.controls()
     if beats:
         run.latency()

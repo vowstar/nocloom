@@ -82,7 +82,7 @@ def generate(cli, root, config, *, budget=False):
     root.mkdir()
     (root / "network.yaml").write_text(json.dumps(config))
     run = subprocess.run([str(cli), "generate", "network.yaml", "--out-dir", "gen",
-                          "--address-table", "--ipxact"],
+                          "--address-table", "--c-header", "--ipxact"],
                          cwd=root, capture_output=True, text=True, timeout=15,
                          preexec_fn=memory_limit if budget else None)
     (root / "generation.log").write_text(run.stdout + run.stderr)
@@ -109,7 +109,7 @@ def scale(cli, work):
                                        width=5, possible=True, exact=True)
         assert len(data["network"]["address_selectors"]) == count
         files = [next(artifacts.glob(suffix)) for suffix in
-                 ("*.address_table.csv", "*.ipxact.xml")]
+                 ("*.address_table.csv", "*.cpu.addresses.h", "*.ipxact.xml")]
         for path in files:
             assert f"sel{count - 1:02}" in path.read_text(), path.name
     check_region(cli, work / "independent", definition(32, independent=True),

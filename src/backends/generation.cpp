@@ -1,5 +1,6 @@
 #include "nocloom/generation.hpp"
 #include "backends/address_table.hpp"
+#include "backends/c_header.hpp"
 #include "backends/constraints/cdc_sdc.hpp"
 #include "backends/optional_outputs.hpp"
 #include "core/axi4_output.hpp"
@@ -28,6 +29,7 @@ Status process_optional_outputs(const Definition &definition, const GenerationOp
                                 const nlohmann::json &map, OutputFiles *output) {
   for (const auto &[requested, process] :
        {std::pair{options.cdc_constraints, &process_cdc_constraints},
+        std::pair{options.c_header, &process_c_headers},
         std::pair{options.address_table, &process_address_table}})
     if (requested)
       if (auto status = process(map, output); !status)
@@ -45,7 +47,7 @@ Result<ArtifactSet> emit(const Plan &plan, const GenerationOptions &options) {
     return Result<ArtifactSet>::failure(
         detail::error("NCL_INTERNAL_PLAN", "plan", "Plan has been moved from"));
   const bool extra =
-      options.cdc_constraints || options.address_table || options.ipxact;
+      options.cdc_constraints || options.c_header || options.address_table || options.ipxact;
   nlohmann::json map;
   auto emitted =
       detail::emit_axi4_network(*plan.data_, options.register_reset, extra ? &map : nullptr);
