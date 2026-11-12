@@ -1,6 +1,7 @@
 """CTest integration driver. All generated inputs and logs stay in isolated run directories."""
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,8 @@ parser = argparse.ArgumentParser()
 for argument in ("case", "cli", "source", "build", "work"):
     parser.add_argument("--" + argument, required=True)
 parser.add_argument("--compiler")
+parser.add_argument("--c-compiler")
+parser.add_argument("--definition-generator")
 parser.add_argument("--generator", default="Ninja")
 parser.add_argument("--make-program")
 parser.add_argument("--schema")
@@ -288,6 +291,271 @@ def install():
             expected = {p.name: p.read_bytes() for p in (ROOT / "cli-ipxact").iterdir()}
             actual = {p.name: p.read_bytes() for p in (folder / "ipxact").iterdir()}
             assert actual == expected and len(actual) == 7, "installed IP-XACT mismatch"
+            run([folder / "build/consumer", "apb_simple", folder / "headers",
+                 SOURCE / "examples/apb_simple.yaml", "c-header"])
+            run([moved / "bin/nocloom", "generate", SOURCE / "examples/apb_simple.yaml",
+                 "--c-header", "--out-dir", ROOT / "cli-headers"])
+            expected = {p.name: p.read_bytes() for p in (ROOT / "cli-headers").iterdir()}
+            actual = {p.name: p.read_bytes() for p in (folder / "headers").iterdir()}
+            assert actual == expected and len(actual) == 7, "installed C header mismatch"
+
+
+def c_header():
+    source = ROOT / "wide.yaml"
+    source.write_text(definition(48, [("wide", 0x100000, 0x101000)])
+                      .replace('size: "0x1000"}',
+                               'size: "0x1000", local_address: "0x1000"}, '
+                               '{base: "0x123450000000", size: "0x1000", '
+                               'local_address: "0x2000"}')
+                      .replace("protocol: apb4", "protocol: axi4")
+                      .replace("    data_width: 32\n", "    data_width: 32\n    len_width: 8\n"))
+    run([CLI, "generate", source, "--c-header", "--address-table", "--ipxact",
+         "--out-dir", ROOT / "wide"])
+    folder = ROOT / "wide"
+    header = folder / "nocloom_test_bus.control.addresses.h"
+    log_source = ROOT / "logs.yaml"
+    log_yaml = (definition(32, [("ram", 0, 0x1000)])
+                          .replace("name: control", "name: logger_control") + """
+error_logging:
+  registers: {name: csr, base: '0x100000', size: '0x100000', clock_domain: main}
+  logs:
+    - name: errors
+      watch: [ram]
+      loggers: [{offset: '0x200'}, {offset: '0x500'},
+                {offset: '0x1000'}, {offset: '0xfffc0'}]
+""")
+    log_source.write_text(log_yaml)
+    run([CLI, "generate", log_source, "--c-header", "--out-dir", ROOT / "logs"])
+    for group, offsets in (("local", "[{offset: '0x1000'}]"),
+                           ("cross", "[{offset: '0x1000'}, {offset: '0x1200'}, "
+                            "{offset: '0x2000'}, {offset: '0xfffc0'}]")):
+        local_yaml = re.sub(r"loggers: \[.*?\]", "loggers: " + offsets, log_yaml, flags=re.S)
+        local_yaml = local_yaml.replace("size: '0x100000'", "size: '0x100000', "
+                                       "local_address: '0x1000'")
+        local_source = ROOT / (group + ".yaml")
+        local_source.write_text(local_yaml)
+        run([CLI, "generate", local_source, "--c-header", "--out-dir", ROOT / group])
+    cut_source = ROOT / "cut.yaml"
+    cut_source.write_text(definition(32, [("ram", 0, 0x1000), ("gap", 0x1007d0, 0x1007d8)])
+                          .replace("name: control", "name: logger_control") + """
+error_logging:
+  registers: {name: csr, base: '0x100000', size: '0x100000', local_address: '0x1000',
+              clock_domain: main}
+  revision: 305419896
+  logs:
+    - name: errors
+      watch: [ram]
+      loggers: [{offset: '0x1000'}, {offset: '0x17c0'}, {offset: '0x2000'}]
+""")
+    run([CLI, "generate", cut_source, "--c-header", "--out-dir", ROOT / "cut"])
+    window = "NOCLOOM_TEST_BUS_LOGGER_CONTROL_CSR_WINDOW_0"
+    layout = "NOCLOOM_TEST_BUS_ERROR_LOG"
+    held = layout + "_RECORD_HELD_OFFSET"
+    prelude = """#ifdef __cplusplus
+#define CHECK static_assert
+#else
+#define CHECK _Static_assert
+#endif
+#define PART(word, field) (((word) & field##_MASK) >> field##_SHIFT)
+"""
+    # A register is at the window's base plus the bank's offset plus the field's offset.
+    assertions = f"""#include "nocloom_test_bus.control.addresses.h"
+#include "nocloom_test_bus.control.addresses.h"
+#include "nocloom_test_bus.logger_control.addresses.h"
+#include "nocloom_test_bus.error_logs.h"
+#include "nocloom_test_bus.error_logs.h"
+{prelude}CHECK(NOCLOOM_TEST_BUS_CONTROL_WIDE_WINDOW_0_BASE == 0x100000U, "global base");
+CHECK(NOCLOOM_TEST_BUS_CONTROL_WIDE_WINDOW_0_BASE + 0x10U == 0x100010U, "global word");
+CHECK(NOCLOOM_TEST_BUS_CONTROL_WIDE_WINDOW_0_SIZE == 0x1000U, "size");
+CHECK(NOCLOOM_TEST_BUS_CONTROL_WIDE_WINDOW_1_BASE == 0x123450000000ULL, "wide alias");
+CHECK({layout}_LAYOUT == 0x2U, "layout");
+CHECK({layout}_BANK_BYTES == 0x40U, "bank bytes");
+CHECK({layout}_CLASS_DECODE == 0x1U, "decode class");
+CHECK({layout}_CLASS_TARGET == 0x2U, "target class");
+CHECK({held} == 0x4U, "state word");
+CHECK({window}_CSR_OFFSET + {held} == 0x204U, "first bank");
+CHECK({window}_ERRORS_1_OFFSET + {held} == 0x504U, "second bank");
+CHECK({window}_ERRORS_2_OFFSET + {held} == 0x1004U, "bank above 4 KiB");
+CHECK({window}_ERRORS_3_OFFSET + {held} == 0xfffc4U, "last bank");
+CHECK({window}_BASE + {window}_ERRORS_2_OFFSET + {held} == 0x101004U, "global register");
+CHECK({window}_BASE + {window}_ERRORS_3_OFFSET + {held} == 0x1fffc4U, "last register");
+CHECK({window}_BASE + {window}_ERRORS_3_OFFSET + {layout}_REVISION_OFFSET == 0x1fffdcU,
+      "last revision");
+CHECK({window}_CSR_ID_VALUE == 0x02000008U, "first bank id");
+CHECK({window}_ERRORS_3_ID_VALUE == 0x02000300U, "last bank id");
+CHECK(PART({window}_ERRORS_3_ID_VALUE, {layout}_LAYOUT) == {layout}_LAYOUT, "layout of a bank");
+CHECK(PART({window}_ERRORS_3_ID_VALUE, {layout}_LOGGER_INDEX) == 3U, "logger of a bank");
+CHECK(PART({window}_ERRORS_3_ID_VALUE, {layout}_LOG_INDEX) == 0U, "log of a bank");
+CHECK(PART({window}_CSR_ID_VALUE, {layout}_CAPABILITY_NEXT_LOGGER) == 1U, "a logger follows");
+CHECK(PART({window}_ERRORS_3_ID_VALUE, {layout}_CAPABILITY_NEXT_LOGGER) == 0U, "last logger");
+CHECK(PART(0x12345678U, {layout}_RECORD_CLASS) == 0x7U, "class of a state word");
+CHECK(PART(0x12345678U, {layout}_RECORD_BYTES) == 0x1234U, "bytes of a word");
+CHECK(PART(0xffffffffU, {layout}_RECORD_TARGET_PATH) == 0x1fffU, "target path of a word");
+CHECK(PART(0x87654321U, {layout}_RECORD_USER_FLAGS7) == 0x87654321U, "user flags of a word");
+#ifdef {window}_CSR_REVISION_VALUE
+#error "a bank states a revision value only when the definition gives one"
+#endif
+#ifdef {window}_CSR_RECORD_HELD_OFFSET
+#error "a whole bank has no macro per field"
+#endif
+int main(void) {{ return 0; }}
+"""
+    run([args.definition_generator, ROOT / "direct"])
+    from log_mapping_bench import simulate
+    for output in (ROOT, ROOT / "direct"):
+        simulate(output / "local", [0x1000], header=True)
+    for group in ("wide", "logs", "local", "cross", "cut"):
+        for generated in (ROOT / group).glob("*.h"):
+            assert generated.read_bytes() == (ROOT / "direct" / group / generated.name).read_bytes()
+
+    def compiles(folder, checks, spoiled, include=None):
+        """Both compilers take the checks, and refuse them with one expectation spoiled."""
+        for compiler, standard, suffix in ((args.c_compiler, "c11", "c"),
+                                           (args.compiler, "c++20", "cpp")):
+            for k, (right, wrong) in enumerate([(None, None)] + spoiled):
+                assert right is None or checks.count(right) == 1, right
+                unit = folder / f"check-{k}.{suffix}"
+                unit.write_text(checks if right is None else checks.replace(right, wrong))
+                result = run([compiler, "-std=" + standard, "-pedantic-errors", "-Wall", "-Wextra",
+                              "-Werror", *(["-I", include] if include else []), "-c", unit,
+                              "-o", unit.with_suffix(".o")], expected=None)
+                assert (result.returncode != 0) == (right is not None), (
+                    folder, standard, right, result.stderr)
+
+    # A wrong expected address, a wrong field and a macro that must be absent each fail.
+    for output in (ROOT, ROOT / "direct"):
+        compiles(output / "wide", assertions,
+                 [("== 0x100000U", "== 0x100001U"), ("== 0x1fffc4U", "== 0x1fffc8U"),
+                  ("== 0x1234U", "== 0x5678U"),
+                  (f"#ifdef {window}_CSR_REVISION_VALUE", f"#ifdef {window}_CSR_ID_VALUE")],
+                 include=output / "logs")
+    local_assertions = f"""#include "nocloom_test_bus.logger_control.addresses.h"
+#include "nocloom_test_bus.error_logs.h"
+{prelude}CHECK({window}_BASE == 0x100000U, "window");
+CHECK({window}_CSR_OFFSET + {held} == 0x4U, "window offset");
+CHECK({window}_BASE + {window}_CSR_OFFSET + {held} == 0x100004U,
+      "global register with nonzero local base");
+"""
+    cross_assertions = local_assertions + f"""
+CHECK({window}_ERRORS_1_OFFSET + {held} == 0x204U, "second bank");
+CHECK({window}_ERRORS_2_OFFSET + {held} == 0x1004U, "bank across 4 KiB");
+CHECK({window}_BASE + {window}_ERRORS_2_OFFSET + {held} == 0x101004U,
+      "global register across 4 KiB");
+CHECK({window}_BASE + {window}_ERRORS_3_OFFSET + {held} == 0x1fefc4U,
+      "last global register");
+"""
+    # Eight bytes of the target gap lie in the second bank, over its words at 0x10 and 0x14: the
+    # first window reaches the four words before them, the second window the words after them.
+    # The bank's target path is in the word at 0x10, so no window reaches it.
+    after = "NOCLOOM_TEST_BUS_LOGGER_CONTROL_CSR_WINDOW_1"
+    cut_assertions = f"""#include "nocloom_test_bus.logger_control.addresses.h"
+#include "nocloom_test_bus.error_logs.h"
+{prelude}CHECK({window}_BASE == 0x100000U, "first window");
+CHECK({window}_SIZE == 0x7d0U, "first window ends in the bank");
+CHECK({after}_BASE == 0x1007d8U, "second window");
+CHECK({window}_BASE + {window}_CSR_OFFSET + {held} == 0x100004U, "whole bank before the cut one");
+CHECK({window}_CSR_ID_VALUE == 0x02000018U, "id with a given revision");
+CHECK({window}_CSR_REVISION_VALUE == 0x12345678U, "given revision");
+CHECK({window}_BASE + {window}_ERRORS_1_LAYOUT_OFFSET == 0x1007c0U, "cut bank, first word");
+CHECK({window}_BASE + {window}_ERRORS_1_RECORD_HELD_OFFSET == 0x1007c4U, "cut bank, state word");
+CHECK({window}_BASE + {window}_ERRORS_1_RECORD_ADDRESS_LOW_OFFSET == 0x1007c8U,
+      "cut bank, address word");
+CHECK({window}_BASE + {window}_ERRORS_1_RECORD_BYTES_OFFSET == 0x1007ccU,
+      "cut bank, last word of the first window");
+CHECK({after}_BASE + {after}_ERRORS_1_REVISION_OFFSET == 0x1007dcU,
+      "cut bank, revision in the second window");
+CHECK({after}_BASE + {after}_ERRORS_2_OFFSET + {held} == 0x101004U, "whole bank after the cut one");
+CHECK({after}_ERRORS_2_ID_VALUE == 0x02000210U, "id of the last bank");
+#if defined({window}_ERRORS_1_OFFSET) || defined({after}_ERRORS_1_OFFSET) || \\
+    defined({window}_ERRORS_1_ID_VALUE) || defined({after}_ERRORS_1_ID_VALUE) || \\
+    defined({window}_ERRORS_1_REVISION_VALUE) || defined({after}_ERRORS_1_REVISION_VALUE)
+#error "a cut bank states no offset of its own and no value of a word"
+#endif
+#if defined({window}_ERRORS_1_RECORD_TARGET_PATH_OFFSET) || \\
+    defined({after}_ERRORS_1_RECORD_TARGET_PATH_OFFSET) || \\
+    defined({window}_ERRORS_1_REVISION_OFFSET) || defined({after}_ERRORS_1_RECORD_HELD_OFFSET)
+#error "a field has a macro only in the window that reaches its word"
+#endif
+"""
+    cut_spoiled = [("== 0x1007c4U", "== 0x1007c8U"), ("== 0x1007dcU", "== 0x1007d8U"),
+                   (f"defined({window}_ERRORS_1_OFFSET)", f"defined({window}_CSR_OFFSET)"),
+                   (f"defined({after}_ERRORS_1_RECORD_HELD_OFFSET)",
+                    f"defined({after}_ERRORS_1_REVISION_OFFSET)")]
+    for output in (ROOT, ROOT / "direct"):
+        for group, checks, spoiled in (
+                ("local", local_assertions, [("== 0x100004U", "== 0x101004U")]),
+                ("cross", cross_assertions, [("== 0x100004U", "== 0x101004U"),
+                                             ("== 0x1fefc4U", "== 0x1fffc4U")]),
+                ("cut", cut_assertions, cut_spoiled)):
+            compiles(output / group, checks + "int main(void) { return 0; }\n", spoiled)
+    # Each field of the cut bank has one macro, in the window that reaches its word.
+    cut_macros = {name: int(number, 16) for name, number in re.findall(
+        r"#define (\w+_ERRORS_1_\w+) \((0x[0-9a-f]+)U\)",
+        (ROOT / "cut" / "nocloom_test_bus.error_logs.h").read_text())}
+    cut_bank = json.loads((ROOT / "cut" / "nocloom_test_bus.map.json").read_text())[
+        "definition"]["log_registers"]["csr"]["banks"][1]
+    assert cut_bank["bank"] == "errors_1" and cut_bank["base"] == 0x17c0
+    offsets = {f["name"].upper(): f["offset"] for f in cut_bank["registers"]}
+    assert offsets["RECORD_TARGET_PATH"] == 0x10 and offsets["REVISION"] == 0x1c
+    assert cut_macros == {
+        **{f"{window}_ERRORS_1_{name}_OFFSET": 0x7c0 + offset
+           for name, offset in offsets.items() if offset < 0x10},
+        **{f"{after}_ERRORS_1_{name}_OFFSET": offset - 0x18
+           for name, offset in offsets.items() if offset >= 0x18}}
+    assert "ULL)" in header.read_text()
+    manifest = json.loads((folder / "nocloom_test_bus.bundle.json").read_text())
+    assert [f for f in manifest["files"] if f["role"] == "c_header"] == [
+        dict(path=header.name, role="c_header")]
+    conflict = ROOT / "conflict.yaml"
+    conflict.write_text(definition(32, [("ram", 0, 0x1000), ("RAM", 0x1000, 0x2000)]))
+    rejected = ROOT / "rejected"
+    result = run([CLI, "generate", conflict, "--c-header", "--out-dir", rejected], expected=1)
+    assert "NCL_C_HEADER_NAME" in result.stderr and not rejected.exists()
+    for name in ("double__name", "trailing_"):
+        reserved = ROOT / (name + ".yaml")
+        reserved.write_text(definition(32, [(name, 0, 0x1000)]))
+        run([CLI, "generate", reserved, "--out-dir", ROOT / (name + "-plain")])
+        rejected = ROOT / (name + "-rejected")
+        result = run([CLI, "generate", reserved, "--c-header", "--out-dir", rejected], expected=1)
+        assert "NCL_C_HEADER_RESERVED" in result.stderr and not rejected.exists()
+
+
+def log_mapping():
+    from log_mapping_bench import simulate
+    shadow = ROOT / "zero-shadow"
+    run([CLI, "generate", SOURCE / "tests/log_zero_shadow.yaml", "--out-dir", shadow,
+         "--ipxact", "--address-table"])
+    expected = json.loads((SOURCE / "tests/log_zero_shadow.json").read_text())
+    assert {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in shadow.iterdir()} == expected
+    run([args.definition_generator, ROOT / "direct"])
+    failures = []
+    for group, banks in (("local", [0x1000]),
+                         ("cross", [0x1000, 0x1200, 0x4000, 0xfffc0]),
+                         ("shadow", [0x2000, 0x2200, 0x4000, 0xfffc0])):
+        source = ROOT / (group + ".yaml")
+        text = definition(32, [("ram", 0x100000, 0x101000)] if group == "shadow"
+                          else [("ram", 0, 0x1000)])
+        if group == "shadow":
+            text = text.replace('size: "0x1000"}', 'size: "0x1000"}, '
+                                '{base: "0x108000", size: "0x1000"}')
+        source.write_text(text
+                          .replace("name: control", "name: logger_control") + """
+error_logging:
+  registers: {name: csr, base: '0x100000', size: '0x100000',
+              local_address: '0x1000', clock_domain: main}
+  logs:
+    - name: errors
+      watch: [ram]
+      loggers: [""" + ", ".join("{offset: '" + hex(b) + "'}" for b in banks) + "]\n")
+        run([CLI, "generate", source, "--out-dir", ROOT / group])
+        for path in (ROOT / group).iterdir():
+            assert path.read_bytes() == (ROOT / "direct" / group / path.name).read_bytes()
+        for output in (ROOT, ROOT / "direct"):
+            try:
+                simulate(output / group, banks)
+            except AssertionError as error:
+                failures.append(f"{output / group}: {error}")
+    assert not failures, "\n".join(failures)
 
 
 def ipxact():
