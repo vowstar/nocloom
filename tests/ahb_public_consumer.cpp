@@ -28,7 +28,7 @@ int main(int argc, char **argv) {
     t.protocol = nocloom::Protocol::Axi4;
     t.data_width = 32;
   }
-  if (selected > 3)
+  if (selected > 4)
     return 2;
   for (unsigned i = 0; i < 2; ++i)
     if (selected >= 2 || selected == i)
@@ -42,6 +42,15 @@ int main(int argc, char **argv) {
     d.targets[0].undefined_length_bursts = false;
     d.targets[1].undefined_length_bursts = false;
     d.targets[1].hresp_width = 2;
+  }
+  if (selected == 4) {
+    d.initiators[0].protocol = nocloom::Protocol::Ahb5;
+    d.initiators[0].ahb5 =
+        nocloom::Ahb5Properties{.hprot_width = 7, .hnonsec = true, .hmaster_width = 5};
+    for (auto &t : d.targets) {
+      t.protocol = nocloom::Protocol::Ahb5;
+      t.ahb5 = nocloom::Ahb5Properties{.hprot_width = 7, .hnonsec = true, .hmaster_width = 7};
+    }
   }
   d.transport = nocloom::TransportOptions{.max_outstanding = 1, .transport_word_bytes = word};
   endpoint_ports(d, 4, 8);

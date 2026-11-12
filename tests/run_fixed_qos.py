@@ -364,7 +364,7 @@ def ledger_pressure(cli, root):
 def main():
     p=argparse.ArgumentParser();p.add_argument('--fixture',required=True);p.add_argument('--cli',required=True);p.add_argument('--work',required=True);p.add_argument('--network-fixture',required=True);a=p.parse_args()
     work=Path(a.work);work.mkdir(parents=True,exist_ok=True);root=Path(tempfile.mkdtemp(prefix='run-',dir=work));(work/'latest.txt').write_text(str(root)+'\n')
-    results=[dict(ahb_fixed=ahb_fixed_levels.run(a.cli, root / 'ahb-fixed')),dict(ledger_pressure=ledger_pressure(a.cli, root / 'ledger-pressure')),dict(limiter=limiter(a.cli, root)),dict(regulator=regulator(a.cli, root)),
+    results=[dict(ahb_fixed=ahb_fixed_levels.run(a.cli, root / 'ahb-fixed', ('ahb_v3', 'ahb5'))),dict(ledger_pressure=ledger_pressure(a.cli, root / 'ledger-pressure')),dict(limiter=limiter(a.cli, root)),dict(regulator=regulator(a.cli, root)),
              dict(axi=axi(a.cli, root)),dict(pressure=pressure(a.cli, a.network_fixture, root))]
     for policy in (*Arbiter.POLICIES, "level_round_robin"):
         case=root/policy;case.mkdir();args=[a.fixture,str(case),'output',policy,'3','priority']

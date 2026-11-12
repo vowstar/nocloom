@@ -305,3 +305,118 @@ output: {backend: verilog, language: verilog_2001}
   REQUIRE_FALSE(unknown);
   CHECK(unknown.diagnostics().front().code == "NCL_UNSUPPORTED_PROTOCOL");
 }
+
+TEST_CASE("AHB5 properties are typed and checked at both endpoints", "[ahb-public]") {
+  using namespace nocloom;
+  Definition d;
+  d.name = "ahb5_public";
+  d.reset_ports = {{"reset_n"}};
+  d.test_ports = {{"test"}};
+  d.clock_domains = {{"main", "clk_main", "reset_n", "test"}};
+  d.initiators = {{"s0", "main"}};
+  d.targets = {{"t0", "main", {{0x1000, 4096}}}};
+  d.connectivity = Connectivity{.all = true};
+  d.initiators[0].protocol = Protocol::Ahb5;
+  d.initiators[0].data_width = 32;
+  d.targets[0].protocol = Protocol::Ahb5;
+  d.targets[0].data_width = 32;
+  d.targets[0].attributes = TargetAttributes::amba();
+  const auto base = d;
+  const auto no_master = public_artifacts(d);
+  const std::string writes =
+      "bufferable_HPROT2_beats_complete_on_W_acceptance_and_ignore_the_B_unless_"
+      "seven_bit_HPROT6_is_shareable_other_writes_complete_their_last_beat_with_the_B_"
+      "and_preserve_errors";
+  CHECK(no_master.map["definition"]["contract"]["ahb_ingress"]["writes"] == writes);
+  CHECK(no_master.port_width("nl_i_s0_hprot") == 4);
+  CHECK(no_master.port_width("nl_t_t0_hprot") == 4);
+  CHECK_FALSE(no_master.has_port("nl_i_s0_hnonsec"));
+  CHECK_FALSE(no_master.has_port("nl_t_t0_hnonsec"));
+  CHECK_FALSE(no_master.has_port("nl_i_s0_hmaster"));
+  CHECK_FALSE(no_master.has_port("nl_t_t0_hmaster"));
+  for (const auto *signal : {"hexcl", "hexokay", "hauser", "hwuser", "hruser", "hbuser"}) {
+    CHECK_FALSE(no_master.has_port(std::string("nl_i_s0_") + signal));
+    CHECK_FALSE(no_master.has_port(std::string("nl_t_t0_") + signal));
+  }
+  d.initiators[0].ahb5 = Ahb5Properties{.hprot_width = 7, .hnonsec = true, .hmaster_width = 5};
+  d.targets[0].ahb5 = Ahb5Properties{.hprot_width = 7, .hnonsec = true, .hmaster_width = 7};
+  REQUIRE(generate(d));
+  const auto valid = d;
+  CHECK(public_artifacts(valid).map["definition"]["contract"]["ahb_ingress"]["writes"] == writes);
+  for (bool source : {false, true}) {
+    for (auto protocol : {Protocol::AhbV3, Protocol::Axi4, Protocol::Apb4}) {
+      d = valid;
+      (source ? d.initiators[0].protocol : d.targets[0].protocol) = protocol;
+      (source ? d.initiators[0].ahb5 : d.targets[0].ahb5) = Ahb5Properties{};
+      const auto result = generate(d);
+      REQUIRE_FALSE(result);
+      CHECK(std::ranges::any_of(result.diagnostics(), [&](const auto &diagnostic) {
+        return diagnostic.code == "NCL_AHB5_PROPERTIES" &&
+               diagnostic.field == (source ? "initiators[0].ahb5" : "targets[0].ahb5") &&
+               diagnostic.message == "The ahb5 object requires protocol: ahb5";
+      }));
+    }
+  }
+  const auto refused = [&](const Definition &input, const std::string &code) {
+    const auto result = generate(input);
+    REQUIRE_FALSE(result);
+    CHECK(std::ranges::any_of(result.diagnostics(), [&](const auto &x) { return x.code == code; }));
+  };
+  for (bool source : {false, true}) {
+    for (unsigned option = 0; option < 7; ++option) {
+      d = valid;
+      auto &p = *(source ? d.initiators[0].ahb5 : d.targets[0].ahb5);
+      if (option == 0)
+        p.hmaster_width = 33;
+      if (option == 1)
+        p.exclusive = true;
+      if (option == 2)
+        p.hauser_width = 1;
+      if (option == 3)
+        p.hwuser_width = 1;
+      if (option == 4)
+        p.hruser_width = 1;
+      if (option == 5)
+        p.hbuser_width = 1;
+      if (option == 6) {
+        if (source)
+          d.initiators[0].protocol = Protocol::AhbV3;
+        else
+          d.targets[0].protocol = Protocol::AhbV3;
+      }
+      refused(d, "NCL_AHB5_PROPERTIES");
+    }
+  }
+  for (bool source : {false, true}) {
+    for (unsigned width : {0U, 1U, 3U, 5U, 6U, 8U, 32U}) {
+      d = valid;
+      (source ? d.initiators[0].ahb5 : d.targets[0].ahb5)->hprot_width = width;
+      refused(d, "NCL_AHB5_PROPERTIES");
+    }
+    for (unsigned width : {4U, 7U}) {
+      d = valid;
+      auto &properties = *(source ? d.initiators[0].ahb5 : d.targets[0].ahb5);
+      properties.hprot_width = width;
+      for (bool enabled : {false, true}) {
+        properties.hnonsec = enabled;
+        const auto artifacts = public_artifacts(d);
+        const std::string prefix = source ? "nl_i_s0_" : "nl_t_t0_";
+        CHECK(artifacts.port_width(prefix + "hprot") == width);
+        CHECK(artifacts.has_port(prefix + "hnonsec") == enabled);
+      }
+    }
+  }
+  d = valid;
+  d.targets[0].ahb5->hmaster_width = 4;
+  refused(d, "NCL_AHB5_PROPERTIES");
+  d = valid;
+  d.targets[0].hresp_width = 2;
+  refused(d, "NCL_TARGET_AHB_HRESP");
+  d = valid;
+  d.targets[0].attributes = TargetAttributes::zero();
+  refused(d, "NCL_AHB5_PROPERTIES");
+  d = base;
+  d.initiators[0].ahb5 = Ahb5Properties{.hprot_width = 7, .hnonsec = true, .hmaster_width = 32};
+  d.targets[0].ahb5 = Ahb5Properties{.hprot_width = 7, .hnonsec = true, .hmaster_width = 32};
+  REQUIRE(generate(d));
+}

@@ -188,6 +188,14 @@ output: {{backend: verilog, language: verilog_2001}}
             assert code in r.stderr and not dest.exists()
     print('NOCLOOM_PASS installed dedicated AHB targets')
 
+    ahb5 = work / 'ahb5-api'
+    run([consumer / 'build/consumer', ahb5, 4, 4, 32], 'ahb5-api')
+    amap = json.loads((ahb5 / 'nocloom_ahb_public.map.json').read_text())
+    ports = {p['name']: p for p in amap['ports']}
+    assert ports['nl_i_s0_hmaster']['width'] == 5
+    assert ports['nl_t_t0_hmaster']['width'] == ports['nl_t_t1_hmaster']['width'] == 7
+    assert ports['nl_i_s0_hprot']['width'] == ports['nl_t_t0_hprot']['width'] == 7
+
 
 if __name__ == '__main__':
     main()

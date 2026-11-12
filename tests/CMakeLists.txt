@@ -515,14 +515,15 @@ foreach(apb_mode IN ITEMS graph tree clocked funnel apb4_tree timeout selective 
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 endforeach()
 # Schema 10 AHB-Lite initiators: every HBURST, BUSY, ERROR, early ends and width conversion.
-foreach(ahb_mode IN ITEMS switch wide clocked cache)
+foreach(ahb_mode IN ITEMS switch wide clocked ahb5 ahb5_clocked cache)
   add_test(NAME ahb_initiator_${ahb_mode}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_ahb_initiator.py
       --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/ahb_initiator_${ahb_mode}
       --mode ${ahb_mode})
   set_tests_properties(ahb_initiator_${ahb_mode} PROPERTIES TIMEOUT 1800 LABELS "rtl;axi4;ahb;focused"
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} PROCESSORS 2 RESOURCE_LOCK rtl_memory)
 endforeach()
+set_property(TEST ahb_initiator_ahb5 ahb_initiator_cache APPEND PROPERTY LABELS ci)
 # Schema 10 AXI3 initiators: two-bit AxLOCK, WID, width conversion and exclusive pairs; AXI3
 # targets (axi3_target): WID in AW order with two bursts in flight, AxLOCK 0b01 in target mode.
 foreach(axi3_case IN ITEMS initiator_switch:switch initiator_wide:wide target:target)
