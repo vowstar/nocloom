@@ -457,7 +457,7 @@ struct Initiator {
   // entry is busy, holding the other direction behind it. An entry frees as its last response
   // reaches the source.
   std::optional<unsigned> id_table_entries = std::nullopt;
-  // A graph whose endpoints are all full AXI4 (no target wider than the transport) or all 32-bit
+  // AXI4, AXI3 or AHB sources to full AXI4/AXI3 targets no wider than the transport, or all 32-bit
   // APB, on one clock or placed on several. Burst capacities and packets keep their ordinary
   // limits; switch outputs arbitrate by the pressure the levels give their packets
   // (docs/scheduling.md#scheduling-pressure-rules). Each level is 0..7. All zero is the

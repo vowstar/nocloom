@@ -128,7 +128,7 @@ See [address maps](address-map.md) and [definition shorthand](definition.md).
 | `NCL_CDC_EDGE_ALIGNED_RELATION` | Missing fixed-ratio ancestry or integer edge ratio |
 | `NCL_QOS_LEVEL`, `NCL_QOS_MAP` | Invalid fixed level or AxQOS map, or incompatible initiator options |
 | `NCL_QOS_SHAPER`, `NCL_QOS_SCHEDULER` | Invalid byte budgets, levels, threshold or required companion configuration |
-| `NCL_QOS_PROFILE` | Unsupported endpoint, width, whole-burst or scheduler-pipe combination |
+| `NCL_QOS_PROFILE` | Unsupported endpoint, width, whole-burst or scheduler-pipe combination. AHB sources accept fixed levels only, to full AXI targets when nonzero |
 
 See [clocks and resets](clocks-and-resets.md) and [scheduling](scheduling.md).
 

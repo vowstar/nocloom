@@ -57,6 +57,8 @@ struct SourcePlan {
   // The network carries an APB initiator as an AXI4-Lite source; apb names its face. An AHB
   // initiator is an AXI4 source behind an AHB-Lite face (ahb), with no ID or length ports, and an
   // AXI3 initiator an AXI4 source behind AXI3 ports (axi3).
+  // The declared port protocol is independent of the internal engine protocol.
+  Protocol external_protocol = Protocol::Axi4;
   Protocol protocol = Protocol::Axi4;
   std::optional<Protocol> apb;
   bool ahb = false, axi3 = false;
@@ -118,6 +120,8 @@ inline std::string service_branch_suffix(const ServicePlan &service, unsigned br
 struct TargetPlan {
   std::string name;
   // An AXI3 target is an AXI4 target behind AXI3 ports (axi3).
+  // The declared port protocol is independent of the internal engine protocol.
+  Protocol external_protocol = Protocol::Axi4;
   Protocol protocol = Protocol::Axi4;
   bool axi3 = false;
   std::vector<MappingPlan> mappings; // in base order

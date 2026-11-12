@@ -150,13 +150,12 @@ traffic crosses its boundary.
 | Address width | 2 to 48 bits. AXI4, AXI3 and AHB-Lite initiators need at least 12 bits. APB initiators use at most 32 bits. APB, AHB-Lite and AXI4-Lite targets use at most 32 bits |
 | Clock domains | 1 to 64. More than one domain needs a `topology` whose switches name their clock domains. Clock domain crossings connect asynchronous clocks, or related clocks divided from one root |
 | Transactions | Several AXI transactions in flight, exclusive access, target timeouts and an error response on a decode miss |
-| Scheduling | AxQOS levels and bandwidth limits. Scheduling needs a network of only AXI4 and AXI3 endpoints, or of only 32-bit APB endpoints. It excludes exclusive access, target timeouts and targets wider than the network |
+| Scheduling | Fixed levels from 0 to 7 on AXI4, AXI3 and AHB-Lite sources to full AXI4 or AXI3 targets, or on 32-bit APB networks. AXI4 and AXI3 sources also support AxQOS maps. AXI4, AXI3 and 32-bit APB sources support bandwidth limits |
 | Routing | NocLoom fixes each route at generation |
 | Output files | Always: Verilog-2001 RTL and three JSON files, which are the map, the bundle and the dependency graph. Optional: IP-XACT (`--ipxact`), address table (`--address-table`), CDC constraints (`--cdc-constraints`) and C headers (`--c-header`) |
 | C++ library | In-memory generation, tree and mesh topology helpers, and a CMake package. The core library does no file I/O and prints nothing |
 
-See [Documentation](#documentation) for the definition fields and their value
-limits.
+See [Documentation](#documentation) for field definitions and limits.
 
 ## Limits
 
@@ -165,6 +164,7 @@ limits.
 | Other protocols | For example AXI5, ACE and APB2 initiators |
 | Other RTL languages | The output is Verilog-2001 only |
 | Adaptive routing | A route does not change with the load |
+| Scheduling | Nonzero levels exclude AHB targets, other mixed protocol networks, exclusive access, target timeouts and targets wider than the network. AXI graphs also exclude one-direction endpoints. AHB sources have no AxQOS map, shaper or scheduler |
 | AxREGION | AXI endpoints have no AxREGION ports |
 | AXI3 locked writes and write data interleaving | An AXI3 target receives neither |
 | Unchanged non-modifiable narrow bursts | With the default `narrow_bursts: merge`, an AXI target that is wider than the beats of a burst merges them regardless of AxCACHE. This can change non-modifiable transactions beyond the transformations that AXI A4.3 permits. See [width transformation details](docs/width-conversion.md#width-transformation-details) |

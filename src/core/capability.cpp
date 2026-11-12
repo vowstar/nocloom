@@ -101,6 +101,17 @@ constexpr CapabilityRule rules[] = {
                    "A shaper needs a 32-bit apb4 or apb3, an axi4 or an axi3 "
                    "initiator");
      }},
+    {"qos.scheduler_protocol", "NCL_QOS_PROFILE", Scope::Network, Stage::Definition,
+     [](const RuleView &v) {
+       const auto &list = v.def.initiators;
+       const auto i = std::ranges::find_if(list, [](const Initiator &x) {
+         const bool apb = (x.protocol == P::Apb4 || x.protocol == P::Apb3) && x.data_width == 32U;
+         return x.qos.scheduler && !apb && !full_axi(x.protocol);
+       });
+       return when(i != list.end(),
+                   "initiators[" + std::to_string(i - list.begin()) + "].qos.scheduler",
+                   "A scheduler needs a 32-bit APB initiator or an AXI4 or AXI3 initiator");
+     }},
     // A limiter or regulator charges an AXI burst once, from its one network packet: no burst
     // of the source may be cut (its largest INCR, up to 4 KiB, fits every packet window; no
     // boundary below 4 KiB, WRAP cut, narrow split, exact packets or width conversion).
@@ -148,11 +159,13 @@ constexpr CapabilityRule rules[] = {
        const auto &p = v.plan;
        const unsigned bits = p.burst_data_bits;
        const auto axi_source = [&](const SourcePlan &s) {
-         return s.protocol == P::Axi4 && !s.read_only && !s.write_only;
+         return (full_axi(s.external_protocol) || s.external_protocol == P::AhbV3) &&
+                s.protocol == P::Axi4 && !s.read_only && !s.write_only;
        };
        const auto axi_target = [&](const TargetPlan &t) {
-         return t.protocol == P::Axi4 && t.data_bits == bits && !t.read_only && !t.write_only &&
-                !t.timeout && t.exclusive.mode == ExclusiveAccess::None;
+         return full_axi(t.external_protocol) && t.protocol == P::Axi4 && t.data_bits == bits &&
+                !t.read_only && !t.write_only && !t.timeout &&
+                t.exclusive.mode == ExclusiveAccess::None;
        };
        const auto apb_source = [](const SourcePlan &s) { return s.apb && s.apb_bits == 32; };
        const auto apb_target = [](const TargetPlan &t) {
@@ -163,10 +176,14 @@ constexpr CapabilityRule rules[] = {
            std::ranges::all_of(p.sources, axi_source) && std::ranges::all_of(p.targets, axi_target);
        const bool apb = std::ranges::all_of(p.sources, apb_source) &&
                         std::ranges::all_of(p.targets, apb_target) && !p.laddered;
-       return when(p.levels() && !(axi || apb), "exchange",
-                   "Scheduling levels require graphs of full AXI4 endpoints (no target wider "
-                   "than the transport) or of 32-bit APB endpoints, without exclusive access or "
-                   "timeout");
+       const auto ahb = std::ranges::find_if(
+           p.targets, [](const TargetPlan &t) { return t.external_protocol == P::AhbV3; });
+       const auto field =
+           ahb == p.targets.end() ? "exchange" : target_field(v.def, ahb->name, "protocol");
+       return when(p.levels() && !(axi || apb), field,
+                   "Scheduling levels require AXI4, AXI3 or AHB-Lite sources to full AXI4 or AXI3 "
+                   "targets, or 32-bit APB endpoints, without targets wider than the transport, "
+                   "exclusive access or timeout. AXI graphs also exclude one-direction endpoints");
      }},
     {"arbitration.single_candidate", "NCL_ARBITRATION_OUTPUT", Scope::Output, Stage::Plan,
      [](const RuleView &v) {

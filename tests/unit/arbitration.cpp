@@ -941,3 +941,48 @@ TEST_CASE("Upgrade obligations rotate and retain newer requirements", "[fixed-qo
     }
   }
 }
+
+TEST_CASE("AHB fixed levels use the port protocol and retain zero-level graphs",
+          "[fixed-qos][axi4-config]") {
+  using namespace nocloom;
+  auto d = hub(2);
+  d.initiators[0].protocol = Protocol::AhbV3;
+  for (unsigned read = 0; read < 8; ++read)
+    for (unsigned write = 0; write < 8; ++write) {
+      d.initiators[0].qos.levels = {read, write};
+      REQUIRE(generate(d));
+    }
+  d.initiators[0].qos = {};
+  d.initiators[0].qos.axqos_map = {0, 7};
+  rejected(generate(d), "NCL_QOS_MAP", "initiators[0].qos.axqos_map");
+  d.initiators[0].qos = {};
+  d.initiators[0].qos.shaper = QosShaper{64, 64};
+  rejected(generate(d), "NCL_QOS_PROFILE", "initiators[0].qos.shaper");
+  d.initiators[0].qos.scheduler = QosScheduler{3, 0, 50};
+  rejected(generate(d), "NCL_QOS_PROFILE", "initiators[0].qos.scheduler");
+  d.initiators[0].qos = {};
+  d.targets[0].protocol = Protocol::AhbV3;
+  const auto plain = generate(d);
+  REQUIRE(plain);
+  d.initiators[0].qos.levels = {0, 0};
+  REQUIRE(generate(d));
+  CHECK(generate(d).value() == plain.value());
+  d.initiators[0].qos.levels = {1, 0};
+  rejected(generate(d), "NCL_QOS_PROFILE", "targets[0].protocol");
+  d.targets[0].protocol = Protocol::Axi4;
+  for (const auto option :
+       {"axqos_map: [0, 7]", "shaper: {bytes_per_1024_cycles: 64, burst_bytes: 64}",
+        "scheduler: {under_level: 3, over_level: 0, threshold_percent: 50}"}) {
+    auto yaml = with("arbitration: {policy: round_robin}");
+    const std::string source = "protocol: axi4, data_width: 32}";
+    yaml.replace(yaml.find(source), source.size(),
+                 "protocol: ahb_v3, data_width: 32, qos: {" + std::string(option) + "}}");
+    const auto parsed = config::parse(yaml, "hub.yaml");
+    REQUIRE(parsed);
+    const auto result = generate(parsed.value().definition);
+    REQUIRE_FALSE(result);
+    CHECK(std::ranges::any_of(result.diagnostics(), [](const auto &diag) {
+      return diag.field.starts_with("initiators[0].qos.");
+    }));
+  }
+}

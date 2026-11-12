@@ -277,6 +277,7 @@ void plan_endpoints(NetworkPlan &plan, const Definition &d) {
   for (const auto &initiator : d.initiators) {
     auto &s = plan.sources.emplace_back();
     s.name = initiator.name;
+    s.external_protocol = initiator.protocol.value_or(Protocol::Axi4);
     s.qos = initiator.qos;
     if (plan.placement)
       plan.placement->objects["source/" + s.name] = initiator.clock_domain;
@@ -369,6 +370,7 @@ void plan_endpoints(NetworkPlan &plan, const Definition &d) {
     if (plan.placement)
       plan.placement->objects["target/" + t.name] = t.clock_domain;
     x.local_bits = t.address_width.value_or(d.address_width);
+    x.external_protocol = t.protocol.value_or(Protocol::Axi4);
     x.axi3 = t.protocol == Protocol::Axi3;
     x.protocol = x.axi3 ? Protocol::Axi4 : t.protocol.value_or(Protocol::Axi4);
     // Absent id_width: the default ID width for several bursts or a target monitor.
