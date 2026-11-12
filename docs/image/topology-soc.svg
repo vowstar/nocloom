@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img">
+<title>A mixed-protocol SoC network</title>
+<desc>Three initiators connect to a front switch: two 64-bit AXI4 initiators and one AHB-Lite initiator. The front switch connects to a memory switch with an AXI4 target and an AHB-Lite target, and through a clock domain crossing to a peripheral switch with three APB targets in a second clock domain. A second, faint copy of the switches stands for the response graph. One route is highlighted.</desc>
+<rect x="1" y="1" width="1198" height="518" rx="16" fill="#0E7F8F" fill-opacity="0.06" stroke="#0E7F8F" stroke-opacity="0.3" stroke-width="2"/>
+<text x="88" y="92" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="24" font-weight="600" fill="#0E7F8F">A mixed-protocol SoC network</text>
+<rect x="88" y="122" width="472" height="248" rx="8" fill="#6B7B88" fill-opacity="0.08" stroke="#6B7B88" stroke-opacity="0.45" stroke-width="2"/>
+<rect x="108" y="171" width="4" height="74" rx="1" fill="#D9822B"/>
+<rect x="108" y="275" width="4" height="74" rx="1" fill="#D9822B"/>
+<g font-family="Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="17" fill="#6B7B88">
+<text x="124" y="162" xml:space="preserve">initiators:</text>
+<text x="124" y="188" xml:space="preserve">  - name: cpu</text>
+<text x="124" y="214" xml:space="preserve">    protocol: axi4</text>
+<text x="124" y="240" xml:space="preserve">    data_width: 64</text>
+<text x="124" y="266" xml:space="preserve">targets:</text>
+<text x="124" y="292" xml:space="preserve">  - name: uart</text>
+<text x="124" y="318" xml:space="preserve">    protocol: apb4</text>
+<text x="124" y="344" xml:space="preserve">    clock_domain: periph</text>
+</g>
+<g font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="16" fill="#6B7B88">
+<g fill="none" stroke="#0E7F8F" stroke-width="4" transform="translate(100 426) scale(0.6)"><path d="M-20 -8V-14A6 6 0 0 1 -14 -20H-8M20 -8V-14A6 6 0 0 0 14 -20H8M20 8V14A6 6 0 0 1 14 20H8M-20 8V14A6 6 0 0 0 -14 20H-8"/></g>
+<text x="122" y="432">switch</text>
+<rect x="200" y="416" width="20" height="20" rx="3" fill="#6B7B88"/>
+<text x="230" y="432">initiator</text>
+<rect x="313.5" y="417.5" width="17" height="17" rx="2" fill="none" stroke="#6B7B88" stroke-width="3"/>
+<text x="342" y="432">target</text>
+<rect x="408" y="422.0" width="32" height="8" rx="1" fill="#D9822B"/>
+<text x="450" y="432">fixed route</text>
+</g>
+<g fill="#6B7B88" fill-opacity="0.07" stroke="#6B7B88" stroke-opacity="0.5" stroke-width="2" stroke-dasharray="6 6">
+<rect x="586" y="66" width="558" height="230" rx="12"/>
+<rect x="880" y="332" width="264" height="128" rx="12"/>
+</g>
+<g font-family="Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="15" fill="#6B7B88">
+<text x="590" y="54">clock domain core</text>
+<text x="884" y="322">clock domain periph</text>
+<text x="852" y="374" text-anchor="middle">CDC</text>
+</g>
+<g transform="translate(12 12)" opacity="0.4"><path d="M790 222L790 140Q790 130 800 130L922 130" fill="none" stroke="#0E7F8F" stroke-width="8"/><path d="M790 238L790 386Q790 396 800 396L834 396" fill="none" stroke="#0E7F8F" stroke-width="8"/><path d="M870 396L922 396" fill="none" stroke="#0E7F8F" stroke-width="8"/><g fill="none" stroke="#0E7F8F" stroke-width="4"><path d="M770 222V216A6 6 0 0 1 776 210H782M810 222V216A6 6 0 0 0 804 210H798M810 238V244A6 6 0 0 1 804 250H798M770 238V244A6 6 0 0 0 776 250H782"/><path d="M910 122V116A6 6 0 0 1 916 110H922M950 122V116A6 6 0 0 0 944 110H938M950 138V144A6 6 0 0 1 944 150H938M910 138V144A6 6 0 0 0 916 150H922"/><path d="M910 388V382A6 6 0 0 1 916 376H922M950 388V382A6 6 0 0 0 944 376H938M950 404V410A6 6 0 0 1 944 416H938M910 404V410A6 6 0 0 0 916 416H922"/></g><rect x="838" y="384" width="28" height="24" rx="5" fill="none" stroke="#0E7F8F" stroke-width="4"/></g>
+<path d="M790 222L790 140Q790 130 800 130L922 130" fill="none" stroke="#0E7F8F" stroke-width="8"/><path d="M790 238L790 386Q790 396 800 396L834 396" fill="none" stroke="#D9822B" stroke-width="8"/><path d="M870 396L922 396" fill="none" stroke="#D9822B" stroke-width="8"/><g fill="none" stroke="#0E7F8F" stroke-width="4"><path d="M770 222V216A6 6 0 0 1 776 210H782M810 222V216A6 6 0 0 0 804 210H798M810 238V244A6 6 0 0 1 804 250H798M770 238V244A6 6 0 0 0 776 250H782"/><path d="M910 122V116A6 6 0 0 1 916 110H922M950 122V116A6 6 0 0 0 944 110H938M950 138V144A6 6 0 0 1 944 150H938M910 138V144A6 6 0 0 0 916 150H922"/><path d="M910 388V382A6 6 0 0 1 916 376H922M950 388V382A6 6 0 0 0 944 376H938M950 404V410A6 6 0 0 1 944 416H938M910 404V410A6 6 0 0 0 916 416H922"/></g><rect x="838" y="384" width="28" height="24" rx="5" fill="none" stroke="#0E7F8F" stroke-width="4"/><g fill="#0E7F8F"><rect x="776" y="226" width="28" height="8" rx="1"/><rect x="926" y="116" width="8" height="28" rx="1"/><rect x="926" y="382" width="8" height="28" rx="1"/></g><g fill="#0E7F8F"><rect x="843" y="390" width="4" height="12" rx="1"/><rect x="850" y="390" width="4" height="12" rx="1"/><rect x="857" y="390" width="4" height="12" rx="1"/></g>
+<path d="M767 230H758M770.56 249.44L758 262M949.44 110.56L962 98M949.44 149.44L962 162M953 396H962M949.44 415.44L962 428" fill="none" stroke="#6B7B88" stroke-width="3"/>
+<path d="M770.56 210.56L758 198M949.44 376.56L962 364" fill="none" stroke="#D9822B" stroke-width="3"/>
+<rect x="738" y="178" width="20" height="20" rx="3" fill="#D9822B"/><rect x="738" y="220" width="20" height="20" rx="3" fill="#6B7B88"/><rect x="738" y="262" width="20" height="20" rx="3" fill="#6B7B88"/><rect x="963.5" y="79.5" width="17" height="17" rx="2" fill="none" stroke="#6B7B88" stroke-width="3"/><rect x="963.5" y="163.5" width="17" height="17" rx="2" fill="none" stroke="#6B7B88" stroke-width="3"/><rect x="963.5" y="345.5" width="17" height="17" rx="2" fill="none" stroke="#D9822B" stroke-width="3"/><rect x="963.5" y="387.5" width="17" height="17" rx="2" fill="none" stroke="#6B7B88" stroke-width="3"/><rect x="963.5" y="429.5" width="17" height="17" rx="2" fill="none" stroke="#6B7B88" stroke-width="3"/>
+<g font-family="Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="15"><text x="730" y="193" text-anchor="end" fill="#6B7B88">cpu</text><text x="692" y="193" text-anchor="end" fill="#0E7F8F">AXI4 64</text><text x="730" y="235" text-anchor="end" fill="#6B7B88">dma</text><text x="692" y="235" text-anchor="end" fill="#0E7F8F">AXI4 64</text><text x="730" y="277" text-anchor="end" fill="#6B7B88">dbg</text><text x="692" y="277" text-anchor="end" fill="#0E7F8F">AHB-Lite 32</text><text x="990" y="93" fill="#6B7B88">ram</text><text x="1046" y="93" fill="#0E7F8F">AXI4 32</text><text x="990" y="177" fill="#6B7B88">rom</text><text x="1046" y="177" fill="#0E7F8F">AHB-Lite 32</text><text x="990" y="359" fill="#6B7B88">uart</text><text x="1046" y="359" fill="#0E7F8F">APB4 32</text><text x="990" y="401" fill="#6B7B88">timer</text><text x="1046" y="401" fill="#0E7F8F">APB4 32</text><text x="990" y="443" fill="#6B7B88">gpio</text><text x="1046" y="443" fill="#0E7F8F">APB3 32</text></g>
+<g fill="none" stroke="#0E7F8F" stroke-width="4" transform="translate(606 372) scale(0.6)"><path d="M-20 -8V-14A6 6 0 0 1 -14 -20H-8M20 -8V-14A6 6 0 0 0 14 -20H8M20 8V14A6 6 0 0 1 14 20H8M-20 8V14A6 6 0 0 0 -14 20H-8"/></g>
+<g fill="none" stroke="#0E7F8F" stroke-width="4" opacity="0.4" transform="translate(606 408) scale(0.6)"><path d="M-20 -8V-14A6 6 0 0 1 -14 -20H-8M20 -8V-14A6 6 0 0 0 14 -20H8M20 8V14A6 6 0 0 1 14 20H8M-20 8V14A6 6 0 0 0 -14 20H-8"/></g>
+<g font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="16" fill="#6B7B88">
+<text x="628" y="378">request graph</text>
+<text x="628" y="414">response graph</text>
+</g>
+</svg>

@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img">
+<title>A 4x4 mesh network</title>
+<desc>Sixteen switches in a 4 by 4 grid. Each switch has one initiator and one target. The links between the switches cross like woven strands. One route is highlighted. It goes along the top row first and then down the last column.</desc>
+<rect x="1" y="1" width="1198" height="518" rx="16" fill="#0E7F8F" fill-opacity="0.06" stroke="#0E7F8F" stroke-opacity="0.3" stroke-width="2"/>
+<text x="88" y="92" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="24" font-weight="600" fill="#0E7F8F">A 4x4 mesh from a declared graph</text>
+<rect x="88" y="122" width="472" height="248" rx="8" fill="#6B7B88" fill-opacity="0.08" stroke="#6B7B88" stroke-opacity="0.45" stroke-width="2"/>
+<rect x="108" y="249" width="4" height="100" rx="1" fill="#D9822B"/>
+<g font-family="Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="17" fill="#6B7B88">
+<text x="124" y="162" xml:space="preserve">topology:</text>
+<text x="124" y="188" xml:space="preserve">  request:  {nodes: ..., links: ...}</text>
+<text x="124" y="214" xml:space="preserve">  response: {nodes: ..., links: ...}</text>
+<text x="124" y="240" xml:space="preserve">  routes:</text>
+<text x="124" y="266" xml:space="preserve">    - initiator: i0_0</text>
+<text x="124" y="292" xml:space="preserve">      target: t3_2</text>
+<text x="124" y="318" xml:space="preserve">      request: [q0_0, q1_0, q2_0,</text>
+<text x="124" y="344" xml:space="preserve">                q3_0, q3_1, q3_2]</text>
+</g>
+<g font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="16" fill="#6B7B88">
+<g fill="none" stroke="#0E7F8F" stroke-width="4" transform="translate(100 426) scale(0.6)"><path d="M-20 -8V-14A6 6 0 0 1 -14 -20H-8M20 -8V-14A6 6 0 0 0 14 -20H8M20 8V14A6 6 0 0 1 14 20H8M-20 8V14A6 6 0 0 0 -14 20H-8"/></g>
+<text x="122" y="432">switch</text>
+<rect x="200" y="416" width="20" height="20" rx="3" fill="#6B7B88"/>
+<text x="230" y="432">initiator</text>
+<rect x="313.5" y="417.5" width="17" height="17" rx="2" fill="none" stroke="#6B7B88" stroke-width="3"/>
+<text x="342" y="432">target</text>
+<rect x="408" y="422.0" width="32" height="8" rx="1" fill="#D9822B"/>
+<text x="450" y="432">fixed route</text>
+</g>
+<g fill="#0E7F8F">
+<rect x="708" y="196" width="224" height="8" rx="1"/>
+<rect x="948" y="196" width="120" height="8" rx="1"/>
+<rect x="692" y="316" width="120" height="8" rx="1"/>
+<rect x="828" y="316" width="224" height="8" rx="1"/>
+<rect x="708" y="436" width="224" height="8" rx="1"/>
+<rect x="948" y="436" width="120" height="8" rx="1"/>
+<rect x="696" y="88" width="8" height="224" rx="1"/>
+<rect x="696" y="328" width="8" height="120" rx="1"/>
+<rect x="816" y="72" width="8" height="120" rx="1"/>
+<rect x="816" y="208" width="8" height="224" rx="1"/>
+<rect x="936" y="88" width="8" height="224" rx="1"/>
+<rect x="936" y="328" width="8" height="120" rx="1"/>
+<rect x="1056" y="320" width="8" height="112" rx="1"/>
+</g>
+<g fill="none" stroke="#0E7F8F" stroke-width="4">
+<path d="M680 72V66A6 6 0 0 1 686 60H692M720 72V66A6 6 0 0 0 714 60H708M720 88V94A6 6 0 0 1 714 100H708M680 88V94A6 6 0 0 0 686 100H692"/>
+<path d="M800 72V66A6 6 0 0 1 806 60H812M840 72V66A6 6 0 0 0 834 60H828M840 88V94A6 6 0 0 1 834 100H828M800 88V94A6 6 0 0 0 806 100H812"/>
+<path d="M920 72V66A6 6 0 0 1 926 60H932M960 72V66A6 6 0 0 0 954 60H948M960 88V94A6 6 0 0 1 954 100H948M920 88V94A6 6 0 0 0 926 100H932"/>
+<path d="M1040 72V66A6 6 0 0 1 1046 60H1052M1080 72V66A6 6 0 0 0 1074 60H1068M1080 88V94A6 6 0 0 1 1074 100H1068M1040 88V94A6 6 0 0 0 1046 100H1052"/>
+<path d="M680 192V186A6 6 0 0 1 686 180H692M720 192V186A6 6 0 0 0 714 180H708M720 208V214A6 6 0 0 1 714 220H708M680 208V214A6 6 0 0 0 686 220H692"/>
+<path d="M800 192V186A6 6 0 0 1 806 180H812M840 192V186A6 6 0 0 0 834 180H828M840 208V214A6 6 0 0 1 834 220H828M800 208V214A6 6 0 0 0 806 220H812"/>
+<path d="M920 192V186A6 6 0 0 1 926 180H932M960 192V186A6 6 0 0 0 954 180H948M960 208V214A6 6 0 0 1 954 220H948M920 208V214A6 6 0 0 0 926 220H932"/>
+<path d="M1040 192V186A6 6 0 0 1 1046 180H1052M1080 192V186A6 6 0 0 0 1074 180H1068M1080 208V214A6 6 0 0 1 1074 220H1068M1040 208V214A6 6 0 0 0 1046 220H1052"/>
+<path d="M680 312V306A6 6 0 0 1 686 300H692M720 312V306A6 6 0 0 0 714 300H708M720 328V334A6 6 0 0 1 714 340H708M680 328V334A6 6 0 0 0 686 340H692"/>
+<path d="M800 312V306A6 6 0 0 1 806 300H812M840 312V306A6 6 0 0 0 834 300H828M840 328V334A6 6 0 0 1 834 340H828M800 328V334A6 6 0 0 0 806 340H812"/>
+<path d="M920 312V306A6 6 0 0 1 926 300H932M960 312V306A6 6 0 0 0 954 300H948M960 328V334A6 6 0 0 1 954 340H948M920 328V334A6 6 0 0 0 926 340H932"/>
+<path d="M1040 312V306A6 6 0 0 1 1046 300H1052M1080 312V306A6 6 0 0 0 1074 300H1068M1080 328V334A6 6 0 0 1 1074 340H1068M1040 328V334A6 6 0 0 0 1046 340H1052"/>
+<path d="M680 432V426A6 6 0 0 1 686 420H692M720 432V426A6 6 0 0 0 714 420H708M720 448V454A6 6 0 0 1 714 460H708M680 448V454A6 6 0 0 0 686 460H692"/>
+<path d="M800 432V426A6 6 0 0 1 806 420H812M840 432V426A6 6 0 0 0 834 420H828M840 448V454A6 6 0 0 1 834 460H828M800 448V454A6 6 0 0 0 806 460H812"/>
+<path d="M920 432V426A6 6 0 0 1 926 420H932M960 432V426A6 6 0 0 0 954 420H948M960 448V454A6 6 0 0 1 954 460H948M920 448V454A6 6 0 0 0 926 460H932"/>
+<path d="M1040 432V426A6 6 0 0 1 1046 420H1052M1080 432V426A6 6 0 0 0 1074 420H1068M1080 448V454A6 6 0 0 1 1074 460H1068M1040 448V454A6 6 0 0 0 1046 460H1052"/>
+</g>
+<path d="M719.44 99.44L732 112M800.56 60.56L788 48M839.44 99.44L852 112M920.56 60.56L908 48M959.44 99.44L972 112M1040.56 60.56L1028 48M1079.44 99.44L1092 112M680.56 180.56L668 168M719.44 219.44L732 232M800.56 180.56L788 168M839.44 219.44L852 232M920.56 180.56L908 168M959.44 219.44L972 232M1040.56 180.56L1028 168M1079.44 219.44L1092 232M680.56 300.56L668 288M719.44 339.44L732 352M800.56 300.56L788 288M839.44 339.44L852 352M920.56 300.56L908 288M959.44 339.44L972 352M1040.56 300.56L1028 288M680.56 420.56L668 408M719.44 459.44L732 472M800.56 420.56L788 408M839.44 459.44L852 472M920.56 420.56L908 408M959.44 459.44L972 472M1040.56 420.56L1028 408M1079.44 459.44L1092 472" fill="none" stroke="#6B7B88" stroke-width="3"/>
+<rect x="648" y="28" width="20" height="20" rx="3" fill="#D9822B"/>
+<rect x="733.5" y="113.5" width="17" height="17" rx="2" fill="none" stroke="#6B7B88" stroke-width="3"/>
+<rect x="768" y="28" width="20" height="20" rx="3" fill="#6B7B88"/>
+<rect x="853.5" y="113.5" width="17" height="17" rx="2" fill="none" stroke="#6B7B88" stroke-width="3"/>
+<rect x="888" y="28" width="20" height="20" rx="3" fill="#6B7B88"/>
+<rect x="973.5" y="113.5" width="17" height="17" rx="2" fill="none" stroke="#6B7B88" stroke-width="3"/>
+<rect x="1008" y="28" width="20" height="20" rx="3" fill="#6B7B88"/>
+<rect x="1093.5" y="113.5" width="17" height="17" rx="2" fill="none" stroke="#6B7B88" stroke-width="3"/>
+<rect x="648" y="148" width="20" height="20" rx="3" fill="#6B7B88"/>
+<rect x="733.5" y="233.5" width="17" height="17" rx="2" fill="none" stroke="#6B7B88" stroke-width="3"/>
+<rect x="768" y="148" width="20" height="20" rx="3" fill="#6B7B88"/>
+<rect x="853.5" y="233.5" width="17" height="17" rx="2" fill="none" stroke="#6B7B88" stroke-width="3"/>
+<rect x="888" y="148" width="20" height="20" rx="3" fill="#6B7B88"/>
+<rect x="973.5" y="233.5" width="17" height="17" rx="2" fill="none" stroke="#6B7B88" stroke-width="3"/>
+<rect x="1008" y="148" width="20" height="20" rx="3" fill="#6B7B88"/>
+<rect x="1093.5" y="233.5" width="17" height="17" rx="2" fill="none" stroke="#6B7B88" stroke-width="3"/>
+<rect x="648" y="268" width="20" height="20" rx="3" fill="#6B7B88"/>
+<rect x="733.5" y="353.5" width="17" height="17" rx="2" fill="none" stroke="#6B7B88" stroke-width="3"/>
+<rect x="768" y="268" width="20" height="20" rx="3" fill="#6B7B88"/>
+<rect x="853.5" y="353.5" width="17" height="17" rx="2" fill="none" stroke="#6B7B88" stroke-width="3"/>
+<rect x="888" y="268" width="20" height="20" rx="3" fill="#6B7B88"/>
+<rect x="973.5" y="353.5" width="17" height="17" rx="2" fill="none" stroke="#6B7B88" stroke-width="3"/>
+<rect x="1008" y="268" width="20" height="20" rx="3" fill="#6B7B88"/>
+<rect x="1093.5" y="353.5" width="17" height="17" rx="2" fill="none" stroke="#D9822B" stroke-width="3"/>
+<rect x="648" y="388" width="20" height="20" rx="3" fill="#6B7B88"/>
+<rect x="733.5" y="473.5" width="17" height="17" rx="2" fill="none" stroke="#6B7B88" stroke-width="3"/>
+<rect x="768" y="388" width="20" height="20" rx="3" fill="#6B7B88"/>
+<rect x="853.5" y="473.5" width="17" height="17" rx="2" fill="none" stroke="#6B7B88" stroke-width="3"/>
+<rect x="888" y="388" width="20" height="20" rx="3" fill="#6B7B88"/>
+<rect x="973.5" y="473.5" width="17" height="17" rx="2" fill="none" stroke="#6B7B88" stroke-width="3"/>
+<rect x="1008" y="388" width="20" height="20" rx="3" fill="#6B7B88"/>
+<rect x="1093.5" y="473.5" width="17" height="17" rx="2" fill="none" stroke="#6B7B88" stroke-width="3"/>
+<g font-family="Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="15" fill="#6B7B88">
+<text x="640" y="43" text-anchor="end">i0_0</text>
+<text x="1120" y="367">t3_2</text>
+</g>
+<g fill="#D9822B">
+<rect x="692" y="76" width="120" height="8" rx="1"/>
+<rect x="828" y="76" width="224" height="8" rx="1"/>
+<rect x="1056" y="88" width="8" height="104" rx="1"/>
+<rect x="1056" y="208" width="8" height="112" rx="1"/>
+</g>
+<path d="M1052 80Q1060 80 1060 88" fill="none" stroke="#D9822B" stroke-width="8"/>
+<path d="M680.56 60.56L668 48M1079.44 339.44L1092 352" fill="none" stroke="#D9822B" stroke-width="3"/>
+</svg>

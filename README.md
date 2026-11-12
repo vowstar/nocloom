@@ -13,6 +13,13 @@ converters and clock domain crossings (CDC).
 
 NocLoom 0.1.0 is the first public release.
 
+![A mixed-protocol SoC network with two clock domains.][soc]
+
+![A 4x4 mesh network from a declared graph and explicit routes.][mesh]
+
+[soc]: docs/image/topology-soc.svg
+[mesh]: docs/image/topology-mesh.svg
+
 ## Quick start
 
 Run all commands from the repository root. The build needs CMake, Ninja, a C++20
