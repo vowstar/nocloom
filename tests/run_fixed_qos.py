@@ -15,6 +15,7 @@ from treadle_model import Arbiter
 from sim_engine import generated_rtl
 import qos_shaper_bench
 import qos_scheduler_bench
+import ahb_fixed_levels
 import qos_axi_bench
 import qos_pressure_bench
 from qos_pressure_stimulus import stimulus
@@ -386,7 +387,7 @@ def main():
     if a.only=='axi':
         # The AXI shaper and scheduler alone: their charges with unaligned and narrow bursts.
         (root/'result.json').write_text(json.dumps(dict(status='PASS',results=[dict(axi=axi(a.cli, root))]),indent=1)+'\n');return
-    results=[dict(ledger_pressure=ledger_pressure(a.cli, root / 'ledger-pressure')),dict(shaper=shaper(a.cli, root)),dict(scheduler=scheduler(a.cli, root)),
+    results=[dict(ahb_fixed=ahb_fixed_levels.run(a.cli, root / 'ahb-fixed')),dict(ledger_pressure=ledger_pressure(a.cli, root / 'ledger-pressure')),dict(shaper=shaper(a.cli, root)),dict(scheduler=scheduler(a.cli, root)),
              dict(axi=axi(a.cli, root)),dict(pressure=pressure(a.cli, a.network_fixture, root))]
     for policy in (*Arbiter.POLICIES, "level_round_robin"):
         case=root/policy;case.mkdir();args=[a.fixture,str(case),'output',policy,'3','priority']
