@@ -300,10 +300,10 @@ class Oracle:
                     elif write:
                         strobes.append(0)
                 burst = 2 if t['hburst'] in (2, 4, 6) else 1
-                # amba attributes: AxCACHE[1:0] = HPROT[3:2], AxPROT = {~HPROT[0], 1, HPROT[1]}.
+                # Cacheable accesses set read lookup or write lookup as well as modifiable.
                 hprot = t['prot']
                 self.bursts[tname].append({'op': t['op'], 'addr': addrs[first] % 0x1000, 'len': count - 1,
-                                           'size': t['size'], 'burst': burst, 'cache': hprot >> 2,
+                                           'size': t['size'], 'burst': burst, 'cache': (hprot >> 2) | ((hprot & 8) >> (1 if write else 0)),
                                            'prot': (~hprot & 1) << 2 | 2 | (hprot >> 1 & 1),
                                            'strobes': strobes})
         return {'resp': resp, 'data': data}
@@ -714,8 +714,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--cli', required=True)
     parser.add_argument('--work', required=True)
-    parser.add_argument('--mode', choices=sorted(MODES), required=True)
+    parser.add_argument('--mode', choices=sorted(MODES) + ['cache'], required=True)
     args = parser.parse_args()
+    if args.mode == 'cache':
+        from ahb_cache_properties import run
+        run(args.cli, args.work)
+        return
     base = Path(args.work).resolve()
     base.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix='run-', dir=base))

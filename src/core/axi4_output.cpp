@@ -774,8 +774,8 @@ private:
                         "unstrobed_or_drops_its_remaining_R_beats"},
           {"writes", "bufferable_HPROT2_beats_complete_on_W_acceptance_and_ignore_the_B_other_"
                      "writes_complete_their_last_beat_with_the_B"},
-          {"attributes", "HPROT3_2_as_AxCACHE1_0_HPROT1_as_AxPROT0_inverted_HPROT0_as_AxPROT2_"
-                         "AxPROT1_nonsecure_AxID_and_AxLOCK_zero"},
+          {"attributes", "HPROT3_lookup_ARCACHE3_AWCACHE2_HPROT3_2_AxCACHE1_0_HPROT1_AxPROT0_"
+                         "inverted_HPROT0_AxPROT2_AxPROT1_nonsecure_AxID_and_AxLOCK_zero"},
           {"error", "two_cycle_ERROR_for_a_failed_beat_including_unmapped_HRDATA_only_valid_on_"
                     "OKAY_reads"},
           {"unsupported", "HMASTLOCK_HSIZE_above_the_bus_and_narrow_HSIZE_outside_SINGLE_answer_"

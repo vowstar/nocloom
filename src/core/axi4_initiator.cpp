@@ -1147,9 +1147,6 @@ void InitiatorLowering::ahb_face() {
     lanes =
         l.b.select(l.b.slice(aligned, k, 1),
                    l.b.concat(l.b.slice(lanes, 0, be_bits - (1U << k)), l.num(1U << k, 0)), lanes);
-  // HPROT[3:2] as AxCACHE[1:0], HPROT[1] as AxPROT[0] and inverted HPROT[0] as AxPROT[2]; AHB-Lite
-  // states no security, so AxPROT[1] marks every transfer Non-secure.
-  const auto cache = l.b.concat(l.num(2, 0), l.b.slice(prot, 2, 2));
   const auto axprot =
       l.b.concat(l.b.concat(l.inv(l.b.slice(prot, 0, 1)), one), l.b.slice(prot, 1, 1));
   for (const auto *ch : {"aw", "ar"}) {
@@ -1161,7 +1158,10 @@ void InitiatorLowering::ahb_face() {
     face_in[c + "size"] = size;
     face_in[c + "burst"] = l.b.select(wrap, l.num(2, 2), l.num(2, 1));
     face_in[c + "lock"] = zero;
-    face_in[c + "cache"] = cache;
+    face_in[c + "cache"] =
+        l.b.concat(ch == std::string("aw") ? l.b.concat(zero, l.b.slice(prot, 3, 1))
+                                           : l.b.concat(l.b.slice(prot, 3, 1), zero),
+                   l.b.slice(prot, 2, 2));
     face_in[c + "prot"] = axprot;
   }
   face_in["awvalid"] = a.awvalid;

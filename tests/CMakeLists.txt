@@ -515,7 +515,7 @@ foreach(apb_mode IN ITEMS graph tree clocked funnel apb4_tree timeout selective 
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 endforeach()
 # Schema 10 AHB-Lite initiators: every HBURST, BUSY, ERROR, early ends and width conversion.
-foreach(ahb_mode IN ITEMS switch wide clocked)
+foreach(ahb_mode IN ITEMS switch wide clocked cache)
   add_test(NAME ahb_initiator_${ahb_mode}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_ahb_initiator.py
       --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/ahb_initiator_${ahb_mode}

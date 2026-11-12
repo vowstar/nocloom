@@ -40,10 +40,17 @@ in its first data phase until the network accepts it. Ending an undefined INCR
 waits only for its committed transfer before starting another data phase. HRDATA
 is valid only on successful read completion.
 
-HPROT bits 3:2 become AxCACHE bits 1:0. HPROT bit 1 becomes AxPROT bit 0.
-Inverted HPROT bit 0 becomes AxPROT bit 2, and AxPROT bit 1 is set. AxID and
-AxLOCK are zero. A request waits for earlier write responses, so reads observe
-earlier bufferable writes.
+With target `attributes: amba`, HPROT bits 3:2 select the cache values below.
+
+| HPROT[3:2] | ARCACHE | AWCACHE |
+| --- | --- | --- |
+| `00` | `0000` | `0000` |
+| `01` | `0001` | `0001` |
+| `10` | `1010` | `0110` |
+| `11` | `1011` | `0111` |
+
+AxPROT is `{~HPROT[0], 1, HPROT[1]}`. AxID and AxLOCK are zero. A request
+waits for earlier write responses, so reads observe earlier bufferable writes.
 
 Bufferable writes never report target errors. Other writes report the piece's
 accumulated error on its last beat only. Holding BUSY inside a write holds its
