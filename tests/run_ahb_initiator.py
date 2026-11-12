@@ -575,6 +575,11 @@ def bench(mode, mapping, selected, resumed):
     quiet = ' '.join(f'nl_i_{s}_htrans = 0; nl_i_{s}_hsel = 0;' for s in m['sources'])
     dumps = ''.join(f' for (a = 0; a < 4096; a = a + 1) $display("EV M {name} %0h %h", a, mem_{name}[a]);\n'
                     for name in m['targets'])
+    reset_checks = ''.join(
+        f'always @(negedge clk_{domain}) if (!reset_n && cycle > 3) begin\n'
+        f' check(nl_t_{name}_hready === 1\'b1, "RESET_READY");\n'
+        f' check(nl_t_{name}_htrans === 2\'b00, "RESET_IDLE");\nend\n'
+        for name, (protocol, _, _, domain) in m['targets'].items() if protocol == 'ahb_v3')
     N = len(every)
     return f'''`timescale 1ns/1ps
 module tb;
@@ -607,6 +612,7 @@ function automatic [{widest - 1}:0] beat_data(input integer k, input integer bea
 endfunction
 {''.join(models)}
 {drivers}
+{reset_checks}
 initial begin : run
  integer k, a;
  reset_n = 0;

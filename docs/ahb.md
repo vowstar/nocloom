@@ -86,7 +86,7 @@ With multiple target flows, the adapter selects `hreadyout_<flow>` for the
 current data-phase flow. It records that flow when its address phase is accepted.
 It broadcasts the selected ready value on every `hready_<flow>`.
 With no data-phase flow selected, the selected ready value is high.
-The `hready` outputs are zero during reset.
+During common reset, `hready` follows HREADYOUT and HTRANS is IDLE.
 
 These connections follow the slave and multiplexor signals in
 [AMBA 3 AHB-Lite, IHI 0033A, sections 2.3 and 2.5](https://documentation-service.arm.com/static/5f914801f86e16515cdc2a27).

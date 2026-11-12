@@ -2941,7 +2941,7 @@ void AhbOutlet::drive_bus() {
   out("ahb", "htrans",
       l.b.select(driven, bus_trans, l.b.select(waiting, l.b.constant(2, 1), l.b.constant(2, 0))));
   out("ahb", "hwdata", hwdata);
-  out("ahb", "hready", active(hready));
+  out("ahb", "hready", hready);
 
   fail_now = timeout ? o.watchdog(l.either(l.either(w.at("valid"), r.at("valid")),
                                            l.either(l.bindings.at("w.busy"),
