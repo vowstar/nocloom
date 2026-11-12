@@ -40,7 +40,7 @@ The codes of the C++ tree helper are in
 | Code | Condition |
 | --- | --- |
 | `NCL_ENDPOINT_DATA_WIDTH`, `NCL_NETWORK_DATA_WIDTH` | Unsupported endpoint or resolved network width |
-| `NCL_ENDPOINT_ADDRESS_WIDTH` | Endpoint address port width outside its protocol limits |
+| `NCL_ENDPOINT_ADDRESS_WIDTH` | Endpoint address port width outside its protocol limits, or a mapping's local interval outside that width, including `error_logging.registers.local_address` |
 | `NCL_ENDPOINT_TRANSACTION_WIDTH` | Unsupported ID or length width for the endpoint protocol |
 | `NCL_UNSUPPORTED_WIDTH`, `NCL_WIDTH_CONVERSION` | `transport.data_width` is not 32 or 64, or an endpoint width conversion that the network does not support |
 | `NCL_AXI4_TRANSPORT_WORD` | `transport_word_bytes` is not 4, 8, 16 or 32 |
@@ -105,7 +105,7 @@ See [network](network.md), [arbitration](arbitration.md) and [pipes](pipes.md).
 | `NCL_GROUP_DUPLICATE`, `NCL_GROUP_UNUSED` | Repeated group member or unused group |
 | `NCL_MIRROR_RENAME`, `NCL_MIRROR_OVERRIDE` | Invalid suffix transformation or invalid mirrored link override |
 | `NCL_ADDRESS_WIDTH` | Global `address_width` outside 2 to 48 |
-| `NCL_ADDRESS_RANGE` | Invalid address string, a mapping outside the address space, an empty mapping or a mapping smaller than one target data word |
+| `NCL_ADDRESS_RANGE` | Invalid address string or mapping range, alignment or size. Includes `error_logging.registers.local_address` |
 
 See [address maps](address-map.md) and [definition shorthand](definition.md).
 

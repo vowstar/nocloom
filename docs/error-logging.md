@@ -2,9 +2,12 @@
 
 Error logs capture failed target transactions in software-readable register
 banks. `error_logging` declares one register window, audit flags and logs. The
-window is at most 1 MiB and aligns to its size. The register window has no
-external target bus ports. APB initiators read and clear its banks through the
-network.
+window is at most 1 MiB and its global base aligns to its size. The size is
+a power of two from 256 to 2048 bytes, or a multiple of 4 KiB. It need not
+be a power of two at or above 4 KiB.
+
+The register window has no external target bus ports. APB initiators read
+and clear its banks through the network.
 
 ## Supported networks
 
@@ -21,6 +24,7 @@ multiple packets.
 | Object | Fields |
 | --- | --- |
 | `error_logging.registers` | `name`, `base`, `size`, `clock_domain` |
+| `error_logging.registers.local_address` | Optional target local byte address at `base`, default zero |
 | `error_logging.audit_flags` | Named request bits recorded with errors |
 | `error_logging.logs` | Log definitions in declaration order |
 | `error_logging.revision` | Optional integer from 0 to 16777215 for the revision register |
@@ -31,6 +35,34 @@ multiple packets.
 at that log. The log uses the register window's domain when `clock_domain` is
 omitted or explicitly names that domain. All logs of that window share their
 domain. `whole_record` defaults to `false`.
+
+`registers.local_address` is the target local byte address at the mapping base.
+It uses an [address string](address-map.md#target-mappings) and defaults to
+zero. The mapped interval must fit the target address width, which is the
+network address width for this YAML register target. Whole-page mappings
+require 4 KiB alignment. A sub-page mapping requires alignment to its size.
+
+The outlet uses `local = global - base + local_address` before it selects a
+bank and register. Each visible piece of a mapping uses these original bases.
+This rule applies to every supported window size, including `0x3000` and
+`0x5000`.
+
+The local base does not move banks.
+Only banks in the mapped local interval are reachable.
+Each bank's local address plus 256 must not exceed the declared window size.
+The [C headers](outputs.md#c-headers) give offsets from each initiator window.
+
+For `base: "0x100000"`, `local_address: "0x1000"` and logger
+`offset: "0x1000"`, register offset `0x10` is at global address `0x100010`.
+The C++ field is `AddressMapping::local_address`, with the same range and
+alignment checks.
+
+| Invalid `local_address` | Diagnostic |
+| --- | --- |
+| Unquoted value or a value other than a single-line string | `NCL_SCHEMA_TYPE` |
+| Invalid address string or an integer above the `uint64_t` range | `NCL_ADDRESS_RANGE` |
+| Misaligned local start | `NCL_ADDRESS_RANGE` |
+| Local start or mapped interval outside the target address width | `NCL_ENDPOINT_ADDRESS_WIDTH` |
 
 `whole_record: true` retains every user flag and as many address bits as the
 record field holds.
@@ -46,8 +78,9 @@ change with the NocLoom version. Set `revision` to keep the RTL independent of
 the NocLoom version. The map states the value in use.
 
 An empty `loggers` list creates one logger with default configuration. A chain
-has at most 8 loggers. Each bank occupies 256 bytes. `offset` is its byte offset
-in the window. Without an offset, it uses the next free bank position.
+has at most 8 loggers. Each bank occupies 256 bytes. `offset` is its target
+local byte address. Without an offset, the first bank starts at zero. Each
+later bank follows the preceding bank.
 
 ## Filters and forwarding
 

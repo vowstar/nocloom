@@ -18,6 +18,8 @@ build/nocloom generate examples/tree_apb.yaml --out-dir build/generated
 and generates in memory before writing artifacts. It defaults to the Verilog
 target. Other `--target` values are rejected. `--ipxact`, `--address-table` and
 `--cdc-constraints` add the files described in [output files](outputs.md).
+`--c-header` adds [C headers](outputs.md#c-headers) for address windows and
+error log register offsets.
 
 `--version` reports the generator version.
 

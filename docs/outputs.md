@@ -21,6 +21,8 @@ Related manuals: [CDC timing constraints](timing-constraints.md).
 | `<cell_module>.v` | Behavioral model of a bound library cell | That bound cell is used |
 | `nocloom_<name>.ipxact.xml` | IEEE 1685-2009 component | `--ipxact` |
 | `nocloom_<name>.address_table.json` and `.csv` | Per-initiator address windows | `--address-table` |
+| `nocloom_<name>.<initiator>.addresses.h` | Per-initiator address macros | `--c-header` |
+| `nocloom_<name>.error_logs.h` | Error log register offset macros | `--c-header` with error logs |
 | `nocloom_<name>.cdc.sdc` and `.cdc_preserve.txt` | Timing exceptions and preserve list | `--cdc-constraints` |
 
 Only the bundle records the generator version. The other output files do not
@@ -71,6 +73,12 @@ version.
 
 JSON and CSV derive per-initiator routing windows from the map. See the
 [columns](#address-table-format).
+
+## C headers
+
+`--c-header` adds address and error log register macros.
+See [C headers](c-headers.md) for file names, window selection, macro names
+and diagnostics.
 
 ## Dependency graph
 

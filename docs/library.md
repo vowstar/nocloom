@@ -28,6 +28,7 @@ A build with `NOCLOOM_BUILD_TESTS` also needs these tools.
 | Tool | Required version |
 | --- | --- |
 | Catch2 | 3.4.0 or newer within version 3 |
+| C compiler | C11, for generated header checks |
 | Python 3, Make, Icarus Verilog, Yosys, Verilator | No version check |
 | clang-format, cppcheck | No version check. The project uses clang-format 23.1 and cppcheck 2.21. Older versions can report differences |
 | A second C++20 compiler | No version check. `NOCLOOM_DETERMINISM_COMPILERS=OFF` removes this requirement |
@@ -108,6 +109,12 @@ both. A parent CMake project can use `add_subdirectory` and link
 
 `ArtifactSet` contains `Artifact` values with relative `path` and `text` fields.
 Failed results contain diagnostics without a value.
+
+`GenerationOptions::c_header` is a boolean that defaults to `false`. Set it to
+`true` in `generate` or `emit` to add [C headers](outputs.md#c-headers) in
+memory.
+It needs no file adapter or address table output. The bundle lists the headers.
+Macro name conflicts fail generation with `NCL_C_HEADER_NAME`.
 
 Configuration errors and expected file errors return diagnostics. Allocation
 failures and other exceptional runtime failures can throw exceptions. The core
