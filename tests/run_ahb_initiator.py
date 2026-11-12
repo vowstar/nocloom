@@ -714,11 +714,15 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--cli', required=True)
     parser.add_argument('--work', required=True)
-    parser.add_argument('--mode', choices=sorted(MODES) + ['cache'], required=True)
+    parser.add_argument('--mode', choices=sorted(MODES) + ['ahb5', 'ahb5_clocked', 'cache'], required=True)
     args = parser.parse_args()
     if args.mode == 'cache':
         from ahb_cache_properties import run
         run(args.cli, args.work)
+        return
+    if args.mode.startswith('ahb5'):
+        from ahb5_properties import run
+        run(args.cli, args.work, args.mode.endswith('clocked'))
         return
     base = Path(args.work).resolve()
     base.mkdir(parents=True, exist_ok=True)
