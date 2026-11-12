@@ -152,7 +152,7 @@ traffic crosses its boundary.
 | Transactions | Several AXI transactions in flight, exclusive access, target timeouts and an error response on a decode miss |
 | Scheduling | AxQOS levels and bandwidth limits. Scheduling needs a network of only AXI4 and AXI3 endpoints, or of only 32-bit APB endpoints. It excludes exclusive access, target timeouts and targets wider than the network |
 | Routing | NocLoom fixes each route at generation |
-| Output files | Always: Verilog-2001 RTL and three JSON files, which are the map, the bundle and the dependency graph. Optional: IP-XACT (`--ipxact`), address table (`--address-table`) and CDC constraints (`--cdc-constraints`) |
+| Output files | Always: Verilog-2001 RTL and three JSON files, which are the map, the bundle and the dependency graph. Optional: IP-XACT (`--ipxact`), address table (`--address-table`), CDC constraints (`--cdc-constraints`) and C headers (`--c-header`) |
 | C++ library | In-memory generation, tree and mesh topology helpers, and a CMake package. The core library does no file I/O and prints nothing |
 
 See [Documentation](#documentation) for the definition fields and their value
@@ -184,7 +184,8 @@ known. [Diagnostics](docs/diagnostics.md) lists the codes.
 | [Protocols](docs/protocols.md) | Initiator and target protocols, width conversion and packets |
 | [Transactions](docs/transactions.md) | Bursts in flight, target IDs, read interleaving, exclusive access and timeouts |
 | [Scheduling](docs/scheduling.md) | Levels, AxQOS maps, bandwidth shapers and bandwidth schedulers |
-| [Output files](docs/outputs.md) | Map, bundle, dependency graph, IP-XACT, address table and CDC constraints |
+| [Output files](docs/outputs.md) | Map, bundle, dependency graph, IP-XACT, address table, CDC constraints and C headers |
+| [C headers](docs/c-headers.md) | Address and error log register macros |
 | [Error logging](docs/error-logging.md) | Register windows, capture, filters and alarms |
 | [Library](docs/library.md) | Build requirements, CMake packages, C++ API, tree and mesh topology helpers |
 | [CLI](docs/cli.md) | Validation, generation, semantic diff and exit codes |

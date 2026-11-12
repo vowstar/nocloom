@@ -125,8 +125,8 @@ value and `capability_given_revision` reads 1. Give each build its own revision.
 
 An empty `loggers` list creates one default logger. A chain has at most 32.
 An explicit `offset` fixes the bank's local byte address on the 64-byte grid
-for this layout, even if a mapping covers some words.
-The map shows which words initiators can reach.
+for this layout, even if a mapping covers some words. The map and C header
+show which words initiators can reach.
 
 By default, an omitted offset puts the first bank at zero or a later bank
 immediately after its predecessor. Placement changes only if a mapping takes
@@ -155,8 +155,8 @@ network address width for the register window. Whole-page mappings require
 4 KiB alignment. A sub-page mapping requires alignment to its size.
 
 Each piece uses `local = global - base + local_address`. Only the mapped interval
-is reachable. Each bank must fit in the window.
-The C headers give offsets from each address window.
+is reachable. Each bank must fit in the window. The offsets in the
+[C headers](c-headers.md#error-log-header) use each initiator's window bases.
 
 For `base: "0x100000"`, `local_address: "0x1000"` and `offset: "0x1000"`,
 register offset `0x10` is at global address `0x100010`. The C++ field

@@ -20,7 +20,7 @@ Offsets are bytes within each bank.
 | `0x1c` | `REVISION` | Revision value |
 | `0x20` to `0x3c` | `USER0` to `USER7` | User flags |
 
-The word names are names of this manual. The map names fields.
+The word names are names of this manual. The map and the C header name fields.
 The record words are the words at `0x08` to `0x18` and `0x20` to `0x3c`. A
 record field is a field with a name that starts with `record_`, except
 `record_held` and `record_overflow`.
@@ -136,7 +136,9 @@ With `error_logging.capture_class: false`, the field reads zero.
 
 ## Driver rules
 
-Find the bank and its fields in the generated map.
+The bank address is `_BASE + _<BANK>_OFFSET` from the
+[C headers](c-headers.md#error-log-header). For a bank cut by an address window,
+use the field offsets from that window's base.
 
 | Step | Rule |
 | --- | --- |
@@ -144,10 +146,13 @@ Find the bank and its fields in the generated map.
 | 2 | Compare `layout`. If the driver does not know the layout number, do not use the bank |
 | 3 | Read the capability bits. Ignore each set bit that the driver does not know |
 | 4 | Identify the log and the logger with `log_index` and `logger_index`. `capability_next_logger` tells whether another logger follows |
-| 5 | Read `REVISION` at `0x1c` if reachable. If a revision was supplied, compare the word with that value |
+| 5 | Read `REVISION` at `0x1c` if reachable. If the header gives `_REVISION_VALUE`, compare the word with it |
 | 6 | If `STATE` is unreachable, software can read reachable fields but cannot check or clear `record_held`, enable the alarm or set `wait_when_full`. Otherwise read `STATE`. If `record_held` is 1, read the reachable record words. Then write byte 0 of the value read back to byte 0 of `STATE`. This clears `record_held` and `record_overflow` when they read 1 |
 | 7 | If `record_class` has a bit that the driver does not know, treat the words at `0x08` to `0x14` as opaque values |
 | 8 | If `STATE` is reachable, change `alarm_enable` or `wait_when_full` with zero to byte 0 of `STATE` or strobe only byte 1 |
+
+A driver built with the header of one design can compare the whole word at
+`0x00` with `_ID_VALUE` in place of steps 2 to 4.
 
 Each read returns the whole word as sampled when its bank accepts the read
 request. A capture, clear or overflow cannot mix bytes from different cycles.

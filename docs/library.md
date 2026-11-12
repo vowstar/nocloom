@@ -28,6 +28,7 @@ A build with `NOCLOOM_BUILD_TESTS` also needs these tools.
 | Tool | Required version |
 | --- | --- |
 | Catch2 | 3.4.0 or newer within version 3 |
+| C compiler | C11, for generated header checks |
 | Python 3, Make, Icarus Verilog, Yosys, Verilator | No version check |
 | clang-format, cppcheck | No version check. The project uses clang-format 23.1 and cppcheck 2.21. Older versions can report differences |
 | A second C++20 compiler | No version check. `NOCLOOM_DETERMINISM_COMPILERS=OFF` removes this requirement |
@@ -117,7 +118,7 @@ the bundle.
 | Flag | Artifacts |
 | --- | --- |
 | `cdc_constraints` | [CDC timing constraints and preserve list](timing-constraints.md#cdc-constraints) |
-| `c_header` | C headers for address windows and error log registers |
+| `c_header` | [C headers](outputs.md#c-headers) for address windows and error log registers |
 | `address_table` | [Address tables](outputs.md#address-table) in JSON and CSV |
 | `ipxact` | [IP-XACT component](outputs.md#ip-xact) with the default component identifier |
 
