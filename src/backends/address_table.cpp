@@ -1,4 +1,5 @@
 // The address table: each initiator's routing windows, read back from the interface map.
+#include "backends/address_table.hpp"
 #include "backends/output_license.hpp"
 #include "core/diagnostic.hpp"
 #include "core/network_plan_profiles.hpp"
@@ -278,6 +279,10 @@ Diagnostic input_error(const std::string &message) {
   return detail::error("NCL_ADDRESS_TABLE_INPUT", "artifacts", message);
 }
 } // namespace
+
+namespace detail {
+Json address_table(const Json &map) { return build(map).json; }
+} // namespace detail
 
 Result<ArtifactSet> add_address_table(ArtifactSet artifacts) {
   const auto with = [&](std::string_view suffix) {

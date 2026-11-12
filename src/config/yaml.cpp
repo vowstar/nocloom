@@ -250,7 +250,7 @@ void error_logging(Reader &r, const YAML::Node &node, Definition &d) {
   };
   const auto registers = r.field(node, "registers", at + ".registers");
   const auto window = at + ".registers";
-  r.object(registers, window, {"name", "base", "size", "clock_domain"});
+  r.object(registers, window, {"name", "base", "size", "local_address", "clock_domain"});
   auto &target = d.targets.emplace_back(
       Target{r.string(r.field(registers, "name", window + ".name"), window + ".name"),
              r.string(r.field(registers, "clock_domain", window + ".clock_domain"),
@@ -259,6 +259,9 @@ void error_logging(Reader &r, const YAML::Node &node, Definition &d) {
   auto &mapping = target.mappings.emplace_back();
   mapping.base = r.address(r.field(registers, "base", window + ".base"), window + ".base");
   mapping.size = r.address(r.field(registers, "size", window + ".size"), window + ".size");
+  if (registers["local_address"])
+    mapping.local_address = r.address(
+        r.field(registers, "local_address", window + ".local_address"), window + ".local_address");
   target.protocol = Protocol::Apb4;
   target.data_width = 32;
   target.attributes = TargetAttributes::amba();

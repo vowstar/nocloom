@@ -26,6 +26,8 @@ a defect and include the definition.
 | `NCL_UNSUPPORTED_BACKEND` | Unsupported backend or a CDC output request without crossings |
 | `NCL_IO_PATH` | Unsafe output directory or artifact path, including symbolic links |
 | `NCL_IO_EXISTS`, `NCL_IO_READ`, `NCL_IO_WRITE` | Output already present, unreadable input or output write failure |
+| `NCL_C_HEADER_NAME` | Two generated C macros or include guards have the same name |
+| `NCL_C_HEADER_RESERVED` | A generated C macro or include guard is reserved in C11 or C++20 |
 | `NCL_ADDRESS_TABLE_INPUT` | Artifact set has missing, duplicate or conflicting table inputs |
 | `NCL_IPXACT_INPUT` | Invalid IP-XACT vendor, library or version text, or an artifact set that is not from this definition |
 

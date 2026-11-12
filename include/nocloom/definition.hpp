@@ -858,6 +858,8 @@ struct GenerationOptions {
   // <top>.cdc_preserve.txt (cells to keep through synthesis) and lists both in the bundle.
   // Requires a clocked network with at least one crossing. Off leaves every artifact unchanged.
   bool cdc_constraints = false;
+  // Adds one address-window C header per initiator and a register header when error logs exist.
+  bool c_header = false;
 };
 using SourceMap = std::map<std::string, SourceLocation>;
 struct ParsedDefinition {

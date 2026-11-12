@@ -1,4 +1,5 @@
 #include "nocloom/generation.hpp"
+#include "backends/c_header.hpp"
 #include "backends/constraints/cdc_sdc.hpp"
 #include "core/axi4_output.hpp"
 #include "core/diagnostic.hpp"
@@ -14,9 +15,11 @@ Result<ArtifactSet> emit(const Plan &plan, const GenerationOptions &options) {
     return Result<ArtifactSet>::failure(
         detail::error("NCL_INTERNAL_PLAN", "plan", "Plan has been moved from"));
   auto artifacts = detail::emit_axi4_network(*plan.data_, options.register_reset);
-  if (!artifacts || !options.cdc_constraints)
-    return artifacts;
-  return detail::add_cdc_constraints(std::move(artifacts).value());
+  if (artifacts && options.cdc_constraints)
+    artifacts = detail::add_cdc_constraints(std::move(artifacts).value());
+  if (artifacts && options.c_header)
+    artifacts = detail::add_c_headers(std::move(artifacts).value());
+  return artifacts;
 }
 
 Result<ArtifactSet> generate(const Definition &definition, const GenerationOptions &options,

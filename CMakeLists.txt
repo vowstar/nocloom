@@ -24,7 +24,7 @@ find_package(nlohmann_json 3.11.3 CONFIG REQUIRED)
 add_library(nocloom_core STATIC src/core/validation.cpp src/core/hardware.cpp src/core/message.cpp
   src/backends/output_license.cpp
   src/backends/generation.cpp src/backends/verilog/emitter.cpp src/backends/ipxact/component.cpp
-  src/backends/address_table.cpp src/backends/constraints/cdc_sdc.cpp)
+  src/backends/address_table.cpp src/backends/c_header.cpp src/backends/constraints/cdc_sdc.cpp)
 add_library(nocloom::core ALIAS nocloom_core)
 set_target_properties(nocloom_core PROPERTIES EXPORT_NAME core)
 # The generated files name this version. A non-empty suffix marks an unreleased build.

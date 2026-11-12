@@ -32,6 +32,7 @@ int run(int argc, char **argv) {
   bool ipxact = false;
   bool address_table = false;
   bool cdc_constraints = false;
+  bool c_header = false;
   auto *validate = app.add_subcommand("validate", "Validate an interconnect definition");
   validate->add_option("input", input, "YAML definition")->required();
   auto *generate = app.add_subcommand("generate", "Generate Verilog-2001 and metadata");
@@ -43,6 +44,8 @@ int run(int argc, char **argv) {
                      "Also write each initiator's address windows as JSON and CSV");
   generate->add_flag("--cdc-constraints", cdc_constraints,
                      "Also write <top>.cdc.sdc and <top>.cdc_preserve.txt (clocked networks)");
+  generate->add_flag("--c-header", c_header,
+                     "Also write C headers for address windows and error log registers");
   std::string before;
   std::string after;
   bool full = false;
@@ -92,6 +95,7 @@ int run(int argc, char **argv) {
   }
   auto options = definition.options;
   options.cdc_constraints = cdc_constraints;
+  options.c_header = c_header;
   auto artifacts = nocloom::generate(definition.definition, options, &definition.sources);
   if (address_table && artifacts)
     artifacts = nocloom::add_address_table(std::move(artifacts).value());
