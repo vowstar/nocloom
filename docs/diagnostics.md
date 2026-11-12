@@ -150,3 +150,16 @@ node that is on no route.
 | `NCL_TREE_CYCLE` | The parent links contain a cycle |
 
 See the [tree topology helper](library.md#tree-topology-helper).
+
+## Mesh topology helper
+
+The C++ function `mesh_topology` returns these codes. It also returns
+`NCL_NAME_INVALID` for an invalid endpoint name.
+
+| Code | Condition |
+| --- | --- |
+| `NCL_MESH_DIMENSIONS` | A zero dimension or a grid with more than 128 cells |
+| `NCL_MESH_ENDPOINT` | An endpoint list outside 1 to 256. Duplicate attachments within a role, out-of-grid coordinates or flow counts outside 1 to 32 |
+| `NCL_MESH_CONNECTIVITY` | `all` with a pair list, an unknown endpoint, an invalid flow index, a repeated admitted flow pair or an endpoint without an admitted pair |
+
+See the [mesh topology helper](library.md#mesh-topology-helper).

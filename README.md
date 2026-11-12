@@ -153,7 +153,7 @@ traffic crosses its boundary.
 | Scheduling | AxQOS levels and bandwidth limits. Scheduling needs a network of only AXI4 and AXI3 endpoints, or of only 32-bit APB endpoints. It excludes exclusive access, target timeouts and targets wider than the network |
 | Routing | NocLoom fixes each route at generation |
 | Output files | Always: Verilog-2001 RTL and three JSON files, which are the map, the bundle and the dependency graph. Optional: IP-XACT (`--ipxact`), address table (`--address-table`) and CDC constraints (`--cdc-constraints`) |
-| C++ library | In-memory generation and a CMake package. The core library does no file I/O and prints nothing |
+| C++ library | In-memory generation, tree and mesh topology helpers, and a CMake package. The core library does no file I/O and prints nothing |
 
 See [Documentation](#documentation) for the definition fields and their value
 limits.
@@ -186,7 +186,7 @@ known. [Diagnostics](docs/diagnostics.md) lists the codes.
 | [Scheduling](docs/scheduling.md) | Levels, AxQOS maps, bandwidth shapers and bandwidth schedulers |
 | [Output files](docs/outputs.md) | Map, bundle, dependency graph, IP-XACT, address table and CDC constraints |
 | [Error logging](docs/error-logging.md) | Register windows, capture, filters and alarms |
-| [Library](docs/library.md) | Build requirements, CMake packages, C++ API and tree topology helper |
+| [Library](docs/library.md) | Build requirements, CMake packages, C++ API, tree and mesh topology helpers |
 | [CLI](docs/cli.md) | Validation, generation, semantic diff and exit codes |
 | [Diagnostics](docs/diagnostics.md) | Diagnostic codes and the conditions that produce them |
 

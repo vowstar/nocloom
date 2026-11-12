@@ -139,6 +139,58 @@ Empty branches are rejected. The helper performs no I/O and selects no
 connectivity, arbitration or transport configuration. Validate the complete
 definition to check endpoint identities, domains and resource limits.
 
+## Mesh topology helper
+
+`mesh_topology` creates explicit request and response graphs with fixed routes.
+See [generate_mesh.cpp](../examples/generate_mesh.cpp) and its generated
+[mesh_axi.yaml](../examples/mesh_axi.yaml).
+
+With examples enabled, run `build/nocloom_mesh_example build/mesh-output` from
+the repository root. The output directory must be new. It contains the ordinary
+artifacts and `mesh_axi.yaml`. The example uses a 3 by 3 grid, four AXI4
+initiators at the corners and one AXI4 target at every cell.
+
+```cpp
+#include <nocloom/topology.hpp>
+
+const auto topology = nocloom::mesh_topology(
+    3, 3, {{"cpu", 0, 0}}, {{"memory", 2, 2}},
+    nocloom::Connectivity{.all = true}, "main");
+if (topology)
+  definition.topology = topology.value();
+```
+
+Pass the same connectivity matrix to the helper and `Definition::connectivity`.
+The helper returns `Result<ExchangeTopology>`. Failed results contain
+diagnostics without a topology. It does no file I/O and prints nothing.
+
+| Parameter | Values and default |
+| --- | --- |
+| `rows`, `columns` | Nonzero counts with a product from 1 to 128, including cells that carry no route |
+| `initiators`, `targets` | Each list has 1 to 256 `MeshEndpoint` attachments, unique by name within its role |
+| `MeshEndpoint::name` | A valid endpoint name that matches the complete definition |
+| `MeshEndpoint::row`, `column` | Zero-based coordinates within the grid, each defaults to 0 |
+| `MeshEndpoint::flows` | 1 to 32, default 1. For an initiator, use its `route_classes` count, or 1 without classes. For a target, use its `flows` count |
+| `connectivity` | Required. `all` or admitted pairs with optional flow indices, as in [connectivity](network.md#connectivity). Every attached endpoint must occur in a pair |
+| `clock_domain` | Optional common node domain, absent by default. Copied to every retained node |
+
+Columns are X and rows are Y. Node names are `mesh_r<row>_c<column>`, local to
+each graph. Each request route moves along X to the target column, then along Y
+to the target row. Each response starts at the target and independently moves
+along X, then Y to the initiator. A same-cell route contains one node and no
+link. Each admitted initiator flow and target flow pair has one route.
+
+Each graph retains only nodes and directed links used by its routes. Links join
+adjacent cells. Both link directions are present when routes use both. Endpoint
+and connectivity list order do not affect the topology or artifact content.
+Node names, links, attachments and route keys are sorted. Widths, arbitration
+and pipes keep their ordinary defaults.
+
+The helper checks dimensions, attachments and connectivity. Use flow counts that
+match the endpoint declarations. Validate the complete definition to check
+routes, endpoint identities, clock domains, mappings, protocols and resource
+limits. The helper creates no additional hardware type.
+
 ## Artifact writes
 
 Artifact paths must be unique basenames containing only letters, digits,
