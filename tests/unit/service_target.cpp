@@ -91,6 +91,29 @@ TEST_CASE("A service outlet carries its target mapping", "[service]") {
   CHECK_FALSE(lower_service_outlet(wide));
 }
 
+TEST_CASE("A service window retains every bank address bit", "[service]") {
+  auto d = definition();
+  const auto size = GENERATE(0x3000U, 0x5000U, 0x8000U);
+  const auto local = GENERATE(0U, 0x1000U);
+  d.targets.back().mappings = {{size * 257ULL, size, local}};
+  d.targets.back().log_registers = true;
+  d.error_logging.logs = {
+      {"errors", {"ram"}, std::nullopt, false, {{.offset = local}, {.offset = size - 64}}}};
+  const auto plan = build_network_plan(d);
+  REQUIRE(plan);
+  const auto profile = service_outlet_profile(plan.value(), plan.value().target_index("service"));
+  CHECK(profile.window_bits == (size == 0x3000 ? 14 : 15));
+  CHECK(profile.places.back().base == size - 64);
+  // The two loggers of the one log: each bank's key is its place in the chain, on branch 0.
+  REQUIRE(profile.places.size() == 2);
+  for (unsigned place = 0; place < 2; ++place) {
+    CHECK(profile.places[place].key == place);
+    CHECK(profile.places[place].branch == 0);
+  }
+  CHECK(profile.bank_bits == error_log_bank_address_bits);
+  CHECK(lower_service_outlet(profile));
+}
+
 TEST_CASE("A service target serves one packet from APB4 sources", "[service]") {
   auto cases = logger();
   SECTION("an unknown name") {

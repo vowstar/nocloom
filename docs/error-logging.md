@@ -15,7 +15,8 @@ and [driver rules](error-log-registers.md#driver-rules).
 
 | Size of the register window | Rule |
 | --- | --- |
-| 64 bytes to 1 MiB | Use a power of two to reach every bank address |
+| 64 to 2048 bytes | A power of two |
+| 4 KiB to 1 MiB | A multiple of 4 KiB |
 
 The global base aligns to the window size. At 64 bytes per bank, 64 logs of
 32 loggers fit in 128 KiB.

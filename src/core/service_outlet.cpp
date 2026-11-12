@@ -54,7 +54,7 @@ Result<NodeHardware> lower_service_outlet(const ServiceOutletProfile &p, bool sh
   const auto offered = l.active(l.either(writing, r.at("valid")));
   const auto address = l.pick(writing, w.at("address"), r.at("address"));
   const auto miss = l.bind("bus.miss", l.pick(writing, w.at("error"), r.at("error")));
-  const bool translated = p.mapping.local_address;
+  const bool translated = p.mapping.local_address || !std::has_single_bit(p.mapping.size);
   const auto offset = translated
                           ? mapping_decode::local(l, address, p.transport_address_bits, {p.mapping})
                           : l.fit(b.slice(address, 0, p.window_bits), window_offset_bits);
