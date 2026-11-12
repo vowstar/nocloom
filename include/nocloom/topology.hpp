@@ -14,4 +14,26 @@ namespace nocloom {
 // No file I/O or console side effects.
 Result<ExchangeTopology> tree_topology(const std::vector<TreeNode> &nodes,
                                        const std::vector<std::string> &initiators);
+
+// A zero-based grid attachment. Initiator flows match route_classes (one
+// when absent), and target flows match Target::flows.
+struct MeshEndpoint {
+  std::string name;
+  unsigned row = 0, column = 0;
+  unsigned flows = 1;
+  bool operator==(const MeshEndpoint &) const = default;
+};
+// Convert a grid of 1..128 cells to explicit graphs and routes. Columns are
+// X and rows are Y. Both directions independently traverse X before Y.
+// Only routed nodes and directed links are retained. Each admitted flow pair
+// gets a route. Endpoint and connectivity order do not affect the result.
+// clock_domain is copied to every retained node, without a default domain.
+// Flow counts must match the endpoint declarations. Validate the complete
+// Definition to check routes, clocks, protocols, mappings and resource limits. No file I/O or
+// console effects.
+Result<ExchangeTopology> mesh_topology(unsigned rows, unsigned columns,
+                                       const std::vector<MeshEndpoint> &initiators,
+                                       const std::vector<MeshEndpoint> &targets,
+                                       const Connectivity &connectivity,
+                                       std::optional<std::string> clock_domain = std::nullopt);
 } // namespace nocloom
