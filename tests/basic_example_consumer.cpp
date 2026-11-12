@@ -10,8 +10,9 @@
 #include <string_view>
 
 int main(int argc, char **argv) {
-  // An optional fourth argument "ipxact" adds the IP-XACT component.
-  if (argc != 4 && !(argc == 5 && std::string_view(argv[4]) == "ipxact"))
+  // The optional fourth argument selects IP-XACT or C headers.
+  if (argc != 4 && !(argc == 5 && (std::string_view(argv[4]) == "ipxact" ||
+                                   std::string_view(argv[4]) == "c-header")))
     return 1;
   const std::string_view mode(argv[1]);
   if (mode != "apb_simple" && mode != "apb_shared" && mode != "axi_lite_apb" &&
@@ -74,15 +75,18 @@ int main(int argc, char **argv) {
     return 3;
   d = loaded.value().definition;
 #endif
-  auto generated = nocloom::generate(d);
-  if (generated && argc == 5)
+  const bool c_header = argc == 5 && std::string_view(argv[4]) == "c-header";
+  auto generated = nocloom::generate(d, {.c_header = c_header});
+  if (generated && argc == 5 && !c_header)
     generated = nocloom::add_ipxact(d, generated.value());
   if (!generated) {
     for (const auto &diagnostic : generated.diagnostics())
       std::cerr << diagnostic.code << ": " << diagnostic.message << '\n';
     return 4;
   }
-  if (generated.value().size() != (argc == 5 ? 7U : 6U) ||
+  if (generated.value().size() != (c_header    ? 6U + d.initiators.size()
+                                   : argc == 5 ? 7U
+                                               : 6U) ||
       !std::filesystem::create_directory(argv[2]))
     return 5;
   for (const auto &artifact : generated.value()) {

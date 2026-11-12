@@ -924,6 +924,54 @@ TEST_CASE("A configuration opens error logging on the same network", "[observer]
   CHECK(xml->text.find(">ram<") != std::string::npos);
 }
 
+TEST_CASE("Register local addresses use target mapping validation", "[observer]") {
+  const auto yaml = [](const std::string &value) {
+    auto window = logged_window;
+    window.insert(window.find("clock_domain"), "local_address: " + value + ", ");
+    return logged_config(window + "  logs: [{name: errors, watch: [ram]}]\n");
+  };
+  const auto omitted =
+      parsed_definition(logged_config(logged_window + "  logs: [{name: errors, watch: [ram]}]\n"));
+  CHECK(generated_from(omitted) == generated_from(parsed_definition(yaml("'0'"))));
+  for (const auto local : {0ULL, 0x1000ULL, 0xfff00000ULL}) {
+    const auto parsed = parsed_definition(yaml("'" + std::to_string(local) + "'"));
+    auto direct = omitted;
+    std::ranges::find(direct.targets, "csr", &Target::name)->mappings[0].local_address = local;
+    CHECK(parsed == direct);
+    CHECK(generated_from(parsed) == generated_from(direct));
+  }
+  for (const auto &[local, code] : std::vector<std::pair<std::uint64_t, std::string>>{
+           {1, "NCL_ADDRESS_RANGE"},
+           {0xfffff000, "NCL_ENDPOINT_ADDRESS_WIDTH"},
+           {0x100000000ULL, "NCL_ENDPOINT_ADDRESS_WIDTH"},
+           {~0ULL, "NCL_ENDPOINT_ADDRESS_WIDTH"}}) {
+    const auto parsed = parsed_definition(yaml("'" + std::to_string(local) + "'"));
+    auto direct = omitted;
+    std::ranges::find(direct.targets, "csr", &Target::name)->mappings[0].local_address = local;
+    for (const auto &d : {parsed, direct}) {
+      const auto checked = generate(d);
+      REQUIRE_FALSE(checked);
+      CHECK(std::ranges::any_of(checked.diagnostics(),
+                                [&](const auto &diag) { return diag.code == code; }));
+    }
+  }
+  for (const auto &[value, code] : std::vector<std::pair<std::string, std::string>>{
+           {"4096", "NCL_SCHEMA_TYPE"},
+           {"null", "NCL_SCHEMA_TYPE"},
+           {"[]", "NCL_SCHEMA_TYPE"},
+           {"'-1'", "NCL_ADDRESS_RANGE"},
+           {"'0x10000000000000000'", "NCL_ADDRESS_RANGE"},
+           {"'0xxyz'", "NCL_ADDRESS_RANGE"}}) {
+    INFO(value);
+    const auto parsed = config::parse(yaml(value));
+    REQUIRE_FALSE(parsed);
+    CHECK(parsed.diagnostics().front().code == code);
+    CHECK(parsed.diagnostics().front().field ==
+          (value == "null" ? "" : "error_logging.registers.local_address"));
+    CHECK(parsed.diagnostics().front().location.has_value());
+  }
+}
+
 TEST_CASE("Explicit same-domain logs match the omitted domain", "[observer]") {
   const auto text = logged_config(logged_window + "  logs:\n    - {name: errors, watch: [ram]}\n");
   for (const auto topology : {0, 1, 2}) {

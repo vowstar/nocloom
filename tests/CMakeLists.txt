@@ -8,7 +8,34 @@ add_executable(nocloom_unit unit/core.cpp unit/message.cpp)
 target_sources(nocloom_unit PRIVATE unit/switch_graph.cpp)
 target_sources(nocloom_unit PRIVATE unit/connectivity.cpp)
 target_sources(nocloom_unit PRIVATE unit/canonical.cpp)
-target_sources(nocloom_unit PRIVATE unit/address_table.cpp unit/modes.cpp unit/routes.cpp)
+target_sources(nocloom_unit PRIVATE unit/address_table.cpp unit/modes.cpp unit/routes.cpp unit/c_header.cpp)
+add_test(NAME c_header_structure COMMAND nocloom_unit "[c-header]")
+set_tests_properties(c_header_structure PROPERTIES
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit TIMEOUT 120
+  LABELS "unit;quick" PROCESSORS 1)
+find_program(NOCLOOM_C_COMPILER NAMES cc gcc clang REQUIRED)
+add_executable(nocloom_c_header_definition c_header_definition.cpp)
+target_link_libraries(nocloom_c_header_definition PRIVATE nocloom_core)
+target_compile_options(nocloom_c_header_definition PRIVATE
+  $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>)
+add_test(NAME c_header_compile COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run.py
+  --case c_header --cli $<TARGET_FILE:nocloom_cli> --source ${PROJECT_SOURCE_DIR}
+  --build ${PROJECT_BINARY_DIR} --work ${CMAKE_CURRENT_BINARY_DIR}/c_header
+  --compiler ${CMAKE_CXX_COMPILER} --c-compiler ${NOCLOOM_C_COMPILER}
+  --definition-generator $<TARGET_FILE:nocloom_c_header_definition>)
+set_tests_properties(c_header_compile PROPERTIES TIMEOUT 120
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} LABELS "integration;quick" PROCESSORS 1)
+add_executable(nocloom_log_mapping_definition log_mapping_definition.cpp)
+target_link_libraries(nocloom_log_mapping_definition PRIVATE nocloom_core)
+target_compile_options(nocloom_log_mapping_definition PRIVATE
+  $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>)
+add_test(NAME log_mapping_transactions COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run.py
+  --case log_mapping --cli $<TARGET_FILE:nocloom_cli> --source ${PROJECT_SOURCE_DIR}
+  --build ${PROJECT_BINARY_DIR} --work ${CMAKE_CURRENT_BINARY_DIR}/log_mapping
+  --definition-generator $<TARGET_FILE:nocloom_log_mapping_definition>)
+set_tests_properties(log_mapping_transactions PROPERTIES TIMEOUT 180
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} LABELS "rtl;focused;ci" PROCESSORS 1
+  RESOURCE_LOCK log_mapping_simulation)
 add_test(NAME canonical_ir COMMAND nocloom_unit "[canonical]")
 set_tests_properties(canonical_ir PROPERTIES TIMEOUT 60 LABELS "unit;quick")
 add_test(NAME connectivity_structure COMMAND nocloom_unit "[connectivity]")

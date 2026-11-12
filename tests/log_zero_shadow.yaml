@@ -1,0 +1,22 @@
+schema_version: 10
+name: test_bus
+address_width: 32
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains:
+  - {name: main, clock_port: clk_main, reset_port: reset_n, test_port: test}
+initiators:
+  - {name: logger_control, clock_domain: main, protocol: apb4, data_width: 32}
+targets:
+  - name: ram
+    clock_domain: main
+    protocol: apb4
+    data_width: 32
+    attributes: amba
+    mappings: [{base: '0x100000', size: '0x1000'}]
+error_logging:
+  registers: {name: csr, base: '0x100000', size: '0x100000', clock_domain: main}
+  logs:
+    - {name: errors, watch: [ram], loggers: [{offset: '0x2000'}]}
+connectivity: all
+output: {backend: verilog, language: verilog_2001}
