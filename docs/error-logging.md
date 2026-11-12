@@ -148,6 +148,21 @@ The map uses these bank names.
 | First logger of a later log | The name of the log |
 | A later logger of a log, with `logger_index` `n` | `<log>_<n>` |
 
+In C++, set `AddressMapping::local_address` to the local byte address at the
+mapping base. Its default is zero.
+The mapped interval must fit the target address width, which is the
+network address width for the register window. Whole-page mappings require
+4 KiB alignment. A sub-page mapping requires alignment to its size.
+
+Each piece uses `local = global - base + local_address`. Only the mapped interval
+is reachable. Each bank must fit in the window.
+
+The local base leaves bank addresses unchanged. Only the mapped local interval
+is reachable. Each bank must fit in the register window.
+
+With global base `0x100000`, local base `0x1000`, and bank
+base `0x1000`, register offset `0x10` is at global address `0x100010`.
+
 ## Filters and forwarding
 
 | Field | Behavior |

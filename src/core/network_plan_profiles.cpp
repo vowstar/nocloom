@@ -1418,6 +1418,8 @@ ServiceOutletProfile service_outlet_profile(const NetworkPlan &plan, unsigned in
   profile.arrival = arrival_block(plan, tp);
   profile.response_run_bits = plan.response_run_bits();
   profile.window_bits = static_cast<unsigned>(std::countr_zero(tp.mappings.front().window.size));
+  const auto &mapping = tp.mappings.front();
+  profile.mapping = {mapping.window.base, mapping.window.size, mapping.local_base};
   const auto &banks = tp.service->banks;
   profile.bank_bits = banks.front().plan.address_bits;
   profile.key = banks.front().plan.key;

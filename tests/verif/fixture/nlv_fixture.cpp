@@ -1234,6 +1234,7 @@ std::vector<Component> service_outlet(const Params &) {
   profile.tag_bits = 2;
   profile.window_bits = window_bits;
   profile.bank_bits = bank_bits;
+  profile.mapping = {0, std::uint64_t{1} << window_bits, 0};
   for (unsigned k = 0; k < bases.size(); ++k)
     profile.places.push_back({bases[k], k, 0});
   auto node = take(lower_service_outlet(profile), "service outlet");
