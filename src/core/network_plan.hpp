@@ -61,7 +61,9 @@ struct SourcePlan {
   Protocol external_protocol = Protocol::Axi4;
   Protocol protocol = Protocol::Axi4;
   std::optional<Protocol> apb;
-  bool ahb = false, axi3 = false;
+  bool ahb = false, axi3 = false, ahb5 = false;
+  unsigned hmaster_bits = 0, hprot_bits = 4;
+  bool hnonsec = false;
   unsigned apb_bits = 32, address_bits = 32, engine_bits = 32;
   // AxID and AxLEN port widths of a full AXI4 source.
   std::optional<unsigned> id_bits, len_bits;
@@ -123,7 +125,9 @@ struct TargetPlan {
   // The declared port protocol is independent of the internal engine protocol.
   Protocol external_protocol = Protocol::Axi4;
   Protocol protocol = Protocol::Axi4;
-  bool axi3 = false;
+  bool axi3 = false, ahb5 = false;
+  unsigned hmaster_bits = 0, hprot_bits = 4;
+  bool hnonsec = false;
   std::vector<MappingPlan> mappings; // in base order
   // data_bits is the endpoint engine width (a narrow APB target keeps the network width) and
   // apb_bits a narrow APB target's physical width.
@@ -477,6 +481,9 @@ struct NetworkPlan {
   unsigned burst_level_bits = 0;
   // Network user flags (message.hpp point 13), transport.user_flags in order; zero without them.
   unsigned burst_user_bits = 0, burst_response_user_bits = 0;
+  // AHB5 request metadata above the named flags: presence, HPROT, HMASTER.
+  bool ahb5 = false;
+  unsigned hmaster_bits = 0;
   // BurstProfile::record_bits, with an error logger whose lengths vary.
   unsigned burst_record_bits = 0;
   std::vector<std::string> user_flags;

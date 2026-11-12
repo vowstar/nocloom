@@ -65,6 +65,9 @@ struct BurstOutletProfile {
   // AHB only: 1 (AHB-Lite/AHB5 OKAY, ERROR) or 2 (AMBA 2). ERROR fails the transfer. RETRY
   // and SPLIT cancel the next address and fail the current packet (no retry).
   unsigned hresp_width = 1;
+  bool ahb5 = false;
+  unsigned hmaster_bits = 0, ahb5_metadata_bits = 0, hprot_bits = 4;
+  bool hnonsec = false;
   // Target word: 32 for APB; 32 or 64 for AXI4-Lite; 32, 64, 128, 256, 512 or 1024 for AHB
   // (AHB-Lite 6.2). A burst beat keeps its AxSIZE as HSIZE: a read packet of beats of at least 32
   // bits is one burst that steps HADDR by 2^AxSIZE, byte and halfword packets are SINGLE transfers,

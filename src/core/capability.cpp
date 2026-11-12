@@ -19,6 +19,7 @@ constexpr ProtocolCaps caps[] = {
     {P::Apb2, false, true, wide, narrow, false, false, true, true, false, false, 1},
     {P::Axi4, true, true, wide, wide, true, true, false, false, false, true, 16},
     {P::AhbV3, true, true, wide, wide, true, true, true, false, true, false, 1},
+    {P::Ahb5, true, true, wide, wide, true, true, true, false, true, false, 1},
     {P::Axi3, true, true, wide, wide, true, true, false, false, false, true, 16}};
 
 std::optional<Finding> when(bool violated, std::string field, std::string message) {
@@ -89,6 +90,15 @@ std::set<unsigned> chain_stages(const NetworkPlan &plan) {
 bool ladder(unsigned bytes) { return bytes == 4 || bytes == 8 || bytes == 16 || bytes == 32; }
 
 constexpr CapabilityRule rules[] = {
+    {"ahb5.master_width", "NCL_AHB5_PROPERTIES", Scope::Pair, Stage::Plan,
+     [](const RuleView &v) {
+       const auto &pair = v.plan.pairs[v.at];
+       const auto &s = v.plan.sources[pair.source];
+       const auto &t = v.plan.targets[pair.target];
+       return when(t.ahb5 && t.hmaster_bits && t.hmaster_bits < s.hmaster_bits,
+                   target_field(v.def, t.name, "ahb5.hmaster_width"),
+                   "An AHB5 target HMASTER port must hold every reaching source HMASTER");
+     }},
     {"qos.shaper_protocol", "NCL_QOS_PROFILE", Scope::Network, Stage::Definition,
      [](const RuleView &v) {
        const auto &list = v.def.initiators;
@@ -159,7 +169,7 @@ constexpr CapabilityRule rules[] = {
        const auto &p = v.plan;
        const unsigned bits = p.burst_data_bits;
        const auto axi_source = [&](const SourcePlan &s) {
-         return (full_axi(s.external_protocol) || s.external_protocol == P::AhbV3) &&
+         return (full_axi(s.external_protocol) || ahb_protocol(s.external_protocol)) &&
                 s.protocol == P::Axi4 && !s.read_only && !s.write_only;
        };
        const auto axi_target = [&](const TargetPlan &t) {
@@ -177,13 +187,14 @@ constexpr CapabilityRule rules[] = {
        const bool apb = std::ranges::all_of(p.sources, apb_source) &&
                         std::ranges::all_of(p.targets, apb_target) && !p.laddered;
        const auto ahb = std::ranges::find_if(
-           p.targets, [](const TargetPlan &t) { return t.external_protocol == P::AhbV3; });
+           p.targets, [](const TargetPlan &t) { return ahb_protocol(t.external_protocol); });
        const auto field =
            ahb == p.targets.end() ? "exchange" : target_field(v.def, ahb->name, "protocol");
-       return when(p.levels() && !(axi || apb), field,
-                   "Scheduling levels require AXI4, AXI3 or AHB-Lite sources to full AXI4 or AXI3 "
-                   "targets, or 32-bit APB endpoints, without targets wider than the transport, "
-                   "exclusive access or timeout. AXI graphs also exclude one-direction endpoints");
+       return when(
+           p.levels() && !(axi || apb), field,
+           "Scheduling levels require AXI4, AXI3, AHB-Lite or AHB5 sources to full AXI4 or AXI3 "
+           "targets, or 32-bit APB endpoints, without targets wider than the transport, "
+           "exclusive access or timeout. AXI graphs also exclude one-direction endpoints");
      }},
     {"arbitration.single_candidate", "NCL_ARBITRATION_OUTPUT", Scope::Output, Stage::Plan,
      [](const RuleView &v) {

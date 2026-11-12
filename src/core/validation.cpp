@@ -677,7 +677,7 @@ void check_transport(Checks &c) {
     else if (!connects(d, limit.source, limit.target))
       c("NCL_AXI4_PACKETS", field,
         "A packet limit names a pair that the connectivity matrix does not carry");
-    else if (source->protocol == Protocol::AhbV3)
+    else if (detail::ahb_protocol(source->protocol))
       c("NCL_AXI4_PACKETS", field,
         "AHB initiators take the target packet limits; a pair limit needs an AXI4 initiator");
     else if (!full_axi(source->protocol))
@@ -1060,9 +1060,23 @@ void check_domains(Checks &c) {
     c("NCL_DOMAIN_REFERENCE", "clock_domains",
       "Endpoint domains do not match the selected topology");
 }
+void check_ahb5(Checks &c, std::optional<Protocol> protocol,
+                const std::optional<Ahb5Properties> &properties, const std::string &field) {
+  if (!properties)
+    return;
+  const auto &p = *properties;
+  if (protocol != Protocol::Ahb5)
+    c("NCL_AHB5_PROPERTIES", field + ".ahb5", "The ahb5 object requires protocol: ahb5");
+  else if ((p.hprot_width != 4 && p.hprot_width != 7) || p.hmaster_width > 32 || p.exclusive ||
+           p.hauser_width || p.hwuser_width || p.hruser_width || p.hbuser_width)
+    c("NCL_AHB5_PROPERTIES", field + ".ahb5",
+      "AHB5 requires hprot_width 4 or 7 and hmaster_width 0..32, without exclusive or user "
+      "signals");
+}
 // The protocol, data width and address width of an initiator.
 void check_initiator_face(Checks &c, const Initiator &initiator, const std::string &field) {
   const auto &d = c.d;
+  check_ahb5(c, initiator.protocol, initiator.ahb5, field);
   if (initiator.protocol) {
     if (*initiator.protocol == Protocol::Apb2)
       c("NCL_UNSUPPORTED_PROTOCOL", field + ".protocol",
@@ -1070,7 +1084,7 @@ void check_initiator_face(Checks &c, const Initiator &initiator, const std::stri
         "its first access cycle, which a network does not provide; use apb3 or apb4");
     else if (*initiator.protocol == Protocol::Apb4 || *initiator.protocol == Protocol::Apb3)
       check_apb_initiator(d, c.network_bits, initiator, field, c);
-    else if (*initiator.protocol == Protocol::AhbV3)
+    else if (detail::ahb_protocol(initiator.protocol))
       check_ahb_initiator(d, initiator, field, c);
     else if (initiator.data_width.value_or(c.source_bits) != c.network_bits &&
              !full_axi(initiator.protocol) &&
@@ -1079,7 +1093,7 @@ void check_initiator_face(Checks &c, const Initiator &initiator, const std::stri
       c("NCL_UNSUPPORTED_PROTOCOL", field + ".protocol", "Wide ingress requires full AXI4");
     else if (!detail::protocol_caps(*initiator.protocol).ingress)
       c("NCL_UNSUPPORTED_PROTOCOL", field + ".protocol",
-        "Schema 10 initiators support axi4, axi3, axi4_lite, apb4, apb3 or ahb_v3");
+        "Schema 10 initiators support axi4, axi3, axi4_lite, apb4, apb3 or ahb_v3 or ahb5");
   }
   // check_apb_initiator owns the width rules of an APB initiator.
   if (initiator.data_width && !apb_initiator(initiator)) {
@@ -1109,7 +1123,7 @@ bool check_initiator_bursts(Checks &c, const Initiator &initiator, const std::st
   const auto options = c.d.transport.value_or(TransportOptions{});
   const bool lite_source = initiator.protocol == Protocol::Axi4Lite;
   // check_apb_initiator and check_ahb_initiator own the port and burst rules of their faces.
-  const bool face_source = apb_initiator(initiator) || initiator.protocol == Protocol::AhbV3;
+  const bool face_source = apb_initiator(initiator) || detail::ahb_protocol(initiator.protocol);
   // An AXI3 AxLEN has four bits: bursts of at most 16 beats.
   const bool axi3 = initiator.protocol == Protocol::Axi3;
   for (const auto &[name, value, limit] :
@@ -1306,8 +1320,8 @@ void check_target_face(Checks &c, const Target &t, const std::string &field) {
   const bool narrow_address = t.address_width.value_or(d.address_width) <= 32;
   if (!caps.egress)
     c("NCL_UNSUPPORTED_PROTOCOL", field + ".protocol",
-      "Expected axi4, axi3 or a dedicated ahb_v3, apb4, apb3, apb2 or axi4_lite target");
-  else if (t.protocol == Protocol::AhbV3 && (network_bits != 32 || !narrow_address))
+      "Expected axi4, axi3 or a dedicated ahb_v3, ahb5, apb4, apb3, apb2 or axi4_lite target");
+  else if (detail::ahb_protocol(t.protocol) && (network_bits != 32 || !narrow_address))
     c("NCL_AHB_OUTLET_PROFILE", field + ".protocol",
       "Dedicated AHB targets require a 32-bit network data width (a wider AHB target sets its own "
       "data_width) and at most 32 local address bits; set address_width when the global width "
@@ -1329,7 +1343,7 @@ void check_target_face(Checks &c, const Target &t, const std::string &field) {
       c("NCL_ENDPOINT_DATA_WIDTH", field + ".data_width",
         "Target data width must be 32, 64, 128, 256, 512 or 1024");
     else if (width != network_bits && width >= 32 && !full_axi(protocol) &&
-             protocol != Protocol::AhbV3 && !(protocol == Protocol::Axi4Lite && width <= 64))
+             !detail::ahb_protocol(protocol) && !(protocol == Protocol::Axi4Lite && width <= 64))
       c("NCL_ENDPOINT_DATA_WIDTH", field + ".data_width",
         "A target data width different from the network data width needs an AXI4, AHB "
         "32/64-bit AXI4-Lite or 8/16-bit APB target");
@@ -1363,6 +1377,8 @@ void check_target_attributes(Checks &c, const Target &t, const std::string &fiel
       "AXI4, AXI4-Lite, APB4 and AHB targets need attributes, for example amba");
   if (!t.attributes)
     return;
+  if (t.protocol == Protocol::Ahb5 && *t.attributes != TargetAttributes::amba())
+    c("NCL_AHB5_PROPERTIES", field + ".attributes", "AHB5 targets require attributes: amba");
   const auto valid = [](const auto &bits) {
     return std::ranges::all_of(bits, [](const AttributeBit &bit) {
       return bit.source >= AttributeSource::Zero && bit.source <= AttributeSource::Instruction;
@@ -1372,7 +1388,7 @@ void check_target_attributes(Checks &c, const Target &t, const std::string &fiel
   const auto unused = [&](auto member) {
     return (*t.attributes).*member != amba.*member && (*t.attributes).*member != zero.*member;
   };
-  const bool axi = full_axi(protocol), ahb = protocol == Protocol::AhbV3;
+  const bool axi = full_axi(protocol), ahb = detail::ahb_protocol(protocol);
   if (!caps.attributes)
     c("NCL_TARGET_ATTRIBUTES", field + ".attributes", "APB3 and APB2 targets have no PPROT to map");
   else if (!valid(t.attributes->read_cache) || !valid(t.attributes->write_cache) ||
@@ -1388,6 +1404,9 @@ void check_target_attributes(Checks &c, const Target &t, const std::string &fiel
 // HRESP width, the timeout and the in-flight capacity. Burst shaping exists only on the AHB
 // outlet: other targets have no HBURST, so even an explicit default is rejected there.
 void check_target_options(Checks &c, const Target &t, const std::string &field) {
+  check_ahb5(c, t.protocol, t.ahb5, field);
+  if (t.protocol == Protocol::Ahb5 && t.hresp_width.value_or(1) != 1)
+    c("NCL_TARGET_AHB_HRESP", field + ".hresp_width", "AHB5 requires one-bit HRESP");
   const auto &caps = detail::protocol_caps(t.protocol.value_or(Protocol::Axi4));
   for (const auto &[key, pipe] :
        {std::pair{"arrival", &t.pipes.arrival}, std::pair{"response", &t.pipes.response},
@@ -1410,14 +1429,14 @@ void check_target_options(Checks &c, const Target &t, const std::string &field) 
   else if (t.fixed_bursts && !caps.fixed_single)
     c("NCL_TARGET_FIXED_BURSTS", field + ".fixed_bursts",
       "AXI4 targets receive FIXED bursts unchanged; fixed_bursts applies to dedicated apb4, "
-      "apb3, apb2, axi4_lite and ahb_v3 targets");
+      "apb3, apb2, axi4_lite and AHB targets");
   for (const auto &[present, key] :
        {std::pair{t.write_bursts.has_value(), "write_bursts"},
         std::pair{t.undefined_length_bursts.has_value(), "undefined_length_bursts"}})
     if (present && !caps.ahb_shape)
-      c("NCL_TARGET_AHB_BURSTS", field + "." + key, "Burst shaping applies to ahb_v3 targets only");
+      c("NCL_TARGET_AHB_BURSTS", field + "." + key, "Burst shaping applies to AHB targets only");
   if (t.hresp_width && !caps.ahb_shape)
-    c("NCL_TARGET_AHB_HRESP", field + ".hresp_width", "hresp_width applies to ahb_v3 targets only");
+    c("NCL_TARGET_AHB_HRESP", field + ".hresp_width", "hresp_width applies to AHB targets only");
   else if (t.hresp_width && *t.hresp_width != 1 && *t.hresp_width != 2)
     c("NCL_TARGET_AHB_HRESP", field + ".hresp_width",
       "Expected 1 (AHB-Lite/AHB5) or 2 (AMBA 2 AHB)");
@@ -1519,7 +1538,7 @@ void check_mapping(Checks &c, const Target &t, const AddressMapping &m, const st
       "base and local address are aligned to its size");
   // A wide word decodes as one beat, and an AXI4 packet never crosses a mapping edge: the
   // mapping holds one word.
-  else if ((t.protocol == Protocol::AhbV3 || t.protocol == Protocol::Axi4Lite ||
+  else if ((detail::ahb_protocol(t.protocol) || t.protocol == Protocol::Axi4Lite ||
             t.protocol == Protocol::Axi4) &&
            m.size < t.data_width.value_or(c.network_bits) / 8)
     c("NCL_ADDRESS_RANGE", field,

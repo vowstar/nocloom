@@ -146,10 +146,12 @@ unsigned dedicated_engine_bits(const NetworkPlan &plan, const std::string &targe
   // *.start) are control state, not payload.
   if (direction == 1 && t.protocol == Protocol::AhbV3)
     return 28U + 4 * arrival_bits(plan, t) + plan.burst_len_bits + 3 * plan.burst_id_bits +
-           3 * plan.source_bits + 24 * endpoint_word(plan, target) + half(t.upsize, direction);
+           3 * plan.source_bits + 24 * endpoint_word(plan, target) + half(t.upsize, direction) +
+           (t.ahb5 ? plan.burst_user_bits : 0);
   if (t.protocol == Protocol::AhbV3)
     return 49U + 5 * arrival_bits(plan, t) + 4 * plan.burst_len_bits + 4 * plan.burst_id_bits +
-           4 * plan.source_bits + 9 * endpoint_word(plan, target) + half(t.upsize, direction);
+           4 * plan.source_bits + 9 * endpoint_word(plan, target) + half(t.upsize, direction) +
+           (t.ahb5 ? 3 * plan.burst_user_bits : 0);
   // APB: the write side stages each completed packet's B snapshot in two
   // slots (address, result, size, [id,] [source]); the read side keeps two
   // full entries (address, result, data, size, [id,] [source]). A serial
@@ -193,7 +195,8 @@ unsigned dedicated_bus_bits(const NetworkPlan &plan, const std::string &target) 
   if (t.service)
     return 0U;
   if (t.protocol == Protocol::AhbV3)
-    return 7U + t.local_bits + 8 * endpoint_word(plan, target) + t.flow_bits();
+    return 7U + t.local_bits + 8 * endpoint_word(plan, target) + t.flow_bits() +
+           (t.ahb5 ? t.hprot_bits - 4 + unsigned(t.hnonsec) + t.hmaster_bits : 0);
   const unsigned fixed = t.protocol == Protocol::Apb3 || t.protocol == Protocol::Apb2 ? 36U : 39U;
   const bool single = apb_target(plan, target) && !t.back_to_back && !t.timeout;
   const auto address = apb_target(plan, target)
@@ -235,7 +238,11 @@ struct Obligations {
         const auto id = flow_id(source, operation);
         // An AHB face holds its data phase with the read engine: HADDR, HWRITE, HSIZE, HBURST,
         // HPROT, HMASTLOCK and NONSEQ.
-        const unsigned face = sp.ahb && direction == 1 ? sp.address_bits + 13 : 0;
+        const unsigned face =
+            sp.ahb && direction == 1
+                ? sp.address_bits + 13 +
+                      (sp.ahb5 ? sp.hprot_bits - 4 + unsigned(sp.hnonsec) + sp.hmaster_bits : 0)
+                : 0;
         // A mode-dependent decode holds the plane of a write in service.
         const unsigned plane =
             direction == 0 && plan.decodes_modes(static_cast<unsigned>(&sp - plan.sources.data()))

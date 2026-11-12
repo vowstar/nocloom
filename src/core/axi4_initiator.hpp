@@ -112,6 +112,9 @@ struct Axi4InitiatorProfile {
   // wider than the bus and a narrow beat outside SINGLE answer ERROR without access. Requests
   // issue only after every earlier write response, so transfers keep program order.
   bool ahb = false;
+  bool ahb5 = false;
+  unsigned hmaster_bits = 0, ahb5_metadata_bits = 0, hprot_bits = 4;
+  bool hnonsec = false;
   // AMBA 3 AXI ports (IHI0022B) on a full AXI4 engine: AWLOCK and ARLOCK are two bits, and W
   // carries WID. AxLOCK 0b01 is exclusive; 0b10 (locked) and 0b11 (reserved) take the reserved
   // AxBURST encoding, so the burst completes locally with SLVERR. W beats follow their AW in order

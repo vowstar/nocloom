@@ -267,6 +267,17 @@ void plan_source_pipes(SourcePlan &s, const Initiator &initiator) {
   }
   endpoint_pipe(s.pipes, "source/" + s.name + "/pipe/issue", {pipes.issue, false});
 }
+void plan_ahb5_metadata(NetworkPlan &plan, const Definition &d) {
+  for (const auto &i : d.initiators) {
+    plan.ahb5 = plan.ahb5 || i.protocol == Protocol::Ahb5;
+    plan.hmaster_bits =
+        std::max(plan.hmaster_bits, i.ahb5.value_or(Ahb5Properties{}).hmaster_width);
+  }
+  for (const auto &t : d.targets)
+    plan.ahb5 = plan.ahb5 || t.protocol == Protocol::Ahb5;
+  if (plan.ahb5)
+    plan.burst_user_bits += 8 + plan.hmaster_bits;
+}
 // The endpoint settings of the definition, in name order.
 void plan_endpoints(NetworkPlan &plan, const Definition &d) {
   const auto options = d.transport.value_or(TransportOptions{});
@@ -274,6 +285,7 @@ void plan_endpoints(NetworkPlan &plan, const Definition &d) {
   plan.user_flags = options.user_flags;
   plan.burst_user_bits = static_cast<unsigned>(options.user_flags.size());
   plan.burst_response_user_bits = options.response_user_bits;
+  plan_ahb5_metadata(plan, d);
   for (const auto &initiator : d.initiators) {
     auto &s = plan.sources.emplace_back();
     s.name = initiator.name;
@@ -291,7 +303,11 @@ void plan_endpoints(NetworkPlan &plan, const Definition &d) {
       s.apb_bits = initiator.data_width.value_or(32);
     }
     // An AHB burst holds at most 16 beats; the face drives AxID zero.
-    s.ahb = initiator.protocol == Protocol::AhbV3;
+    s.ahb = ahb_protocol(initiator.protocol);
+    s.ahb5 = initiator.protocol == Protocol::Ahb5;
+    s.hmaster_bits = initiator.ahb5.value_or(Ahb5Properties{}).hmaster_width;
+    s.hprot_bits = initiator.ahb5.value_or(Ahb5Properties{}).hprot_width;
+    s.hnonsec = initiator.ahb5.value_or(Ahb5Properties{}).hnonsec;
     if (s.ahb) {
       s.protocol = Protocol::Axi4;
       s.len_bits = 4;
@@ -373,6 +389,12 @@ void plan_endpoints(NetworkPlan &plan, const Definition &d) {
     x.external_protocol = t.protocol.value_or(Protocol::Axi4);
     x.axi3 = t.protocol == Protocol::Axi3;
     x.protocol = x.axi3 ? Protocol::Axi4 : t.protocol.value_or(Protocol::Axi4);
+    x.ahb5 = t.protocol == Protocol::Ahb5;
+    x.hmaster_bits = t.ahb5.value_or(Ahb5Properties{}).hmaster_width;
+    x.hprot_bits = t.ahb5.value_or(Ahb5Properties{}).hprot_width;
+    x.hnonsec = t.ahb5.value_or(Ahb5Properties{}).hnonsec;
+    if (x.ahb5)
+      x.protocol = Protocol::AhbV3;
     // Absent id_width: the default ID width for several bursts or a target monitor.
     if (x.protocol == Protocol::Axi4) {
       if (t.id_width ||

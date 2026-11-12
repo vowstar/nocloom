@@ -3145,6 +3145,14 @@ private:
   // The storage records of a source's write and read engines (axi4_initiator.cpp): descriptor,
   // slot and queued-descriptor words with the converter's and splitter's words of the direction,
   // then the return staging (the B response register, the one-beat R skid).
+  static void ahb5_source_names(std::vector<std::string> &fields, const SourcePlan &sp) {
+    if (sp.ahb5) {
+      if (sp.hnonsec)
+        fields.push_back("ahb.nonsecure");
+      if (sp.hmaster_bits)
+        fields.push_back("ahb.master");
+    }
+  }
   void register_source_storage(unsigned si, const SourceSide &side, const Imported &converter,
                                const Imported &splitter) {
     const auto &sp = plan.sources[si];
@@ -3211,6 +3219,7 @@ private:
       if (read && sp.ahb) {
         fields.insert(fields.end(), {"ahb.addr", "ahb.write", "ahb.size", "ahb.burst", "ahb.prot",
                                      "ahb.lock", "ahb.first"});
+        ahb5_source_names(fields, sp);
         controls.insert(controls.end(), {"ahb.phase", "ahb.sent", "ahb.done", "ahb.err", "ahb.end",
                                          "ahb.left", "ahb.flight", "ahb.open_write"});
       }
@@ -5010,8 +5019,10 @@ private:
             "next_data", "next_mask", "issue_address", "initial_result"};
         for (const auto &[name, value] : ep.states)
           if (name.starts_with(dir + "."))
-            (data_names.contains(name.substr(name.find_last_of('.') + 1)) ? words.first
-                                                                          : words.second)
+            ((data_names.contains(name.substr(name.find_last_of('.') + 1)) ||
+              (profile.ahb5 && name.ends_with(".user")))
+                 ? words.first
+                 : words.second)
                 .push_back(name);
       }
       // A denied direction holds each packet's first fragment one cycle.
@@ -5056,6 +5067,12 @@ private:
     if (ahb) {
       // The pipelined address and data phases replace the phase counter.
       bus_fields.push_back("bus.hwdata");
+      if (profile.ahb5) {
+        if (profile.hnonsec)
+          bus_fields.push_back("bus.nonsecure");
+        if (profile.hmaster_bits)
+          bus_fields.push_back("bus.master");
+      }
       bus_controls = {"bus.address_phase", "bus.data_phase",     "bus.data_write", "bus.write",
                       "bus.open",          "bus.open_write",     "bus.hburst",     "bus.htrans",
                       "bus.release",       "bus.address_packet", "bus.data_packet"};

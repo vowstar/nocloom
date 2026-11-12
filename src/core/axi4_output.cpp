@@ -307,6 +307,7 @@ private:
   // own protocol names them.
   const Json source_protocols = by_name(p.sources, [](const auto &s) {
     return std::optional{s.apb    ? *s.apb == Protocol::Apb3 ? "apb3" : "apb4"
+                         : s.ahb5 ? "ahb5"
                          : s.ahb  ? "ahb_v3"
                          : s.axi3 ? "axi3"
                          : s.protocol == Protocol::Axi4Lite ? "axi4_lite"
@@ -782,6 +783,35 @@ private:
                           "ERROR_without_target_access"},
           {"order", "every_request_issues_after_the_responses_of_earlier_writes"},
           {"reset", "cancel_the_burst_no_replay"}};
+    if (p.ahb5) {
+      definition["ahb5_properties"] = {
+          {"initiators",
+           by_name(p.sources,
+                   [](const SourcePlan &s) {
+                     return s.ahb5 ? std::optional{Json{{"hmaster_width", s.hmaster_bits},
+                                                        {"hprot_width", s.hprot_bits},
+                                                        {"hnonsec", s.hnonsec}}}
+                                   : std::nullopt;
+                   })},
+          {"targets", by_name(p.targets, [](const TargetPlan &t) {
+             return t.ahb5 ? std::optional{Json{{"hmaster_width", t.hmaster_bits},
+                                                {"hprot_width", t.hprot_bits},
+                                                {"hnonsec", t.hnonsec}}}
+                           : std::nullopt;
+           })}};
+      contract()["ahb5_properties"] =
+          "optional_HNONSEC_as_AxPROT1_HPROT_and_HMASTER_preserved_between_AHB5_endpoints_"
+          "other_sources_HMASTER_zero_AXI4_shareable_zero_see_docs_ahb";
+      if (any(p.sources, &SourcePlan::ahb5)) {
+        contract()["ahb_ingress"]["writes"] =
+            "bufferable_HPROT2_beats_complete_on_W_acceptance_and_ignore_the_B_unless_"
+            "seven_bit_HPROT6_is_shareable_other_writes_complete_their_last_beat_with_the_B_"
+            "and_preserve_errors";
+        contract()["ahb_ingress"]["attributes"] =
+            "AHB5_optional_HNONSEC_as_AxPROT1_HPROT_memory_types_as_AxCACHE_"
+            "raw_HPROT_and_HMASTER_in_request_metadata_AxID_and_AxLOCK_zero";
+      }
+    }
     if (any(p.sources, lite_face))
       contract()["lite_ingress"] = {
           {"channels", "independent_AW_W_single_slot_each_independent_B_R"},
@@ -840,6 +870,7 @@ private:
     definition["endpoint_protocols"]["targets"] = by_name(p.targets, [](const TargetPlan &t) {
       return std::optional{t.service ? "service"
                            : t.axi3  ? "axi3"
+                           : t.ahb5  ? "ahb5"
                                      : protocols[static_cast<int>(t.protocol)]};
     });
     if (has_axi3)

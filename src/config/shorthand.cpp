@@ -10,7 +10,7 @@
 
 namespace nocloom::config::detail {
 namespace {
-constexpr std::array<std::string_view, 21> initiator_keys{"name",
+constexpr std::array<std::string_view, 22> initiator_keys{"name",
                                                           "clock_domain",
                                                           "address_width",
                                                           "protocol",
@@ -30,8 +30,9 @@ constexpr std::array<std::string_view, 21> initiator_keys{"name",
                                                           "response_user_width",
                                                           "route_classes",
                                                           "default_class",
-                                                          "id_ranges"};
-constexpr std::array<std::string_view, 26> target_keys{"name",
+                                                          "id_ranges",
+                                                          "ahb5"};
+constexpr std::array<std::string_view, 27> target_keys{"name",
                                                        "clock_domain",
                                                        "mappings",
                                                        "address_width",
@@ -56,7 +57,8 @@ constexpr std::array<std::string_view, 26> target_keys{"name",
                                                        "pipes",
                                                        "user",
                                                        "response_user_width",
-                                                       "flows"};
+                                                       "flows",
+                                                       "ahb5"};
 constexpr std::array<const char *, 2> kinds{"initiators", "targets"};
 constexpr std::array<const char *, 2> singular{"initiator", "target"};
 

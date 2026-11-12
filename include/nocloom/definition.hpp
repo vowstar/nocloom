@@ -17,7 +17,7 @@ namespace nocloom {
 // network); Apb2 is never a valid initiator protocol. Axi4 is the full AXI4 burst profile. AhbV3 is
 // AMBA 3 AHB-Lite: a target outlet, or an initiator's subordinate port. Axi3 is an AMBA 3 AXI port
 // of an initiator or a target: AXI4 bursts of at most 16 beats with WID and a two-bit AxLOCK.
-enum class Protocol { Apb4, Axi4Lite, Apb3, Apb2, Axi4, AhbV3, Axi3 };
+enum class Protocol { Apb4, Axi4Lite, Apb3, Apb2, Axi4, AhbV3, Axi3, Ahb5 };
 // How the deassertion of an active-low reset port reaches the flip-flops of
 // the domains that use it. Resynchronized: the port deasserts asynchronously
 // and each domain releases it through two registers clocked by its own clock.
@@ -405,17 +405,25 @@ struct IdRange {
   std::string route_class;
   bool operator==(const IdRange &) const = default;
 };
+// AHB5 interface properties. A zero HMASTER width omits its port.
+struct Ahb5Properties {
+  unsigned hprot_width = 4;   // 4 or 7 protection bits
+  bool hnonsec = false;       // include the HNONSEC port
+  unsigned hmaster_width = 0; // 0..32, carried with the request
+  bool exclusive = false;     // HEXCL and HEXOKAY are unsupported
+  unsigned hauser_width = 0, hwuser_width = 0, hruser_width = 0, hbuser_width = 0;
+  bool operator==(const Ahb5Properties &) const = default;
+};
 struct Initiator {
   std::string name;
   std::string clock_domain;
   // Absent inherits the global address width.
   std::optional<unsigned> address_width = std::nullopt;
   // Required: axi4, axi3, a single-beat axi4_lite, apb4 or apb3 ingress, or an ahb_v3
-  // (AHB-Lite) ingress. An axi3 initiator follows the axi4 rules with len_width 0..4. An APB
-  // initiator is 8, 16 or 32 bits wide in a 32-bit network and
-  // sets none of id_width, len_width, access, narrow_bursts or max_outstanding above
-  // one. An AHB initiator is 32 to 1024 bits wide under the AXI4 width rules and sets
-  // none of them either.
+  // (AHB-Lite) or ahb5 ingress. An axi3 initiator follows the axi4 rules with len_width 0..4. An
+  // APB initiator is 8, 16 or 32 bits wide in a 32-bit network and sets none of id_width,
+  // len_width, access, narrow_bursts or max_outstanding above one. An AHB initiator is 32 to 1024
+  // bits wide under the AXI4 width rules and sets none of them either.
   std::optional<Protocol> protocol = std::nullopt;
   // Required. In a 32-bit network an AXI4 source may be 64 to
   // 1024 bits wide: converted to 32 bits, or, once any target differs from the
@@ -488,6 +496,7 @@ struct Initiator {
   std::vector<std::string> route_classes = {};
   std::optional<std::string> default_class = std::nullopt;
   std::vector<IdRange> id_ranges = {};
+  std::optional<Ahb5Properties> ahb5 = std::nullopt;
   bool operator==(const Initiator &) const = default;
 };
 // Targets: the outlet fails a target that leaves an issued handshake
@@ -508,7 +517,7 @@ struct Target {
   // Local address port; every mapping's local interval must fit.
   std::optional<unsigned> address_width = std::nullopt;
   // Required: axi4, axi3 (an AXI4 target with len_width 4, WID and a two-bit AxLOCK), or a
-  // dedicated ahb_v3, apb4, apb3, apb2 or axi4_lite port.
+  // dedicated ahb_v3, ahb5, apb4, apb3, apb2 or axi4_lite port.
   std::optional<Protocol> protocol = std::nullopt;
   // A read-only target never sees a write: the outlet absorbs it and
   // answers one SLVERR after W. A read-only AXI4 target has no AW/W/B ports.
@@ -615,6 +624,7 @@ struct Target {
   // The window of error logging's registers (docs/error-logging.md): this target has no ports of
   // its own. A configuration writes it as error_logging.registers; protocol stays apb4 here.
   bool log_registers = false;
+  std::optional<Ahb5Properties> ahb5 = std::nullopt;
   bool operator==(const Target &) const = default;
 };
 struct TreeNode {

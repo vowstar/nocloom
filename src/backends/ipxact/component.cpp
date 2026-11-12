@@ -70,7 +70,9 @@ const BusType &bus_type(Protocol protocol, bool initiator) {
     t.logical.insert(t.logical.end(), {{"HSELx", 1}, {"HREADYOUT", 1}});
     return t;
   }();
-  return initiator && protocol == Protocol::AhbV3 ? ahb_slave : types.at(protocol);
+  return initiator && (protocol == Protocol::AhbV3 || protocol == Protocol::Ahb5)
+             ? ahb_slave
+             : types.at(protocol == Protocol::Ahb5 ? Protocol::AhbV3 : protocol);
 }
 
 std::string hex(std::uint64_t value) {
@@ -365,7 +367,7 @@ private:
       std::ranges::transform(logical, logical.begin(), [](char c) {
         return static_cast<char>(c >= 'a' && c <= 'z' ? c - 'a' + 'A' : c);
       });
-      if (e.protocol == Protocol::AhbV3 && !e.initiator) {
+      if ((e.protocol == Protocol::AhbV3 || e.protocol == Protocol::Ahb5) && !e.initiator) {
         // The master abstraction receives HREADY from the target response multiplexor.
         // The physical HREADY output to slaves remains a plain model port.
         if (logical == "HREADY")

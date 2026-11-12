@@ -182,6 +182,11 @@ std::optional<Diagnostic> profile_window_error(const BurstOutletProfile &p, Prot
   return std::nullopt;
 }
 std::optional<Diagnostic> profile_error(const BurstOutletProfile &p, Protocol kind) {
+  if ((p.ahb5 && (kind != Protocol::AhbV3 || p.hresp_width != 1 || p.ahb5_metadata_bits < 8)) ||
+      p.hmaster_bits > 32 || (p.hprot_bits != 4 && p.hprot_bits != 7) ||
+      (!p.ahb5 && (p.hprot_bits != 4 || p.hnonsec)) || p.user_bits < p.ahb5_metadata_bits)
+    return error(outlet_profile_code(kind), "ahb5",
+                 "AHB5 needs one-bit HRESP and request metadata");
   if (auto bad = profile_bounds_error(p, kind))
     return bad;
   if (auto bad = profile_timeout_error(p, kind))
@@ -353,8 +358,11 @@ struct OutletBase {
     }
     l.out(face, field, value);
   }
-  static std::vector<const char *> captured() {
-    return {"address", "length", "size", "burst", "cache", "protection"};
+  std::vector<const char *> captured() const {
+    std::vector<const char *> fields{"address", "length", "size", "burst", "cache", "protection"};
+    if (p.ahb5)
+      fields.push_back("user");
+    return fields;
   }
   Fields capture(const std::string &prefix, const Fields &f, ValueId take) {
     Fields d;
@@ -905,8 +913,8 @@ void ApbOutlet::bus_issue() {
   read_protection = packet_coded ? r.at("protection") : rd_now.at("protection");
   read_cache = packet_coded ? r.at("cache") : rd_now.at("cache");
   if (timeout) {
-    orphan = o.orphan({{"address", bits}, {"left", p.len_bits}, {"mask", lanes}}, rd_now,
-                      OutletBase::captured());
+    orphan =
+        o.orphan({{"address", bits}, {"left", p.len_bits}, {"mask", lanes}}, rd_now, o.captured());
     read_address = l.b.select(failed, orphan.word.at("address"), read_address);
     read_mask = l.b.select(failed, orphan.word.at("mask"), read_mask);
     read_protection = l.b.select(failed, orphan.packet.at("protection"), read_protection);
@@ -2144,6 +2152,7 @@ struct AhbOutlet {
   void burst_blocks();
   void retire_write();
   void drive_bus();
+  void drive_ahb5(ValueId &hprot, ValueId cache, ValueId prot);
   void update_write();
   void respond_write();
   void update_read();
@@ -2489,8 +2498,8 @@ void AhbOutlet::write_accept() {
   live_rt = rt;
   if (timeout) {
     orphan = o.orphan({{"issuing", 1U}, {"address", bits}, {"left", p.len_bits}, {"transfer", 1U}},
-                      rd_now, OutletBase::captured());
-    for (const auto *name : OutletBase::captured())
+                      rd_now, o.captured());
+    for (const auto *name : o.captured())
       bus_rd[name] = l.b.select(failed, orphan.packet.at(name), rd_now.at(name));
     orphan.packet["result"] = l.latch("timeout.orphan.result", initial_now, orphan.capture);
     bus_issuing = l.b.select(failed, orphan.word.at("issuing"), issuing_now);
@@ -2879,6 +2888,32 @@ void AhbOutlet::retire_write() {
   }
 }
 
+void AhbOutlet::drive_ahb5(ValueId &hprot, ValueId cache, ValueId prot) {
+  if (!p.ahb5)
+    return;
+  const auto meta = l.b.select(choose_w, wd_now.at("user"), bus_rd.at("user"));
+  const unsigned offset = p.user_bits - p.ahb5_metadata_bits;
+  const auto present = l.b.slice(meta, offset, 1);
+  const auto lookup = l.inv(l.eq(l.b.slice(cache, 2, 2), 0));
+  const auto allocate = l.b.select(choose_w, l.b.slice(cache, 3, 1), l.b.slice(cache, 2, 1));
+  // Seven-bit HPROT has no Normal Non-cacheable Bufferable type (IHI0033C 3.9.3).
+  const auto bufferable = p.hprot_bits == 7 ? l.both(l.b.slice(cache, 0, 1), l.inv(l.eq(cache, 3)))
+                                            : l.b.slice(cache, 0, 1);
+  const auto mapped = l.b.concat(
+      l.b.concat(zero, allocate),
+      l.b.concat(lookup,
+                 l.b.concat(l.b.slice(cache, 1, 1),
+                            l.b.concat(bufferable, l.b.concat(l.b.slice(prot, 0, 1),
+                                                              l.inv(l.b.slice(prot, 2, 1)))))));
+  hprot = l.fit(l.b.select(present, l.b.slice(meta, offset + 1, 7), mapped), p.hprot_bits);
+  if (p.hnonsec)
+    out("ahb", "hnonsec", l.latch("bus.nonsecure", l.b.slice(prot, 1, 1), issue));
+  if (p.hmaster_bits) {
+    const unsigned master_bits = p.ahb5_metadata_bits - 8;
+    const auto master = master_bits ? l.b.slice(meta, offset + 8, master_bits) : zero;
+    out("ahb", "hmaster", l.latch("bus.master", l.fit(master, p.hmaster_bits), issue));
+  }
+}
 // The bus signals. Between the transfers of an open burst the bus shows BUSY
 // with the next address of the burst (WRAP turns inside its container).
 void AhbOutlet::drive_bus() {
@@ -2893,6 +2928,7 @@ void AhbOutlet::drive_bus() {
     hprot = l.b.concat(l.b.slice(cache, 0, 2),
                        l.b.concat(l.b.slice(prot, 0, 1), l.inv(l.b.slice(prot, 2, 1))));
   }
+  drive_ahb5(hprot, cache, prot);
   auto bus_prot = l.latch("bus.protection", hprot, issue);
   const auto driven = active(l.both(a_valid, l.inv(l.either(abort_pending, aborted_address))));
   const auto waiting = active(l.both(l.both(shown, l.inv(a_valid)), l.inv(abort_pending)));
@@ -3009,6 +3045,8 @@ void AhbOutlet::update_write() {
          {"address", "length", "size", "burst", "cache", "protection", "source", "id", "tag"})
       if (w.contains(name))
         l.b.update(q.at(name), l.b.select(head, w.at(name), q.at(name)));
+    if (p.ahb5)
+      l.b.update(q.at("user"), l.b.select(head, w.at("user"), q.at("user")));
     l.b.update(q.at("start"),
                l.b.select(head, l.b.slice(w.at("start_address"), 0, max_size), q.at("start")));
     l.b.update(q.at("hburst"), l.b.select(head, head_burst[k], q.at("hburst")));

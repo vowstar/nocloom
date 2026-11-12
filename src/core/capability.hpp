@@ -21,6 +21,9 @@ struct ProtocolCaps {
   unsigned max_outstanding;
 };
 const ProtocolCaps &protocol_caps(Protocol protocol);
+inline bool ahb_protocol(std::optional<Protocol> protocol) {
+  return protocol == Protocol::AhbV3 || protocol == Protocol::Ahb5;
+}
 inline bool width_in(std::uint32_t widths, unsigned bits) {
   return std::has_single_bit(bits) && bits >= 8 && bits <= 1024 &&
          (widths >> (std::bit_width(bits) - 4) & 1U);

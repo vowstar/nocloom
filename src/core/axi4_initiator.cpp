@@ -678,6 +678,15 @@ void initiator_width_errors(const Axi4InitiatorProfile &profile, std::vector<Dia
                                      "The AxLEN field width must be 4 to 8"));
 }
 
+void initiator_ahb5_errors(const Axi4InitiatorProfile &profile, std::vector<Diagnostic> &errors) {
+  if ((profile.ahb5 && (!profile.ahb || profile.ahb5_metadata_bits < 8 + profile.hmaster_bits)) ||
+      profile.hmaster_bits > 32 || (profile.hprot_bits != 4 && profile.hprot_bits != 7) ||
+      (!profile.ahb5 && (profile.hprot_bits != 4 || profile.hnonsec)) ||
+      profile.user_bits < profile.ahb5_metadata_bits)
+    errors.push_back(
+        initiator_error("NCL_AXI4_INITIATOR_AHB", "ahb5",
+                        "AHB5 needs an AHB face and request metadata for HPROT and HMASTER"));
+}
 void initiator_capacity_errors(const Axi4InitiatorProfile &profile,
                                std::vector<Diagnostic> &errors) {
   if (!profile.read)
@@ -719,6 +728,7 @@ void initiator_capacity_errors(const Axi4InitiatorProfile &profile,
         "NCL_AXI4_INITIATOR_AHB", "ahb",
         "An AHB face needs a read-write full AXI4 engine with one burst per direction and at "
         "least 12 address bits"));
+  initiator_ahb5_errors(profile, errors);
   if (profile.axi3 && (profile.lite || profile.apb || profile.ahb))
     errors.push_back(initiator_error("NCL_AXI4_INITIATOR_AXI3", "axi3",
                                      "AXI3 ports need a full AXI4 engine without another face"));
@@ -952,8 +962,14 @@ struct InitiatorLowering {
     const auto user_port = (p.user_bits || p.security_bits) && p.user_port_bits
                                ? std::optional{axi_input(ch + "user", p.user_port_bits)}
                                : std::nullopt;
-    if (p.user_bits)
-      f.user = map_attributes(l, p.user_flags, f.cache, f.prot, write_channel, user_port);
+    if (p.user_bits) {
+      if (!p.user_flags.empty())
+        f.user = map_attributes(l, p.user_flags, f.cache, f.prot, write_channel, user_port);
+      if (p.ahb5_metadata_bits) {
+        const auto meta = p.ahb ? face_in.at("ahb_metadata") : l.num(p.ahb5_metadata_bits, 0);
+        f.user = p.user_flags.empty() ? meta : l.b.concat(meta, f.user);
+      }
+    }
     if (p.security_bits)
       f.security = map_attributes(l, p.security_flags, f.cache, f.prot, write_channel, user_port);
     f.valid = axi_input(ch + "valid", 1);
@@ -1081,7 +1097,7 @@ void InitiatorLowering::ahb_face() {
   const auto hwrite = input("hwrite", 1);
   const auto hsize = input("hsize", 3);
   const auto hburst = input("hburst", 3);
-  const auto hprot = input("hprot", 4);
+  const auto hprot = input("hprot", p.hprot_bits);
   const auto hmastlock = input("hmastlock", 1);
   const auto hwdata = input("hwdata", p.data_bits);
   a.hready = input("hready", 1);
@@ -1100,6 +1116,17 @@ void InitiatorLowering::ahb_face() {
   const auto kind = latch("burst", hburst);
   const auto prot = latch("prot", hprot);
   const auto lock = latch("lock", hmastlock);
+  const auto nonsecure = p.ahb5 && p.hnonsec ? latch("nonsecure", input("hnonsec", 1)) : one;
+  if (p.ahb5_metadata_bits) {
+    auto raw =
+        p.hprot_bits == 7 ? prot : l.b.concat(l.num(2, 0), l.b.concat(l.b.slice(prot, 3, 1), prot));
+    auto meta = l.b.concat(raw, one);
+    if (p.ahb5_metadata_bits > 8) {
+      const auto master = p.hmaster_bits ? latch("master", input("hmaster", p.hmaster_bits)) : zero;
+      meta = l.b.concat(l.fit(master, p.ahb5_metadata_bits - 8), meta);
+    }
+    face_in["ahb_metadata"] = meta;
+  }
   const auto first = latch("first", l.eq(a.htrans, 2));
   a.sent = l.state("ahb.sent", 1);
   a.done = l.state("ahb.done", 1);
@@ -1117,7 +1144,10 @@ void InitiatorLowering::ahb_face() {
   a.serve = l.both(l.both(a.phase, legal), l.inv(l.either(a.end, a.err)));
   const auto fresh =
       l.bind("ahb.fresh", l.both(l.both(a.serve, l.inv(a.sent)), l.either(first, l.eq(a.left, 0))));
-  a.posted = l.both(a.write, l.b.slice(prot, 2, 1));
+  const auto bufferable = p.hprot_bits == 7
+                              ? l.both(l.b.slice(prot, 2, 1), l.inv(l.b.slice(prot, 6, 1)))
+                              : l.b.slice(prot, 2, 1);
+  a.posted = l.both(a.write, bufferable);
   // Undefined INCR admits only the transfer already in its data phase. This avoids
   // speculative target reads when the manager ends the burst. Fixed lengths retain their size.
   const auto undefined = l.num(4, 0);
@@ -1148,7 +1178,7 @@ void InitiatorLowering::ahb_face() {
         l.b.select(l.b.slice(aligned, k, 1),
                    l.b.concat(l.b.slice(lanes, 0, be_bits - (1U << k)), l.num(1U << k, 0)), lanes);
   const auto axprot =
-      l.b.concat(l.b.concat(l.inv(l.b.slice(prot, 0, 1)), one), l.b.slice(prot, 1, 1));
+      l.b.concat(l.b.concat(l.inv(l.b.slice(prot, 0, 1)), nonsecure), l.b.slice(prot, 1, 1));
   for (const auto *ch : {"aw", "ar"}) {
     const std::string c = ch;
     if (p.id_bits)
@@ -1158,10 +1188,12 @@ void InitiatorLowering::ahb_face() {
     face_in[c + "size"] = size;
     face_in[c + "burst"] = l.b.select(wrap, l.num(2, 2), l.num(2, 1));
     face_in[c + "lock"] = zero;
-    face_in[c + "cache"] =
-        l.b.concat(ch == std::string("aw") ? l.b.concat(zero, l.b.slice(prot, 3, 1))
-                                           : l.b.concat(l.b.slice(prot, 3, 1), zero),
-                   l.b.slice(prot, 2, 2));
+    face_in[c + "cache"] = l.b.concat(
+        ch == std::string("aw") ? l.b.concat(p.hprot_bits == 7 ? l.b.slice(prot, 5, 1) : zero,
+                                             l.b.slice(prot, p.hprot_bits == 7 ? 4 : 3, 1))
+                                : l.b.concat(l.b.slice(prot, p.hprot_bits == 7 ? 4 : 3, 1),
+                                             p.hprot_bits == 7 ? l.b.slice(prot, 5, 1) : zero),
+        l.b.slice(prot, 2, 2));
     face_in[c + "prot"] = axprot;
   }
   face_in["awvalid"] = a.awvalid;

@@ -46,7 +46,8 @@ The codes of the C++ tree helper are in
 | `NCL_AXI4_TRANSPORT_WORD` | `transport_word_bytes` is not 4, 8, 16 or 32 |
 | `NCL_TARGET_TIMEOUT` | `timeout.cycles` is not a power of two from 16 to 1048576, or the target protocol has no timeout |
 | `NCL_TARGET_APB_ACCESS`, `NCL_TARGET_FIXED_BURSTS` | Back-to-back access on a target that is not APB, or an invalid `fixed_bursts` value |
-| `NCL_TARGET_AHB_BURSTS`, `NCL_TARGET_AHB_HRESP` | Burst shaping or `hresp_width` on a target that is not `ahb_v3`, or an invalid value |
+| `NCL_AHB5_PROPERTIES` | The `ahb5` object requires AHB5. HPROT width must be 4 or 7. HMASTER width must be 0 to 32. A nonzero target width must hold each reaching source. Exclusive and user signals are unsupported. Targets accept only `attributes: amba`, without per-bit overrides |
+| `NCL_TARGET_AHB_BURSTS`, `NCL_TARGET_AHB_HRESP` | Burst shaping or `hresp_width` on a target that is not AHB, an invalid value, or two-bit HRESP on AHB5 |
 | `NCL_ENDPOINT_ACCESS` | `access` is not `read_write`, `read_only` or `write_only` |
 | `NCL_APB_INITIATOR`, `NCL_AHB_INITIATOR` | Unsupported options on a dedicated initiator |
 | `NCL_UNSUPPORTED_PROTOCOL` | Unsupported protocol or endpoint role |
