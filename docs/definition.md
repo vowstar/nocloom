@@ -8,7 +8,7 @@ Use YAML or C++ `nocloom::Definition`. Both use the same validator.
 | --- | --- |
 | Schema | `schema_version: 10` is required |
 | Names | Names start with a letter and contain only letters, digits and underscores, with at most 128 characters. Names cannot start with `nl_` or `nocloom_` and cannot be a Verilog-2001 keyword. Names within one kind are unique |
-| Required endpoint fields | `name`, `clock_domain`, `protocol`, `data_width`. Targets also need `mappings`. `axi4`, `axi3`, `axi4_lite`, `apb4` and `ahb_v3` targets also need `attributes` |
+| Required endpoint fields | `name`, `clock_domain`, `protocol`, `data_width`. Targets also need `mappings`. `axi4`, `axi3`, `axi4_lite`, `apb4`, `ahb_v3` and `ahb5` targets also need `attributes` |
 | Unknown fields | The YAML parser rejects unknown fields with `NCL_SCHEMA_UNKNOWN_FIELD` |
 | Duplicate YAML keys | The YAML parser rejects duplicate keys |
 | Integers | Unquoted decimal integers without leading zeros, such as `64`. Other forms produce `NCL_SCHEMA_TYPE` |
@@ -91,6 +91,25 @@ YAML without `output`, `output.backend` or `output.language` produces
 Verilog-2001 and asynchronous reset.
 
 CLI switches select optional output files. See [output files](outputs.md).
+
+## AHB5 endpoint fields
+
+`protocol: ahb5` has four-bit HPROT by default. The optional `ahb5` object
+accepts `hprot_width: 4` or `7`, `hnonsec: false` or `true`, and
+`hmaster_width` from 0 to 32. HNONSEC defaults to false and HMASTER width to
+zero. The object also accepts `exclusive: false`
+and zero `hauser_width`, `hwuser_width`, `hruser_width` and `hbuser_width`.
+Other values produce `NCL_AHB5_PROPERTIES`. The object is rejected on other
+protocols, including explicit defaults.
+
+AHB5 targets require `attributes: amba` and `hresp_width: 1`, or an omitted
+`hresp_width`. See [AHB5 basic properties](ahb.md#ahb5-basic-properties).
+C++ endpoints use `Protocol::Ahb5` and optional `Ahb5Properties ahb5`.
+
+```yaml
+protocol: ahb5
+ahb5: {hprot_width: 7, hnonsec: true, hmaster_width: 32}
+```
 
 ## Endpoint templates
 

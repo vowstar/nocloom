@@ -22,14 +22,15 @@ other scheduling options use the ordinary protocol capability checks.
 | Sources | Targets | Scheduling options |
 | --- | --- | --- |
 | AXI4 and AXI3 | Full AXI4 or AXI3 | Fixed levels, AxQOS maps, shapers and schedulers |
-| AHB-Lite, also alongside AXI4 and AXI3 | Full AXI4 or AXI3 | Fixed read and write levels from 0 to 7 |
+| AHB-Lite and AHB5, also alongside AXI4 and AXI3 | Full AXI4 or AXI3 | Fixed read and write levels from 0 to 7 |
 | 32-bit APB | 32-bit APB | Fixed levels, shapers and schedulers |
 
 Nonzero levels exclude AHB targets, other mixed protocol networks, targets
 wider than the network, exclusives and target timeouts. AXI graphs also exclude
 one-direction endpoints.
 AHB sources have no AWQOS or ARQOS ports and cannot set `qos.axqos_map`.
-They cannot set `qos.shaper` or `qos.scheduler`.
+They cannot set `qos.shaper` or `qos.scheduler`. AHB5 HMASTER identifies a
+manager and does not select a scheduling level.
 
 ## AxQOS maps
 

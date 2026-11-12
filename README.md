@@ -7,9 +7,9 @@
 An open-source on-chip interconnect generator.
 
 NocLoom is a command-line tool (CLI) and a C++20 library. You define a network
-of AXI4, AXI3, AXI4-Lite, APB and AHB-Lite interfaces in YAML or C++. NocLoom
-generates synthesizable Verilog-2001 with switches, protocol adapters, width
-converters and clock domain crossings (CDC).
+of AXI4, AXI3, AXI4-Lite, APB, AHB-Lite and AHB5 interfaces in YAML or C++.
+NocLoom generates synthesizable Verilog-2001 with switches, protocol adapters,
+width converters and clock domain crossings (CDC).
 
 NocLoom 0.1.0 is the first public release.
 
@@ -72,7 +72,7 @@ requests to APB for `uart`.
 | `test_ports` | `test` is an input that opens the clock gates during testing. Domains have clock gates by default |
 | `id_width` | The example does not set it. The AXI ID ports then have the default width of 4 bits |
 | `len_width` | The width of the AxLEN ports. The default is 4 bits. A standard AXI4 port has 8 bits |
-| `attributes` | `axi4`, `axi3`, `axi4_lite`, `apb4` and `ahb_v3` targets must set it. With `amba`, the CACHE, PROT or HPROT outputs of the target follow the Arm® AMBA® attributes of the request. With `zero`, these outputs are constants |
+| `attributes` | `axi4`, `axi3`, `axi4_lite`, `apb4`, `ahb_v3` and `ahb5` targets must set it. With `amba`, the CACHE, PROT or HPROT outputs of the target follow the Arm® AMBA® attributes of the request. AHB5 requires `amba`. Other targets can use `zero` for constant outputs |
 
 Validate the definition. Then generate the output files into a new directory.
 
@@ -141,16 +141,17 @@ traffic crosses its boundary.
 
 | Area | Supported |
 | --- | --- |
-| Initiator protocols | `axi4`, `axi3`, `axi4_lite`, `apb4`, `apb3` and `ahb_v3` (AHB-Lite) |
-| Target protocols | `axi4`, `axi3`, `axi4_lite`, `apb4`, `apb3`, `apb2` and `ahb_v3` (AHB-Lite) |
+| Initiator protocols | `axi4`, `axi3`, `axi4_lite`, `apb4`, `apb3`, `ahb_v3` (AHB-Lite) and `ahb5` |
+| Target protocols | `axi4`, `axi3`, `axi4_lite`, `apb4`, `apb3`, `apb2`, `ahb_v3` (AHB-Lite) and `ahb5` |
+| AHB5 properties | HPROT is 4 bits by default or 7 bits. HNONSEC is optional and defaults to absent. HMASTER is 0 to 32 bits |
 | Endpoint count | 1 to 256 initiators, 1 to 256 targets |
 | Topology | One generated request switch and one generated response switch, or declared request and response graphs of 1 to 128 switches each |
-| Endpoint data width | AXI4, AXI3 and AHB-Lite: 32, 64, 128, 256, 512 or 1024 bits. AXI4-Lite: 32 or 64 bits. APB: 8, 16 or 32 bits |
-| Network data width | 32 or 64 bits (`transport.data_width`). The default is the narrowest endpoint data width, where APB counts as 32 bits and the maximum is 64 bits. A 64-bit network accepts only 64-bit initiators, and no APB endpoint or AHB-Lite target. Other definitions need a 32-bit network. Therefore, an initiator wider than 64 bits needs `transport.data_width: 32`, unless a 32-bit or APB endpoint already makes 32 bits the default |
-| Address width | 2 to 48 bits. AXI4, AXI3 and AHB-Lite initiators need at least 12 bits. APB initiators use at most 32 bits. APB, AHB-Lite and AXI4-Lite targets use at most 32 bits |
+| Endpoint data width | AXI4, AXI3, AHB-Lite and AHB5: 32, 64, 128, 256, 512 or 1024 bits. AXI4-Lite: 32 or 64 bits. APB: 8, 16 or 32 bits |
+| Network data width | 32 or 64 bits (`transport.data_width`). The default is the narrowest endpoint data width, where APB counts as 32 bits and the maximum is 64 bits. A 64-bit network accepts only 64-bit initiators, and no APB endpoint or AHB target. Other definitions need a 32-bit network. Therefore, an initiator wider than 64 bits needs `transport.data_width: 32`, unless a 32-bit or APB endpoint already makes 32 bits the default |
+| Address width | 2 to 48 bits. AXI4, AXI3 and AHB initiators need at least 12 bits. APB initiators use at most 32 bits. APB, AHB and AXI4-Lite targets use at most 32 bits |
 | Clock domains | 1 to 64. More than one domain needs a `topology` whose switches name their clock domains. Clock domain crossings connect asynchronous clocks, or related clocks divided from one root |
 | Transactions | Several AXI transactions in flight, exclusive access, target timeouts and an error response on a decode miss |
-| Scheduling | Fixed levels from 0 to 7 on AXI4, AXI3 and AHB-Lite sources to full AXI4 or AXI3 targets, or on 32-bit APB networks. AXI4 and AXI3 sources also support AxQOS maps. AXI4, AXI3 and 32-bit APB sources support bandwidth limits |
+| Scheduling | Fixed levels from 0 to 7 on AXI4, AXI3, AHB-Lite and AHB5 sources to full AXI4 or AXI3 targets, or on 32-bit APB networks. AXI4 and AXI3 sources also support AxQOS maps. AXI4, AXI3 and 32-bit APB sources support bandwidth limits |
 | Routing | NocLoom fixes each route at generation |
 | Output files | Always: Verilog-2001 RTL and three JSON files, which are the map, the bundle and the dependency graph. Optional: IP-XACT (`--ipxact`), address table (`--address-table`), CDC constraints (`--cdc-constraints`) and C headers (`--c-header`) |
 | C++ library | In-memory generation, tree and mesh topology helpers, and a CMake package. The core library does no file I/O and prints nothing |
@@ -162,6 +163,8 @@ See [Documentation](#documentation) for field definitions and limits.
 | Not supported | Detail |
 | --- | --- |
 | Other protocols | For example AXI5, ACE and APB2 initiators |
+| AHB5 optional signals | HEXCL, HEXOKAY and HAUSER, HWUSER, HRUSER and HBUSER are unsupported. See [AHB5 properties](docs/ahb.md#ahb5-basic-properties) |
+| AHB arbitration and responses | No multi-manager arbitration or HSPLIT. RETRY and SPLIT on two-bit `ahb_v3` targets fail the packet |
 | Other RTL languages | The output is Verilog-2001 only |
 | Adaptive routing | A route does not change with the load |
 | Scheduling | Nonzero levels exclude AHB targets, other mixed protocol networks, exclusive access, target timeouts and targets wider than the network. AXI graphs also exclude one-direction endpoints. AHB sources have no AxQOS map, shaper or scheduler |

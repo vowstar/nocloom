@@ -2,7 +2,11 @@
 
 ## Target attributes
 
-Targets with attribute signals declare `attributes: amba` or `attributes: zero`.
+AHB5 targets require `attributes: amba`. Their HPROT and optional HNONSEC
+follow the [AHB5 mappings](ahb.md#ahb5-basic-properties).
+
+Other targets with attribute signals declare `attributes: amba` or
+`attributes: zero`.
 The object form maps `read_cache`, `write_cache`, `prot` and `hprot` bit by bit.
 Bit lists run from least significant to most significant.
 

@@ -1,4 +1,4 @@
-# AHB-Lite
+# AHB-Lite and AHB5
 
 ## AHB-Lite initiators
 
@@ -57,7 +57,7 @@ accumulated error on its last beat only. Holding BUSY inside a write holds its
 request path.
 
 An AHB initiator rejects pair packet-limit overrides and any capacity above one.
-It has no AHB5 exclusive, security, manager-ID or user signals. Common reset
+An `ahb_v3` initiator has no AHB5 security or manager-ID ports. Common reset
 cancels its burst, and the external manager must restart it.
 
 ## Dedicated AHB targets
@@ -90,8 +90,8 @@ HREADYOUT, HRDATA and HRESP using the accepted address phase. Feed the selected
 response into the network and distribute `hready` to every slave.
 
 With multiple target flows, the adapter selects `hreadyout_<flow>` for the
-current data-phase flow. It records that flow when its address phase is accepted.
-It broadcasts the selected ready value on every `hready_<flow>`.
+current data-phase flow. It records that flow when its address phase is
+accepted. It broadcasts the selected ready value on every `hready_<flow>`.
 With no data-phase flow selected, the selected ready value is high.
 During common reset, `hready` follows HREADYOUT and HTRANS is IDLE.
 
@@ -165,8 +165,8 @@ responses already offered and returns zero data with errors for the remaining
 words of that packet. Other packets keep their results. A cancelled address of
 another packet restarts with NONSEQ.
 
-Use two-cycle responses. HMASTER, HSPLIT and full RETRY/SPLIT arbitration are
-unsupported.
+Use two-cycle responses. An `ahb_v3` target has no HMASTER port. HSPLIT and
+full RETRY/SPLIT arbitration are unsupported.
 
 ERROR becomes SLVERR. Remaining burst transfers continue and side effects are
 not rolled back. The outgoing HPROT low bit is inverted instruction, bit 1
@@ -176,3 +176,74 @@ use the same merging and clamping rules as AXI, with at most 16 words and 1 KiB
 per packet.
 
 A FIXED beat wider than the target fails even with `fixed_bursts: single`.
+
+## AHB5 basic properties
+
+Set `protocol: ahb5` on either endpoint. AHB5 follows the transfer, burst,
+wait, ordering and two-cycle ERROR rules on this page. Targets require
+`attributes: amba` and one-bit HRESP.
+
+| Field in the optional `ahb5` object | Values | Default |
+| --- | --- | --- |
+| `hprot_width` | 4 or 7 bits | 4 |
+| `hnonsec` | Boolean, includes HNONSEC when true | `false` |
+| `hmaster_width` | 0 to 32 bits | 0, no HMASTER port |
+| `exclusive` | `false` only | `false` |
+| `hauser_width`, `hwuser_width`, `hruser_width`, `hbuser_width` | 0 only | 0 |
+
+Other protocols reject the object. Unsupported values and per-bit attribute
+maps produce `NCL_AHB5_PROPERTIES`. HEXCL, HEXOKAY and user ports are absent.
+HMASTLOCK returns ERROR without target access. Multi-manager arbitration,
+HSPLIT and full RETRY/SPLIT are unsupported.
+
+HMASTER is an initiator input and a target output, preserved through packet
+splitting, width conversion and clock crossings. A nonzero target width must
+hold all reaching initiator values, with zero extension where needed.
+Endpoints with width zero omit the port, and sources without HMASTER supply
+zero. HMASTER does not select routes or arbitration and does not use AXI IDs.
+
+HNONSEC is an initiator input and a target output. It maps to AxPROT[1],
+with 0 for Secure and 1 for Non-secure. AHB sources without an HNONSEC input
+supply 1. AXI sources supply AxPROT[1].
+
+AHB5 pairs preserve HPROT. Four-bit sources extend HPROT[4] from HPROT[3]
+and set HPROT[6:5] to zero. Four-bit targets use the low four bits.
+
+| Attribute | AHB to AXI4 | AXI4 to AHB5 |
+| --- | --- | --- |
+| HPROT[0], Data | Invert into AxPROT[2] | Invert AxPROT[2] |
+| HPROT[1], Privileged | AxPROT[0] | AxPROT[0] |
+| HPROT[2], Bufferable | AxCACHE[0] | AxCACHE[0]. Seven-bit targets use zero for AxCACHE `0011` |
+| HPROT[3], Modifiable | AxCACHE[1] | AxCACHE[1] |
+| HPROT[4], Lookup | ARCACHE[3], AWCACHE[2] | AxCACHE[2] OR AxCACHE[3] |
+| HPROT[5], Allocate | ARCACHE[2], AWCACHE[3] | ARCACHE[2] on reads, AWCACHE[3] on writes |
+| HPROT[6], Shareable | No AXI4 port | Zero |
+
+For four-bit AHB, Lookup follows HPROT[3] and Allocate is zero.
+Seven-bit HPROT[6:2] permits only the memory types below. Other encodings
+must not be driven. Shareable writes wait for target completion and errors.
+
+| Memory type | HPROT[6:2] (decimal) |
+| --- | --- |
+| Device without early response | 0 |
+| Device with early response | 1 |
+| Normal non-cacheable | 2, 18 |
+| Write-through | 6, 14, 22, 30 |
+| Write-back | 7, 15, 23, 31 |
+
+On seven-bit targets, AxCACHE `0011` maps to Normal non-cacheable.
+With AxPROT `000`, it gives HPROT `0001001`. Four-bit targets map
+AxCACHE[1:0] directly to HPROT[3:2], giving `1101` for that request.
+Reads use ARCACHE and ARPROT. Writes use AWCACHE and AWPROT.
+
+The map records the endpoint protocol as `ahb5`. Under
+`definition.ahb5_properties`, `initiators` and `targets` list each endpoint's
+`hprot_width`, `hnonsec` and `hmaster_width` by name.
+IP-XACT uses the AMBA3 AHBLite subset and maps four-bit HPROT on the bus.
+Seven-bit HPROT, HNONSEC and HMASTER are plain model ports outside that mapping.
+
+The rules follow [AMBA AHB, IHI 0033C, sections 3.8 to 3.10][ahb5-spec]
+and [AMBA AXI, IHI 0022E, table A4-5][axi-memory].
+
+[ahb5-spec]: https://documentation-service.arm.com/static/6141bf0d674a052ae36ca811
+[axi-memory]: https://documentation-service.arm.com/static/5f915b62f86e16515cdc3b1c

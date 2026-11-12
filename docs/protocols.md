@@ -3,7 +3,7 @@
 Byte lanes use little-endian ordering. The manuals use full AXI for AXI4 and
 AXI3, and Lite for AXI4-Lite.
 
-Related manuals: [AHB-Lite](ahb.md),
+Related manuals: [AHB-Lite and AHB5](ahb.md),
 [APB and AXI4-Lite targets](dedicated-targets.md),
 [Widths and AXI target interfaces](width-conversion.md),
 [Attributes and user signals](user-signals.md).
@@ -19,6 +19,7 @@ Related manuals: [AHB-Lite](ahb.md),
 | `apb3` | Initiator or target | 8, 16, 32 |
 | `apb2` | Target only | 8, 16, 32 |
 | `ahb_v3` | AHB-Lite initiator or target | 32, 64, 128, 256, 512, 1024 |
+| `ahb5` | AHB5 initiator or target with basic properties | 32, 64, 128, 256, 512, 1024 |
 
 APB endpoints require a 32-bit network.
 
@@ -41,6 +42,9 @@ direction. APB and AHB initiators reject this option.
 A target refuses the direction it does not support without bus access. Refused
 writes return one error after consuming W. Refused reads return zero data and an
 error on every beat.
+
+AHB5 supports four-bit or seven-bit HPROT, optional HNONSEC and HMASTER. See
+[AHB5 basic properties](ahb.md#ahb5-basic-properties) for mappings and limits.
 
 ## AXI4 initiators
 
