@@ -11,6 +11,25 @@ namespace nocloom::config {
 namespace {
 using detail::ParseFailure;
 using detail::Reader;
+Ahb5Properties ahb5_properties(Reader &r, const YAML::Node &node, const std::string &path) {
+  r.object(node, path,
+           {"hprot_width", "hnonsec", "hmaster_width", "exclusive", "hauser_width", "hwuser_width",
+            "hruser_width", "hbuser_width"});
+  Ahb5Properties out;
+  if (node["hnonsec"])
+    out.hnonsec = r.boolean(node["hnonsec"], path + ".hnonsec");
+  if (node["exclusive"])
+    out.exclusive = r.boolean(node["exclusive"], path + ".exclusive");
+  for (const auto &[key, value] : {std::pair{"hprot_width", &out.hprot_width},
+                                   {"hmaster_width", &out.hmaster_width},
+                                   {"hauser_width", &out.hauser_width},
+                                   {"hwuser_width", &out.hwuser_width},
+                                   {"hruser_width", &out.hruser_width},
+                                   {"hbuser_width", &out.hbuser_width}})
+    if (node[key])
+      *value = r.integer(node[key], path + "." + key);
+  return out;
+}
 // A preset name (amba, zero) or {preset, read_cache, write_cache, prot, hprot}
 // whose bit lists are 0, 1 or a flag name, optionally prefixed by ~. Only the
 // signals of the target protocol may be listed.
@@ -26,6 +45,9 @@ TargetAttributes target_attributes(Reader &r, const YAML::Node &node, const std:
   };
   if (node.IsScalar())
     return preset(node, path);
+  if (protocol == Protocol::Ahb5)
+    r.fail("NCL_AHB5_PROPERTIES", path,
+           "AHB5 does not support per-bit attribute overrides. Use attributes: amba", node.Mark());
   r.object(node, path, {"preset", "read_cache", "write_cache", "prot", "hprot"});
   auto result = node["preset"] ? preset(r.field(node, "preset", path + ".preset"), path + ".preset")
                                : TargetAttributes::zero();
@@ -887,6 +909,8 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
               QosScheduler{get("under_level"), get("over_level"), get("threshold_percent")};
         }
       }
+      if (node["ahb5"])
+        d.initiators.back().ahb5 = ahb5_properties(r, node["ahb5"], path + ".ahb5");
       if (node["address_width"])
         d.initiators.back().address_width = r.integer(
             r.field(node, "address_width", path + ".address_width"), path + ".address_width");
@@ -1023,6 +1047,8 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
           }
         }
       }
+      if (node["ahb5"])
+        d.targets.back().ahb5 = ahb5_properties(r, node["ahb5"], path + ".ahb5");
       if (node["address_width"])
         d.targets.back().address_width = r.integer(
             r.field(node, "address_width", path + ".address_width"), path + ".address_width");

@@ -1237,6 +1237,11 @@ Axi4InitiatorProfile initiator_profile(const NetworkPlan &plan, unsigned index) 
   profile.tag_bits = plan.burst_tag_bits;
   profile.user_bits = plan.burst_user_bits;
   profile.response_user_bits = plan.burst_response_user_bits;
+  profile.ahb5 = sp.ahb5;
+  profile.hmaster_bits = sp.hmaster_bits;
+  profile.hprot_bits = sp.hprot_bits;
+  profile.hnonsec = sp.hnonsec;
+  profile.ahb5_metadata_bits = plan.ahb5 ? 8 + plan.hmaster_bits : 0;
   profile.user_port_bits = sp.user_bits;
   profile.response_user_port_bits = sp.response_user_bits;
   profile.user_flags = sp.user_flags;
@@ -1399,6 +1404,11 @@ BurstOutletProfile outlet_profile(const NetworkPlan &plan, unsigned index) {
   profile.fixed_single = tp.fixed_single;
   profile.undefined_length_bursts = !tp.fixed_length;
   profile.hresp_width = tp.hresp_bits;
+  profile.ahb5 = tp.ahb5;
+  profile.hmaster_bits = tp.hmaster_bits;
+  profile.hprot_bits = tp.hprot_bits;
+  profile.hnonsec = tp.hnonsec;
+  profile.ahb5_metadata_bits = plan.ahb5 ? 8 + plan.hmaster_bits : 0;
   if (tp.protocol == Protocol::Axi4Lite && tp.outstanding > 1)
     profile.max_outstanding = tp.outstanding;
   profile.flows = tp.flows;
