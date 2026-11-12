@@ -71,6 +71,9 @@ if(NOCLOOM_BUILD_EXAMPLES)
   target_link_libraries(nocloom_feature_definitions_example PRIVATE nocloom_core)
   add_executable(nocloom_tree_example examples/generate_tree.cpp)
   target_link_libraries(nocloom_tree_example PRIVATE nocloom_core)
+  add_executable(nocloom_mesh_example examples/generate_mesh.cpp)
+  target_link_libraries(nocloom_mesh_example PRIVATE nocloom_core)
+  target_compile_options(nocloom_mesh_example PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>)
   add_executable(nocloom_large_tree_example examples/generate_large_tree.cpp)
   target_link_libraries(nocloom_large_tree_example PRIVATE nocloom_core)
 endif()
@@ -134,7 +137,8 @@ target_sources(nocloom_core PRIVATE src/core/cross_domain.cpp)
 
 target_sources(nocloom_core PRIVATE src/core/async_fifo.cpp src/core/related_clock.cpp)
 
-target_sources(nocloom_core PRIVATE src/core/switch_graph.cpp src/core/tree_topology.cpp)
+target_sources(nocloom_core PRIVATE src/core/switch_graph.cpp src/core/tree_topology.cpp
+  src/core/mesh_topology.cpp)
 
 target_sources(nocloom_core PRIVATE src/core/exchange_composition.cpp src/core/exchange_clocking.cpp
   src/core/dependency_graph.cpp src/core/network_plan.cpp src/core/network_plan_profiles.cpp src/core/plan_obligations.cpp

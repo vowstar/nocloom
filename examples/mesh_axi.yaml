@@ -1,0 +1,265 @@
+schema_version: 10
+name: mesh_axi
+address_width: 32
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains:
+  - {name: main, clock_port: clk_main, reset_port: reset_n, test_port: test}
+arbitration: {policy: round_robin}
+initiators:
+  - {name: i00, clock_domain: main, protocol: axi4, data_width: 32, id_width: 2, len_width: 8}
+  - {name: i02, clock_domain: main, protocol: axi4, data_width: 32, id_width: 2, len_width: 8}
+  - {name: i20, clock_domain: main, protocol: axi4, data_width: 32, id_width: 2, len_width: 8}
+  - {name: i22, clock_domain: main, protocol: axi4, data_width: 32, id_width: 2, len_width: 8}
+targets:
+  - {name: t00, clock_domain: main, protocol: axi4, data_width: 32, id_width: 4, len_width: 8, attributes: amba, mappings: [{base: "0", size: "4096"}]}
+  - {name: t01, clock_domain: main, protocol: axi4, data_width: 32, id_width: 4, len_width: 8, attributes: amba, mappings: [{base: "4096", size: "4096"}]}
+  - {name: t02, clock_domain: main, protocol: axi4, data_width: 32, id_width: 4, len_width: 8, attributes: amba, mappings: [{base: "8192", size: "4096"}]}
+  - {name: t10, clock_domain: main, protocol: axi4, data_width: 32, id_width: 4, len_width: 8, attributes: amba, mappings: [{base: "12288", size: "4096"}]}
+  - {name: t11, clock_domain: main, protocol: axi4, data_width: 32, id_width: 4, len_width: 8, attributes: amba, mappings: [{base: "16384", size: "4096"}]}
+  - {name: t12, clock_domain: main, protocol: axi4, data_width: 32, id_width: 4, len_width: 8, attributes: amba, mappings: [{base: "20480", size: "4096"}]}
+  - {name: t20, clock_domain: main, protocol: axi4, data_width: 32, id_width: 4, len_width: 8, attributes: amba, mappings: [{base: "24576", size: "4096"}]}
+  - {name: t21, clock_domain: main, protocol: axi4, data_width: 32, id_width: 4, len_width: 8, attributes: amba, mappings: [{base: "28672", size: "4096"}]}
+  - {name: t22, clock_domain: main, protocol: axi4, data_width: 32, id_width: 4, len_width: 8, attributes: amba, mappings: [{base: "32768", size: "4096"}]}
+connectivity: all
+output: {backend: verilog, language: verilog_2001}
+topology:
+  request:
+    nodes:
+      - {name: mesh_r0_c0, clock_domain: main}
+      - {name: mesh_r0_c1, clock_domain: main}
+      - {name: mesh_r0_c2, clock_domain: main}
+      - {name: mesh_r1_c0, clock_domain: main}
+      - {name: mesh_r1_c1, clock_domain: main}
+      - {name: mesh_r1_c2, clock_domain: main}
+      - {name: mesh_r2_c0, clock_domain: main}
+      - {name: mesh_r2_c1, clock_domain: main}
+      - {name: mesh_r2_c2, clock_domain: main}
+    links:
+      - {from: mesh_r0_c0, to: mesh_r0_c1}
+      - {from: mesh_r0_c0, to: mesh_r1_c0}
+      - {from: mesh_r0_c1, to: mesh_r0_c0}
+      - {from: mesh_r0_c1, to: mesh_r0_c2}
+      - {from: mesh_r0_c1, to: mesh_r1_c1}
+      - {from: mesh_r0_c2, to: mesh_r0_c1}
+      - {from: mesh_r0_c2, to: mesh_r1_c2}
+      - {from: mesh_r1_c0, to: mesh_r0_c0}
+      - {from: mesh_r1_c0, to: mesh_r2_c0}
+      - {from: mesh_r1_c1, to: mesh_r0_c1}
+      - {from: mesh_r1_c1, to: mesh_r2_c1}
+      - {from: mesh_r1_c2, to: mesh_r0_c2}
+      - {from: mesh_r1_c2, to: mesh_r2_c2}
+      - {from: mesh_r2_c0, to: mesh_r1_c0}
+      - {from: mesh_r2_c0, to: mesh_r2_c1}
+      - {from: mesh_r2_c1, to: mesh_r1_c1}
+      - {from: mesh_r2_c1, to: mesh_r2_c0}
+      - {from: mesh_r2_c1, to: mesh_r2_c2}
+      - {from: mesh_r2_c2, to: mesh_r1_c2}
+      - {from: mesh_r2_c2, to: mesh_r2_c1}
+    entries:
+      - {endpoint: i00, node: mesh_r0_c0}
+      - {endpoint: i02, node: mesh_r0_c2}
+      - {endpoint: i20, node: mesh_r2_c0}
+      - {endpoint: i22, node: mesh_r2_c2}
+    exits:
+      - {endpoint: t00, node: mesh_r0_c0}
+      - {endpoint: t01, node: mesh_r0_c1}
+      - {endpoint: t02, node: mesh_r0_c2}
+      - {endpoint: t10, node: mesh_r1_c0}
+      - {endpoint: t11, node: mesh_r1_c1}
+      - {endpoint: t12, node: mesh_r1_c2}
+      - {endpoint: t20, node: mesh_r2_c0}
+      - {endpoint: t21, node: mesh_r2_c1}
+      - {endpoint: t22, node: mesh_r2_c2}
+  response:
+    nodes:
+      - {name: mesh_r0_c0, clock_domain: main}
+      - {name: mesh_r0_c1, clock_domain: main}
+      - {name: mesh_r0_c2, clock_domain: main}
+      - {name: mesh_r1_c0, clock_domain: main}
+      - {name: mesh_r1_c1, clock_domain: main}
+      - {name: mesh_r1_c2, clock_domain: main}
+      - {name: mesh_r2_c0, clock_domain: main}
+      - {name: mesh_r2_c1, clock_domain: main}
+      - {name: mesh_r2_c2, clock_domain: main}
+    links:
+      - {from: mesh_r0_c0, to: mesh_r0_c1}
+      - {from: mesh_r0_c0, to: mesh_r1_c0}
+      - {from: mesh_r0_c1, to: mesh_r0_c0}
+      - {from: mesh_r0_c1, to: mesh_r0_c2}
+      - {from: mesh_r0_c2, to: mesh_r0_c1}
+      - {from: mesh_r0_c2, to: mesh_r1_c2}
+      - {from: mesh_r1_c0, to: mesh_r0_c0}
+      - {from: mesh_r1_c0, to: mesh_r1_c1}
+      - {from: mesh_r1_c0, to: mesh_r2_c0}
+      - {from: mesh_r1_c1, to: mesh_r1_c0}
+      - {from: mesh_r1_c1, to: mesh_r1_c2}
+      - {from: mesh_r1_c2, to: mesh_r0_c2}
+      - {from: mesh_r1_c2, to: mesh_r1_c1}
+      - {from: mesh_r1_c2, to: mesh_r2_c2}
+      - {from: mesh_r2_c0, to: mesh_r1_c0}
+      - {from: mesh_r2_c0, to: mesh_r2_c1}
+      - {from: mesh_r2_c1, to: mesh_r2_c0}
+      - {from: mesh_r2_c1, to: mesh_r2_c2}
+      - {from: mesh_r2_c2, to: mesh_r1_c2}
+      - {from: mesh_r2_c2, to: mesh_r2_c1}
+    entries:
+      - {endpoint: t00, node: mesh_r0_c0}
+      - {endpoint: t01, node: mesh_r0_c1}
+      - {endpoint: t02, node: mesh_r0_c2}
+      - {endpoint: t10, node: mesh_r1_c0}
+      - {endpoint: t11, node: mesh_r1_c1}
+      - {endpoint: t12, node: mesh_r1_c2}
+      - {endpoint: t20, node: mesh_r2_c0}
+      - {endpoint: t21, node: mesh_r2_c1}
+      - {endpoint: t22, node: mesh_r2_c2}
+    exits:
+      - {endpoint: i00, node: mesh_r0_c0}
+      - {endpoint: i02, node: mesh_r0_c2}
+      - {endpoint: i20, node: mesh_r2_c0}
+      - {endpoint: i22, node: mesh_r2_c2}
+  routes:
+    - initiator: i00
+      target: t00
+      request: [mesh_r0_c0]
+      response: [mesh_r0_c0]
+    - initiator: i00
+      target: t01
+      request: [mesh_r0_c0, mesh_r0_c1]
+      response: [mesh_r0_c1, mesh_r0_c0]
+    - initiator: i00
+      target: t02
+      request: [mesh_r0_c0, mesh_r0_c1, mesh_r0_c2]
+      response: [mesh_r0_c2, mesh_r0_c1, mesh_r0_c0]
+    - initiator: i00
+      target: t10
+      request: [mesh_r0_c0, mesh_r1_c0]
+      response: [mesh_r1_c0, mesh_r0_c0]
+    - initiator: i00
+      target: t11
+      request: [mesh_r0_c0, mesh_r0_c1, mesh_r1_c1]
+      response: [mesh_r1_c1, mesh_r1_c0, mesh_r0_c0]
+    - initiator: i00
+      target: t12
+      request: [mesh_r0_c0, mesh_r0_c1, mesh_r0_c2, mesh_r1_c2]
+      response: [mesh_r1_c2, mesh_r1_c1, mesh_r1_c0, mesh_r0_c0]
+    - initiator: i00
+      target: t20
+      request: [mesh_r0_c0, mesh_r1_c0, mesh_r2_c0]
+      response: [mesh_r2_c0, mesh_r1_c0, mesh_r0_c0]
+    - initiator: i00
+      target: t21
+      request: [mesh_r0_c0, mesh_r0_c1, mesh_r1_c1, mesh_r2_c1]
+      response: [mesh_r2_c1, mesh_r2_c0, mesh_r1_c0, mesh_r0_c0]
+    - initiator: i00
+      target: t22
+      request: [mesh_r0_c0, mesh_r0_c1, mesh_r0_c2, mesh_r1_c2, mesh_r2_c2]
+      response: [mesh_r2_c2, mesh_r2_c1, mesh_r2_c0, mesh_r1_c0, mesh_r0_c0]
+    - initiator: i02
+      target: t00
+      request: [mesh_r0_c2, mesh_r0_c1, mesh_r0_c0]
+      response: [mesh_r0_c0, mesh_r0_c1, mesh_r0_c2]
+    - initiator: i02
+      target: t01
+      request: [mesh_r0_c2, mesh_r0_c1]
+      response: [mesh_r0_c1, mesh_r0_c2]
+    - initiator: i02
+      target: t02
+      request: [mesh_r0_c2]
+      response: [mesh_r0_c2]
+    - initiator: i02
+      target: t10
+      request: [mesh_r0_c2, mesh_r0_c1, mesh_r0_c0, mesh_r1_c0]
+      response: [mesh_r1_c0, mesh_r1_c1, mesh_r1_c2, mesh_r0_c2]
+    - initiator: i02
+      target: t11
+      request: [mesh_r0_c2, mesh_r0_c1, mesh_r1_c1]
+      response: [mesh_r1_c1, mesh_r1_c2, mesh_r0_c2]
+    - initiator: i02
+      target: t12
+      request: [mesh_r0_c2, mesh_r1_c2]
+      response: [mesh_r1_c2, mesh_r0_c2]
+    - initiator: i02
+      target: t20
+      request: [mesh_r0_c2, mesh_r0_c1, mesh_r0_c0, mesh_r1_c0, mesh_r2_c0]
+      response: [mesh_r2_c0, mesh_r2_c1, mesh_r2_c2, mesh_r1_c2, mesh_r0_c2]
+    - initiator: i02
+      target: t21
+      request: [mesh_r0_c2, mesh_r0_c1, mesh_r1_c1, mesh_r2_c1]
+      response: [mesh_r2_c1, mesh_r2_c2, mesh_r1_c2, mesh_r0_c2]
+    - initiator: i02
+      target: t22
+      request: [mesh_r0_c2, mesh_r1_c2, mesh_r2_c2]
+      response: [mesh_r2_c2, mesh_r1_c2, mesh_r0_c2]
+    - initiator: i20
+      target: t00
+      request: [mesh_r2_c0, mesh_r1_c0, mesh_r0_c0]
+      response: [mesh_r0_c0, mesh_r1_c0, mesh_r2_c0]
+    - initiator: i20
+      target: t01
+      request: [mesh_r2_c0, mesh_r2_c1, mesh_r1_c1, mesh_r0_c1]
+      response: [mesh_r0_c1, mesh_r0_c0, mesh_r1_c0, mesh_r2_c0]
+    - initiator: i20
+      target: t02
+      request: [mesh_r2_c0, mesh_r2_c1, mesh_r2_c2, mesh_r1_c2, mesh_r0_c2]
+      response: [mesh_r0_c2, mesh_r0_c1, mesh_r0_c0, mesh_r1_c0, mesh_r2_c0]
+    - initiator: i20
+      target: t10
+      request: [mesh_r2_c0, mesh_r1_c0]
+      response: [mesh_r1_c0, mesh_r2_c0]
+    - initiator: i20
+      target: t11
+      request: [mesh_r2_c0, mesh_r2_c1, mesh_r1_c1]
+      response: [mesh_r1_c1, mesh_r1_c0, mesh_r2_c0]
+    - initiator: i20
+      target: t12
+      request: [mesh_r2_c0, mesh_r2_c1, mesh_r2_c2, mesh_r1_c2]
+      response: [mesh_r1_c2, mesh_r1_c1, mesh_r1_c0, mesh_r2_c0]
+    - initiator: i20
+      target: t20
+      request: [mesh_r2_c0]
+      response: [mesh_r2_c0]
+    - initiator: i20
+      target: t21
+      request: [mesh_r2_c0, mesh_r2_c1]
+      response: [mesh_r2_c1, mesh_r2_c0]
+    - initiator: i20
+      target: t22
+      request: [mesh_r2_c0, mesh_r2_c1, mesh_r2_c2]
+      response: [mesh_r2_c2, mesh_r2_c1, mesh_r2_c0]
+    - initiator: i22
+      target: t00
+      request: [mesh_r2_c2, mesh_r2_c1, mesh_r2_c0, mesh_r1_c0, mesh_r0_c0]
+      response: [mesh_r0_c0, mesh_r0_c1, mesh_r0_c2, mesh_r1_c2, mesh_r2_c2]
+    - initiator: i22
+      target: t01
+      request: [mesh_r2_c2, mesh_r2_c1, mesh_r1_c1, mesh_r0_c1]
+      response: [mesh_r0_c1, mesh_r0_c2, mesh_r1_c2, mesh_r2_c2]
+    - initiator: i22
+      target: t02
+      request: [mesh_r2_c2, mesh_r1_c2, mesh_r0_c2]
+      response: [mesh_r0_c2, mesh_r1_c2, mesh_r2_c2]
+    - initiator: i22
+      target: t10
+      request: [mesh_r2_c2, mesh_r2_c1, mesh_r2_c0, mesh_r1_c0]
+      response: [mesh_r1_c0, mesh_r1_c1, mesh_r1_c2, mesh_r2_c2]
+    - initiator: i22
+      target: t11
+      request: [mesh_r2_c2, mesh_r2_c1, mesh_r1_c1]
+      response: [mesh_r1_c1, mesh_r1_c2, mesh_r2_c2]
+    - initiator: i22
+      target: t12
+      request: [mesh_r2_c2, mesh_r1_c2]
+      response: [mesh_r1_c2, mesh_r2_c2]
+    - initiator: i22
+      target: t20
+      request: [mesh_r2_c2, mesh_r2_c1, mesh_r2_c0]
+      response: [mesh_r2_c0, mesh_r2_c1, mesh_r2_c2]
+    - initiator: i22
+      target: t21
+      request: [mesh_r2_c2, mesh_r2_c1]
+      response: [mesh_r2_c1, mesh_r2_c2]
+    - initiator: i22
+      target: t22
+      request: [mesh_r2_c2]
+      response: [mesh_r2_c2]
