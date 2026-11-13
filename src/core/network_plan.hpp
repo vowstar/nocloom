@@ -18,6 +18,19 @@
 #include <stdexcept>
 
 namespace nocloom::detail {
+// An endpoint path starts with source/<name> or target/<name>.
+inline std::string endpoint_owner(const std::string &path) {
+  return path.substr(0, path.find('/', 7));
+}
+// Only a complete protocol component after the endpoint name denotes its protocol zone.
+inline std::string gate_owner(const std::string &path) {
+  if (path.starts_with("source/") || path.starts_with("target/")) {
+    const auto owner = endpoint_owner(path);
+    if (path == owner + "/protocol")
+      return owner;
+  }
+  return path;
+}
 // One mapping of a target: its own window, the local address at its base, its routing windows
 // (the parts no smaller mapping overlapping it takes; layout_mappings) and, for each of its aligned
 // power-of-two blocks holding another mapping, the packet boundary that keeps packets in that block
@@ -99,6 +112,7 @@ struct SourcePlan {
   std::vector<std::string> flows;
   std::vector<IdClassInterval> id_ranges;
   std::string default_class;
+  std::optional<EndpointClockGating> clock_gating = std::nullopt;
   bool operator==(const SourcePlan &) const = default;
 };
 // One bank of a service target: where it sits in the target's window, and the output of the
@@ -165,6 +179,7 @@ struct TargetPlan {
   }
   // The bits of a flow number, zero for one flow.
   unsigned flow_bits() const { return static_cast<unsigned>(std::bit_width(flows - 1)); }
+  std::optional<EndpointClockGating> clock_gating = std::nullopt;
   bool operator==(const TargetPlan &) const = default;
 };
 // A connected (source, target) pair by index, with its packet limit in bytes (zero keeps the
@@ -543,6 +558,18 @@ struct NetworkPlan {
   DependencyGraph dependency;
   DependencyReport dependency_report;
   bool clocked() const { return !domains.empty(); }
+  std::optional<EndpointClockGating> endpoint_gating(const std::string &owner) const {
+    const auto endpoint_name = owner.substr(owner.find('/') + 1);
+    if (owner.starts_with("source/")) {
+      const auto it = std::ranges::find(sources, endpoint_name, &SourcePlan::name);
+      return it == sources.end() ? std::nullopt : it->clock_gating;
+    }
+    if (owner.starts_with("target/")) {
+      const auto it = std::ranges::find(targets, endpoint_name, &TargetPlan::name);
+      return it == targets.end() ? std::nullopt : it->clock_gating;
+    }
+    return std::nullopt;
+  }
   const TargetPlan &target(std::string_view key) const {
     const auto it = std::ranges::lower_bound(targets, key, {}, &TargetPlan::name);
     if (it == targets.end() || it->name != key)

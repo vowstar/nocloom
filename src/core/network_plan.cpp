@@ -291,6 +291,7 @@ void plan_endpoints(NetworkPlan &plan, const Definition &d) {
     auto &s = plan.sources.emplace_back();
     s.name = initiator.name;
     s.external_protocol = initiator.protocol.value_or(Protocol::Axi4);
+    s.clock_gating = initiator.clock_gating;
     s.qos = initiator.qos;
     if (plan.placement)
       plan.placement->objects["source/" + s.name] = initiator.clock_domain;
@@ -369,6 +370,7 @@ void plan_endpoints(NetworkPlan &plan, const Definition &d) {
   for (const auto &t : d.targets) {
     auto &x = plan.targets.emplace_back();
     x.name = t.name;
+    x.clock_gating = t.clock_gating;
     const auto index = static_cast<std::size_t>(&t - d.targets.data());
     for (std::size_t m = 0; m < t.mappings.size(); ++m) {
       const auto &y = t.mappings[m];

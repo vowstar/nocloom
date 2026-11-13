@@ -321,7 +321,7 @@ void plan_clocking(NetworkPlan &p) {
   // Each endpoint pipe (<endpoint>/pipe/<place>) in its endpoint's domain.
   auto pipes_in = [&](const std::vector<EndpointPipe> &pipes) {
     for (const auto &pipe : pipes)
-      p.resource_domains.emplace(pipe.name, owner(pipe.name.substr(0, pipe.name.find("/pipe/"))));
+      p.resource_domains.emplace(pipe.name, owner(endpoint_owner(pipe.name)));
   };
   for (const auto &s : p.sources)
     pipes_in(s.pipes);

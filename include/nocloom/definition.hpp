@@ -26,9 +26,10 @@ enum class Protocol { Apb4, Axi4Lite, Apb3, Apb2, Axi4, AhbV3, Axi3, Ahb5, Apb5 
 // Both drive the flip-flops directly. Assertion is always asynchronous.
 enum class ResetRelease { Resynchronized, AllClocksOff, OnClockEdge };
 // Clock gate placement: None places no gate; PerSwitchAndEndpoint (the default) gives each switch
-// of a gated domain one gate and each endpoint two, one for its protocol side and one for its
-// transport side.
+// of a gated domain one gate. EndpointClockGating selects each endpoint's protocol and
+// transport gates. Separate is the default.
 enum class ClockGating { None, PerSwitchAndEndpoint };
+enum class EndpointClockGating { Separate, Shared, TransportOnly };
 // Which flip-flops get a reset pin. All (the default) resets every flip-flop; Minimal resets only
 // the control ones, and a clock crossing's payload slots and receive register then keep their
 // value through a reset. A crossing's reset-handshake Gray counts have no reset pin in either
@@ -499,6 +500,8 @@ struct Initiator {
   std::optional<std::string> default_class = std::nullopt;
   std::vector<IdRange> id_ranges = {};
   std::optional<Ahb5Properties> ahb5 = std::nullopt;
+  // Absent selects Separate. Explicit modes require automatic gating in a gated domain.
+  std::optional<EndpointClockGating> clock_gating = std::nullopt;
   bool operator==(const Initiator &) const = default;
 };
 // Targets: the outlet fails a target that leaves an issued handshake
@@ -630,6 +633,8 @@ struct Target {
   // its own. A configuration writes it as error_logging.registers; protocol stays apb4 here.
   bool log_registers = false;
   std::optional<Ahb5Properties> ahb5 = std::nullopt;
+  // Absent selects Separate. Explicit modes require automatic gating in a gated domain.
+  std::optional<EndpointClockGating> clock_gating = std::nullopt;
   bool operator==(const Target &) const = default;
 };
 struct TreeNode {

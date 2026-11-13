@@ -195,11 +195,12 @@ public:
     const auto &p = out.plan;
     if (p.clock_gating == ClockGating::None || object.empty())
       return nullptr;
-    const auto owner = object.substr(0, object.find("/protocol"));
+    const auto owner = gate_owner(object);
     const auto domain =
         p.clocked() ? *std::ranges::find(p.domains, p.object_domains.at(owner), &DomainPlan::name)
                     : p.domain;
-    if (!domain.gated)
+    if (!domain.gated ||
+        (object != owner && p.endpoint_gating(owner) == EndpointClockGating::TransportOnly))
       return nullptr;
     auto &r = regions[object];
     r.domain = domain.name;
@@ -214,6 +215,20 @@ public:
   }
   // Each gated region's gate, once the network is complete.
   void gate_regions() {
+    for (auto it = regions.begin(); it != regions.end();) {
+      const auto owner = gate_owner(it->first);
+      if (owner == it->first || out.plan.endpoint_gating(owner) != EndpointClockGating::Shared) {
+        ++it;
+        continue;
+      }
+      auto &combined = regions[owner];
+      combined.domain = it->second.domain;
+      combined.states.insert(combined.states.end(), it->second.states.begin(),
+                             it->second.states.end());
+      combined.idle.insert(combined.idle.end(), it->second.idle.begin(), it->second.idle.end());
+      combined.wake.insert(combined.wake.end(), it->second.wake.begin(), it->second.wake.end());
+      it = regions.erase(it);
+    }
     for (const auto &[object, r] : regions) {
       if (r.states.empty())
         continue;
@@ -4161,9 +4176,10 @@ private:
       // A head admitted ahead (into the dispatch stage) counts in the outlet's pool at once.
       if (t.admits)
         zone->wake.insert(zone->wake.end(), {(*t.admits)[0], (*t.admits)[1]});
+    }
+    if (transport)
       transport->wake.insert(transport->wake.end(),
                              {out_wrsp.valid, read_face_wake(t, ep, out_rrsp.valid)});
-    }
     first = b.ir.states.size();
     if (t.upsize) {
       t.merge = c.import_endpoint(admitted(lower_axi4_upsize(upsize_profile(plan, o))),
