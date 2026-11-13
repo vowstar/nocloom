@@ -988,8 +988,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--cli', required=True)
     parser.add_argument('--work', required=True)
-    parser.add_argument('--mode', choices=sorted(MODES), required=True)
+    parser.add_argument('--mode', choices=sorted(MODES) + ['apb5', 'apb5_clocked'], required=True)
     args = parser.parse_args()
+    if args.mode.startswith('apb5'):
+        from apb5_user_bench import run
+        run(args.cli, args.work, args.mode == 'apb5_clocked')
+        return
     base = Path(args.work).resolve()
     base.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix='run-', dir=base))

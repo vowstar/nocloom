@@ -1,8 +1,10 @@
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <functional>
+#include <nlohmann/json.hpp>
 #include <nocloom/config.hpp>
 #include <nocloom/generation.hpp>
+#include <nocloom/ipxact.hpp>
 #include <tuple>
 
 namespace {
@@ -870,6 +872,93 @@ TEST_CASE("APB5 user widths follow endpoint signal limits", "[axi4-config][apb5]
     d.initiators[0].id_width = 1;
     rejected(validate(d), "NCL_APB_INITIATOR");
   }
+}
+
+TEST_CASE("Every endpoint retains its protocol in structural outputs", "[axi4-config]") {
+  using namespace nocloom;
+  struct Expected {
+    Protocol protocol;
+    const char *name, *library, *bus;
+  };
+  const Expected protocols[] = {{Protocol::Apb4, "apb4", "AMBA4", "APB4"},
+                                {Protocol::Axi4Lite, "axi4_lite", "AMBA4", "AXI4-Lite"},
+                                {Protocol::Apb3, "apb3", "AMBA3", "APB"},
+                                {Protocol::Apb2, "apb2", "AMBA2", "APB"},
+                                {Protocol::Axi4, "axi4", "AMBA4", "AXI4"},
+                                {Protocol::AhbV3, "ahb_v3", "AMBA3", "AHBLite"},
+                                {Protocol::Axi3, "axi3", "AMBA3", "AXI"},
+                                {Protocol::Ahb5, "ahb5", "AMBA3", "AHBLite"},
+                                {Protocol::Apb5, "apb5", "AMBA5", "APB5"}};
+  auto d = profile();
+  d.initiators.clear();
+  d.targets.clear();
+  for (const auto &e : protocols) {
+    if (e.protocol != Protocol::Apb2) {
+      Initiator i{"i_" + std::string(e.name), "main"};
+      i.protocol = e.protocol;
+      i.data_width = 32;
+      d.initiators.push_back(i);
+    }
+    Target t{"t_" + std::string(e.name), "main", {{d.targets.size() * 4096, 4096}}};
+    t.protocol = e.protocol;
+    t.data_width = 32;
+    if (e.protocol != Protocol::Apb2 && e.protocol != Protocol::Apb3)
+      t.attributes = TargetAttributes::amba();
+    d.targets.push_back(t);
+  }
+  const auto generated = generate(d);
+  for (const auto &diag : generated.diagnostics())
+    UNSCOPED_INFO(diag.code << " " << diag.field << " " << diag.message);
+  REQUIRE(generated);
+  const auto table = add_address_table(generated.value());
+  REQUIRE(table);
+  const auto packaged = add_ipxact(d, table.value());
+  REQUIRE(packaged);
+  const auto file = [&](const char *suffix) -> const std::string & {
+    const auto at = std::ranges::find_if(packaged.value(),
+                                         [&](const auto &a) { return a.path.ends_with(suffix); });
+    REQUIRE(at != packaged.value().end());
+    return at->text;
+  };
+  const auto map = nlohmann::json::parse(file(".map.json"));
+  const auto bundle = nlohmann::json::parse(file(".bundle.json"));
+  const auto addresses = nlohmann::json::parse(file(".address_table.json"));
+  const auto &xml = file(".ipxact.xml");
+  for (const auto &e : protocols)
+    for (const bool source : {true, false}) {
+      if (source && e.protocol == Protocol::Apb2)
+        continue;
+      const auto name = std::string(source ? "i_" : "t_") + e.name;
+      const auto role = source ? "initiators" : "targets";
+      CAPTURE(name);
+      CHECK(map["definition"]["endpoint_protocols"][role][name] == e.name);
+      CHECK(bundle["definition"]["endpoint_protocols"][role][name] == e.name);
+      const auto begin =
+          xml.find("<spirit:name>" + name + "</spirit:name>", xml.find("<spirit:busInterfaces>"));
+      REQUIRE(begin != std::string::npos);
+      const auto end = xml.find("</spirit:busInterface>", begin);
+      REQUIRE(end != std::string::npos);
+      const auto interface = xml.substr(begin, end - begin);
+      CHECK(interface.find(
+                std::string("<spirit:busType spirit:vendor=\"amba.com\" spirit:library=\"") +
+                e.library + "\" spirit:name=\"" + e.bus + "\"") != std::string::npos);
+      CHECK(interface.find(source ? "<spirit:slave>" : "<spirit:master>") != std::string::npos);
+      // Address tables name endpoints and routing windows, with protocols supplied by the map.
+      if (source) {
+        const auto &entries = addresses["initiators"];
+        const auto at =
+            std::ranges::find_if(entries, [&](const auto &i) { return i["name"] == name; });
+        REQUIRE(at != entries.end());
+        REQUIRE((*at)["windows"].size() == std::size(protocols));
+        for (const auto &target : protocols) {
+          const auto target_name = "t_" + std::string(target.name);
+          CHECK(std::ranges::count_if((*at)["windows"], [&](const auto &w) {
+                  return w["target"] == target_name && w["size"] == "0x00001000";
+                }) == 1);
+          CHECK(map["definition"]["endpoint_protocols"]["targets"][target_name] == target.name);
+        }
+      }
+    }
 }
 
 TEST_CASE("Target option diagnostics list APB5", "[axi4-config][apb5]") {

@@ -506,7 +506,7 @@ foreach(kind IN ITEMS apb4 apb3 axi4_lite ahb_v3 axi4)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 endforeach()
 # Schema 10 APB4 and APB3 initiators mixed with AXI sources and every target protocol.
-foreach(apb_mode IN ITEMS graph tree clocked funnel apb4_tree timeout selective multi narrow narrow_clocked)
+foreach(apb_mode IN ITEMS graph tree clocked funnel apb4_tree timeout selective multi narrow narrow_clocked apb5 apb5_clocked)
   add_test(NAME apb_initiator_${apb_mode}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_apb_initiator.py
       --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/apb_initiator_${apb_mode}
@@ -514,6 +514,8 @@ foreach(apb_mode IN ITEMS graph tree clocked funnel apb4_tree timeout selective 
   set_tests_properties(apb_initiator_${apb_mode} PROPERTIES TIMEOUT 1200 LABELS "rtl;axi4;apb;focused"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 endforeach()
+set_tests_properties(apb_initiator_apb5 apb_initiator_apb5_clocked PROPERTIES
+  LABELS "rtl;axi4;apb;focused;ci" PROCESSORS 2 RESOURCE_LOCK apb5_user)
 # Schema 10 AHB-Lite initiators: every HBURST, BUSY, ERROR, early ends and width conversion.
 foreach(ahb_mode IN ITEMS switch wide clocked ahb5 ahb5_clocked cache)
   add_test(NAME ahb_initiator_${ahb_mode}

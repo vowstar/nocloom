@@ -1,0 +1,37 @@
+schema_version: 10
+name: apb5_user
+address_width: 32
+clock_gating: none
+reset_ports: [{name: reset_n}]
+clock_domains:
+  - {name: main, clock_port: clk_main, reset_port: reset_n}
+initiators:
+  - name: s
+    clock_domain: main
+    protocol: apb5
+    data_width: 32
+    user_width: 7
+    response_user_width: 16
+    user_flags:
+      u0: user[0]
+      u1: user[1]
+      u2: user[2]
+      u3: user[3]
+      u4: user[4]
+      u5: user[5]
+      u6: user[6]
+targets:
+  - name: t
+    clock_domain: main
+    protocol: apb5
+    data_width: 32
+    attributes: amba
+    user: [u0, u1, u2, u3, u4, u5, u6]
+    response_user_width: 16
+    mappings:
+      - {base: "0x1000", size: "0x1000", local_address: "0x1000"}
+transport:
+  user_flags: [u0, u1, u2, u3, u4, u5, u6]
+  response_user_bits: 16
+connectivity: all
+output: {backend: verilog, language: verilog_2001}
