@@ -51,8 +51,8 @@ def ahb_hresp(text):
             continue
         width = field(entry, "hresp_width")
         widths[field(entry, "name")] = int(width) if width else 1
-    # Every ahb_lite mention is one counted target.
-    if len(re.findall(r"\bahb_lite\b", text)) != len(widths):
+    # Count target entries independently of initiator protocols.
+    if sum(field(e, "protocol") == "ahb_lite" for e in target_entries(text)) != len(widths):
         raise ValueError("ahb_lite targets not all parsed")
     return widths
 
