@@ -717,11 +717,12 @@ void initiator_capacity_errors(const Axi4InitiatorProfile &profile,
       (!profile.lite || !profile.read || !profile.write || profile.data_bits != 32 ||
        profile.max_outstanding != 1 || profile.address_bits > 32 ||
        (profile.apb_data_bits != 8 && profile.apb_data_bits != 16 && profile.apb_data_bits != 32) ||
-       (*profile.apb != Protocol::Apb4 && *profile.apb != Protocol::Apb3)))
+       (*profile.apb != Protocol::Apb5 && *profile.apb != Protocol::Apb4 &&
+        *profile.apb != Protocol::Apb3)))
     errors.push_back(initiator_error(
         "NCL_AXI4_INITIATOR_APB", "apb",
         "An APB face needs a read-write 32-bit Lite engine with at most 32 address bits and "
-        "APB4 or APB3"));
+        "APB5, APB4 or APB3"));
   if (profile.ahb && (profile.lite || profile.apb || !profile.read || !profile.write ||
                       profile.max_outstanding != 1 || profile.address_bits < 12))
     errors.push_back(initiator_error(
@@ -1041,7 +1042,7 @@ void InitiatorLowering::apb_face() {
     auto apb_input = [&](const std::string &signal, unsigned width) {
       return l.b.input("nl_apb_" + signal, width, "apb", signal);
     };
-    const bool apb4 = *p.apb == Protocol::Apb4;
+    const bool apb4 = *p.apb != Protocol::Apb3;
     const auto psel = apb_input("psel", 1);
     const auto penable = apb_input("penable", 1);
     const auto pwrite = apb_input("pwrite", 1);
@@ -1077,6 +1078,11 @@ void InitiatorLowering::apb_face() {
     face_in = {{"awaddr", paddr}, {"awprot", pprot}, {"awvalid", write},     {"wdata", pwdata},
                {"wstrb", pstrb},  {"wvalid", write}, {"bready", apb_access}, {"araddr", paddr},
                {"arprot", pprot}, {"arvalid", read}, {"rready", apb_access}};
+    if (*p.apb == Protocol::Apb5 && p.user_port_bits) {
+      const auto user = apb_input("pauser", p.user_port_bits);
+      face_in["awuser"] = user;
+      face_in["aruser"] = user;
+    }
   }
 }
 
@@ -1930,6 +1936,9 @@ void InitiatorLowering::apb_tail() {
     l.bind("wr.b_take", l.both(bvalid, apb_access));
     const auto answer = l.either(bvalid, rvalid);
     l.b.output("nl_apb_pready", answer, "apb", "pready");
+    if (*p.apb == Protocol::Apb5 && p.response_user_port_bits)
+      l.b.output("nl_apb_pbuser", l.b.select(bvalid, face_out.at("buser"), face_out.at("ruser")),
+                 "apb", "pbuser");
     // PRDATA is zero unless the last answer is a read without error; its word stays in the staging,
     // which only the next read loads.
     const auto read_kept = l.state("rr.prdata_read", 1);

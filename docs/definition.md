@@ -77,6 +77,11 @@ An APB endpoint requires a 32-bit network. Endpoint widths can differ from the
 network width under the [protocol rules](protocols.md). The
 [transactions manual](transactions.md) describes capacity and ordering keys.
 
+APB5 uses endpoint `user_width`, `user_flags`, `user` and
+`response_user_width` for user signals.
+The request port is at most 128 bits and the response port at most 16 bits.
+Both default to zero.
+
 ## Initiator error responses
 
 `initiators[].slverr_only` accepts `true` or `false` and defaults to `false`.

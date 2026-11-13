@@ -52,7 +52,8 @@ TargetAttributes target_attributes(Reader &r, const YAML::Node &node, const std:
   auto result = node["preset"] ? preset(r.field(node, "preset", path + ".preset"), path + ".preset")
                                : TargetAttributes::zero();
   const bool axi = protocol == Protocol::Axi4 || protocol == Protocol::Axi3;
-  const bool prot = axi || protocol == Protocol::Axi4Lite || protocol == Protocol::Apb4;
+  const bool prot = axi || protocol == Protocol::Axi4Lite ||
+                    (protocol == Protocol::Apb4 || protocol == Protocol::Apb5);
   auto bits = [&](const char *key, bool allowed, auto &array) {
     if (!node[key])
       return;

@@ -167,11 +167,12 @@ Result<MessageLayout> describe_messages(MessageParameters parameters);
 // 13. User flags. With BurstProfile::user_bits > 0 the request control
 //    bundle carries `user` (after lock): the network user flags its source
 //    drove, the same on every packet and fragment of a burst. Every hop
-//    passes it unchanged; a target outlet maps it onto its AxUSER port. With
+//    passes it unchanged; a target outlet maps it onto its AxUSER or PAUSER port. With
 //    response_user_bits > 0 the response bundle carries `user` (after
 //    exclusive_okay): every fragment of a response packet holds the target's
 //    user of the packet's first R beat, or of its B (zero from a target
-//    without the port and on local answers).
+//    without the port and on local answers). APB5 uses PBUSER: the first
+//    completed physical transfer of each read or write packet. Timeout write responses carry zero.
 // 14. Route path. With BurstProfile::path_bits > 0 both control bundles carry
 //    `path` after source: on a request the route class of its captured AxID
 //    from the total ID interval partition, stamped where the
