@@ -56,11 +56,13 @@ for _k in range(4):
 CHANNEL = dict(aw=1, w=2, ar=3, b=4, r=5)
 
 APB_MASTER_CTL = dict(seed=18, stab_n=24, stab0=32)
-COUNTERS = dict(axi_master=MASTER_COUNTERS, apb_master=MASTER_COUNTERS, axi_slave=SLAVE_COUNTERS, apb_slave=APB_COUNTERS,
+COUNTERS = dict(axi_master=MASTER_COUNTERS, apb_master=MASTER_COUNTERS,
+                ahb_master=MASTER_COUNTERS, axi_slave=SLAVE_COUNTERS, apb_slave=APB_COUNTERS,
                 ahb_slave=dict(addr=0, data=1, active=8, trans=9, err_next=10, retry_next=11,
                                sideband=15, cycle=20),
                 stream=STREAM_COUNTERS)
-CONTROLS = dict(axi_master=MASTER_CTL, apb_master=APB_MASTER_CTL, axi_slave=SLAVE_CTL, apb_slave=APB_CTL,
+CONTROLS = dict(axi_master=MASTER_CTL, apb_master=APB_MASTER_CTL, ahb_master={},
+                axi_slave=SLAVE_CTL, apb_slave=APB_CTL,
                 ahb_slave=dict(wait=0, wait_mode=1, idle_mode=2, err_default=15, quiet=35, base=41,
                                response_one_cycle=55,
                                seed=54, reg0_lo=43, ovr_i0=17, ovr_i1=18, ovr_c0=21, ovr_c1=22,
@@ -128,18 +130,23 @@ class Tape:
         """keep: a lane mask (bit j strobes lane j of every beat's active
         lanes), for strobe "keep"."""
         b = self._bfm(port)
+        if b["kind"] == "ahb_master" and strobe != "full":
+            raise TapeError("AHB stimulus requires full strobes")
         if keep is not None:
             if strobe != "keep" or not 0 <= keep < 1 << 128:
                 raise TapeError("keep needs strobe keep and at most 128 lanes")
             for k in range(4):
                 self.set(port, f"keep{k}", keep >> (32 * k) & 0xFFFFFFFF)
-        if b["kind"] not in ("axi_master", "apb_master"):
+        if b["kind"] not in ("axi_master", "apb_master", "ahb_master"):
             raise TapeError(port + " is not an initiator BFM")
         size = b["size"] if size is None else size
         if size > b["size"] or not 1 <= beats <= 1 << b.get("len_bits", 8):
             raise TapeError("illegal write shape")
         if b["kind"] == "apb_master" and (beats != 1 or size != b["size"]):
             raise TapeError("an APB transfer is one bus-wide beat")
+        if b["kind"] == "ahb_master" and (beats != 1 or size != b["size"] or
+                burst != "incr" or id or lock or cache or qos):
+            raise TapeError("AHB stimulus requires one full-width non-bufferable SINGLE")
         self.tag += 1
         tag = self.tag
         self._emit("WRITE", b["index"], addr, beats - 1, size, BURST[burst], id, lock, cache,
@@ -151,13 +158,16 @@ class Tape:
     def read(self, port, addr, beats=1, size=None, burst="incr", id=0, lock=0, cache=0,
              prot=0, qos=0, **expect):
         b = self._bfm(port)
-        if b["kind"] not in ("axi_master", "apb_master"):
+        if b["kind"] not in ("axi_master", "apb_master", "ahb_master"):
             raise TapeError(port + " is not an initiator BFM")
         size = b["size"] if size is None else size
         if size > b["size"] or not 1 <= beats <= 1 << b.get("len_bits", 8):
             raise TapeError("illegal read shape")
         if b["kind"] == "apb_master" and (beats != 1 or size != b["size"]):
             raise TapeError("an APB transfer is one bus-wide beat")
+        if b["kind"] == "ahb_master" and (beats != 1 or size != b["size"] or
+                burst != "incr" or id or lock or cache or qos):
+            raise TapeError("AHB stimulus requires one full-width non-bufferable SINGLE")
         self.tag += 1
         tag = self.tag
         self._emit("READ", b["index"], addr, beats - 1, size, BURST[burst], id, lock, cache,
