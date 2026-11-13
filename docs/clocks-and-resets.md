@@ -35,8 +35,8 @@ If omitted, declarations on fixed chains supply the root period and must agree.
 
 Crossing depths and link word widths use nominal periods and spacing promises.
 Timing bounds use the shortest possible physical periods across clock modes.
-See [clock domains](../examples/apb_domains.yaml) and
-[clocked graphs](../examples/axi4_graph_clocked.yaml).
+See [clock domains](../examples/apb_domains.yaml), [clocked graphs](../examples/axi4_graph_clocked.yaml)
+and the mixed protocol [SoC example](../examples/soc_mixed.yaml).
 
 ## Reset release
 
