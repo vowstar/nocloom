@@ -41,7 +41,7 @@ body:
     attributes:
       label: NocLoom version
       description: The output of `nocloom --version`, or the commit you built.
-      placeholder: 0.1.0
+      placeholder: 0.2.0
     validations:
       required: true
 
