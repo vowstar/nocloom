@@ -2,19 +2,23 @@
 
 ## Dedicated APB and AXI4-Lite targets
 
-Dedicated targets are APB4, APB3, APB2, AXI4-Lite and AHB-Lite targets.
+Dedicated targets are APB5, APB4, APB3, APB2, AXI4-Lite, AHB-Lite and AHB5 targets.
 AXI4-Lite issues one access per touched target word.
 
 | Write strobes | Target behavior |
 | --- | --- |
 | All zero at APB or AHB | Complete without bus access |
-| Partial at APB4 | Drive the selected byte strobes |
+| Partial at APB5 or APB4 | Drive the selected PSTRB byte strobes |
 | Partial at APB3 or APB2 | Reject that physical word. Retain the packet error and completed effects. Execute later full words, including those in the same beat |
 | Zero or partial at AXI4 or AXI4-Lite | Drive WSTRB with those bits |
 
 APB packet capacity is one per direction.
 
 ## APB target transfer details
+
+APB5 uses the APB4 target rules for transfer timing, PPROT, PSTRB, narrow
+words, packet capacity, ordering, errors and reset. Its PAUSER and PBUSER
+rules are in [APB5 user ports](user-signals.md#apb5-user-ports).
 
 | `apb_back_to_back` | No-stall physical-word interval |
 | --- | --- |

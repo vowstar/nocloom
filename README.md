@@ -72,7 +72,7 @@ requests to APB for `uart`.
 | `test_ports` | `test` is an input that opens the clock gates during testing. Domains have clock gates by default |
 | `id_width` | The example does not set it. The AXI ID ports then have the default width of 4 bits |
 | `len_width` | The width of the AxLEN ports. The default is 4 bits. A standard AXI4 port has 8 bits |
-| `attributes` | `axi4`, `axi3`, `axi4_lite`, `apb4`, `ahb_v3` and `ahb5` targets must set it. With `amba`, the CACHE, PROT or HPROT outputs of the target follow the Arm® AMBA® attributes of the request. AHB5 requires `amba`. Other targets can use `zero` for constant outputs |
+| `attributes` | `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `ahb_v3` and `ahb5` targets must set it. With `amba`, the CACHE, PROT or HPROT outputs of the target follow the Arm® AMBA® attributes of the request. AHB5 requires `amba`. Other targets can use `zero` for constant outputs |
 
 Validate the definition. Then generate the output files into a new directory.
 
@@ -141,8 +141,8 @@ traffic crosses its boundary.
 
 | Area | Supported |
 | --- | --- |
-| Initiator protocols | `axi4`, `axi3`, `axi4_lite`, `apb4`, `apb3`, `ahb_v3` (AHB-Lite) and `ahb5` |
-| Target protocols | `axi4`, `axi3`, `axi4_lite`, `apb4`, `apb3`, `apb2`, `ahb_v3` (AHB-Lite) and `ahb5` |
+| Initiator protocols | `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `apb3`, `ahb_v3` (AHB-Lite) and `ahb5` |
+| Target protocols | `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `apb3`, `apb2`, `ahb_v3` (AHB-Lite) and `ahb5` |
 | AHB5 properties | HPROT is 4 bits by default or 7 bits. HNONSEC is optional and defaults to absent. HMASTER is 0 to 32 bits |
 | Endpoint count | 1 to 256 initiators, 1 to 256 targets |
 | Topology | One generated request switch and one generated response switch, or declared request and response graphs of 1 to 128 switches each |
@@ -168,6 +168,7 @@ See [Documentation](#documentation) for field definitions and limits.
 | Other RTL languages | The output is Verilog-2001 only |
 | Adaptive routing | A route does not change with the load |
 | Scheduling | Nonzero levels exclude AHB targets, other mixed protocol networks, exclusive access, target timeouts and targets wider than the network. AXI graphs also exclude one-direction endpoints. AHB sources have no AxQOS map, shaper or scheduler |
+| APB5 optional signals | PAUSER and PBUSER only. PWUSER, PRUSER, PWAKEUP, parity check signals and RME PNSE are unsupported |
 | AxREGION | AXI endpoints have no AxREGION ports |
 | AXI3 locked writes and write data interleaving | An AXI3 target receives neither |
 | Unchanged non-modifiable narrow bursts | With the default `narrow_bursts: merge`, an AXI target that is wider than the beats of a burst merges them regardless of AxCACHE. This can change non-modifiable transactions beyond the transformations that AXI A4.3 permits. See [width transformation details](docs/width-conversion.md#width-transformation-details) |

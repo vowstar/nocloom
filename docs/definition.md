@@ -8,7 +8,7 @@ Use YAML or C++ `nocloom::Definition`. Both use the same validator.
 | --- | --- |
 | Schema | `schema_version: 10` is required |
 | Names | Names start with a letter and contain only letters, digits and underscores, with at most 128 characters. Names cannot start with `nl_` or `nocloom_` and cannot be a Verilog-2001 keyword. Names within one kind are unique |
-| Required endpoint fields | `name`, `clock_domain`, `protocol`, `data_width`. Targets also need `mappings`. `axi4`, `axi3`, `axi4_lite`, `apb4`, `ahb_v3` and `ahb5` targets also need `attributes` |
+| Required endpoint fields | `name`, `clock_domain`, `protocol`, `data_width`. Targets also need `mappings`. `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `ahb_v3` and `ahb5` targets also need `attributes` |
 | Unknown fields | The YAML parser rejects unknown fields with `NCL_SCHEMA_UNKNOWN_FIELD` |
 | Duplicate YAML keys | The YAML parser rejects duplicate keys |
 | Integers | Unquoted decimal integers without leading zeros, such as `64`. Other forms produce `NCL_SCHEMA_TYPE` |
@@ -77,6 +77,11 @@ Endpoint `data_width` sets physical bus width. Nodes and links can override the
 An APB endpoint requires a 32-bit network. Endpoint widths can differ from the
 network width under the [protocol rules](protocols.md). The
 [transactions manual](transactions.md) describes capacity and ordering keys.
+
+APB5 uses endpoint `user_width`, `user_flags`, `user` and
+`response_user_width` for [user signals](user-signals.md#apb5-user-ports).
+The request port is at most 128 bits and the response port is at most 16 bits.
+Both default to zero width.
 
 ## Output configuration
 

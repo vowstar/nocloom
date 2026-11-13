@@ -58,7 +58,8 @@ completes. After the initiator exceeds its budget, new transfers wait until it
 recovers. The overshoot can include one transfer beyond the burst budget. Rate
 zero stops admission after the budget is exceeded and never recovers.
 
-A shaper supports a 32-bit APB3 or APB4 initiator, or an AXI4 or AXI3 initiator.
+A shaper supports a 32-bit APB3, APB4 or APB5 initiator, or an AXI4 or AXI3
+initiator.
 It can combine with fixed levels. The initiator's transport clock stays open
 while it owes bytes.
 

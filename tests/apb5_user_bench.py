@@ -655,6 +655,10 @@ def run(cli, base, clocked):
     base.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix='run-', dir=base))
     (base / 'latest.txt').write_text(str(work) + '\n')
+    manual = (Path(__file__).resolve().parents[1] / 'docs/dedicated-targets.md').read_text()
+    assert 'Dedicated targets are APB5, APB4, APB3, APB2' in manual
+    assert '| Partial at APB5 or APB4 |' in manual
+    assert 'user-signals.md#apb5-user-ports' in manual
     rejected_configurations(cli, work)
     timeout_cases(cli, work, clocked)
     pairs = [('apb5', 'apb5'), ('apb5', 'axi4'), ('axi4', 'apb5')]
