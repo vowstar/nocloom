@@ -789,7 +789,7 @@ endif()
 # cases named here. They cover each protocol family, width conversion, clock domain crossing,
 # clock gating, error logging and the installed package. The three suite contracts stay out: they
 # compare the free processors with the load average and refuse to start on a loaded runner.
-set(NOCLOOM_CI_CASES cli install verif_examples
+set(NOCLOOM_CI_CASES cli install verif_examples verif_soc_mixed
   axi4_public_installed multi_outstanding_graph multi_outstanding_clocked exclusive_graph
   verif_axi4_write_miss_answer verif_source_merge verif_qos_outstanding link_pipeline_network
   axi3_initiator_switch axi3_initiator_wide axi3_target

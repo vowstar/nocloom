@@ -92,6 +92,15 @@ nocloom_verif_case(NAME verif_examples LAYER structure TIER focused TIMEOUT 1200
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/examples.py
     --cli $<TARGET_FILE:nocloom_cli> ${NLV_FIXTURE}
     --config-case ${NLV_CASES}/config_examples.py --traffic-case ${NLV_CASES}/example_features.py)
+# The two-domain SoC definition with every connected initiator-target pair.
+nocloom_verif_case(NAME verif_soc_mixed LAYER rtl TIER focused TIMEOUT 300
+  FEATURES examples axi4 ahb apb cdc width MEMORY_MB 2048
+  CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.WIDTH.DOWNSIZE.PIECES APB.TARGET.ACCESS AXI.CDC.CROSSING
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/soc_mixed.py --cli $<TARGET_FILE:nocloom_cli>)
+nocloom_verif_case(NAME verif_soc_mixed_negative LAYER negative TIER focused TIMEOUT 600
+  FEATURES examples axi4 ahb apb cdc width MEMORY_MB 3072
+  CONTRACTS AXI.WIDTH.DOWNSIZE.PIECES
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/soc_mixed.py --cli $<TARGET_FILE:nocloom_cli> --negative)
 # The same examples from a CLI built with the other C++ compiler: no byte may
 # differ. Without a second compiler the case reports skipped (77).
 if(NOCLOOM_DETERMINISM_COMPILERS)

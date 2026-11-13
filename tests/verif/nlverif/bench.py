@@ -31,12 +31,15 @@ AHB_SLAVE = [("hsel", "i", 1), ("haddr", "i", "ADDR_W"), ("htrans", "i", 2), ("h
              ("hsize", "i", 3), ("hburst", "i", 3), ("hprot", "i", 4), ("hmastlock", "i", 1),
              ("hwdata", "i", "DATA_W"), ("hready", "i", 1), ("hreadyout", "o", 1),
              ("hresp", "o", "HRESP_W"), ("hrdata", "o", "DATA_W")]
+AHB_MASTER = [(n, "o" if d == "i" else "i", w) for n, d, w in AHB_SLAVE
+              if n != "hready"] + [("hready", "o", 1)]
 APB_MASTER = [(n, "o" if d == "i" else "i", w) for n, d, w in APB_SLAVE]
 KINDS = {"axi_master": ("nlv_axi_master", AXI_MASTER), "axi_slave": ("nlv_axi_slave", AXI_SLAVE),
          "apb_master": ("nlv_apb_master", APB_MASTER),
+         "ahb_master": ("nlv_ahb_master", AHB_MASTER),
          "apb_slave": ("nlv_apb_slave", APB_SLAVE), "ahb_slave": ("nlv_ahb_slave", AHB_SLAVE)}
 SOURCES = ["nlv_axi_master.sv", "nlv_axi_slave.sv", "nlv_apb_master.sv", "nlv_apb_slave.sv",
-           "nlv_ahb_slave.sv",
+           "nlv_ahb_slave.sv", "nlv_ahb_master.sv",
            "nlv_stream_mon.sv"]
 
 
@@ -292,7 +295,7 @@ def generate(case, components, faulted=False, probes=None):
             overrides.append(f".HRESP_W({params['HRESP_W']})")
         if kind in ("apb_slave", "apb_master"):
             overrides.append(f".DIALECT({spec.get('dialect', 4)})")
-        if kind not in ("axi_master", "apb_master"):
+        if kind not in ("axi_master", "apb_master", "ahb_master"):
             overrides += [f".MEM_BYTES({spec.get('mem_bytes', 65536)})", f".SALT({spec.get('salt', index)})"]
         bfm_text.append(f"{module} #({', '.join(overrides)}) bfm_{spec['name']} (\n    "
                         + ",\n    ".join(conns) + ");")
@@ -380,7 +383,7 @@ def generate(case, components, faulted=False, probes=None):
             f"  if (!rst_n) begin nlv_cnt_{net} <= 0; {net} <= 1'b0; end\n"
             f"  else begin nlv_cnt_{net} <= nlv_cnt_{net} == {ratio - 1} ? 0 : nlv_cnt_{net} + 1; "
             f"{net} <= nlv_cnt_{net} == {ratio - 1}; end")
-    masters = [b for b in bfms.values() if b["kind"] in ("axi_master", "apb_master")]
+    masters = [b for b in bfms.values() if b["kind"] in ("axi_master", "apb_master", "ahb_master")]
     probe_text, probe_meta = probe_monitors(case, probes, "clk_" + case.get("main_clock", "main"))
     tb = TEMPLATE
     names = sorted(bfms.values(), key=lambda b: b["index"])
@@ -394,11 +397,11 @@ def generate(case, components, faulted=False, probes=None):
         "@TAPE_WORDS@": str(TAPE_WORDS),
         "@MAIN_CLOCK@": "clk_" + case.get("main_clock", "main"),
         "@PUSH_WRITE@": cases("{i}.push_write(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11);",
-                              ("axi_master", "apb_master")),
+                              ("axi_master", "apb_master", "ahb_master")),
         "@PUSH_READ@": cases("{i}.push_read(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9);",
-                             ("axi_master", "apb_master")),
+                             ("axi_master", "apb_master", "ahb_master")),
         "@SET@": cases("{i}.set_ctl(r, v);", ("axi_master", "axi_slave", "apb_slave", "ahb_slave",
-                                               "apb_master")),
+                                               "apb_master", "ahb_master")),
         "@COUNTER@": cases("nlv_counter = {i}.counter(idx);", tuple(KINDS) + ("stream",)),
         "@STALL@": "\n".join(f"    {b['instance']}.stall_report(NLV_STALL_MIN);" for b in names
                              if b["kind"] in ("axi_master", "axi_slave")),

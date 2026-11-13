@@ -98,7 +98,7 @@ class Checker:
     # ------------------------------------------------------------------
     def run(self, events):
         bfms = self.bench["bfms"]
-        masters = [n for n, b in bfms.items() if b["kind"] in ("axi_master", "apb_master")]
+        masters = [n for n, b in bfms.items() if b["kind"] in ("axi_master", "apb_master", "ahb_master")]
         # A case may name target BFMs whose buses carry no source traffic
         # (the rule stub drives its APB and AHB buses on its own).
         slaves = [n for n, b in bfms.items()
@@ -850,9 +850,9 @@ class Checker:
             return set(exp["resp_in"])
         code = (t.local_error if t.local_error is not None and t.local_error >= 0
                 else model.merge(codes))
-        # APB exposes PSLVERR, so its normalized response cannot distinguish DECERR.
-        apb = self.bench["bfms"][t.port]["kind"] == "apb_master"
-        return {C.SLVERR if code == C.DECERR and (apb or not self._error_codes()) else code}
+        # APB PSLVERR and AHB-Lite HRESP cannot distinguish decode errors.
+        simple = self.bench["bfms"][t.port]["kind"] in ("apb_master", "ahb_master")
+        return {C.SLVERR if code == C.DECERR and (simple or not self._error_codes()) else code}
 
     def _judge_write(self, t, kind, exp):
         sbytes = self.bench["bfms"][t.port]["data_bits"] // 8

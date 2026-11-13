@@ -222,7 +222,12 @@ def generate_dut(args, case, work):
             cell = gen / "cells.v"
         else:
             cfg = work / "input.yaml"
-            cfg.write_text(json.dumps(cli_config(dut), indent=1) + "\n")
+            if "path" in dut:
+                if REGISTER_RESET:
+                    raise Infra("--register-reset needs an in-memory configuration")
+                cfg = Path(dut["path"]).resolve()
+            else:
+                cfg.write_text(json.dumps(cli_config(dut), indent=1) + "\n")
             out = gen / "cli"
             if "service" in dut:
                 # The fixture's plan names a service target; the CLI has no field for one yet.
@@ -233,7 +238,8 @@ def generate_dut(args, case, work):
                 r, _ = run_tool([args.cli, "generate", cfg, "--out-dir", out], work / "cli.log")
             if r.returncode:
                 raise Infra("cli generate failed: " + r.stderr[-2000:])
-            top = "nocloom_" + dut["config"]["name"]
+            top = (json.loads(next(out.glob("*.bundle.json")).read_text())["top"]
+                   if "path" in dut else "nocloom_" + dut["config"]["name"])
             bundle = json.loads((out / f"{top}.bundle.json").read_text())
             cell = out / "cells.v"
         mapping = json.loads((out / f"{top}.map.json").read_text())
