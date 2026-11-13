@@ -778,8 +778,8 @@ bool aligns_wrap_reads(const NetworkPlan &plan, unsigned target) {
 }
 
 static std::uint64_t read_packing_bytes(const TargetPlan &target, std::uint64_t pack) {
-  const bool apb = target.protocol == Protocol::Apb4 || target.protocol == Protocol::Apb3 ||
-                   target.protocol == Protocol::Apb2;
+  const bool apb = target.protocol == Protocol::Apb5 || target.protocol == Protocol::Apb4 ||
+                   target.protocol == Protocol::Apb3 || target.protocol == Protocol::Apb2;
   return apb ? std::min<std::uint64_t>(pack, target.apb_bits / 8) : pack;
 }
 Axi4PacketizerProfile packet_profile(const NetworkPlan &plan, unsigned index) {

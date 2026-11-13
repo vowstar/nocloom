@@ -4841,6 +4841,8 @@ private:
     } else if (read || !form.write_in_entry)
       described(dir + ".descriptor.",
                 {"address", "length", "size", "burst", "cache", "protection"});
+    if (!profile.user.empty() && profile.user_bits)
+      fields.push_back(dir + ".request_user");
     fields.push_back(dir + ".data");
     if (!form.at_once)
       fields.insert(fields.end(), {dir + ".address", dir + ".mask"});
@@ -4889,6 +4891,16 @@ private:
       if (monitored)
         controls.insert(controls.end(), {"w.response.fail", "w.response.exclusive_okay",
                                          "w.response_tail.fail", "w.response_tail.exclusive_okay"});
+    }
+    if (profile.dialect == Protocol::Apb5 && profile.response_user_bits &&
+        profile.response_user_port_bits) {
+      if (read) {
+        fields.insert(fields.end(), {"r.packet_user", "r.response_user", "r.tail_meta_user"});
+        controls.push_back("r.user_seen");
+      } else {
+        fields.insert(fields.end(), {"w.packet_user", "w.response.user", "w.response_tail.user"});
+        controls.push_back("w.user_seen");
+      }
     }
     // A serial outlet without a timer keeps one response entry per direction.
     if (!profile.apb_back_to_back && !profile.timeout_cycles)
@@ -5058,6 +5070,8 @@ private:
       bus_fields.push_back("bus.protection");
     if (lite && !profile.user.empty())
       bus_fields.push_back("bus.user");
+    if (apb && !profile.user.empty())
+      bus_fields.push_back("bus.request_user");
     if (profile.flows > 1)
       bus_fields.push_back("bus.flow");
     if (lite)
@@ -5104,8 +5118,9 @@ private:
     c.bind(t.key + "/bus.release", ep.bound.at("bus.complete"));
     c.out.storage.push_back({t.key + "/bus", c.clock, payload, control, ep.bound.at("bus.issue"),
                              ep.bound.at("bus.complete")});
-    if (assigned.size() != ep.states.size())
-      throw std::logic_error("Unowned dedicated outlet state at " + t.key);
+    for (const auto &[name, value] : ep.states)
+      if (!assigned.contains(name))
+        throw std::logic_error("Unowned dedicated outlet state " + name + " at " + t.key);
   }
 
   // An AXI4 target: the burst outlet and its packet records.

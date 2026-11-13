@@ -52,7 +52,8 @@ TargetAttributes target_attributes(Reader &r, const YAML::Node &node, const std:
   auto result = node["preset"] ? preset(r.field(node, "preset", path + ".preset"), path + ".preset")
                                : TargetAttributes::zero();
   const bool axi = protocol == Protocol::Axi4 || protocol == Protocol::Axi3;
-  const bool prot = axi || protocol == Protocol::Axi4Lite || protocol == Protocol::Apb4;
+  const bool prot = axi || protocol == Protocol::Axi4Lite ||
+                    (protocol == Protocol::Apb4 || protocol == Protocol::Apb5);
   auto bits = [&](const char *key, bool allowed, auto &array) {
     if (!node[key])
       return;
@@ -1024,6 +1025,8 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
           d.initiators.back().protocol = Protocol::Axi3;
         else if (name == "axi4_lite")
           d.initiators.back().protocol = Protocol::Axi4Lite;
+        else if (name == "apb5")
+          d.initiators.back().protocol = Protocol::Apb5;
         else if (name == "apb4")
           d.initiators.back().protocol = Protocol::Apb4;
         else if (name == "apb3")
@@ -1037,7 +1040,7 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
           d.initiators.back().protocol = Protocol::AhbV3;
         else
           r.fail("NCL_UNSUPPORTED_PROTOCOL", path + ".protocol",
-                 "Initiators support axi4, axi3, axi4_lite, apb4, apb3 or ahb_v3 or ahb5",
+                 "Initiators support axi4, axi3, axi4_lite, apb5, apb4, apb3, ahb_v3 or ahb5",
                  value.Mark());
       }
     }
@@ -1116,6 +1119,8 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
           d.targets.back().protocol = Protocol::Ahb5;
         else if (name == "ahb_v3")
           d.targets.back().protocol = Protocol::AhbV3;
+        else if (name == "apb5")
+          d.targets.back().protocol = Protocol::Apb5;
         else if (name == "apb4")
           d.targets.back().protocol = Protocol::Apb4;
         else if (name == "apb3")
@@ -1126,7 +1131,7 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
           d.targets.back().protocol = Protocol::Axi4Lite;
         else
           r.fail("NCL_UNSUPPORTED_PROTOCOL", path + ".protocol",
-                 "Targets support axi4, axi3 or dedicated ahb_v3, ahb5, apb4, apb3, apb2 and "
+                 "Targets support axi4, axi3 or dedicated ahb_v3, ahb5, apb5, apb4, apb3, apb2 and "
                  "axi4_lite",
                  value.Mark());
       }

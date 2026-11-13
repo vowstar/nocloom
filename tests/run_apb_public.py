@@ -197,7 +197,7 @@ def main():
     negatives = []
     # 'window' is not word aligned; 'odd_size' is word aligned but not a
     # power of two.
-    for label, value in [('protocol', 'apb5'), ('address', 40), ('width', 64), ('window', '0x182'),
+    for label, value in [('protocol', 'unsupported'), ('address', 40), ('width', 64), ('window', '0x182'),
                          ('odd_size', '0x180')]:
         bad = copy.deepcopy(config)
         if label == 'protocol': bad['targets'][1]['protocol'] = value

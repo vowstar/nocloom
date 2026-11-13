@@ -55,7 +55,8 @@ std::uint64_t exclusive_keys(const Definition &d, const Target &t) {
 }
 // APB4 and APB3 initiators: single transfers carried as AXI4-Lite beats of the 32-bit network.
 bool apb_initiator(const Initiator &initiator) {
-  return initiator.protocol == Protocol::Apb4 || initiator.protocol == Protocol::Apb3;
+  return initiator.protocol == Protocol::Apb5 || initiator.protocol == Protocol::Apb4 ||
+         initiator.protocol == Protocol::Apb3;
 }
 bool full_axi(std::optional<Protocol> protocol) {
   return protocol.value_or(Protocol::Axi4) == Protocol::Axi4 || protocol == Protocol::Axi3;

@@ -1082,7 +1082,8 @@ void check_initiator_face(Checks &c, const Initiator &initiator, const std::stri
       c("NCL_UNSUPPORTED_PROTOCOL", field + ".protocol",
         "APB2 initiators are not supported: an APB2 manager expects every transfer to complete in "
         "its first access cycle, which a network does not provide; use apb3 or apb4");
-    else if (*initiator.protocol == Protocol::Apb4 || *initiator.protocol == Protocol::Apb3)
+    else if (*initiator.protocol == Protocol::Apb5 || *initiator.protocol == Protocol::Apb4 ||
+             *initiator.protocol == Protocol::Apb3)
       check_apb_initiator(d, c.network_bits, initiator, field, c);
     else if (detail::ahb_protocol(initiator.protocol))
       check_ahb_initiator(d, initiator, field, c);
@@ -1093,7 +1094,7 @@ void check_initiator_face(Checks &c, const Initiator &initiator, const std::stri
       c("NCL_UNSUPPORTED_PROTOCOL", field + ".protocol", "Wide ingress requires full AXI4");
     else if (!detail::protocol_caps(*initiator.protocol).ingress)
       c("NCL_UNSUPPORTED_PROTOCOL", field + ".protocol",
-        "Schema 10 initiators support axi4, axi3, axi4_lite, apb4, apb3 or ahb_v3 or ahb5");
+        "Schema 10 initiators support axi4, axi3, axi4_lite, apb5, apb4, apb3, ahb_v3 or ahb5");
   }
   // check_apb_initiator owns the width rules of an APB initiator.
   if (initiator.data_width && !apb_initiator(initiator)) {
@@ -1320,7 +1321,8 @@ void check_target_face(Checks &c, const Target &t, const std::string &field) {
   const bool narrow_address = t.address_width.value_or(d.address_width) <= 32;
   if (!caps.egress)
     c("NCL_UNSUPPORTED_PROTOCOL", field + ".protocol",
-      "Expected axi4, axi3 or a dedicated ahb_v3, ahb5, apb4, apb3, apb2 or axi4_lite target");
+      "Expected axi4, axi3 or a dedicated ahb_v3, ahb5, apb5, apb4, apb3, apb2 or axi4_lite "
+      "target");
   else if (detail::ahb_protocol(t.protocol) && (network_bits != 32 || !narrow_address))
     c("NCL_AHB_OUTLET_PROFILE", field + ".protocol",
       "Dedicated AHB targets require a 32-bit network data width (a wider AHB target sets its own "
@@ -1374,7 +1376,7 @@ void check_target_attributes(Checks &c, const Target &t, const std::string &fiel
   const auto &caps = detail::protocol_caps(protocol);
   if (!t.attributes && caps.attributes)
     c("NCL_TARGET_ATTRIBUTES", field + ".attributes",
-      "AXI4, AXI4-Lite, APB4 and AHB targets need attributes, for example amba");
+      "AXI4, AXI3, AXI4-Lite, APB5, APB4 and AHB targets need attributes, for example amba");
   if (!t.attributes)
     return;
   if (t.protocol == Protocol::Ahb5 && *t.attributes != TargetAttributes::amba())
@@ -1414,7 +1416,7 @@ void check_target_options(Checks &c, const Target &t, const std::string &field) 
     check_endpoint_pipe(*pipe, field + ".pipes." + key, c);
   if (t.apb_back_to_back && !caps.apb)
     c("NCL_TARGET_APB_ACCESS", field + ".apb_back_to_back",
-      "Back-to-back access requires an APB4, APB3 or APB2 target");
+      "Back-to-back access requires an APB5, APB4, APB3 or APB2 target");
   // An outlet timer must see its target's handshakes.
   if (t.pipes.request != TargetPipes{}.request && (!full_axi(t.protocol) || t.timeout))
     c("NCL_ENDPOINT_PIPE", field + ".pipes.request",
@@ -1428,7 +1430,7 @@ void check_target_options(Checks &c, const Target &t, const std::string &field) 
     c("NCL_TARGET_FIXED_BURSTS", field + ".fixed_bursts", "Expected reject or single");
   else if (t.fixed_bursts && !caps.fixed_single)
     c("NCL_TARGET_FIXED_BURSTS", field + ".fixed_bursts",
-      "AXI4 targets receive FIXED bursts unchanged; fixed_bursts applies to dedicated apb4, "
+      "AXI4 targets receive FIXED bursts unchanged; fixed_bursts applies to dedicated apb5, apb4, "
       "apb3, apb2, axi4_lite and AHB targets");
   for (const auto &[present, key] :
        {std::pair{t.write_bursts.has_value(), "write_bursts"},
@@ -1730,10 +1732,16 @@ void check_user_flags(Checks &c) {
     const auto field = "initiators[" + std::to_string(i) + "]";
     for (const auto &[width, key] : {std::pair{s.user_width, ".user_width"},
                                      std::pair{s.response_user_width, ".response_user_width"}})
-      if (width &&
-          ((!axi(s.protocol) && s.protocol != Protocol::Axi3) || *width == 0 || *width > 256))
+      if (width && s.protocol == Protocol::Apb5) {
+        const auto limit = key == std::string(".user_width") ? 128U : 16U;
+        if (*width > limit)
+          c("NCL_APB5_USER_WIDTH", field + key,
+            "APB5 request user width is 0 to 128 and response user width is 0 to 16");
+      } else if (width && ((!axi(s.protocol) && s.protocol != Protocol::Axi3) || *width == 0 ||
+                           *width > 256))
         c("NCL_USER_FLAGS", field + key,
-          "Only AXI4, AXI3 and AXI4-Lite initiators have user ports, 1 to 256 bits");
+          "AXI4, AXI3 and AXI4-Lite initiator user widths are 1 to 256 bits. "
+          "APB5 request widths are 0 to 128 and response widths are 0 to 16");
     for (const auto &[name, bit] : s.user_flags)
       if (std::ranges::find(flags, name) == flags.end())
         c("NCL_USER_FLAGS", field + ".user_flags." + name,
@@ -1741,7 +1749,9 @@ void check_user_flags(Checks &c) {
       else if (bit.source > AttributeSource::User ||
                (bit.source == AttributeSource::User && bit.index >= s.user_width.value_or(0)))
         c("NCL_USER_FLAGS", field + ".user_flags." + name,
-          "Expected a constant, an attribute flag or a bit of this initiator's AxUSER port");
+          s.protocol == Protocol::Apb5
+              ? "Expected a constant, an attribute flag or a bit of this initiator's PAUSER port"
+              : "Expected a constant, an attribute flag or a bit of this initiator's AxUSER port");
     for (const auto &name : flags)
       if (!s.user_flags.contains(name))
         c("NCL_USER_FLAGS", field + ".user_flags",
@@ -1750,11 +1760,16 @@ void check_user_flags(Checks &c) {
   for (std::size_t i = 0; i < c.d.targets.size(); ++i) {
     const auto &t = c.d.targets[i];
     const auto field = "targets[" + std::to_string(i) + "].user";
+    const bool apb5 = t.protocol == Protocol::Apb5;
     const bool ports = axi(t.protocol) || t.protocol == Protocol::Axi3;
-    if (!t.user.empty() && (!ports || t.user.size() > 256))
+    if (apb5 && (t.user.size() > 128 || t.response_user_width.value_or(0) > 16))
+      c("NCL_APB5_USER_WIDTH", "targets[" + std::to_string(i) + "]",
+        "APB5 request user width is 0 to 128 and response user width is 0 to 16");
+    if (!apb5 && !t.user.empty() && (!ports || t.user.size() > 256))
       c("NCL_USER_FLAGS", field,
         "Only AXI4, AXI3 and AXI4-Lite targets have AxUSER ports, 1 to 256 bits");
-    if (const auto width = t.response_user_width; width && (!ports || *width == 0 || *width > 256))
+    if (const auto width = t.response_user_width;
+        !apb5 && width && (!ports || *width == 0 || *width > 256))
       c("NCL_USER_FLAGS", "targets[" + std::to_string(i) + "].response_user_width",
         "Only AXI4, AXI3 and AXI4-Lite targets have BUSER and RUSER ports, 1 to 256 bits");
     for (std::size_t b = 0; b < t.user.size(); ++b)

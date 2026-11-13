@@ -27,7 +27,7 @@ struct BurstOutletProfile {
   // The address bits of the widest response word a run gathers to (message.hpp point 18): the
   // outlet marks where a run ends; zero without runs.
   unsigned response_run_bits = 0;
-  // APB dialect for lower_apb_burst_outlet: apb4, apb3 or apb2.
+  // APB dialect for lower_apb_burst_outlet: apb5, apb4, apb3 or apb2.
   Protocol dialect = Protocol::Apb4;
   // Mapped PPROT, AXI4-Lite AxPROT or AHB HPROT; absent carries AxPROT through
   // (AHB HPROT = {cache[1:0], prot[0], ~prot[2]}).
@@ -86,9 +86,10 @@ struct BurstOutletProfile {
   unsigned tag_bits = 0;
   unsigned user_bits = 0; // network user flags (message.hpp point 13)
   unsigned response_user_bits = 0;
-  // AxUSER bit i: a constant or AttributeSource::User naming a flag by index; empty has no port.
+  // AxUSER or PAUSER bit i: a constant or AttributeSource::User naming a flag by index; empty has
+  // no port.
   std::vector<AttributeBit> user{};
-  unsigned response_user_port_bits = 0; // BUSER and RUSER inputs; none at zero
+  unsigned response_user_port_bits = 0; // BUSER/RUSER or APB5 PBUSER inputs, absent at zero
   // APB physical word, independent of the 32-bit internal packet container.
   unsigned apb_data_bits = 32;
   // APB32 only: start another SETUP at a completed ACCESS when request and

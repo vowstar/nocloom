@@ -80,7 +80,8 @@ ValueId next_address(Logic &l, ValueId address, const Fields &d, unsigned bits,
 namespace {
 const char *pick_kind(Protocol kind, const char *apb_code, const char *lite_code,
                       const char *ahb_code) {
-  const bool apb = kind == Protocol::Apb4 || kind == Protocol::Apb3 || kind == Protocol::Apb2;
+  const bool apb = kind == Protocol::Apb5 || kind == Protocol::Apb4 || kind == Protocol::Apb3 ||
+                   kind == Protocol::Apb2;
   return apb ? apb_code : kind == Protocol::Axi4Lite ? lite_code : ahb_code;
 }
 // The profile checks shared by the APB, AXI4-Lite and AHB outlets, one helper per
@@ -90,7 +91,8 @@ const char *outlet_profile_code(Protocol kind) {
                    "NCL_AHB_OUTLET_PROFILE");
 }
 std::optional<Diagnostic> profile_bounds_error(const BurstOutletProfile &p, Protocol kind) {
-  const bool apb = kind == Protocol::Apb4 || kind == Protocol::Apb3 || kind == Protocol::Apb2;
+  const bool apb = kind == Protocol::Apb5 || kind == Protocol::Apb4 || kind == Protocol::Apb3 ||
+                   kind == Protocol::Apb2;
   const bool lite = kind == Protocol::Axi4Lite;
   const unsigned bits = p.transport_address_bits ? p.transport_address_bits : 32;
   if (!valid_name(p.name) || p.id_bits > 16 || p.source_bits > max_source_bits ||
@@ -131,7 +133,8 @@ std::optional<Diagnostic> profile_exclusive_error(const BurstOutletProfile &p, P
   return std::nullopt;
 }
 std::optional<Diagnostic> profile_face_error(const BurstOutletProfile &p, Protocol kind) {
-  const bool apb = kind == Protocol::Apb4 || kind == Protocol::Apb3 || kind == Protocol::Apb2;
+  const bool apb = kind == Protocol::Apb5 || kind == Protocol::Apb4 || kind == Protocol::Apb3 ||
+                   kind == Protocol::Apb2;
   const bool lite = kind == Protocol::Axi4Lite;
   if (p.hresp_width != 1 && (p.hresp_width != 2 || kind != Protocol::AhbV3))
     return error(outlet_profile_code(kind), "hresp_width",
@@ -584,6 +587,13 @@ struct ApbOutlet {
   ValueId submask = zero, bus_address = zero, bus_mask = zero, bus_data = zero;
   ValueId hrdata = zero, complete = zero, wcomplete = zero, rcomplete = zero, bus_result = zero;
 
+  ValueId read_user = zero, write_user = zero, bus_response_user = zero;
+  ValueId write_response_user = zero, read_response_user = zero;
+  bool user_response() const {
+    return p.dialect == Protocol::Apb5 && p.response_user_bits && p.response_user_port_bits;
+  }
+  void user_drive();
+  void write_user_update(ValueId to_front, ValueId to_tail, ValueId shift);
   void write_accept();
   void read_accept();
   void bus_issue();
@@ -623,6 +633,8 @@ Fields ApbOutlet::response_state(const char *stem) {
     s["fail"] = l.state(std::string(stem) + ".fail", 1);
     s["exclusive_okay"] = l.state(std::string(stem) + ".exclusive_okay", 1);
   }
+  if (user_response())
+    s["response_user"] = l.state(std::string(stem) + ".user", p.response_user_bits);
   return s;
 }
 
@@ -639,6 +651,8 @@ Fields ApbOutlet::queue_meta(const char *stem) {
     s["exclusive"] = l.state(std::string(stem) + "_exclusive", 1);
   if (p.response_run_bits)
     s["run_end"] = l.state(std::string(stem) + "_run_end", 1);
+  if (user_response())
+    s["response_user"] = l.state(std::string(stem) + "_user", p.response_user_bits);
   return s;
 }
 
@@ -706,6 +720,8 @@ void ApbOutlet::write_accept() {
   wl_now = l.b.select(wt, w.at("last"), wl);
   if (!write_in_entry)
     wd_now = view_fields(l, wd, w, wh);
+  if (!p.user.empty() && p.user_bits)
+    write_user = l.b.select(wh, w.at("user"), l.latch("w.request_user", w.at("user"), wh));
   const auto window_code = o.local_result(w);
   wcode = window_code;
   // Network exclusive monitor: a failing write (judged at its packet head
@@ -809,6 +825,8 @@ void ApbOutlet::read_accept() {
         rd[name] = l.latch(std::string("r.descriptor.") + name, r.at(name), rt);
   } else
     rd = o.capture("r.descriptor", r, rt);
+  if (!p.user.empty() && p.user_bits)
+    rd["user"] = l.latch("r.request_user", r.at("user"), rt);
   // As on the write side, a read packet accepted now is worked on in this cycle.
   rd_now = view_fields(l, rd, r, rt);
   if (single)
@@ -912,9 +930,15 @@ void ApbOutlet::bus_issue() {
   // remaining transfers from IDLE and their data is discarded; nothing else starts.
   read_protection = packet_coded ? r.at("protection") : rd_now.at("protection");
   read_cache = packet_coded ? r.at("cache") : rd_now.at("cache");
+  if (!p.user.empty() && p.user_bits)
+    read_user = rd_now.at("user");
   if (timeout) {
-    orphan =
-        o.orphan({{"address", bits}, {"left", p.len_bits}, {"mask", lanes}}, rd_now, o.captured());
+    auto kept = o.captured();
+    if (!p.user.empty() && p.user_bits)
+      kept.push_back("user");
+    orphan = o.orphan({{"address", bits}, {"left", p.len_bits}, {"mask", lanes}}, rd_now, kept);
+    if (!p.user.empty() && p.user_bits)
+      read_user = l.b.select(failed, orphan.packet.at("user"), read_user);
     read_address = l.b.select(failed, orphan.word.at("address"), read_address);
     read_mask = l.b.select(failed, orphan.word.at("mask"), read_mask);
     read_protection = l.b.select(failed, orphan.packet.at("protection"), read_protection);
@@ -989,6 +1013,54 @@ void ApbOutlet::bus_issue() {
 
 // The bus registers drive the APB faces; a completion merges into the waiting
 // word and, after expiry, the orphan steps its remaining transfers.
+void ApbOutlet::user_drive() {
+  if (p.dialect != Protocol::Apb5)
+    return;
+  if (!p.user.empty()) {
+    const auto user = l.b.select(choose_w, write_user, read_user);
+    const auto mapped =
+        map_attributes(l, p.user, l.b.constant(4, 0), l.b.constant(3, 0), choose_w, user);
+    out("apb", "pauser", l.latch("bus.request_user", mapped, issue));
+  }
+  if (p.response_user_port_bits) {
+    const auto user = in("apb", "pbuser", p.response_user_port_bits);
+    if (p.response_user_bits)
+      bus_response_user = l.fit(user, p.response_user_bits);
+  }
+  if (user_response()) {
+    // Reads repeat the first physical transfer's response user throughout the packet.
+    read_response_user = l.state("r.packet_user", p.response_user_bits);
+    const auto first = l.state("r.user_seen", 1);
+    const auto seen = l.b.select(rt, zero, first);
+    l.b.update(first, l.either(seen, rcomplete));
+    const auto held_read =
+        l.b.select(rt, l.b.constant(p.response_user_bits, 0), read_response_user);
+    const auto take_read = l.both(rcomplete, l.inv(seen));
+    l.b.update(read_response_user, l.b.select(take_read, bus_response_user, held_read));
+    read_response_user = l.b.select(take_read, bus_response_user, held_read);
+    write_response_user = l.state("w.packet_user", p.response_user_bits);
+    const auto write_seen = l.state("w.user_seen", 1);
+    const auto seen_write = l.both(l.inv(wh), write_seen);
+    const auto physical_write = l.both(wcomplete, l.inv(l.eq(bus_mask, 0)));
+    const auto take_user = l.both(physical_write, l.inv(seen_write));
+    l.b.update(write_seen, l.either(seen_write, physical_write));
+    const auto held = l.b.select(wh, l.b.constant(p.response_user_bits, 0), write_response_user);
+    l.b.update(write_response_user, l.b.select(take_user, bus_response_user, held));
+    write_response_user = l.b.select(take_user, bus_response_user, held);
+  }
+}
+
+void ApbOutlet::write_user_update(ValueId to_front, ValueId to_tail, ValueId shift) {
+  if (!user_response())
+    return;
+  const auto value = l.b.select(failed, l.b.constant(p.response_user_bits, 0), write_response_user);
+  const auto front = bq.at("response_user"), tail = bt.at("response_user");
+  const auto loaded = l.b.select(to_front, value, front);
+  l.b.update(front, single ? loaded : l.b.select(shift, tail, loaded));
+  if (!single)
+    l.b.update(tail, l.b.select(to_tail, value, tail));
+}
+
 void ApbOutlet::bus_drive() {
   ValueId bus_prot;
   if (!strobeless) {
@@ -1068,6 +1140,7 @@ void ApbOutlet::bus_drive() {
     o.move(orphan, "mask", l.b.select(owing, rest, l.b.constant(lanes, 0)), step, lanes_next,
            l.b.select(l.both(complete, l.inv(owner)), spare(lanes_owed), lanes_owed));
   }
+  user_drive();
   l.b.update(phase, l.b.select(issue, l.b.constant(2, 1),
                                l.b.select(address_done, l.b.constant(2, 2),
                                           l.b.select(complete, ok, phase))));
@@ -1130,6 +1203,7 @@ void ApbOutlet::write_update() {
     const auto to_tail = l.both(bstore, l.both(bf, l.either(l.inv(bpop), btf)));
     const auto to_front = l.both(bstore, l.either(l.inv(bf), l.both(bpop, l.inv(btf))));
     const auto shift = l.both(bpop, btf);
+    write_user_update(to_front, to_tail, shift);
     const auto stage = [&](const char *field, ValueId value) {
       if (write_in_entry)
         return;
@@ -1143,7 +1217,7 @@ void ApbOutlet::write_update() {
     };
     if (write_in_entry) {
       for (const auto &[field, entry] : bq)
-        if (field != "result")
+        if (field != "result" && field != "response_user")
           l.b.update(entry, l.b.select(wh, w.at(field), entry));
     } else {
       stage("address", wd_now.at("address"));
@@ -1262,6 +1336,8 @@ void ApbOutlet::read_update() {
   queue(oc, tail_result, l.b.select(rcomplete, merge_error(l, rc_now, bus_result), rc_now));
   queue(ofirst, tail_first, rfirst_now);
   queue(olast, tail_last, last);
+  if (user_response())
+    queue(om.at("response_user"), otm.at("response_user"), read_response_user);
   // The entry carries the packet's descriptor fields: the next packet may
   // be accepted while this response still waits.
   if (!single) {
@@ -3269,10 +3345,10 @@ ApbOutletForm apb_outlet_form(const BurstOutletProfile &p) {
 }
 
 Result<NodeHardware> lower_apb_burst_outlet(const ApbBurstOutletProfile &profile) {
-  if (profile.dialect != Protocol::Apb4 && profile.dialect != Protocol::Apb3 &&
-      profile.dialect != Protocol::Apb2)
+  if (profile.dialect != Protocol::Apb5 && profile.dialect != Protocol::Apb4 &&
+      profile.dialect != Protocol::Apb3 && profile.dialect != Protocol::Apb2)
     return Result<NodeHardware>::failure(
-        error("NCL_APB_BURST_OUTLET_PROFILE", "dialect", "Expected apb4, apb3 or apb2"));
+        error("NCL_APB_BURST_OUTLET_PROFILE", "dialect", "Expected apb5, apb4, apb3 or apb2"));
   return lower_burst_outlet(profile, profile.dialect);
 }
 

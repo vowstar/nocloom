@@ -351,7 +351,7 @@ TEST_CASE("YAML rejects ambiguity and unsupported syntax") {
   for (const auto &[from, to, code] : std::vector<std::array<std::string, 3>>{
            {"name: peripheral_bus", "name: peripheral_bus\nname: duplicate",
             "NCL_SCHEMA_DUPLICATE_KEY"},
-           {"protocol: apb4", "protocol: apb5", "NCL_UNSUPPORTED_PROTOCOL"},
+           {"protocol: apb4", "protocol: unsupported", "NCL_UNSUPPORTED_PROTOCOL"},
            {"address_width: 32", "address_width: '32'", "NCL_SCHEMA_TYPE"},
            {"address_width: 32", "address_width: 32.0", "NCL_SCHEMA_TYPE"},
            {"address_width: 32", "address_width: true", "NCL_SCHEMA_TYPE"},

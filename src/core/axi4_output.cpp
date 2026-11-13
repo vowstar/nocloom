@@ -257,14 +257,22 @@ constexpr Anchor source_anchors[] = {{"write_miss", "wr.missing"},
                                      {"pre_merge_write_valid", "request.pre_merge_write_valid"},
                                      {"pre_merge_write_error", "request.pre_merge_write_error"},
                                      {"pre_merge_read_valid", "request.pre_merge_read_valid"}};
-constexpr Anchor target_anchors[] = {
-    {"write_busy", "w.busy"},         {"write_miss", "w.miss"},
-    {"write_response", "w.response"}, {"write_response_full", "w.response_full"},
-    {"read_busy", "r.busy"},          {"read_miss", "r.miss"},
-    {"read_response", "r.response"},  {"read_response_full", "r.full"},
-    {"offer_valid", "offer_valid"},   {"offer_write", "offer_write"},
-    {"offer_error", "offer_error"},   {"emit_valid", "emit_valid"},
-    {"emit_result", "emit_result"},   {"emit_route", "emit_route"}};
+constexpr Anchor target_anchors[] = {{"write_busy", "w.busy"},
+                                     {"write_miss", "w.miss"},
+                                     {"write_response", "w.response"},
+                                     {"write_response_full", "w.response_full"},
+                                     {"read_busy", "r.busy"},
+                                     {"read_miss", "r.miss"},
+                                     {"read_response", "r.response"},
+                                     {"read_response_full", "r.full"},
+                                     {"offer_valid", "offer_valid"},
+                                     {"offer_write", "offer_write"},
+                                     {"offer_error", "offer_error"},
+                                     {"emit_valid", "emit_valid"},
+                                     {"emit_result", "emit_result"},
+                                     {"emit_route", "emit_route"},
+                                     {"write_packet_user", "w.packet_user"},
+                                     {"write_response_user", "w.response.user"}};
 // The map and bundle of one composed network in named stages. Stage order matters: later
 // stages refine contract texts (attributes, target_response, fixed) of earlier ones.
 class MapWriter {
@@ -306,10 +314,12 @@ private:
   // APB initiators travel as AXI4-Lite sources, AHB and AXI3 initiators as AXI4 sources; their
   // own protocol names them.
   const Json source_protocols = by_name(p.sources, [](const auto &s) {
-    return std::optional{s.apb    ? *s.apb == Protocol::Apb3 ? "apb3" : "apb4"
-                         : s.ahb5 ? "ahb5"
-                         : s.ahb  ? "ahb_v3"
-                         : s.axi3 ? "axi3"
+    return std::optional{s.apb                              ? *s.apb == Protocol::Apb3   ? "apb3"
+                                                              : *s.apb == Protocol::Apb5 ? "apb5"
+                                                                                         : "apb4"
+                         : s.ahb5                           ? "ahb5"
+                         : s.ahb                            ? "ahb_v3"
+                         : s.axi3                           ? "axi3"
                          : s.protocol == Protocol::Axi4Lite ? "axi4_lite"
                                                             : "axi4"};
   });
@@ -857,7 +867,8 @@ private:
         "source_word_address_selects_32bit_byte_lanes_PWDATA_PSTRB_shifted_PRDATA_extracted";
   }
   void target_contracts() {
-    const bool has_ahb = uses(Protocol::AhbV3), has_apb = uses(Protocol::Apb4);
+    const bool has_ahb = uses(Protocol::AhbV3),
+               has_apb = uses(Protocol::Apb4) || uses(Protocol::Apb5);
     const bool has_axi3 = any(p.targets, &TargetPlan::axi3);
     const bool has_dialects =
         uses(Protocol::Apb3) || uses(Protocol::Apb2) || uses(Protocol::Axi4Lite) || has_axi3;
@@ -865,7 +876,8 @@ private:
       return;
     if (!definition.contains("endpoint_protocols"))
       definition["endpoint_protocols"]["initiators"] = source_protocols;
-    static const char *const protocols[] = {"apb4", "axi4_lite", "apb3", "apb2", "axi4", "ahb_v3"};
+    static const char *const protocols[] = {"apb4",   "axi4_lite", "apb3", "apb2", "axi4",
+                                            "ahb_v3", "axi3",      "ahb5", "apb5"};
     // An AXI3 target travels as an AXI4 target; its own protocol names it.
     definition["endpoint_protocols"]["targets"] = by_name(p.targets, [](const TargetPlan &t) {
       return std::optional{t.service ? "service"
@@ -1059,8 +1071,11 @@ private:
            {"protection", "PPROT_from_AxPROT_CACHE_not_represented"},
            {"reset", "common_reset_cancels_SETUP_ACCESS_and_pending_responses"},
            {"capacity", direction_capacity}};
-    if (extended(Protocol::Apb4)) {
-      apb["profile"] = "dedicated_APB4_32bit_data";
+    if (uses(Protocol::Apb5))
+      apb["profile"] = "dedicated_APB_32bit_engine_PAUSER_PBUSER";
+    if (extended(Protocol::Apb4) || extended(Protocol::Apb5)) {
+      apb["profile"] = uses(Protocol::Apb5) ? "dedicated_APB_32bit_engine_PAUSER_PBUSER"
+                                            : "dedicated_APB4_32bit_data";
       apb["address"] = address_contract();
     }
     contract()["attributes"] = has_ahb

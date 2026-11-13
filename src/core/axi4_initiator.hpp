@@ -93,12 +93,12 @@ struct Axi4InitiatorProfile {
   // Single-beat AXI4-Lite ports with independently held AW/W. AxADDR is cleared to the bus width
   // before every check; WSTRB passes as given.
   bool lite = false;
-  // Apb4 or Apb3: an APB completer face replaces the Lite ports of a 32-bit Lite engine (lite set,
-  // at most 32 address bits). PSEL offers AW and W, or AR, which the idle engine takes in SETUP;
-  // BREADY and RREADY are PSEL & PENABLE, so PREADY is the registered B or R valid and the engine
-  // is idle again when the transfer completes. PSLVERR tells whether the last response was other
-  // than OKAY, and PRDATA is zero unless the last is a read OKAY. APB3 has no PSTRB or PPROT: every
-  // write strobes all bytes and the protection is unprivileged, Non-secure, data (PPROT 2).
+  // Apb5, Apb4 or Apb3: an APB completer face replaces the Lite ports of a 32-bit Lite engine (lite
+  // set, at most 32 address bits). PSEL offers AW and W, or AR, which the idle engine takes in
+  // SETUP; BREADY and RREADY are PSEL & PENABLE, so PREADY is the registered B or R valid and the
+  // engine is idle again when the transfer completes. PSLVERR tells whether the last response was
+  // other than OKAY, and PRDATA is zero unless the last is a read OKAY. APB3 has no PSTRB or PPROT:
+  // every write strobes all bytes and the protection is unprivileged, Non-secure, data (PPROT 2).
   std::optional<Protocol> apb = std::nullopt;
   unsigned apb_data_bits = 32; // Physical APB face: 8, 16 or 32; engine stays 32.
   // An AHB-Lite subordinate face (IHI0033A) replaces the ports of a full AXI4 engine of the same
@@ -176,7 +176,7 @@ struct Axi4InitiatorProfile {
   // drives the field with the entry of the burst's AxQOS; an empty one drives level zero.
   unsigned level_bits = 0;
   std::vector<unsigned> axqos_map{};
-  // AXI4 and AXI4-Lite faces: the AxUSER port width, and the driver of every flag in order.
+  // AXI faces use AxUSER and APB5 uses PAUSER, with one driver per network flag.
   unsigned user_port_bits = 0, response_user_port_bits = 0;
   std::vector<AttributeBit> user_flags{};
   // The request routing windows in target order: the destination of an admitted burst is the target

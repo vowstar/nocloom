@@ -397,7 +397,7 @@ output: {backend: verilog, language: verilog_2001}
   REQUIRE(b);
   CHECK(a.value() == b.value());
   auto invalid = yaml;
-  invalid.replace(invalid.find("protocol: axi4_lite"), 19, "protocol: apb5");
+  invalid.replace(invalid.find("protocol: axi4_lite"), 19, "protocol: unsupported");
   rejected(nocloom::config::parse(invalid), "NCL_UNSUPPORTED_PROTOCOL");
   // APB2 parses and is rejected with its reason by validation.
   auto apb2 = yaml;
@@ -822,4 +822,77 @@ TEST_CASE("Extended AXI IDs retain the source limits", "[axi4-config]") {
   CHECK(artifacts.value().size() == 6);
   d.initiators[1].id_width = 17;
   rejected(nocloom::make_plan(d), "NCL_ENDPOINT_TRANSACTION_WIDTH");
+}
+
+TEST_CASE("APB5 user widths follow endpoint signal limits", "[axi4-config][apb5]") {
+  using namespace nocloom;
+  auto d = profile();
+  for (auto &i : d.initiators) {
+    i.protocol = Protocol::Apb5;
+    i.user_width = 128;
+    i.response_user_width = 16;
+  }
+  for (auto &t : d.targets) {
+    t.protocol = Protocol::Apb5;
+    t.user.resize(128);
+    t.response_user_width = 16;
+  }
+  REQUIRE(validate(d));
+  SECTION("request input overflow") {
+    d.initiators[0].user_width = 129;
+    rejected(validate(d), "NCL_APB5_USER_WIDTH");
+  }
+  SECTION("response output overflow") {
+    d.initiators[0].response_user_width = 17;
+    rejected(validate(d), "NCL_APB5_USER_WIDTH");
+  }
+  SECTION("request output overflow") {
+    d.targets[0].user.resize(129);
+    rejected(validate(d), "NCL_APB5_USER_WIDTH");
+  }
+  SECTION("response input overflow") {
+    d.targets[0].response_user_width = 17;
+    rejected(validate(d), "NCL_APB5_USER_WIDTH");
+  }
+  SECTION("explicit zero widths") {
+    for (auto &i : d.initiators) {
+      i.user_width = 0;
+      i.response_user_width = 0;
+    }
+    for (auto &t : d.targets) {
+      t.user.clear();
+      t.response_user_width = 0;
+    }
+    REQUIRE(validate(d));
+    REQUIRE(generate(d));
+  }
+  SECTION("APB initiator options remain restricted") {
+    d.initiators[0].id_width = 1;
+    rejected(validate(d), "NCL_APB_INITIATOR");
+  }
+}
+
+TEST_CASE("Target option diagnostics list APB5", "[axi4-config][apb5]") {
+  using namespace nocloom;
+  auto d = profile();
+  d.targets[0].apb_back_to_back = true;
+  d.targets[0].fixed_bursts = FixedBursts::Single;
+  const auto result = validate(d);
+  REQUIRE_FALSE(result);
+  for (const auto &[code, field, message] :
+       std::vector<std::tuple<const char *, const char *, const char *>>{
+           {"NCL_TARGET_APB_ACCESS", "targets[0].apb_back_to_back",
+            "Back-to-back access requires an APB5, APB4, APB3 or APB2 target"},
+           {"NCL_TARGET_FIXED_BURSTS", "targets[0].fixed_bursts",
+            "AXI4 targets receive FIXED bursts unchanged; fixed_bursts applies to dedicated apb5, "
+            "apb4, apb3, apb2, axi4_lite and AHB targets"}}) {
+    CAPTURE(code);
+    const auto at = std::ranges::find_if(result.diagnostics(), [&](const auto &diag) {
+      return diag.code == code && diag.field == field;
+    });
+    REQUIRE(at != result.diagnostics().end());
+    CHECK(at->message == message);
+  }
+  d.targets[0].protocol = Protocol::Apb5;
+  REQUIRE(validate(d));
 }

@@ -51,6 +51,8 @@ const BusType &bus_type(Protocol protocol, bool initiator) {
   apb3.insert(apb3.end(), {{"PREADY", 1}, {"PSLVERR", 1}});
   L apb4 = apb3;
   apb4.insert(apb4.end(), {{"PPROT", 3}, {"PSTRB", 0}});
+  L apb5 = apb4;
+  apb5.insert(apb5.end(), {{"PAUSER", 0}, {"PBUSER", 0}});
   // HSELx and HREADYOUT are illegal on an AHB-Lite master interface.
   const L ahb = {{"HADDR", 0},  {"HBURST", 3}, {"HMASTLOCK", 1}, {"HPROT", 4},
                  {"HSIZE", 3},  {"HTRANS", 2}, {"HWDATA", 0},    {"HWRITE", 1},
@@ -60,6 +62,7 @@ const BusType &bus_type(Protocol protocol, bool initiator) {
       {Protocol::Axi3, {"AMBA3", "AXI", "r2p0_0", "AXI_rtl", "ACLK", "ARESETn", axi3}},
       {Protocol::Axi4Lite,
        {"AMBA4", "AXI4-Lite", "r0p0_0", "AXI4-Lite_rtl", "ACLK", "ARESETn", axi_lite}},
+      {Protocol::Apb5, {"AMBA5", "APB5", "r0p0_0", "APB5_rtl", "PCLK", "PRESETn", apb5}},
       {Protocol::Apb4, {"AMBA4", "APB4", "r0p0_0", "APB4_rtl", "PCLK", "PRESETn", apb4}},
       {Protocol::Apb3, {"AMBA3", "APB", "r2p0_0", "APB_rtl", "PCLK", "PRESETn", apb3}},
       {Protocol::Apb2, {"AMBA2", "APB", "r2p0_4", "APB_rtl", "PCLK", "PRESETn", apb2}},

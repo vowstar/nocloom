@@ -221,9 +221,9 @@ Table build(const Json &map) {
         lookup(transactions.value("initiators", Json::object()), source, Json::object()), "access",
         "");
     static const std::map<std::string, Protocol> protocol_values = {
-        {"axi4", Protocol::Axi4}, {"axi3", Protocol::Axi3}, {"axi4_lite", Protocol::Axi4Lite},
-        {"apb4", Protocol::Apb4}, {"apb3", Protocol::Apb3}, {"ahb_v3", Protocol::AhbV3},
-        {"ahb5", Protocol::Ahb5}};
+        {"axi4", Protocol::Axi4},    {"axi3", Protocol::Axi3}, {"axi4_lite", Protocol::Axi4Lite},
+        {"apb5", Protocol::Apb5},    {"apb4", Protocol::Apb4}, {"apb3", Protocol::Apb3},
+        {"ahb_v3", Protocol::AhbV3}, {"ahb5", Protocol::Ahb5}};
     const bool full_axi = detail::full_axi(protocol_values.at(
         lookup<std::string>(protocols.value("initiators", Json::object()), source, "axi4")));
     // A narrower source zero-extends its address: it reaches only the low part of the space.

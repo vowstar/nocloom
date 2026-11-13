@@ -13,11 +13,11 @@ namespace nocloom {
 // Apb3 and Apb2 are dialects of the APB family: Apb3 keeps PREADY and PSLVERR
 // but has no PPROT or PSTRB; Apb2 completes every access in a fixed
 // zero-wait-state cycle and has no PREADY, PSLVERR, PPROT or PSTRB. Initiators
-// may be Apb4 or Apb3 (single transfers, 8, 16 or 32 data bits in a 32-bit
+// may be Apb5, Apb4 or Apb3 (single transfers, 8, 16 or 32 data bits in a 32-bit
 // network); Apb2 is never a valid initiator protocol. Axi4 is the full AXI4 burst profile. AhbV3 is
 // AMBA 3 AHB-Lite: a target outlet, or an initiator's subordinate port. Axi3 is an AMBA 3 AXI port
 // of an initiator or a target: AXI4 bursts of at most 16 beats with WID and a two-bit AxLOCK.
-enum class Protocol { Apb4, Axi4Lite, Apb3, Apb2, Axi4, AhbV3, Axi3, Ahb5 };
+enum class Protocol { Apb4, Axi4Lite, Apb3, Apb2, Axi4, AhbV3, Axi3, Ahb5, Apb5 };
 // How the deassertion of an active-low reset port reaches the flip-flops of
 // the domains that use it. Resynchronized: the port deasserts asynchronously
 // and each domain releases it through two registers clocked by its own clock.
@@ -91,7 +91,7 @@ enum class ExclusiveAccess { None, Network, Target };
 // bufferable AxCACHE[0], modifiable AxCACHE[1], allocate AxCACHE[2] on reads
 // and AxCACHE[3] on writes, lookup AxCACHE[2] | AxCACHE[3], privileged
 // AxPROT[0], nonsecure AxPROT[1], instruction AxPROT[2]. User drives a network
-// user flag from bit `index` of the initiator's AxUSER (Initiator::user_flags only).
+// user flag from bit `index` of the initiator's AxUSER or PAUSER (Initiator::user_flags only).
 enum class AttributeSource {
   Zero,
   One,
@@ -419,7 +419,7 @@ struct Initiator {
   std::string clock_domain;
   // Absent inherits the global address width.
   std::optional<unsigned> address_width = std::nullopt;
-  // Required: axi4, axi3, a single-beat axi4_lite, apb4 or apb3 ingress, or an ahb_v3
+  // Required: axi4, axi3, a single-beat axi4_lite, apb5, apb4 or apb3 ingress, or an ahb_v3
   // (AHB-Lite) or ahb5 ingress. An axi3 initiator follows the axi4 rules with len_width 0..4. An
   // APB initiator is 8, 16 or 32 bits wide in a 32-bit network and sets none of id_width,
   // len_width, access, narrow_bursts or max_outstanding above one. An AHB initiator is 32 to 1024
@@ -469,7 +469,7 @@ struct Initiator {
   // APB, on one clock or placed on several. Burst capacities and packets keep their ordinary
   // limits; switch outputs arbitrate by the pressure the levels give their packets
   // (docs/scheduling.md#scheduling-pressure-rules). Each level is 0..7. All zero is the
-  // default scheduling. A shaper or a scheduler needs a 32-bit apb4 or apb3, axi4 or axi3
+  // default scheduling. A shaper or a scheduler needs a 32-bit apb5, apb4 or apb3, axi4 or axi3
   // initiator; an APB initiator with a scheduler has no packets or issue pipes.
   InitiatorQos qos{};
   InitiatorPipes pipes{};
@@ -478,15 +478,17 @@ struct Initiator {
   // sizes take the lowest block address, then the target name.
   std::optional<std::string> default_target = std::nullopt;
   // AXI4, AXI3 and AXI4-Lite sources: the AWUSER and ARUSER port width, 1..256; absent has no
-  // port.
+  // port. APB5 uses PAUSER with 0..128 bits, absent or zero omits the port.
   std::optional<unsigned> user_width = std::nullopt;
-  // With transport.user_flags, every source drives every flag (and no other): from an AxUSER bit
-  // (AttributeSource::User), an AxCACHE or AxPROT flag of the burst, or a constant, optionally
-  // inverted. An APB source carries AxCACHE 0 and its PPROT, an AHB source its HPROT mapping.
+  // With transport.user_flags, every source drives every flag (and no other): from an AxUSER or
+  // PAUSER bit (AttributeSource::User), an AxCACHE or AxPROT flag of the burst, or a constant,
+  // optionally inverted. An APB source carries AxCACHE 0 and its PPROT, an AHB source its HPROT
+  // mapping.
   std::map<std::string, AttributeBit> user_flags = {};
   // With ErrorLogging::audit_flags, the driver of each flag, in the form of user_flags.
   std::map<std::string, AttributeBit> audit_flags = {};
   // AXI4, AXI3 and AXI4-Lite sources: the BUSER and RUSER port width, 1..256; absent has no port.
+  // APB5 uses PBUSER with 0..16 bits, absent or zero omits the port.
   // They carry the low transport.response_user_bits of the response user field, zero above.
   std::optional<unsigned> response_user_width = std::nullopt;
   // Static source routing classes, at most 32. Their declaration indexes are source_path values
@@ -608,11 +610,14 @@ struct Target {
   // gathers the read responses back into its own beats.
   std::optional<bool> read_side_effects = std::nullopt;
   // AXI4, AXI3 and AXI4-Lite targets: the AWUSER and ARUSER port, bit i from user[i] (1..256
-  // bits); empty has no port. Every packet of a burst carries the flags its source drove.
+  // bits). APB5 uses PAUSER with 0..128 bits. Empty has no port. Every packet of a burst carries
+  // the flags its source drove.
   std::vector<UserBit> user = {};
   // AXI4, AXI3 and AXI4-Lite targets: the BUSER and RUSER port width, 1..256; absent has no port
   // (the response user field is zero). A response packet carries the user of its first R beat, or
-  // of the B, in the low transport.response_user_bits.
+  // of the B, in the low transport.response_user_bits. APB5 uses PBUSER with 0..16
+  // bits, absent or zero omits the port. Its packet carries the first completed access's PBUSER.
+  // A timeout write response carries zero. Timeout read responses retain the packet's first value.
   std::optional<unsigned> response_user_width = std::nullopt;
   TargetPipes pipes{};
   // Target flows, 1..32, each reached by its own mappings (AddressMapping::flow, every flow at

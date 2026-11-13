@@ -60,6 +60,7 @@ The codes of the C++ tree helper are in
 | `NCL_AXI4_NARROW_BURSTS` | Unsupported narrow mode or conflict with target read side effects |
 | `NCL_AXI4_PACKETS` | Invalid pair packet limits or an unsupported initiator for those limits |
 | `NCL_TARGET_ATTRIBUTES` | Missing, unsupported or invalid target attribute mapping |
+| `NCL_APB5_USER_WIDTH` | APB5 request user exceeds 128 bits or response user exceeds 16 bits |
 | `NCL_USER_FLAGS` | Invalid user flags |
 | `NCL_TARGET_EXCLUSIVE` | Invalid exclusive mode, owner flags, monitors or reaching initiators |
 | `NCL_TARGET_READ_INTERLEAVE` | Explicit interleave size or its network profile is unsupported |

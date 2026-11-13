@@ -13,6 +13,7 @@ using P = Protocol;
 constexpr std::uint32_t narrow = 0xFF, wide = 0xFC; // 8 to 1024 bits, 32 to 1024 bits
 // protocol, ingress, egress, their widths, timeout, attributes, fixed, apb, ahb, lock, max
 constexpr ProtocolCaps caps[] = {
+    {P::Apb5, true, true, narrow, narrow, true, true, true, true, false, false, 1},
     {P::Apb4, true, true, narrow, narrow, true, true, true, true, false, false, 1},
     {P::Axi4Lite, true, true, wide, wide, true, true, true, false, false, false, 256},
     {P::Apb3, true, true, narrow, narrow, true, false, true, true, false, false, 1},
@@ -103,19 +104,23 @@ constexpr CapabilityRule rules[] = {
      [](const RuleView &v) {
        const auto &list = v.def.initiators;
        const auto i = std::ranges::find_if(list, [](const Initiator &x) {
-         const bool apb = (x.protocol == P::Apb4 || x.protocol == P::Apb3) && x.data_width == 32U;
+         const bool apb =
+             (x.protocol == P::Apb5 || x.protocol == P::Apb4 || x.protocol == P::Apb3) &&
+             x.data_width == 32U;
          return x.qos.shaper && !apb && !full_axi(x.protocol);
        });
        return when(i != list.end(),
                    "initiators[" + std::to_string(i - list.begin()) + "].qos.shaper",
-                   "A shaper needs a 32-bit apb4 or apb3, an axi4 or an axi3 "
+                   "A shaper needs a 32-bit apb5, apb4 or apb3, an axi4 or an axi3 "
                    "initiator");
      }},
     {"qos.scheduler_protocol", "NCL_QOS_PROFILE", Scope::Network, Stage::Definition,
      [](const RuleView &v) {
        const auto &list = v.def.initiators;
        const auto i = std::ranges::find_if(list, [](const Initiator &x) {
-         const bool apb = (x.protocol == P::Apb4 || x.protocol == P::Apb3) && x.data_width == 32U;
+         const bool apb =
+             (x.protocol == P::Apb5 || x.protocol == P::Apb4 || x.protocol == P::Apb3) &&
+             x.data_width == 32U;
          return x.qos.scheduler && !apb && !full_axi(x.protocol);
        });
        return when(i != list.end(),
@@ -179,7 +184,8 @@ constexpr CapabilityRule rules[] = {
        };
        const auto apb_source = [](const SourcePlan &s) { return s.apb && s.apb_bits == 32; };
        const auto apb_target = [](const TargetPlan &t) {
-         return (t.protocol == P::Apb4 || t.protocol == P::Apb3 || t.protocol == P::Apb2) &&
+         return (t.protocol == P::Apb5 || t.protocol == P::Apb4 || t.protocol == P::Apb3 ||
+                 t.protocol == P::Apb2) &&
                 t.apb_bits == 32 && !t.timeout;
        };
        const bool axi =

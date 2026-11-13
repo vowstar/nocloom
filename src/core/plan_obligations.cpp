@@ -165,23 +165,26 @@ unsigned dedicated_engine_bits(const NetworkPlan &plan, const std::string &targe
     const unsigned ids = plan.burst_id_bits, srcs = plan.source_bits;
     const auto form =
         apb_outlet_form(outlet_profile(plan, static_cast<unsigned>(&t - plan.targets.data())));
+    const unsigned user =
+        (t.user.empty() ? 0U : plan.burst_user_bits) +
+        (t.response_user_bits ? plan.burst_response_user_bits * (form.single ? 2U : 3U) : 0U);
     const bool one_lane =
         (t.protocol == Protocol::Apb3 || t.protocol == Protocol::Apb2) && t.apb_bits >= 32;
     if (direction == 0) {
       // A word issued as it is taken: its data and running result, the response entry's fields.
       if (form.write_in_entry)
-        return bits + 37 + ids + srcs;
+        return user + bits + 37 + ids + srcs;
       const unsigned entry = bits + 5 + ids + srcs + (monitored ? len + 2 : 0U);
       if (form.at_once)
-        return bits + len + 46 + ids + srcs + entry;
-      return 4 * bits + len + 60 + 3 * ids + 3 * srcs + (monitored ? 2 * (len + 2) : 0U) -
+        return user + bits + len + 46 + ids + srcs + entry;
+      return user + 4 * bits + len + 60 + 3 * ids + 3 * srcs + (monitored ? 2 * (len + 2) : 0U) -
              (form.single ? entry : 0U) - (one_lane ? 3U : 0U);
     }
     if (!form.single)
-      return 4 * bits + len + 94 + 3 * ids + 3 * srcs + (t.apb_bits < 32 ? 32U : 0U);
+      return user + 4 * bits + len + 94 + 3 * ids + 3 * srcs + (t.apb_bits < 32 ? 32U : 0U);
     // Its address, data, code and length, the response entry's fields; narrow words keep their
     // mask and gather, a sub-page window also the attributes and the word's code.
-    return 2 * bits + len + 41 + ids + srcs + (form.at_once ? 0U : 4U) +
+    return user + 2 * bits + len + 41 + ids + srcs + (form.at_once ? 0U : 4U) +
            (form.packet_coded ? 0U : 9U) + (t.apb_bits < 32 ? 32U : 0U);
   }
   return 0U; // unreachable: AHB, APB and AXI4-Lite return above
