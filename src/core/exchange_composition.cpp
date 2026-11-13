@@ -2405,6 +2405,13 @@ private:
       if (const auto it = side.ep.bound.find(hint); it != side.ep.bound.end())
         zone.wake.push_back(it->second);
   }
+  void wake_source_face(const SourcePlan &sp, const Imported &ep, GateRegion &zone) {
+    for (const auto *signal : {"awvalid", "wvalid", "arvalid", "psel"})
+      if (ep.axi.contains(signal))
+        zone.wake.push_back(ep.axi.at(signal));
+    if (sp.ahb)
+      zone.wake.push_back(c.and_(ep.axi.at("hsel"), c.not_(c.eq(ep.axi.at("htrans"), 0))));
+  }
   void bind_source_charges(const SourcePlan &sp, SourceSide &side, const Imported &splitter,
                            const Channel &write, const Channel &read) {
     if (!axi_charge(sp))
@@ -2495,9 +2502,7 @@ private:
       zone->idle.push_back(side.ep.states.contains("rr.offered")
                                ? at_rest(b, side.ep.states, initiator_multi_rest)
                                : at_rest(b, side.ep.states, initiator_rest));
-      for (const auto *signal : {"awvalid", "wvalid", "arvalid", "psel", "hsel"})
-        if (side.ep.axi.contains(signal))
-          zone->wake.push_back(side.ep.axi.at(signal));
+      wake_source_face(sp, side.ep, *zone);
       zone->wake.insert(zone->wake.end(), {init_wrsp.valid, read_wake});
       add_waiting_wakes(side, *zone);
     }
