@@ -256,6 +256,13 @@ foreach(case IN ITEMS ratios throughput faults)
   set_tests_properties(async_fifo_${case} PROPERTIES TIMEOUT 1800 LABELS "rtl;cdc;async-fifo"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 endforeach()
+add_test(NAME endpoint_clock_gating_transactions
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/clock_gate_bench.py
+    --cli $<TARGET_FILE:nocloom_cli>
+    --work ${CMAKE_CURRENT_BINARY_DIR}/endpoint_clock_gating_transactions)
+set_tests_properties(endpoint_clock_gating_transactions PROPERTIES TIMEOUT 600 PROCESSORS 2
+  RESOURCE_LOCK endpoint_clock_gating LABELS "rtl;cdc;clock-gating;ci"
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 # Unbounded control proofs; ORDER and SLOT_STABLE unbounded on most shapes, bounded on
 # the largest (see run_async_fifo_formal.py),
 # covers and fault BMC; a missing sby fails the test.
