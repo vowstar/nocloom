@@ -334,6 +334,7 @@ struct OutletBase {
     profile.tag_bits = p.tag_bits;
     profile.user_bits = p.user_bits;
     profile.response_user_bits = p.response_user_bits;
+    profile.data_user_bits_per_byte = p.data_user_bits_per_byte;
     Fields f = l.arrive(l.face(face, burst_request_fields(word_bits, profile, p.source_bits)));
     // A read-only target denies every write word, a write-only one every read word
     // (local_result). The engine sees a denied packet's first fragment one cycle after it
@@ -465,6 +466,10 @@ struct OutletBase {
     l.out(face, "last", last);
     l.out(face, "error", zero);
     l.out(face, "data", data);
+    if (p.data_user_bits_per_byte)
+      l.out(face, "data_user",
+            d.contains("data_user") ? d.at("data_user")
+                                    : l.num(word_bits / 8 * p.data_user_bits_per_byte, 0));
     if (p.tag_bits)
       l.out(face, "tag", d.at("tag"));
     if (p.id_bits)
@@ -592,6 +597,10 @@ struct ApbOutlet {
   bool user_response() const {
     return p.dialect == Protocol::Apb5 && p.response_user_bits && p.response_user_port_bits;
   }
+  ValueId bus_data_user = zero, read_data_user = zero;
+  void data_user_issue();
+  void data_user_drive();
+  void data_user_read(ValueId to_front, ValueId to_tail, ValueId shift);
   void user_drive();
   void write_user_update(ValueId to_front, ValueId to_tail, ValueId shift);
   void write_accept();
@@ -1009,10 +1018,71 @@ void ApbOutlet::bus_issue() {
   // A serial outlet takes no write word while a transfer is on the bus, so PWDATA is the word
   // buffer itself during a write transfer.
   bus_data = single ? wdata : l.latch("bus.data", wdata_now, issue);
+  data_user_issue();
 }
 
 // The bus registers drive the APB faces; a completion merges into the waiting
 // word and, after expiry, the orphan steps its remaining transfers.
+void ApbOutlet::data_user_issue() {
+  if (!p.data_user_port_bits)
+    return;
+  const auto saved = l.latch("w.data_user", w.at("data_user"), wt);
+  const auto current = l.pick(wt, w.at("data_user"), saved);
+  // Mask here too: target strobes can differ from the arriving word's strobes.
+  ValueId masked{};
+  const auto k = p.data_user_bits_per_byte;
+  for (unsigned byte = 0; byte < 4; ++byte) {
+    const auto group =
+        l.pick(l.b.slice(submask, byte, 1), l.b.slice(current, k * byte, k), l.num(k, 0));
+    masked = byte ? l.b.concat(group, masked) : group;
+  }
+  bus_data_user = l.latch("bus.data_user", masked, issue);
+}
+void ApbOutlet::data_user_drive() {
+  if (!p.data_user_port_bits)
+    return;
+  const auto k = p.data_user_bits_per_byte;
+  auto physical = l.b.slice(bus_data_user, 0, p.data_user_port_bits);
+  for (unsigned lane = physical_lanes; lane < 4; lane += physical_lanes)
+    physical = l.pick(l.inv(l.eq(l.b.slice(bus_mask, lane, physical_lanes), 0)),
+                      l.b.slice(bus_data_user, lane * k, p.data_user_port_bits), physical);
+  out("apb", "pwuser", physical);
+  read_data_user = in("apb", "pruser", p.data_user_port_bits);
+}
+void ApbOutlet::data_user_read(ValueId to_front, ValueId to_tail, ValueId shift) {
+  if (!p.data_user_bits_per_byte)
+    return;
+  const auto k = p.data_user_bits_per_byte, width = 4 * k;
+  ValueId word = l.num(width, 0);
+  if (p.data_user_port_bits) {
+    ValueId groups{};
+    for (unsigned byte = 0; byte < 4; ++byte) {
+      const auto enabled =
+          l.both(rcomplete, l.both(l.b.slice(bus_mask, byte, 1), l.eq(bus_result, 0)));
+      const auto group =
+          l.pick(enabled, l.b.slice(read_data_user, (byte % physical_lanes) * k, k), l.num(k, 0));
+      groups = byte ? l.b.concat(group, groups) : group;
+    }
+    word = groups;
+    if (narrow_apb) {
+      const auto gathered_user = l.state("r.gather_user", width);
+      word = l.either(l.pick(rt, l.num(width, 0), gathered_user), word);
+      l.b.update(gathered_user, l.pick(l.either(rt, rnext), l.num(width, 0),
+                                       l.pick(rcomplete, word, gathered_user)));
+    }
+  }
+  const auto front = l.state("r.data_user", width);
+  const auto value = word;
+  const auto loaded = l.pick(to_front, value, front);
+  if (single)
+    l.b.update(front, loaded);
+  else {
+    const auto tail = l.state("r.tail_data_user", width);
+    l.b.update(front, l.pick(shift, tail, loaded));
+    l.b.update(tail, l.pick(to_tail, value, tail));
+  }
+  om["data_user"] = front;
+}
 void ApbOutlet::user_drive() {
   if (p.dialect != Protocol::Apb5)
     return;
@@ -1080,6 +1150,7 @@ void ApbOutlet::bus_drive() {
   const auto empty = continuous ? zero : l.eq(bus_mask, 0);
   const auto ready = continuous ? bus_ready : l.either(empty, bus_ready);
   hrdata = in("apb", "prdata", p.apb_data_bits);
+  data_user_drive();
   const auto hresp = fixed_ready ? zero : in("apb", "pslverr", 1);
   const auto address_done = active(l.eq(phase, 1));
   complete = l.bind("bus.complete", active(l.both(l.eq(phase, 2), ready)));
@@ -1332,6 +1403,7 @@ void ApbOutlet::read_update() {
     l.b.update(tail, l.b.select(to_tail, value, tail));
   };
   queue(rdata, tail_data, l.b.select(rcomplete, word, l.b.constant(32, 0)));
+  data_user_read(to_front, to_tail, shift);
   queue(oa, tail_address, ra_now);
   queue(oc, tail_result, l.b.select(rcomplete, merge_error(l, rc_now, bus_result), rc_now));
   queue(ofirst, tail_first, rfirst_now);

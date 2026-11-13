@@ -88,6 +88,7 @@ Endpoint `data_width` sets physical bus width. Nodes and links can override the
 | `exclusive_granule` | Network monitor reservation granule in bytes | 1, powers of two through 128 |
 | `user_flags` | Named one-bit request fields | Empty, at most 256 |
 | `response_user_bits` | Response user field width | 0, at most 256 |
+| `data_user_bits_per_byte` | Data user bits per data byte | 0 to 4, default 0 |
 
 An APB endpoint requires a 32-bit network. Endpoint widths can differ from the
 network width under the [protocol rules](protocols.md). The
@@ -97,6 +98,15 @@ APB5 uses endpoint `user_width`, `user_flags`, `user` and
 `response_user_width` for [user signals](user-signals.md#apb5-user-ports).
 The request port is at most 128 bits and the response port is at most 16 bits.
 Both default to zero width.
+
+Endpoint `data_user_width` enables PWUSER and
+PRUSER together. It defaults to 0 and must be 0 or
+`transport.data_user_bits_per_byte * data_width / 8` on APB5 endpoints.
+A nonzero width requires a transport value from 1 to 4.
+Other protocols accept only zero data user width.
+
+C++ uses `TransportOptions::data_user_bits_per_byte` and endpoint
+`data_user_width` with the same defaults and limits.
 
 ## Output configuration
 

@@ -30,6 +30,7 @@ Result<NodeHardware> lower_service_outlet(const ServiceOutletProfile &p) {
   layout.tag_bits = p.tag_bits;
   layout.user_bits = p.user_bits;
   layout.response_user_bits = p.response_user_bits;
+  layout.data_user_bits_per_byte = p.data_user_bits_per_byte;
   const auto w = l.arrive(l.face("wreq", burst_request_fields(bus_bits, layout, p.source_bits)));
   const auto r = l.arrive(l.face("rreq", burst_request_fields(bus_bits, layout, p.source_bits)));
   const auto hint_in = [&](const char *name, unsigned bits) {
@@ -159,6 +160,8 @@ Result<NodeHardware> lower_service_outlet(const ServiceOutletProfile &p) {
     l.out(name, "last", l.bit(1));
     l.out(name, "error", l.bit(0));
     l.out(name, "data", data);
+    if (p.data_user_bits_per_byte)
+      l.out(name, "data_user", l.num(bus_bits / 8 * p.data_user_bits_per_byte, 0));
     if (p.tag_bits)
       l.out(name, "tag", tag);
     if (p.id_bits)

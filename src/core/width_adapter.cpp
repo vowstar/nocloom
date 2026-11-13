@@ -10,6 +10,9 @@
 namespace nocloom::detail {
 namespace {
 constexpr unsigned lane_bytes = 4;
+unsigned lane_bits(const std::optional<BurstProfile> &burst) {
+  return 32 + (burst ? burst->data_user_bits_per_byte * 4 : 0);
+}
 std::uint64_t mask(unsigned w) { return w >= 64 ? ~std::uint64_t{0} : (std::uint64_t{1} << w) - 1; }
 // Ladder-global byte occupancy width: six bits hold the 32-byte top of the
 // switch ladder. A burst composition with 64- or 128-byte endpoint words
@@ -205,7 +208,11 @@ Fragment input_fragment(logic::Logic &l, bool response, unsigned source_bits,
     f.count = input("count", occupancy_bits_of(burst));
   }
   for (unsigned i = 0; i < lanes; ++i) {
-    f.data.push_back(input("data" + std::to_string(i), 32));
+    auto data = input("data" + std::to_string(i), 32);
+    if (burst && burst->data_user_bits_per_byte)
+      data = l.b.concat(input("data_user" + std::to_string(i), burst->data_user_bits_per_byte * 4),
+                        data);
+    f.data.push_back(data);
     if (!response)
       f.be.push_back(input("be" + std::to_string(i), 4));
   }
@@ -237,7 +244,11 @@ void output_fragment(logic::Logic &l, bool response, const std::string &side, co
     output("count", f.count);
   }
   for (std::size_t i = 0; i < f.data.size(); ++i) {
-    output("data" + std::to_string(i), f.data[i]);
+    output("data" + std::to_string(i),
+           burst && burst->data_user_bits_per_byte ? l.b.slice(f.data[i], 0, 32) : f.data[i]);
+    if (burst && burst->data_user_bits_per_byte)
+      output("data_user" + std::to_string(i),
+             l.b.slice(f.data[i], 32, burst->data_user_bits_per_byte * 4));
     if (!response)
       output("be" + std::to_string(i), f.be[i]);
   }
@@ -321,6 +332,8 @@ std::vector<std::pair<std::string, unsigned>> fragment_fields(bool response, uns
     fields.emplace_back("cut", 1);
   for (unsigned i = 0; i < word_bytes / lane_bytes; ++i) {
     fields.emplace_back("data" + std::to_string(i), 32);
+    if (burst && burst->data_user_bits_per_byte)
+      fields.emplace_back("data_user" + std::to_string(i), burst->data_user_bits_per_byte * 4);
     if (!response)
       fields.emplace_back("be" + std::to_string(i), 4);
   }
@@ -401,7 +414,7 @@ Result<NodeHardware> lower_width_serializer(const WidthAdapterParameters &parame
         address);
     narrow.count = extent_of(l, plan.parameters, narrow.control, narrow_reach);
   }
-  const auto zero_data = l.b.constant(32, 0);
+  const auto zero_data = l.b.constant(lane_bits(plan.parameters.burst), 0);
   const auto zero_be = l.b.constant(4, 0);
   for (unsigned j = 0; j < plan.lanes_narrow; ++j) {
     const unsigned hi = plan.lanes_narrow + j;
@@ -505,7 +518,7 @@ Result<NodeHardware> lower_response_assembler(const WidthAdapterPlan &plan) {
   if (p.burst->decode_packets)
     failed =
         l.both(failed, l.inv(decode_packet::marked(l, p.burst->decode_flag, result, wide.error)));
-  const auto zero_data = l.b.constant(32, 0);
+  const auto zero_data = l.b.constant(lane_bits(plan.parameters.burst), 0);
   const auto first_group = l.b.slice(start, n, j);
   for (unsigned g = 0; g < groups; ++g) {
     const auto here = l.eq(position, g);
@@ -516,11 +529,17 @@ Result<NodeHardware> lower_response_assembler(const WidthAdapterPlan &plan) {
     for (unsigned i = 0; i < plan.lanes_narrow; ++i) {
       ValueId stored = zero_data;
       if (g + 1 < groups) {
-        const auto lane = l.state("des.lane_data" + std::to_string(g * plan.lanes_narrow + i), 32);
+        const auto lane = l.state("des.lane_data" + std::to_string(g * plan.lanes_narrow + i),
+                                  lane_bits(p.burst));
         l.b.update(lane, l.b.select(l.both(store, here), narrow.data[i], lane));
         stored = l.b.select(kept, lane, zero_data);
       }
-      wide.data.push_back(l.b.select(failed, zero_data, l.b.select(shown, narrow.data[i], stored)));
+      const auto payload = l.b.select(shown, narrow.data[i], stored);
+      const auto failed_payload =
+          p.burst->data_user_bits_per_byte
+              ? l.b.concat(l.b.slice(payload, 32, lane_bits(p.burst) - 32), l.num(32, 0))
+              : zero_data;
+      wide.data.push_back(l.b.select(failed, failed_payload, payload));
     }
   }
   output_fragment(l, true, "wide", wide, p.source_bits, p.burst);
@@ -556,7 +575,7 @@ Result<NodeHardware> lower_width_deserializer(const WidthAdapterParameters &para
       runs(plan.parameters) ? ValueId{} : l.state("des.control.count", plan.count_bits);
   std::vector<ValueId> lane_data, lane_be;
   for (unsigned j = 0; j < plan.lanes_narrow; ++j) {
-    lane_data.push_back(l.state("des.lane_data" + std::to_string(j), 32));
+    lane_data.push_back(l.state("des.lane_data" + std::to_string(j), lane_bits(parameters.burst)));
     if (!plan.parameters.response)
       lane_be.push_back(l.state("des.lane_be" + std::to_string(j), 4));
   }
@@ -619,7 +638,7 @@ Result<NodeHardware> lower_width_deserializer(const WidthAdapterParameters &para
     if (!plan.parameters.response)
       l.b.update(lane_be[j], l.b.select(low_accept, narrow.be[j], lane_be[j]));
   }
-  const auto zero_data = l.b.constant(32, 0);
+  const auto zero_data = l.b.constant(lane_bits(plan.parameters.burst), 0);
   const auto zero_be = l.b.constant(4, 0);
   auto from_current = l.inv(this_group);
   // Only used lanes leave the gather; slots and stored lanes outside the

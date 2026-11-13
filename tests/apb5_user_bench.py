@@ -607,7 +607,7 @@ def rejected_configurations(cli, work):
     valid = configuration('apb5', 'apb5', False, 7, 16, 9)
     variants = []
     for endpoint in ('initiators', 'targets'):
-        for key in ('data_user_width', 'pwuser_width', 'pruser_width', 'wuser_width'):
+        for key in ('pwuser_width', 'pruser_width', 'wuser_width'):
             cfg = copy.deepcopy(valid)
             cfg[endpoint][0][key] = 1
             variants.append((cfg, 'NCL_SCHEMA_UNKNOWN_FIELD'))

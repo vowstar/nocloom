@@ -95,6 +95,7 @@ struct SourcePlan {
   std::optional<std::string> default_target; // Initiator::default_target
   // AxUSER port width and the driver of every network user flag, in flag order.
   unsigned user_bits = 0, response_user_bits = 0;
+  unsigned data_user_bits = 0;
   std::vector<AttributeBit> user_flags;
   // The driver of every security flag, in name order.
   std::vector<AttributeBit> security_flags;
@@ -159,6 +160,7 @@ struct TargetPlan {
   std::optional<TargetAttributes> attributes;
   // AxUSER bit i: a constant or AttributeSource::User naming a network user flag by its index.
   std::vector<AttributeBit> user;
+  unsigned data_user_bits = 0;
   unsigned response_user_bits = 0; // BUSER and RUSER port width
   std::optional<TargetTimeout> timeout;
   ExclusiveTarget exclusive{}; // mode None without support
@@ -496,6 +498,7 @@ struct NetworkPlan {
   unsigned burst_level_bits = 0;
   // Network user flags (message.hpp point 13), transport.user_flags in order; zero without them.
   unsigned burst_user_bits = 0, burst_response_user_bits = 0;
+  unsigned data_user_bits_per_byte = 0;
   // AHB5 request metadata above the named flags: presence, HPROT, HMASTER.
   bool ahb5 = false;
   unsigned hmaster_bits = 0;

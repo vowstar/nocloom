@@ -52,7 +52,7 @@ const BusType &bus_type(Protocol protocol, bool initiator) {
   L apb4 = apb3;
   apb4.insert(apb4.end(), {{"PPROT", 3}, {"PSTRB", 0}});
   L apb5 = apb4;
-  apb5.insert(apb5.end(), {{"PAUSER", 0}, {"PBUSER", 0}});
+  apb5.insert(apb5.end(), {{"PAUSER", 0}, {"PBUSER", 0}, {"PWUSER", 0}, {"PRUSER", 0}});
   // HSELx and HREADYOUT are illegal on an AHB-Lite master interface.
   const L ahb = {{"HADDR", 0},  {"HBURST", 3}, {"HMASTLOCK", 1}, {"HPROT", 4},
                  {"HSIZE", 3},  {"HTRANS", 2}, {"HWDATA", 0},    {"HWRITE", 1},

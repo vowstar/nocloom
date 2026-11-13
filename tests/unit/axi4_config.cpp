@@ -985,3 +985,65 @@ TEST_CASE("Target option diagnostics list APB5", "[axi4-config][apb5]") {
   d.targets[0].protocol = Protocol::Apb5;
   REQUIRE(validate(d));
 }
+
+TEST_CASE("APB5 data user widths match each physical byte", "[axi4-config][apb5]") {
+  using namespace nocloom;
+  auto d = profile();
+  d.transport.emplace().data_user_bits_per_byte = 4;
+  for (auto &i : d.initiators) {
+    i.protocol = Protocol::Apb5;
+    i.data_user_width = 16;
+  }
+  for (auto &t : d.targets) {
+    t.protocol = Protocol::Apb5;
+    t.data_user_width = 16;
+  }
+  REQUIRE(validate(d));
+  REQUIRE(generate(d));
+  SECTION("every supported byte group size") {
+    for (unsigned k = 1; k <= 4; ++k)
+      for (unsigned width : {8U, 16U, 32U}) {
+        d.transport->data_user_bits_per_byte = k;
+        for (auto &i : d.initiators) {
+          i.data_width = width;
+          i.data_user_width = k * width / 8;
+        }
+        for (auto &t : d.targets) {
+          t.data_width = width;
+          t.data_user_width = k * width / 8;
+        }
+        REQUIRE(validate(d));
+        REQUIRE(generate(d));
+      }
+  }
+  SECTION("zero endpoint widths are legal") {
+    for (auto &i : d.initiators)
+      i.data_user_width = 0;
+    for (auto &t : d.targets)
+      t.data_user_width = 0;
+    REQUIRE(generate(d));
+  }
+  SECTION("transport zero cannot carry endpoint data user") {
+    d.transport->data_user_bits_per_byte = 0;
+    rejected(validate(d), "NCL_APB5_DATA_USER_WIDTH");
+  }
+  SECTION("group limit follows the APB5 recommended maximum") {
+    d.transport->data_user_bits_per_byte = 5;
+    rejected(validate(d), "NCL_APB5_DATA_USER_WIDTH");
+  }
+  SECTION("initiator width must match its bytes") {
+    d.initiators[0].data_user_width = 15;
+    rejected(validate(d), "NCL_APB5_DATA_USER_WIDTH");
+  }
+  SECTION("target width must match its bytes") {
+    d.targets[0].data_width = 8;
+    rejected(validate(d), "NCL_APB5_DATA_USER_WIDTH");
+  }
+  SECTION("other protocols have no data user ports") {
+    d.initiators[0].protocol = Protocol::Apb4;
+    rejected(validate(d), "NCL_APB5_DATA_USER_WIDTH");
+    d.initiators[0].data_user_width = 0;
+    d.targets[0].protocol = Protocol::Apb4;
+    rejected(validate(d), "NCL_APB5_DATA_USER_WIDTH");
+  }
+}

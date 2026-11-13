@@ -48,6 +48,7 @@ struct PacketizerLowering {
     burst.record_bits = p.record_bits;
     burst.security_bits = p.security_bits;
     burst.response_user_bits = p.response_user_bits;
+    burst.data_user_bits_per_byte = p.data_user_bits_per_byte;
     burst.level_bits = p.level_bits;
     if (p.split_narrow || exact_any) {
       if (p.write)

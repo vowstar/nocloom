@@ -574,8 +574,24 @@ private:
         "a_response_packet_carries_the_target_BUSER_or_the_RUSER_of_its_first_beat_a_source_takes_"
         "the_low_bits_of_its_final_packet_B_zero_above_and_on_local_answers";
   }
+  void data_user() {
+    if (!p.data_user_bits_per_byte)
+      return;
+    Json record = {{"bits_per_byte", p.data_user_bits_per_byte}};
+    for (const auto &s : p.sources)
+      if (s.data_user_bits)
+        record["initiators"][s.name] = s.data_user_bits;
+    for (const auto &t : p.targets)
+      if (t.data_user_bits)
+        record["targets"][t.name] = t.data_user_bits;
+    definition["data_user"] = record;
+    contract()["data_user"] =
+        "each_byte_keeps_its_user_group_through_width_conversion_strobed_off_write_bytes_"
+        "have_zero_user_groups_a_failed_source_read_returns_zero_in_every_PRUSER_bit";
+  }
   void user_flags() {
     response_user();
+    data_user();
     if (p.user_flags.empty())
       return;
     const auto text = [&](const AttributeBit &bit, bool target) {

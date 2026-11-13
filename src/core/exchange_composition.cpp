@@ -1689,10 +1689,13 @@ public:
               b.ir.values.at(whole.index).width == width ? whole : b.slice(whole, 0, width));
         continue;
       }
-      // A data or strobe lane: 32 or 4 bits of the wide payload, or all of a narrower one.
+      // A payload or strobe lane, sliced at the same lane index in each field.
       if (const bool data = name.starts_with("data"); data || name.starts_with("be")) {
-        const unsigned lane = std::stoul(name.substr(data ? 4 : 2));
-        auto whole = ep.data[endpoint_field_index(response, data ? "data" : "be")];
+        const bool user = name.starts_with("data_user");
+        const unsigned lane = std::stoul(name.substr(user ? 9 : data ? 4 : 2));
+        auto whole = ep.data[endpoint_field_index(response, user   ? "data_user"
+                                                            : data ? "data"
+                                                                   : "be")];
         drive(tr.data[i], width == b.ir.values.at(whole.index).width
                               ? whole
                               : b.slice(whole, lane * width, width));
@@ -1779,7 +1782,7 @@ public:
         drive(ep.data[i], b.concat(b.slice(whole, bits, global - bits), offset));
         continue;
       }
-      if (name == "data" || name == "be") {
+      if (name == "data" || name == "data_user" || name == "be") {
         ValueId joined = tr_field(name + "0");
         for (unsigned lane = 1; lane < lanes; ++lane)
           joined = b.concat(tr_field(name + decimal(lane)), joined);
@@ -3297,14 +3300,16 @@ private:
           staging.second.push_back("wr.b_full");
       } else {
         staging.first = {"rr.rsp_data", "rr.rsp_result", "rr.rsp_error", "rr.rsp_last"};
+        if (sp.data_user_bits)
+          staging.first.push_back("rr.rsp_data_user");
         if (plan.exclusive)
           staging.first.push_back("rr.rsp_exclusive_okay");
         if (plan.burst_response_user_bits)
           staging.first.push_back("rr.rsp_user");
         staging.second = {"rr.rsp_full"};
       }
-      for (const auto &name :
-           {dir + ".rsp_id", dir + ".pslverr", dir + ".prdata_read", dir + ".prdata_lane"})
+      for (const auto &name : {dir + ".rsp_id", dir + ".pslverr", dir + ".prdata_read",
+                               dir + ".prdata_lane", dir + ".pruser_lane"})
         if (side.ep.states.contains(name))
           staging.second.push_back(name);
       std::vector<ValueId> staged, staged_control;
@@ -4865,6 +4870,12 @@ private:
     if (!profile.user.empty() && profile.user_bits)
       fields.push_back(dir + ".request_user");
     fields.push_back(dir + ".data");
+    if (profile.data_user_bits_per_byte && read) {
+      fields.insert(fields.end(), {"r.data_user", "r.tail_data_user"});
+      if (profile.data_user_port_bits && profile.apb_data_bits < 32)
+        fields.push_back("r.gather_user");
+    } else if (profile.data_user_port_bits)
+      fields.push_back("w.data_user");
     if (!form.at_once)
       fields.insert(fields.end(), {dir + ".address", dir + ".mask"});
     else if (read)
@@ -5029,6 +5040,67 @@ private:
     return words;
   }
 
+  Names bus_names(unsigned o, const BurstOutletProfile &profile, const Imported &ep) const {
+    const auto &target = plan.targets[o].name;
+    const bool apb = apb_target(plan, target), lite = lite_target(plan, target);
+    const bool ahb = ahb_target(plan, target);
+    const auto protocol = plan.targets[o].protocol;
+    const bool strobeless = protocol == Protocol::Apb3 || protocol == Protocol::Apb2;
+    Names bus{{"bus.address"}, {"bus.phase", "bus.write"}};
+    auto &[bus_fields, bus_controls] = bus;
+    if (!apb && !lite)
+      bus_fields.push_back("bus.size");
+    if (!ahb)
+      bus_fields.push_back("bus.mask");
+    if (!ahb && (!apb || profile.apb_back_to_back || profile.timeout_cycles))
+      bus_fields.push_back("bus.data");
+    if (!strobeless)
+      bus_fields.push_back("bus.protection");
+    if (lite && !profile.user.empty())
+      bus_fields.push_back("bus.user");
+    if (apb && !profile.user.empty())
+      bus_fields.push_back("bus.request_user");
+    if (apb && profile.data_user_port_bits)
+      bus_fields.push_back("bus.data_user");
+    if (profile.flows > 1)
+      bus_fields.push_back("bus.flow");
+    if (lite)
+      // The pipelined engine: the write word on AW/W and its handshake
+      // tracking; reads run on their own channel state above.
+      bus_controls = {"bus.open", "bus.aw_done", "bus.w_done"};
+    if (ahb) {
+      // The pipelined address and data phases replace the phase counter.
+      bus_fields.push_back("bus.hwdata");
+      if (profile.ahb5) {
+        if (profile.hnonsec)
+          bus_fields.push_back("bus.nonsecure");
+        if (profile.hmaster_bits)
+          bus_fields.push_back("bus.master");
+      }
+      bus_controls = {"bus.address_phase", "bus.data_phase",     "bus.data_write", "bus.write",
+                      "bus.open",          "bus.open_write",     "bus.hburst",     "bus.htrans",
+                      "bus.release",       "bus.address_packet", "bus.data_packet"};
+      if (profile.hresp_width == 2)
+        bus_controls.push_back("bus.abort_pending");
+      if (profile.flows > 1)
+        bus_controls.push_back("bus.response_select");
+      bus_controls.push_back("bus.burst");
+    }
+    // The timer, the failed flag and the orphan read copy are bus control.
+    for (const auto &[name, value] : ep.states)
+      if (name.starts_with("timeout."))
+        bus_controls.push_back(name);
+    // The exclusive monitor's reservations observe the bus; they hold no
+    // transaction.
+    if (profile.exclusive_target.mode == ExclusiveAccess::Network)
+      std::ranges::copy(
+          ExclusiveMonitor::state_names(
+              "exclusive", {profile.exclusive_target.monitors, profile.exclusive_target.granule,
+                            plan.burst_address_bits, profile.exclusive_target.id_flags}),
+          std::back_inserter(bus_controls));
+    return bus;
+  }
+
   // The shared-bus engine's packet records per direction and its bus record.
   void register_bus_storage(unsigned o, TargetSide &t, const BurstOutletProfile &profile,
                             const Imported &ep) {
@@ -5076,59 +5148,8 @@ private:
                  : c.and_(c.transfer(request), c.not_(ep.states.at(dir + ".busy"))),
              release, payload, control);
     }
-    const auto protocol = plan.targets[o].protocol;
-    const bool strobeless = protocol == Protocol::Apb3 || protocol == Protocol::Apb2;
     std::vector<ValueId> payload, control;
-    Names bus{{"bus.address"}, {"bus.phase", "bus.write"}};
-    auto &[bus_fields, bus_controls] = bus;
-    if (!apb && !lite)
-      bus_fields.push_back("bus.size");
-    if (!ahb)
-      bus_fields.push_back("bus.mask");
-    if (!ahb && (!apb || profile.apb_back_to_back || profile.timeout_cycles))
-      bus_fields.push_back("bus.data");
-    if (!strobeless)
-      bus_fields.push_back("bus.protection");
-    if (lite && !profile.user.empty())
-      bus_fields.push_back("bus.user");
-    if (apb && !profile.user.empty())
-      bus_fields.push_back("bus.request_user");
-    if (profile.flows > 1)
-      bus_fields.push_back("bus.flow");
-    if (lite)
-      // The pipelined engine: the write word on AW/W and its handshake
-      // tracking; reads run on their own channel state above.
-      bus_controls = {"bus.open", "bus.aw_done", "bus.w_done"};
-    if (ahb) {
-      // The pipelined address and data phases replace the phase counter.
-      bus_fields.push_back("bus.hwdata");
-      if (profile.ahb5) {
-        if (profile.hnonsec)
-          bus_fields.push_back("bus.nonsecure");
-        if (profile.hmaster_bits)
-          bus_fields.push_back("bus.master");
-      }
-      bus_controls = {"bus.address_phase", "bus.data_phase",     "bus.data_write", "bus.write",
-                      "bus.open",          "bus.open_write",     "bus.hburst",     "bus.htrans",
-                      "bus.release",       "bus.address_packet", "bus.data_packet"};
-      if (profile.hresp_width == 2)
-        bus_controls.push_back("bus.abort_pending");
-      if (profile.flows > 1)
-        bus_controls.push_back("bus.response_select");
-      bus_controls.push_back("bus.burst");
-    }
-    // The timer, the failed flag and the orphan read copy are bus control.
-    for (const auto &[name, value] : ep.states)
-      if (name.starts_with("timeout."))
-        bus_controls.push_back(name);
-    // The exclusive monitor's reservations observe the bus; they hold no
-    // transaction.
-    if (profile.exclusive_target.mode == ExclusiveAccess::Network)
-      std::ranges::copy(
-          ExclusiveMonitor::state_names(
-              "exclusive", {profile.exclusive_target.monitors, profile.exclusive_target.granule,
-                            plan.burst_address_bits, profile.exclusive_target.id_flags}),
-          std::back_inserter(bus_controls));
+    const auto bus = bus_names(o, profile, ep);
     consume_states(ep, bus, assigned, payload, control);
     control.insert(control.end(), {t.count, t.turn});
     if (t.flow)

@@ -19,6 +19,7 @@ struct ServiceOutletProfile {
   std::string name;
   unsigned id_bits = 0, len_bits = 8, source_bits = 0, tag_bits = 0;
   unsigned user_bits = 0, response_user_bits = 0;
+  unsigned data_user_bits_per_byte = 0;
   bool exclusive = false;
   unsigned transport_address_bits = 32;
   AddressBlock arrival{};

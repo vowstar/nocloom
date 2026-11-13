@@ -29,6 +29,7 @@ struct UpsizeLowering {
     burst.tag_bits = p.tag_bits;
     burst.user_bits = p.user_bits;
     burst.response_user_bits = p.response_user_bits;
+    burst.data_user_bits_per_byte = p.data_user_bits_per_byte;
     l.block = p.arrival;
     l.block_bits = ab;
   }

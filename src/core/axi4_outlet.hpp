@@ -94,6 +94,7 @@ struct Axi4OutletProfile {
   // returns its request's tag. Zero omits the field.
   unsigned tag_bits = 0;
   unsigned user_bits = 0; // network user flags (message.hpp point 13)
+  unsigned data_user_bits_per_byte = 0;
   unsigned response_user_bits = 0;
   // AxUSER bit i: a constant or AttributeSource::User naming a flag by index; empty has no port.
   std::vector<AttributeBit> user{};

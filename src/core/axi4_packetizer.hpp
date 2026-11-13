@@ -96,6 +96,7 @@ struct Axi4PacketizerProfile : ComponentProfileBase {
   bool exclusive = false;
   unsigned tag_bits = 0;
   unsigned user_bits = 0; // network user flags (message.hpp point 13)
+  unsigned data_user_bits_per_byte = 0;
   unsigned response_user_bits = 0;
   unsigned level_bits = 0; // request scheduling level (message.hpp point 15)
   // Above one, single-packet bursts pass independently; splitting, folding or

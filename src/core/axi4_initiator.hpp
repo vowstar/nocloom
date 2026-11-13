@@ -170,6 +170,7 @@ struct Axi4InitiatorProfile {
   // width sends zero and ignores returned tags.
   unsigned tag_bits = 0;
   unsigned user_bits = 0; // network user flags (message.hpp point 13)
+  unsigned data_user_bits_per_byte = 0;
   unsigned response_user_bits = 0;
   // Weft request level field width (message.hpp point 15), and the full AXI face's AxQOS map
   // (InitiatorQos::axqos_map): a nonempty map adds AWQOS and ARQOS ports of log2(size) bits and
@@ -178,6 +179,7 @@ struct Axi4InitiatorProfile {
   std::vector<unsigned> axqos_map{};
   // AXI faces use AxUSER and APB5 uses PAUSER, with one driver per network flag.
   unsigned user_port_bits = 0, response_user_port_bits = 0;
+  unsigned data_user_port_bits = 0;
   std::vector<AttributeBit> user_flags{};
   // The request routing windows in target order: the destination of an admitted burst is the target
   // whose window holds its start address.

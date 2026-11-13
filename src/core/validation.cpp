@@ -1572,8 +1572,8 @@ void check_target_place(Checks &c, const Target &t, const std::string &field,
 bool interleave_size_target(const Target &t) {
   return t.len_width == 8U && t.id_width.value_or(0) <= 4 && t.max_outstanding.value_or(1) <= 4 &&
          t.access != Access::WriteOnly && t.flows == 1 && !t.exclusive && !t.timeout &&
-         t.pipes == TargetPipes{} && !t.response_user_width && t.user.empty() &&
-         !t.read_side_effects.value_or(false) && t.mappings.size() == 1;
+         t.pipes == TargetPipes{} && !t.response_user_width && !t.data_user_width &&
+         t.user.empty() && !t.read_side_effects.value_or(false) && t.mappings.size() == 1;
 }
 bool interleave_size_network(const Definition &d, const Target &t) {
   return !d.topology && !d.transport && d.clock_gating == ClockGating::PerSwitchAndEndpoint &&
@@ -1591,7 +1591,8 @@ bool interleave_size_source(const Definition &d, const Initiator &i, const Targe
          i.id_width.value_or(0) <= 4 && i.max_outstanding.value_or(1) <= 4 &&
          i.max_outstanding == first.max_outstanding && !i.access && !i.narrow_bursts &&
          !i.id_table_entries && !i.default_target && !i.user_width && !i.response_user_width &&
-         i.qos == InitiatorQos{} && i.route_classes.empty() && i.pipes == InitiatorPipes{};
+         !i.data_user_width && i.qos == InitiatorQos{} && i.route_classes.empty() &&
+         i.pipes == InitiatorPipes{};
 }
 void check_read_interleave(Checks &c, const Target &t, const std::string &field) {
   if (!t.read_interleave_bytes)
@@ -1708,10 +1709,31 @@ void check_targets(Checks &c) {
       c("NCL_AXI4_CAPACITY_COMBINATION", field,
         "A multi-burst source decodes at most 256 routing windows, not " + std::to_string(windows));
 }
+void check_data_user(Checks &c) {
+  const auto k = c.d.transport.value_or(TransportOptions{}).data_user_bits_per_byte;
+  if (k > 4)
+    c("NCL_APB5_DATA_USER_WIDTH", "transport.data_user_bits_per_byte",
+      "Data user bits per byte must be 0 to 4");
+  const auto check = [&](const auto &endpoints, const std::string &kind) {
+    for (std::size_t i = 0; i < endpoints.size(); ++i) {
+      const auto &e = endpoints[i];
+      if (!e.data_user_width)
+        continue;
+      const auto bytes = e.data_width.value_or(c.network_bits) / 8;
+      if (e.protocol != Protocol::Apb5 || !bytes || !k || k > 4 || e.data_user_width != k * bytes)
+        c("NCL_APB5_DATA_USER_WIDTH", kind + "[" + std::to_string(i) + "].data_user_width",
+          "A nonzero APB5 data user width must equal data bytes times "
+          "transport.data_user_bits_per_byte, with 1 to 4 bits per byte");
+    }
+  };
+  check(c.d.initiators, "initiators");
+  check(c.d.targets, "targets");
+}
 // Network user flags: distinct names, a driver of every flag at every source (an AxUSER bit of an
 // AXI4, AXI3 or AXI4-Lite source with a user port, an attribute flag or a constant) and AxUSER
 // bits of AXI4, AXI3 and AXI4-Lite targets that name declared flags.
 void check_user_flags(Checks &c) {
+  check_data_user(c);
   const auto &flags = c.d.transport.value_or(TransportOptions{}).user_flags;
   if (c.d.transport && c.d.transport->response_user_bits > 256)
     c("NCL_USER_FLAGS", "transport.response_user_bits",

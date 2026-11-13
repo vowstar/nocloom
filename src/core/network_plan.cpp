@@ -286,6 +286,7 @@ void plan_endpoints(NetworkPlan &plan, const Definition &d) {
   plan.user_flags = options.user_flags;
   plan.burst_user_bits = static_cast<unsigned>(options.user_flags.size());
   plan.burst_response_user_bits = options.response_user_bits;
+  plan.data_user_bits_per_byte = options.data_user_bits_per_byte;
   plan_ahb5_metadata(plan, d);
   for (const auto &initiator : d.initiators) {
     auto &s = plan.sources.emplace_back();
@@ -335,6 +336,7 @@ void plan_endpoints(NetworkPlan &plan, const Definition &d) {
     s.default_target = initiator.default_target;
     s.user_bits = initiator.user_width.value_or(0);
     s.response_user_bits = initiator.response_user_width.value_or(0);
+    s.data_user_bits = initiator.data_user_width;
     for (const auto &flag : options.user_flags)
       s.user_flags.push_back(initiator.user_flags.at(flag));
     s.split_narrow = initiator.narrow_bursts == NarrowBursts::SplitNonModifiable;
@@ -408,6 +410,7 @@ void plan_endpoints(NetworkPlan &plan, const Definition &d) {
     }
     x.attributes = t.attributes;
     x.response_user_bits = t.response_user_width.value_or(0);
+    x.data_user_bits = t.data_user_width;
     for (const auto &bit : t.user)
       x.user.push_back(
           bit.flag.empty()

@@ -292,6 +292,8 @@ struct BurstProfile {
   bool decode_packets = false;
   // Reserves the error flag for that descriptor instead of result code 3 (decode_packet.hpp).
   bool decode_flag = false;
+  // User bits per payload byte. Zero omits the data_user field.
+  unsigned data_user_bits_per_byte = 0;
   bool operator==(const BurstProfile &) const = default;
 };
 

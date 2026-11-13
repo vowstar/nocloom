@@ -406,7 +406,7 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
       r.object(transport, "transport",
                {"data_width", "max_outstanding", "id_table_entries", "transport_word_bytes",
                 "response_codes", "exclusive_granule", "packet_limits", "user_flags",
-                "response_user_bits"});
+                "response_user_bits", "data_user_bits_per_byte"});
       TransportOptions options;
       if (transport["data_width"])
         options.data_width = r.integer(r.field(transport, "data_width", "transport.data_width"),
@@ -418,6 +418,7 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
       };
       number("max_outstanding", options.max_outstanding);
       number("response_user_bits", options.response_user_bits);
+      number("data_user_bits_per_byte", options.data_user_bits_per_byte);
       if (transport["id_table_entries"])
         options.id_table_entries =
             r.integer(r.field(transport, "id_table_entries", "transport.id_table_entries"),
@@ -966,6 +967,9 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
       if (node["user_width"])
         d.initiators.back().user_width =
             r.integer(r.field(node, "user_width", path + ".user_width"), path + ".user_width");
+      if (node["data_user_width"])
+        d.initiators.back().data_user_width = r.integer(
+            r.field(node, "data_user_width", path + ".data_user_width"), path + ".data_user_width");
       if (node["response_user_width"])
         d.initiators.back().response_user_width =
             r.integer(r.field(node, "response_user_width", path + ".response_user_width"),
@@ -1228,6 +1232,9 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
           timeout.completion = r.boolean(value["completion"], path + ".timeout.completion");
         d.targets.back().timeout = timeout;
       }
+      if (node["data_user_width"])
+        d.targets.back().data_user_width = r.integer(
+            r.field(node, "data_user_width", path + ".data_user_width"), path + ".data_user_width");
       if (node["response_user_width"])
         d.targets.back().response_user_width =
             r.integer(r.field(node, "response_user_width", path + ".response_user_width"),

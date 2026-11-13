@@ -783,6 +783,7 @@ struct InitiatorLowering {
     burst.record_bits = p.record_bits;
     burst.security_bits = p.security_bits;
     burst.response_user_bits = p.response_user_bits;
+    burst.data_user_bits_per_byte = p.data_user_bits_per_byte;
     burst.level_bits = p.level_bits;
     // Bound constants double as designated fault-injection anchors.
     l.bind("c.zero", zero);
@@ -805,7 +806,9 @@ struct InitiatorLowering {
   const unsigned dest_bits, id_entries;
   // The engine's AXI inputs and outputs behind an APB or AHB face.
   std::map<std::string, ValueId> face_in, face_out;
-  ValueId apb_access{}, apb_read_address{};
+  ValueId apb_access{}, apb_read_address{}, apb_pwuser{}, apb_pruser{};
+  void apb_data_user_face(ValueId address, ValueId strobes);
+  void apb_data_user_tail(ValueId answer, ValueId read_valid);
   // AHB face values handed from ahb_face to ahb_tail.
   struct AhbFace {
     ValueId hsel{}, htrans{}, hready{}, phase{}, write{}, sent{}, done{}, err{}, end{}, left{};
@@ -1034,6 +1037,48 @@ struct InitiatorLowering {
   void apb_tail();
   void ahb_tail();
 };
+void InitiatorLowering::apb_data_user_face(ValueId address, ValueId strobes) {
+  if (!p.data_user_port_bits)
+    return;
+  const auto k = p.data_user_bits_per_byte;
+  const auto input = l.b.input("nl_apb_pwuser", p.data_user_port_bits, "apb", "pwuser");
+  ValueId masked{};
+  for (unsigned byte = 0; byte < face_bytes; ++byte) {
+    const auto group =
+        l.pick(l.b.slice(strobes, byte, 1), l.b.slice(input, k * byte, k), l.num(k, 0));
+    masked = byte ? l.b.concat(group, masked) : group;
+  }
+  apb_pwuser = masked;
+  if (face_bytes < 4) {
+    apb_pwuser = l.num(4 * k, 0);
+    const auto lane = l.both(l.fit(address, 2), l.num(2, 4 - face_bytes));
+    for (unsigned offset = 0; offset < 4; offset += face_bytes) {
+      auto placed = masked;
+      if (offset + face_bytes < 4)
+        placed = l.b.concat(l.num((4 - offset - face_bytes) * k, 0), placed);
+      if (offset)
+        placed = l.b.concat(placed, l.num(offset * k, 0));
+      apb_pwuser = l.pick(l.eq(lane, offset), placed, apb_pwuser);
+    }
+  }
+}
+void InitiatorLowering::apb_data_user_tail(ValueId answer, ValueId read_valid) {
+  if (!p.data_user_port_bits)
+    return;
+  const auto k = p.data_user_bits_per_byte;
+  auto user = apb_pruser;
+  if (face_bytes < 4) {
+    const auto kept = l.state("rr.pruser_lane", 2);
+    const auto lane = l.pick(answer, l.b.slice(apb_read_address, 0, 2), kept);
+    l.b.update(kept, lane);
+    user = l.num(p.data_user_port_bits, 0);
+    for (unsigned offset = 0; offset < 4; offset += face_bytes)
+      user = l.pick(l.eq(lane, offset), l.b.slice(apb_pruser, offset * k, p.data_user_port_bits),
+                    user);
+  }
+  l.b.output("nl_apb_pruser", l.pick(read_valid, user, l.num(p.data_user_port_bits, 0)), "apb",
+             "pruser");
+}
 void InitiatorLowering::apb_face() {
   // The APB face drives the Lite engine's AXI inputs and takes its outputs. A transfer offers AW
   // and W (or AR) while PSEL is high. The idle engine takes them in SETUP and stays busy until the
@@ -1050,6 +1095,7 @@ void InitiatorLowering::apb_face() {
     auto pwdata = apb_input("pwdata", p.apb_data_bits);
     auto pstrb =
         apb4 ? apb_input("pstrb", face_bytes) : l.b.constant(face_bytes, (1U << face_bytes) - 1);
+    apb_data_user_face(paddr, pstrb);
     if (p.apb_data_bits < 32) {
       const auto lane_address = p.address_bits < 2 ? l.b.unary(Op::ZeroExtend, paddr, 2) : paddr;
       const auto offset = l.b.slice(lane_address, 0, 2);
@@ -1588,6 +1634,9 @@ void InitiatorLowering::write_complete() {
   const auto face_data = strobed_data(l.b, w_wdata, w_wstrb, be_bits);
   const auto buffered = p.lite && !p.apb;
   wrq["data"] = buffered ? l.b.select(w_beat_full, w_beat_data, face_data) : face_data;
+  if (p.data_user_bits_per_byte)
+    wrq["data_user"] =
+        p.data_user_port_bits ? apb_pwuser : l.num(be_bits * p.data_user_bits_per_byte, 0);
   wrq["be"] = l.b.select(w_admission.unmapped, l.b.constant(be_bits, 0),
                          buffered ? l.b.select(w_beat_full, w_beat_be, w_wstrb) : w_wstrb);
   l.b.output("nl_wreq_valid", w_wrq_valid, "wreq", "valid");
@@ -1630,6 +1679,8 @@ void InitiatorLowering::read_issue() {
   r_remaining = multi || p.apb ? ValueId{} : l.state("rr.remaining", p.len_bits);
   r_rsp_full = l.state("rr.rsp_full", 1);
   r_rsp_data = l.state("rr.rsp_data", p.data_bits);
+  if (p.data_user_port_bits)
+    apb_pruser = l.state("rr.rsp_data_user", be_bits * p.data_user_bits_per_byte);
   r_rsp_result = l.state("rr.rsp_result", 2);
   r_rsp_error = l.state("rr.rsp_error", 1);
   r_rsp_last = l.state("rr.rsp_last", 1);
@@ -1688,6 +1739,8 @@ void InitiatorLowering::read_issue() {
   rrq["first"] = one;
   rrq["last"] = one;
   rrq["data"] = l.b.constant(p.data_bits, 0);
+  if (p.data_user_bits_per_byte)
+    rrq["data_user"] = l.num(be_bits * p.data_user_bits_per_byte, 0);
   rrq["be"] = l.b.constant(be_bits, 0);
   // The descriptor registers load on the same edge that leaves IDLE, so the admission decision is
   // taken in EMIT: a rejected burst moves to ERRSTREAM without ever asserting rrq_valid. A
@@ -1733,6 +1786,8 @@ void InitiatorLowering::read_issue() {
 void InitiatorLowering::stage_beat(ValueId load) {
   std::vector<std::pair<ValueId, std::string>> staged{
       {r_rsp_data, "data"}, {r_rsp_result, "result"}, {r_rsp_error, "error"}, {r_rsp_last, "last"}};
+  if (p.data_user_port_bits)
+    staged.emplace_back(apb_pruser, "data_user");
   if (r_rsp_exclusive)
     staged.emplace_back(*r_rsp_exclusive, "exclusive_okay");
   if (r_rsp_user)
@@ -1935,6 +1990,7 @@ void InitiatorLowering::apb_tail() {
     const auto rfail = l.b.slice(face_out.at("rresp"), 1, 1);
     l.bind("wr.b_take", l.both(bvalid, apb_access));
     const auto answer = l.either(bvalid, rvalid);
+    apb_data_user_tail(answer, l.both(rvalid, l.inv(rfail)));
     l.b.output("nl_apb_pready", answer, "apb", "pready");
     if (*p.apb == Protocol::Apb5 && p.response_user_port_bits)
       l.b.output("nl_apb_pbuser", l.b.select(bvalid, face_out.at("buser"), face_out.at("ruser")),
