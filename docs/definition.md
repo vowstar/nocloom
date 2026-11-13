@@ -57,6 +57,13 @@ The [clocks manual](clocks-and-resets.md) describes clock and reset fields. The
 [network manual](network.md) describes topology and connectivity. The
 [address manual](address-map.md) describes selectors and mappings.
 
+## Endpoint clock gating
+
+Both `initiators[]` and `targets[]` accept a `clock_gating` object.
+It applies to all flows of the endpoint. See [clock gates](clocks-and-resets.md#clock-gates)
+for the fields and allowed combinations. The corresponding C++ fields hold
+an optional `EndpointClockGates`.
+
 ## Transport fields
 
 Endpoint `data_width` sets physical bus width. Nodes and links can override the

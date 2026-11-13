@@ -78,16 +78,45 @@ drops a response with no waiting transaction.
 
 ## Clock gates
 
-`clock_gating: false` disables automatic gates. The default `true` gives
-each gated switch one gate and each endpoint two gates. The endpoint gates
-separate its protocol and transport clock regions. The map calls them zones. A
-domain with `gated: false` keeps its clock open.
+Top-level `clock_gating: false` disables automatic gates. With the default
+`true`, each switch in a gated domain has one gate. A domain with
+`gated: false` uses its domain clock for all switches and endpoints.
 
-A clock gate opens for incoming work and closes only while its side is idle. A
-two-bit remaining-edge count keeps it open for three edges after reset and two
-edges after sampled activity. Idle edges without a wake decrement the count to
-zero. Incoming work also opens the gate immediately. The map records this count
-in `network.clock_gates[].remaining`.
+An endpoint's optional `clock_gating` object applies to all its flows.
+
+| Field | Meaning | Default |
+| --- | --- | --- |
+| `protocol` | Gate the protocol zone | `true` |
+| `transport` | Gate the transport zone | `true` |
+| `single_gate` | Share one gate between both zones | `false` |
+
+| `protocol` | `transport` | `single_gate` | Gates |
+| --- | --- | --- | --- |
+| `true` | `true` | `false` | One per zone |
+| `true` | `true` | `true` | One for both zones |
+| `false` | `true` | `false` | Transport only |
+| `true` | `false` | `false` | Protocol only |
+| `false` | `false` | `false` | None |
+
+A zone without a gate uses the domain clock. A zone with no registers needs no
+gate. The map reports the generated gate count. An explicit endpoint setting
+requires top-level `clock_gating: true` and a domain with `gated: true`.
+Invalid combinations produce `NCL_ENDPOINT_CLOCK_GATING`.
+
+Synchronizers for crossings, reset handshakes, explicitly ungated pipes and
+the exclusive monitor's free-running state use the domain clock.
+
+A clock gate opens for incoming work and closes only while all its zones are
+idle. A two-bit remaining-edge count keeps it open for three edges after reset
+and two edges after sampled activity. Idle edges without a wake decrement the
+count to zero. Incoming work requests the next complete domain-clock pulse.
+The gated output passes a full pulse without a rising edge inside a high phase.
+The map records this count in `network.clock_gates[].remaining`.
+
+Source protocol logic wakes for bus requests and returned responses. Target
+protocol logic wakes for network requests and target bus responses. An offered
+response keeps its receiving region active while the consumer applies back
+pressure.
 
 A high test or ungate input opens its gates.
 

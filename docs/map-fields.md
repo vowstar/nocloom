@@ -70,7 +70,9 @@ formats. Profile-specific JSON records appear only for that profile.
 | `definition.register_reset` | Synchronous style when selected |
 | `definition.synchronizer_stages` | Effective global crossing synchronizer setting |
 | `definition.clock_gating` | `true` when automatic gating is enabled |
+| `definition.endpoint_clock_gating` | Non-default endpoint settings grouped by `initiator` or `target` and endpoint name |
 | `network.clock_gates` | Gate owner, clock domain, zone, register count and control nets |
+| `network.endpoint_clock_gating` | Explicit endpoint settings, generated gate counts and zone clock selections |
 | `network.cdc` | Object domains, cuts, registers, synchronizer stages and status of physical obligations. See [CDC timing constraints](timing-constraints.md) |
 | `network.cdc.cuts[].unknown_period_domain` | Domain with an unknown period when exactly one crossing period is unknown and `depth_source` is `fallback` |
 | `network.cdc.registers` | Register bindings or synchronizer instances and stage indices |
@@ -85,7 +87,20 @@ picoseconds. The same number and string formats apply to `whole`.
 
 Crossing `depth_source` is `formula`, `fallback` or `explicit`. A synchronizer
 entry identifies its instance and stage instead of a plain register name.
-Clock-gate zone values are `protocol` and `transport`.
+
+Clock-gate `zone` values are `protocol`, `transport` and `shared`. With
+explicit endpoint settings, `zones` lists `protocol`, `transport` or both.
+Count the records for an
+owner to find its number of gates. `remaining` names the two-bit open-edge
+count. `enable`, `idle` and `wake` name the gate control nets.
+
+For example, `network.endpoint_clock_gating.initiator.<name>.gate_count`
+counts the gates of one initiator.
+
+Each explicit endpoint record contains the Booleans `protocol`, `transport`
+and `single_gate`. In the network record, `protocol_clock` and
+`transport_clock` each report `gated` or `domain`. The definition record used
+by `diff` omits settings equal to the default.
 
 ## Behavioral contracts
 

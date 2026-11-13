@@ -117,6 +117,7 @@ See [address maps](address-map.md) and [definition shorthand](definition.md).
 | Code | Condition |
 | --- | --- |
 | `NCL_DOMAIN_REFERENCE`, `NCL_RESET_PORT` | Unknown or unused clock or reset binding, or invalid reset handshake |
+| `NCL_ENDPOINT_CLOCK_GATING` | An explicit endpoint setting requires automatic gating and a gated domain. A shared gate requires both zones |
 | `NCL_CLOCK_DIVISION` | Invalid ratio, division ratio product above the 64-bit range or incompatible `ratio` and `enable_port` |
 | `NCL_CLOCK_ROOT` | Unknown or missing clock root, or clock roots without a clocked graph |
 | `NCL_CLOCK_EDGE` | Invalid or cyclic parent. Selected domains need a parent on the same root. Other domains have no parent |
