@@ -116,6 +116,7 @@ See [address maps](address-map.md) and [definition shorthand](definition.md).
 | Code | Condition |
 | --- | --- |
 | `NCL_DOMAIN_REFERENCE`, `NCL_RESET_PORT` | Unknown or unused clock/reset binding, invalid release mode or invalid reset handshake |
+| `NCL_ENDPOINT_CLOCK_GATING` | Endpoint mode is not `separate`, `shared` or `transport_only`, or an explicit mode has no active automatic gate |
 | `NCL_CLOCK_DIVISION` | Unsupported `clock_type`, or missing, unused or incompatible ratio, enable or ungate fields |
 | `NCL_CLOCK_ROOT` | Unknown or missing clock root, or clock roots without a clocked graph |
 | `NCL_CLOCK_EDGE` | Unknown, self-referencing, cyclic or cross-root `edge_parent` |

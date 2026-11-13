@@ -74,16 +74,42 @@ drops a response with no waiting transaction.
 
 ## Clock gates
 
-`clock_gating: none` disables automatic gates. `per_switch_and_endpoint` gives
-each gated switch one gate and each endpoint two gates. The endpoint gates
-separate its protocol and transport clock regions. The map calls them zones. A
-domain with `gated: false` keeps its clock open.
+Top-level `clock_gating: none` disables automatic gates.
+`per_switch_and_endpoint` gives each gated switch one gate. A domain with
+`gated: false` keeps its clock open.
 
-A clock gate opens for incoming work and closes only while its side is idle. A
-two-bit remaining-edge count keeps it open for three edges after reset and two
-edges after sampled activity. Idle edges without a wake decrement the count to
-zero. Incoming work also opens the gate immediately. The map records this count
-in `network.clock_gates[].remaining`.
+Each initiator and target can set its own `clock_gating` field. The selection
+covers all flows of that endpoint.
+
+| Endpoint `clock_gating` | Gates per endpoint | Gated zones | Sleep and wake |
+| --- | --- | --- | --- |
+| `separate` | At most 2 | Protocol and transport, each with its own gate | Each side sleeps when idle and wakes for its incoming work |
+| `shared` | 1 | Protocol and transport together | Both sides must be idle to sleep. Incoming work or activity on either side keeps the gate open |
+| `transport_only` | At most 1 | Transport | The transport side sleeps when idle and wakes for incoming work. The protocol side always uses the domain clock |
+
+A zone with no registers has no gate. The map reports the generated gate count.
+
+The default is `separate`. Explicit endpoint modes require top-level
+`per_switch_and_endpoint` and a domain with `gated: true`. An inactive gate
+selection produces `NCL_ENDPOINT_CLOCK_GATING`, including explicit `separate`.
+
+Synchronizers and crossing reset handshakes use the domain clock in every
+mode. An internal divider or valid-edge qualifier still selects domain edges.
+The protocol side of `transport_only` uses those edges without an automatic
+endpoint gate. Explicitly ungated pipes and the exclusive monitor's free-running
+state also use the domain clock.
+
+A clock gate opens for incoming work and closes only while all its zones are
+idle. A two-bit remaining-edge count keeps it open for three edges after reset
+and two edges after sampled activity. Idle edges without a wake decrement the
+count to zero. Incoming work requests the next complete domain-clock pulse.
+The gated output passes a full pulse without a rising edge inside a high phase.
+The map records this count in `network.clock_gates[].remaining`.
+
+Source protocol logic wakes for bus requests and returned responses. Target
+protocol logic wakes for network requests and target bus responses. An offered
+response keeps its receiving region active while the consumer applies back
+pressure.
 
 A test or ungate input held high forces the relevant gates open. Those inputs do
 not change transaction results.
@@ -193,7 +219,8 @@ neither. A period on only one side produces `NCL_CDC_PERIOD_PARTIAL`. An unused
 period, unused override or unused global synchronizer setting is rejected.
 Same-domain and duplicate directed overrides are rejected.
 
-An `async` override must set `depth`, `synchronizer_stages` or `reset_handshake`.
+An `async` override must set `depth`, `synchronizer_stages` or
+`reset_handshake`.
 For `related` and `edge_aligned` overrides, setting `kind` alone is sufficient.
 Omitted options use their defaults. Asynchronous options do not apply to related
 crossings, and conversely.

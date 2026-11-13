@@ -35,7 +35,9 @@ formats. Profile-specific JSON records appear only for that profile.
 | `definition.reset_ports` | Release mode and optional release domain |
 | `definition.register_reset` | Synchronous style when selected |
 | `definition.synchronizer_stages` | Effective global crossing synchronizer setting |
-| `network.clock_gates` | Gate owner, protocol or transport zone, clock, register count and control nets |
+| `definition.endpoint_clock_gating` | Effective non-default endpoint modes, grouped by `initiator` or `target` and endpoint name. Used by `diff` |
+| `network.clock_gates` | Gate owner, zone, register count and control nets |
+| `network.endpoint_clock_gating` | Explicit endpoint modes, actual `gate_count` and `protocol_clock`, grouped by `initiator` or `target` and endpoint name |
 | `network.cdc` | Crossings and integration obligations |
 | `network.cdc.registers` | Register bindings or synchronizer instances and stage indices |
 | `cells` | Technology bindings and actual instance paths |
@@ -44,7 +46,22 @@ formats. Profile-specific JSON records appear only for that profile.
 
 Crossing depth origin is `formula`, `fallback` or `explicit`. A synchronizer
 entry identifies its instance and stage instead of a plain register name.
-Clock-gate zone values are `protocol` and `transport`.
+
+Clock-gate `zone` values are `protocol`, `transport` and `shared`. For
+explicit endpoint modes, each gate also records `mode` and `zones`. The
+`zones` array lists `protocol`, `transport` or both. Count the records for an
+owner to find its number of gates. `remaining` names the two-bit open-edge
+count. `enable`, `idle` and `wake` name the gate control nets.
+
+For example, `network.endpoint_clock_gating.initiator.<name>.gate_count`
+counts the gates of one initiator.
+
+For explicit endpoint modes, `protocol_clock` is `domain` for `transport_only`
+and `gated` for the other modes. Omitted endpoint modes have no
+`network.endpoint_clock_gating` record or extra per-gate fields.
+
+In `definition.endpoint_clock_gating`, omission and explicit `separate` both
+use the default mode and have no entry.
 
 ## Behavioral contracts
 

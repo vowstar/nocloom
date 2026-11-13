@@ -57,6 +57,21 @@ The [clocks manual](clocks-and-resets.md) describes clock and reset fields. The
 [network manual](network.md) describes topology and connectivity. The
 [address manual](address-map.md) describes selectors and mappings.
 
+## Endpoint clock gating
+
+Both `initiators[]` and `targets[]` accept `clock_gating` with values
+`separate`, `shared` or `transport_only`. Omission selects `separate`. The mode
+applies to all flows of one endpoint. The top-level `clock_gating` field
+enables or disables automatic gates for the network.
+
+An explicit endpoint mode requires top-level `per_switch_and_endpoint` and a
+gated domain. Invalid values, top-level `none` and domain `gated: false` produce
+`NCL_ENDPOINT_CLOCK_GATING`.
+See [clock gates](clocks-and-resets.md#clock-gates).
+The C++ fields are `Initiator::clock_gating` and `Target::clock_gating`,
+each an optional `EndpointClockGating` with `Separate`, `Shared` and
+`TransportOnly`.
+
 ## Transport fields
 
 Endpoint `data_width` sets physical bus width. Nodes and links can override the
