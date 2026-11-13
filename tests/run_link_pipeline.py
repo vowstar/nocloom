@@ -202,6 +202,37 @@ def pipeline_configuration(mode):
         cfg['topology'][name]['links'] = [{'from':a,'to':b,'pipeline':dict(forward=True,backward=True)} for a,b in edges]
     return cfg
 
+def static_bypass(cli, work):
+    from apb5_user_bench import configuration as user_configuration, bench as user_bench
+    cfg = user_configuration('apb5', 'apb5', True, 0, 0, 0, True)
+    cfg['targets'][0]['data_width'] = 8
+    for graph in cfg['topology'].values():
+        graph['nodes'][0]['transport_word_bytes'] = 8
+        graph['nodes'].append(dict(name='z', clock_domain='main', transport_word_bytes=4))
+        graph['exits'][0]['node'] = 'z'
+        graph['links'] = [dict(**{'from': 'q', 'to': 'z'}, transport_word_bytes=8,
+                               pipeline=dict(forward=True, bypass_port='pipe_bypass'),
+                               sender_pipeline=dict(forward=True))]
+    for bypass in (0, 1):
+        case = work / f'static_bypass{bypass}'
+        case.mkdir()
+        path = case / 'input.yaml'
+        path.write_text(json.dumps(cfg))
+        result = subprocess.run([cli, 'generate', str(path), '--out-dir', str(case / 'gen')],
+                                capture_output=True, text=True, timeout=120)
+        (case / 'generate.log').write_text(result.stdout + result.stderr)
+        assert result.returncode == 0, result.stderr
+        mapping = json.loads((case / 'gen/nocloom_apb5_user.map.json').read_text())
+        (case / 'network.v').write_text(generated_rtl(case / 'gen/nocloom_apb5_user.v'))
+        stimulus = user_bench(mapping, cfg)
+        assert stimulus.count('pipe_bypass = 0;') == 1
+        (case / 'tb.sv').write_text(stimulus.replace('pipe_bypass = 0;',
+                                                   f'pipe_bypass = {bypass};'))
+        rc = simulate(case, case / 'compiled')
+        log = (case / 'simulation.log').read_text()
+        assert rc == 0 and 'NOCLOOM_PASS apb5 user' in log, log[-3000:]
+
+
 def network(cli, work):
     rows = []
     for mode in ('mo_wide', 'bounded32'):
@@ -364,10 +395,12 @@ def configuration_checks(cli, work):
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--cli');p.add_argument('--fixture');p.add_argument('--work',required=True);p.add_argument('--configuration-only',action='store_true')
+    p=argparse.ArgumentParser();p.add_argument('--cli');p.add_argument('--fixture');p.add_argument('--work',required=True);p.add_argument('--configuration-only',action='store_true');p.add_argument('--static-bypass',action='store_true')
     args=p.parse_args();base=Path(args.work).resolve();base.mkdir(parents=True,exist_ok=True)
     work=Path(tempfile.mkdtemp(prefix="run-",dir=base));(base/"latest.txt").write_text(str(work)+"\n")
-    if args.configuration_only:
+    if args.static_bypass:
+        static_bypass(args.cli, work)
+    elif args.configuration_only:
         configuration_checks(args.cli,work)
     elif args.fixture:
         for index,mode in enumerate(('both','forward','backward','half')):

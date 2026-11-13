@@ -959,6 +959,12 @@ private:
       if (ir.values[i].op != Op::Input)
         continue;
       const auto &port = ir.ports[ir.values[i].input_port.index];
+      // A pipe bypass input is fixed before reset release and shared by its pipes.
+      if (port.signal == "bypass") {
+        for (const auto &[name, domain] : domains)
+          allowed_input_crossings.emplace(i, root_clock(ir, clock(name)).index);
+        continue;
+      }
       if (port.signal == "enable" || port.signal == "ungate") {
         std::vector<ValueId> pending{ValueId{i}};
         while (!pending.empty()) {
