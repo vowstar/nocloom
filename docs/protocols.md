@@ -15,6 +15,7 @@ Related manuals: [AHB-Lite and AHB5](ahb.md),
 | `axi4` | Initiator or target | 32, 64, 128, 256, 512, 1024 |
 | `axi3` | Initiator or target | 32, 64, 128, 256, 512, 1024 |
 | `axi4_lite` | Initiator or target | 32, 64 |
+| `apb5` | Initiator or target | 8, 16, 32 |
 | `apb4` | Initiator or target | 8, 16, 32 |
 | `apb3` | Initiator or target | 8, 16, 32 |
 | `apb2` | Target only | 8, 16, 32 |
@@ -84,6 +85,18 @@ or `11` returns an error without target access. W beats follow AW order. A WID
 mismatch still performs the write and marks its response as an error. An AXI3
 target receives at most 16 target words per packet.
 
+## APB5
+
+APB5 uses APB4 transfer timing, PPROT and PSTRB. PAUSER carries request user
+bits. PBUSER carries response user bits for both reads and writes. Configure
+these ports as [user signals](user-signals.md#apb5-user-ports).
+
+PWUSER, PRUSER, PWAKEUP, parity check signals and RME PNSE are unsupported.
+These ports are absent. Data user width fields produce
+`NCL_SCHEMA_UNKNOWN_FIELD`.
+
+The protocol rules follow Arm AMBA APB IHI 0024E, sections 3.8 and 4.1.
+
 ## APB initiators
 
 APB3 omits PSTRB and PPROT, uses full write strobes and supplies PPROT `010`.
@@ -95,7 +108,7 @@ word.
 
 A failed read returns zero data. PRDATA and PSLVERR retain the most recent
 completed result between transfers. A completed write leaves PRDATA zero. After
-reset, both values are zero.
+reset, both values are zero. APB5 PBUSER is valid with PREADY in ACCESS.
 
 APB initiators reject ID, length, access, narrow-burst and `id_table_entries`
 configuration. APB2 initiators are unsupported.
@@ -138,7 +151,8 @@ See [Target attributes](user-signals.md#target-attributes).
 See [Width conversion](width-conversion.md#width-conversion).
 
 See
-[APB and AXI4-Lite targets](dedicated-targets.md#dedicated-apb-and-axi4-lite-targets).
+[APB and AXI4-Lite
+targets](dedicated-targets.md#dedicated-apb-and-axi4-lite-targets).
 
 See [Beat rates](width-conversion.md#beat-rates).
 
