@@ -15,6 +15,8 @@ NocLoom 0.1.0 is the first public release.
 
 ![A mixed-protocol SoC network with two clock domains.][soc]
 
+See [soc_mixed.yaml](examples/soc_mixed.yaml) for this network.
+
 ![A 4x4 mesh network from a declared graph and explicit routes.][mesh]
 
 [soc]: https://github.com/user-attachments/assets/04c77b25-39e9-4ff9-aaf0-ee98ecb714a3

@@ -33,7 +33,9 @@ periods do not establish a common physical root. A root declaration contains
 `name`, `clock_port` and optional `period_ps`.
 
 See [clock domains](../examples/apb_domains.yaml) and
-[clocked graphs](../examples/axi4_graph_clocked.yaml).
+[clocked graphs](../examples/axi4_graph_clocked.yaml). The
+[SoC example](../examples/soc_mixed.yaml) combines AXI4, AHB-Lite, APB4 and
+APB3 across two clock domains.
 
 ## Reset release
 
@@ -88,7 +90,6 @@ covers all flows of that endpoint.
 | `transport_only` | At most 1 | Transport | The transport side sleeps when idle and wakes for incoming work. The protocol side always uses the domain clock |
 
 A zone with no registers has no gate. The map reports the generated gate count.
-
 The default is `separate`. Explicit endpoint modes require top-level
 `per_switch_and_endpoint` and a domain with `gated: true`. An inactive gate
 selection produces `NCL_ENDPOINT_CLOCK_GATING`, including explicit `separate`.
