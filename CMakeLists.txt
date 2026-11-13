@@ -28,7 +28,7 @@ add_library(nocloom_core STATIC src/core/validation.cpp src/core/hardware.cpp sr
 add_library(nocloom::core ALIAS nocloom_core)
 set_target_properties(nocloom_core PROPERTIES EXPORT_NAME core)
 # The generated files name this version. A non-empty suffix marks an unreleased build.
-set(NOCLOOM_VERSION_SUFFIX "-dev")
+set(NOCLOOM_VERSION_SUFFIX "")
 target_compile_definitions(nocloom_core
   PRIVATE NOCLOOM_VERSION="${PROJECT_VERSION}${NOCLOOM_VERSION_SUFFIX}")
 target_compile_features(nocloom_core PUBLIC cxx_std_20)
