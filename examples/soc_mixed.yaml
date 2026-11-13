@@ -1,0 +1,48 @@
+schema_version: 10
+name: soc_mixed
+address_width: 32
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains:
+  - {name: core, clock_port: clk_core, reset_port: reset_n, test_port: test}
+  - {name: periph, clock_port: clk_periph, reset_port: reset_n, test_port: test}
+initiators:
+  - {name: cpu, clock_domain: core, protocol: axi4, data_width: 64, len_width: 8}
+  - {name: dma, clock_domain: core, protocol: axi4, data_width: 64, len_width: 8}
+  - {name: dbg, clock_domain: core, protocol: ahb_v3, data_width: 32}
+targets:
+  - {name: ram, clock_domain: core, protocol: axi4, data_width: 32, len_width: 8,
+     attributes: amba, mappings: [{base: '0x80000000', size: '0x10000000'}]}
+  - {name: rom, clock_domain: core, protocol: ahb_v3, data_width: 32,
+     attributes: amba, mappings: [{base: '0x0', size: '0x10000'}]}
+  - {name: uart, clock_domain: periph, protocol: apb4, data_width: 32,
+     attributes: amba, mappings: [{base: '0x40000000', size: '0x1000'}]}
+  - {name: timer, clock_domain: periph, protocol: apb4, data_width: 32,
+     attributes: amba, mappings: [{base: '0x40001000', size: '0x1000'}]}
+  - {name: gpio, clock_domain: periph, protocol: apb3, data_width: 32,
+     mappings: [{base: '0x40002000', size: '0x1000'}]}
+connectivity:
+  cpu: [ram, rom, uart, timer, gpio]
+  dma: [ram, uart]
+  dbg: [ram, rom, uart, timer, gpio]
+topology:
+  request:
+    nodes:
+      - {name: front, clock_domain: core}
+      - {name: mem, clock_domain: core}
+      - {name: per, clock_domain: periph}
+    links:
+      - {from: front, to: mem}
+      - {from: front, to: per}
+    entries:
+      - {endpoint: cpu, node: front}
+      - {endpoint: dma, node: front}
+      - {endpoint: dbg, node: front}
+    exits:
+      - {endpoint: ram, node: mem}
+      - {endpoint: rom, node: mem}
+      - {endpoint: uart, node: per}
+      - {endpoint: timer, node: per}
+      - {endpoint: gpio, node: per}
+  response: mirror
+output: {backend: verilog, language: verilog_2001}
