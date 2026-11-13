@@ -429,6 +429,8 @@ struct EngineLowering {
     out(face, "first", first);
     out(face, "last", last);
     out(face, "data", data);
+    if (p.data_user_bits_per_byte)
+      out(face, "data_user", l.num(p.data_bits / 8 * p.data_user_bits_per_byte, 0));
     if (p.tag_bits)
       out(face, "tag", d.at("tag"));
     if (p.id_bits)
@@ -672,6 +674,7 @@ EngineLowering::EngineLowering(const Axi4OutletProfile &p, unsigned address_bits
   profile.tag_bits = p.tag_bits;
   profile.user_bits = p.user_bits;
   profile.response_user_bits = p.response_user_bits;
+  profile.data_user_bits_per_byte = p.data_user_bits_per_byte;
   l.block = p.arrival;
   l.block_bits = address_bits;
 }

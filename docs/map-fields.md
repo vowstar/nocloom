@@ -50,7 +50,7 @@ formats. Profile-specific JSON records appear only for that profile.
 | `definition.fixed_bursts_single` | Dedicated targets serving FIXED beats individually |
 | `definition.read_side_effects_targets` | Targets using exact packet shapes |
 | `definition.target_attributes`, `definition.user_flags` | Target attribute bits and the endpoint mappings of user flags |
-| `definition.response_user` | Data-user and response-user widths at the endpoints and in the network |
+| `definition.data_user`, `definition.response_user` | Data-user and response-user widths at the endpoints and in the network |
 
 ## Clocks, cells and logs
 
@@ -112,7 +112,7 @@ These names are relative to `definition.contract`.
 | `connectivity`, `transport_address`, `address_transform`, `start_address` | Admission, restored addresses, target local address and burst start address |
 | `burst_admission`, `attributes`, `omitted_attributes`, `target_attributes` | Burst limits and endpoint attribute handling |
 | `unmapped`, `target_response`, `read_error`, `write_error`, `write_last_mismatch` | Error handling in the exchange |
-| `write_data_unstrobed_bytes`, `user_flags`, `response_user` | Inactive byte values and user sidebands |
+| `write_data_unstrobed_bytes`, `user_flags`, `data_user`, `response_user` | Inactive byte values and user sidebands |
 | `internal_failure_encoding` | Failure classes carried in responses inside the network. The `classified` format distinguishes `decode` and `target`. The `compact` format carries one failure class |
 | `axi_initiator_failure_responses` | The response code sent at each AXI initiator port for each kind of failure. `decode_miss` covers address and connectivity misses, including unmapped parts of a decoded page |
 | `endpoint_widths`, `endpoint_widths.narrow_bursts_default` | Conversion and narrow-burst handling |

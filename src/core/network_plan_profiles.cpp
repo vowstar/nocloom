@@ -685,6 +685,7 @@ static Profile burst_fields(const NetworkPlan &plan, const std::string &name) {
   profile.source_bits = plan.source_bits;
   profile.user_bits = plan.burst_user_bits;
   profile.response_user_bits = plan.burst_response_user_bits;
+  profile.data_user_bits_per_byte = plan.data_user_bits_per_byte;
   return profile;
 }
 // Width clamp of one source: every routing window carries its target's width, capped at the source
@@ -1171,6 +1172,7 @@ Axi4InitiatorProfile initiator_profile(const NetworkPlan &plan, unsigned index) 
   profile.lite = sp.protocol == Protocol::Axi4Lite;
   profile.apb = sp.apb;
   profile.apb_data_bits = sp.apb_bits;
+  profile.data_user_port_bits = sp.data_user_bits;
   profile.ahb = sp.ahb;
   profile.axi3 = sp.axi3;
   profile.port_pipes = !sp.ahb && !sp.apb && sp.protocol != Protocol::Axi4Lite;
@@ -1237,6 +1239,7 @@ Axi4InitiatorProfile initiator_profile(const NetworkPlan &plan, unsigned index) 
   profile.tag_bits = plan.burst_tag_bits;
   profile.user_bits = plan.burst_user_bits;
   profile.response_user_bits = plan.burst_response_user_bits;
+  profile.data_user_bits_per_byte = plan.data_user_bits_per_byte;
   profile.ahb5 = sp.ahb5;
   profile.hmaster_bits = sp.hmaster_bits;
   profile.hprot_bits = sp.hprot_bits;
@@ -1312,6 +1315,7 @@ BurstProfile endpoint_burst(const NetworkPlan &plan) {
   BurstProfile burst{plan.burst_id_bits,      plan.burst_len_bits,  true,
                      plan.burst_address_bits, plan.occupancy_bits,  plan.exclusive,
                      plan.burst_tag_bits,     plan.burst_user_bits, plan.burst_response_user_bits};
+  burst.data_user_bits_per_byte = plan.data_user_bits_per_byte;
   burst.level_bits = plan.burst_level_bits;
   burst.record_bits = plan.burst_record_bits;
   burst.audit_bits = plan.burst_audit_bits;
@@ -1380,6 +1384,7 @@ static Profile target_fields(Profile profile, const NetworkPlan &plan, const Tar
   profile.tag_bits = plan.burst_tag_bits;
   profile.user_bits = plan.burst_user_bits;
   profile.response_user_bits = plan.burst_response_user_bits;
+  profile.data_user_bits_per_byte = plan.data_user_bits_per_byte;
   profile.user = tp.user;
   profile.response_user_port_bits = tp.response_user_bits;
   profile.exclusive_target = tp.exclusive;
@@ -1399,6 +1404,7 @@ BurstOutletProfile outlet_profile(const NetworkPlan &plan, unsigned index) {
     profile.dialect = tp.protocol;
     profile.apb_back_to_back = tp.back_to_back;
     profile.apb_data_bits = tp.apb_bits;
+    profile.data_user_port_bits = tp.data_user_bits;
   } else
     profile.data_bits = endpoint_word(plan, tp.name) * 8;
   profile.fixed_single = tp.fixed_single;
@@ -1423,6 +1429,7 @@ ServiceOutletProfile service_outlet_profile(const NetworkPlan &plan, unsigned in
   profile.tag_bits = plan.burst_tag_bits;
   profile.user_bits = plan.burst_user_bits;
   profile.response_user_bits = plan.burst_response_user_bits;
+  profile.data_user_bits_per_byte = plan.data_user_bits_per_byte;
   profile.exclusive = plan.exclusive;
   profile.transport_address_bits = plan.burst_address_bits;
   profile.arrival = arrival_block(plan, tp);

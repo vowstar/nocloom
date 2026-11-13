@@ -171,7 +171,7 @@ See [Documentation](#documentation) for field definitions and limits.
 | Other RTL languages | The output is Verilog-2001 only |
 | Adaptive routing | A route does not change with the load |
 | Scheduling | Nonzero levels exclude AHB targets, other mixed protocol networks, exclusive access, target timeouts and targets wider than the network. AXI graphs also exclude one-direction endpoints. AHB sources have no AxQOS map, shaper or scheduler |
-| APB5 optional signals | PAUSER and PBUSER only. PWUSER, PRUSER, PWAKEUP, parity check signals and RME PNSE are unsupported |
+| APB5 optional signals | PWAKEUP, parity check signals and RME PNSE are unsupported. PAUSER, PBUSER and per-byte PWUSER and PRUSER groups of 1 to 4 bits are supported |
 | AxREGION | AXI endpoints have no AxREGION ports |
 | AXI3 locked writes and write data interleaving | An AXI3 target receives neither |
 | Unchanged non-modifiable narrow bursts | With the default `narrow_bursts: merge`, an AXI target that is wider than the beats of a burst merges them regardless of AxCACHE. This can change non-modifiable transactions beyond the transformations that AXI A4.3 permits. See [width transformation details](docs/width-conversion.md#width-transformation-details) |

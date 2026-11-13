@@ -21,7 +21,8 @@ unsigned adapter_payload_bits(const StagePlan &adapter, unsigned source_bits,
   const unsigned lanes = adapter.narrow_bytes / endpoint_word_bytes;
   // A response assembler stores its words below the top, the run's start and what accumulates.
   if (adapter.response)
-    return (adapter.wide_bytes - adapter.narrow_bytes) / endpoint_word_bytes * 32 +
+    return (adapter.wide_bytes - adapter.narrow_bytes) / endpoint_word_bytes *
+               (32 + 4 * burst.data_user_bits_per_byte) +
            static_cast<unsigned>(std::countr_zero(adapter.wide_bytes)) + 2 +
            (burst.exclusive ? 1 : 0);
   unsigned control = 0;
@@ -32,7 +33,7 @@ unsigned adapter_payload_bits(const StagePlan &adapter, unsigned source_bits,
       continue;
     control += width;
   }
-  return control + lanes * (adapter.response ? 32 : 36);
+  return control + lanes * ((adapter.response ? 32 : 36) + 4 * burst.data_user_bits_per_byte);
 }
 // Payload register bits of the burst endpoint engine storage records, computed from the profile.
 // The lowering registers the actual state words and the verifier compares, so a drift between this
@@ -117,6 +118,13 @@ unsigned dedicated_wide_bits(const NetworkPlan &plan, const std::string &target)
   const unsigned bytes = endpoint_word(plan, target);
   return bytes > 4 ? 9 * (bytes - 4) : 0U;
 }
+unsigned apb_data_user_state(const NetworkPlan &plan, const TargetPlan &target, bool read) {
+  const auto width = 4 * plan.data_user_bits_per_byte;
+  if (!read)
+    return target.data_user_bits ? width : 0U;
+  const auto single = !target.back_to_back && !target.timeout;
+  return width * ((single ? 1U : 2U) + (target.data_user_bits && target.apb_bits < 32 ? 1U : 0U));
+}
 unsigned dedicated_engine_bits(const NetworkPlan &plan, const std::string &target,
                                unsigned direction) {
   const auto &t = plan.target(target);
@@ -166,6 +174,7 @@ unsigned dedicated_engine_bits(const NetworkPlan &plan, const std::string &targe
     const auto form =
         apb_outlet_form(outlet_profile(plan, static_cast<unsigned>(&t - plan.targets.data())));
     const unsigned user =
+        apb_data_user_state(plan, t, direction == 1) +
         (t.user.empty() ? 0U : plan.burst_user_bits) +
         (t.response_user_bits ? plan.burst_response_user_bits * (form.single ? 2U : 3U) : 0U);
     const bool one_lane =
@@ -207,7 +216,8 @@ unsigned dedicated_bus_bits(const NetworkPlan &plan, const std::string &target) 
                                  plan, static_cast<unsigned>(&t - plan.targets.data())))
                            : t.local_bits;
   return fixed + address + dedicated_wide_bits(plan, target) - (single ? 32U : 0U) +
-         static_cast<unsigned>(t.user.size()) + t.flow_bits();
+         static_cast<unsigned>(t.user.size()) + t.flow_bits() +
+         (t.data_user_bits ? 4 * plan.data_user_bits_per_byte : 0U);
 }
 // The obligations of one plan in the single domain, built source flows first, then target
 // services, packet grants and link stages.
@@ -236,6 +246,8 @@ struct Obligations {
       // An APB face holds its transfer: no descriptor, beat or count in the engine.
       if (sp.apb)
         source_state.source_engine[0] = source_state.source_engine[1] = 0;
+      if (sp.data_user_bits)
+        source_state.source_return[1] += 4 * plan.data_user_bits_per_byte;
       for (unsigned direction = 0; direction < 2; ++direction) {
         const auto operation = direction == 0 ? "write" : "read";
         const auto id = flow_id(source, operation);

@@ -48,6 +48,7 @@ struct Axi4UpsizeProfile : ComponentProfileBase {
   // Weft response steering tag width (message.hpp point 12); zero omits it.
   unsigned tag_bits = 0;
   unsigned user_bits = 0; // network user flags (message.hpp point 13)
+  unsigned data_user_bits_per_byte = 0;
   unsigned response_user_bits = 0;
   // Accepted packets retained until their final upstream response transfers.
   unsigned max_outstanding = 1;

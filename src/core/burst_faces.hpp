@@ -36,7 +36,12 @@ struct BurstFaces {
     return l.face(face, fields(data, request));
   }
   void fields_out(const std::string &face, const logic::Fields &f, unsigned data, bool request) {
-    l.drive(face, f, fields(data, request));
+    auto output = f;
+    if (burst.data_user_bits_per_byte && !output.contains("data_user"))
+      output["data_user"] = l.num(data / 8 * burst.data_user_bits_per_byte, 0);
+    if (burst.data_user_bits_per_byte && output.contains("data_user"))
+      output["data_user"] = l.fit(output.at("data_user"), data / 8 * burst.data_user_bits_per_byte);
+    l.drive(face, output, fields(data, request));
   }
 };
 // Per-field views and register loads of a held field map, walked in the held

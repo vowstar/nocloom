@@ -2,7 +2,8 @@
 
 ## Dedicated APB and AXI4-Lite targets
 
-Dedicated targets are APB5, APB4, APB3, APB2, AXI4-Lite, AHB-Lite and AHB5 targets.
+Dedicated targets are APB5, APB4, APB3, APB2, AXI4-Lite, AHB-Lite and AHB5
+targets.
 AXI4-Lite issues one access per touched target word.
 
 | Write strobes | Target behavior |
@@ -17,8 +18,8 @@ APB packet capacity is one per direction.
 ## APB target transfer details
 
 APB5 uses the APB4 target rules for transfer timing, PPROT, PSTRB, narrow
-words, packet capacity, ordering, errors and reset. Its PAUSER and PBUSER
-rules are in [APB5 user ports](user-signals.md#apb5-user-ports).
+words, packet capacity, ordering, errors and reset. Its PAUSER, PBUSER, PWUSER
+and PRUSER rules are in [APB5 user ports](user-signals.md#apb5-user-ports).
 
 | `apb_back_to_back` | No-stall physical-word interval |
 | --- | --- |
@@ -31,7 +32,7 @@ pressure can add idle cycles.
 An 8-bit or 16-bit APB target visits enabled physical words of its 32-bit
 internal container in ascending byte order. Addresses align to each physical
 word. Reads gather only requested bytes into one internal response. Any physical
-access failure zeros that whole response. Later accesses still execute.
+access failure zeros the whole collected data word. Later accesses still execute.
 
 A default APB target adapter starts another word after the current write
 completes or the current read response leaves. It starts the next packet after

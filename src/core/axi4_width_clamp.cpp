@@ -58,6 +58,7 @@ struct WidthCutLowering {
     burst.tag_bits = p.tag_bits;
     burst.user_bits = p.user_bits;
     burst.response_user_bits = p.response_user_bits;
+    burst.data_user_bits_per_byte = p.data_user_bits_per_byte;
   }
 
   Logic &l;
@@ -1520,6 +1521,7 @@ Result<NodeHardware> lower_axi4_width_clamp(const Axi4WidthClampProfile &p) {
   cut.tag_bits = p.tag_bits;
   cut.user_bits = p.user_bits;
   cut.response_user_bits = p.response_user_bits;
+  cut.data_user_bits_per_byte = p.data_user_bits_per_byte;
   cut.max_outstanding = p.max_outstanding;
   cut.packet_depth = p.packet_depth;
   cut.read_granule_taken = p.read_granule_taken;

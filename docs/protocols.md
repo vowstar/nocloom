@@ -91,9 +91,8 @@ APB5 uses APB4 transfer timing, PPROT and PSTRB. PAUSER carries request user
 bits. PBUSER carries response user bits for both reads and writes. Configure
 these ports as [user signals](user-signals.md#apb5-user-ports).
 
-PWUSER, PRUSER, PWAKEUP, parity check signals and RME PNSE are unsupported.
-These ports are absent. Data user width fields produce
-`NCL_SCHEMA_UNKNOWN_FIELD`.
+PWUSER and PRUSER carry 1 to 4 user bits per data byte when enabled.
+PWAKEUP, parity check signals and RME PNSE are unsupported and have no ports.
 
 The protocol rules follow Arm AMBA APB IHI 0024E, sections 3.8 and 4.1.
 

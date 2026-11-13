@@ -52,6 +52,7 @@ struct Axi4WidthCutProfile : ComponentProfileBase {
   unsigned down_bits = 256; // down face data width: data_bits or 32
   unsigned tag_bits = 0;
   unsigned user_bits = 0; // network user flags (message.hpp point 13), passed through
+  unsigned data_user_bits_per_byte = 0;
   unsigned response_user_bits = 0;
   // Routing window and the log2 byte width of its target (2..log2(data/8)).
   std::vector<std::pair<AddressWindow, unsigned>> windows;
@@ -107,6 +108,7 @@ struct Axi4WidthClampProfile : ComponentProfileBase {
   bool exclusive = false;
   unsigned tag_bits = 0;
   unsigned user_bits = 0; // network user flags (message.hpp point 13), passed through
+  unsigned data_user_bits_per_byte = 0;
   unsigned response_user_bits = 0;
   unsigned max_outstanding = 1;
   // Behind a splitter with read granule windows: hint read_taken_packet names the packet with which

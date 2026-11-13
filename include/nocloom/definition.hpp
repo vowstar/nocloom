@@ -494,6 +494,8 @@ struct Initiator {
   // APB5 uses PBUSER with 0..16 bits, absent or zero omits the port.
   // They carry the low transport.response_user_bits of the response user field, zero above.
   std::optional<unsigned> response_user_width = std::nullopt;
+  // APB5 PWUSER and PRUSER width. Zero omits both ports.
+  unsigned data_user_width = 0;
   // Static source routing classes, at most 32. Their declaration indexes are source_path values
   // in connectivity and explicit routes. Empty means one direct class. With declared classes,
   // default_class is required and receives IDs outside id_ranges. Each class must be reachable.
@@ -621,6 +623,8 @@ struct Target {
   // bits, absent or zero omits the port. Its packet carries the first completed access's PBUSER.
   // A timeout write response carries zero. Timeout read responses retain the packet's first value.
   std::optional<unsigned> response_user_width = std::nullopt;
+  // APB5 PWUSER and PRUSER width. Zero omits both ports.
+  unsigned data_user_width = 0;
   TargetPipes pipes{};
   // Target flows, 1..32, each reached by its own mappings (AddressMapping::flow, every flow at
   // least one) and taking its own explicit routes (ExchangeRoute::target_path). An apb4,
@@ -764,6 +768,8 @@ struct TransportOptions {
   std::vector<std::string> user_flags = {};
   // The response user field of every response packet, 0..256 bits (zero omits it).
   unsigned response_user_bits = 0;
+  // Data user bits per data byte, 0..4. Zero omits the payload field.
+  unsigned data_user_bits_per_byte = 0;
   // Use one internal failure class. All AXI initiators must set slverr_only and
   // no log may record classes. The default keeps distinct internal failure classes.
   bool compact_failure_responses = false;

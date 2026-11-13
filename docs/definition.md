@@ -78,6 +78,7 @@ Endpoint `data_width` sets physical bus width. Nodes and links can override the
 | `packet_limits` | Narrower limits for connected endpoint pairs | Empty |
 | `user_flags` | Named one-bit request fields | Empty, at most 256 |
 | `response_user_bits` | Response user field width | 0, at most 256 |
+| `data_user_bits_per_byte` | Data user bits per data byte | 0 to 4, default 0 |
 | `compact_failure_responses` | Use one internal failure class | `true` or `false`, default `false`. Set `true` only if every AXI initiator sets `slverr_only: true` and no log records failure classes |
 
 An APB endpoint requires a 32-bit network. Endpoint widths can differ from the
@@ -88,6 +89,11 @@ APB5 uses endpoint `user_width`, `user_flags`, `user` and
 `response_user_width` for [user signals](user-signals.md#apb5-user-ports).
 The request port is at most 128 bits and the response port is at most 16 bits.
 Both default to zero width.
+
+Endpoint `data_user_width` enables PWUSER and PRUSER. On APB5 endpoints it is 0
+or `transport.data_user_bits_per_byte * data_width / 8` and defaults to 0.
+A nonzero width requires a transport value from 1 to 4. Other protocols accept
+zero. The C++ fields have the same names, defaults and limits.
 
 ## Initiator error responses
 

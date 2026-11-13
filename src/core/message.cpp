@@ -102,6 +102,8 @@ burst_request_fields(unsigned data_bits, BurstProfile profile, unsigned source_b
   fields.emplace_back("first", 1);
   fields.emplace_back("last", 1);
   fields.emplace_back("data", data_bits);
+  if (profile.data_user_bits_per_byte)
+    fields.emplace_back("data_user", data_bits / 8 * profile.data_user_bits_per_byte);
   fields.emplace_back("be", data_bits / 8);
   return fields;
 }
@@ -130,6 +132,8 @@ burst_response_fields(unsigned data_bits, BurstProfile profile, unsigned source_
   fields.emplace_back("first", 1);
   fields.emplace_back("last", 1);
   fields.emplace_back("data", data_bits);
+  if (profile.data_user_bits_per_byte)
+    fields.emplace_back("data_user", data_bits / 8 * profile.data_user_bits_per_byte);
   return fields;
 }
 
