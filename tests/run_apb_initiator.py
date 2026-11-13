@@ -988,8 +988,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--cli', required=True)
     parser.add_argument('--work', required=True)
-    parser.add_argument('--mode', choices=sorted(MODES) + ['apb5', 'apb5_clocked'], required=True)
+    parser.add_argument('--mode', choices=sorted(MODES) + ['apb5', 'apb5_clocked', 'apb5_data', 'apb5_data_clocked'], required=True)
     args = parser.parse_args()
+    if args.mode.startswith('apb5_data'):
+        from apb5_user_bench import run_data_user
+        run_data_user(args.cli, args.work, args.mode.endswith('clocked'))
+        return
     if args.mode.startswith('apb5'):
         from apb5_user_bench import run
         run(args.cli, args.work, args.mode == 'apb5_clocked')

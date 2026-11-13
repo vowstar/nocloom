@@ -4,6 +4,7 @@ import copy
 from pathlib import Path
 import subprocess
 import tempfile
+import re
 
 from cross_hardware_sim import simulate
 from sim_engine import generated_rtl
@@ -174,9 +175,14 @@ def bench(mapping, cfg):
                             'if (write) check(nl_i_s_buser == expected_user, "BUSER"); '
                             'else check(nl_i_s_ruser == expected_user, "RUSER");')
     target_user_check = ''
+    if target.get('data_user_width'):
+        target_user_check += 'if (write) check(nl_t_t_pwuser == 0, "AXI_PWUSER_ZERO");'
+        drive_response_data = 'nl_t_t_pruser = response_value ^ (index * 17);'
+    else:
+        drive_response_data = ''
     if tw:
         actual = 'nl_t_t_pauser' if ta else '(write ? nl_t_t_awuser : nl_t_t_aruser)'
-        target_user_check = f'check({actual} == expected_request(index >= 40 ? 40 : index >= 32 ? 32 : index), "PAUSER");'
+        target_user_check += f'check({actual} == expected_request(index >= 40 ? 40 : index >= 32 ? 32 : index), "PAUSER");'
     drive_response = ''
     if tb:
         drive_response = ('nl_t_t_pbuser = response_value;' if ta else
@@ -265,6 +271,7 @@ always @(negedge {clk_t}) begin
   // Response user is meaningful only at completion.
   if (!nl_t_t_pready) response_value = ~response_value ^ waited;
   {drive_response}
+  {drive_response_data}
  end
 end
 always @(posedge {clk_t}) begin
@@ -611,6 +618,12 @@ def rejected_configurations(cli, work):
             cfg = copy.deepcopy(valid)
             cfg[endpoint][0][key] = 1
             variants.append((cfg, 'NCL_SCHEMA_UNKNOWN_FIELD'))
+    for k, width in [(0, 4), (1, 3), (4, 17), (5, 20)]:
+        for endpoint in ('initiators', 'targets'):
+            cfg = copy.deepcopy(valid)
+            cfg['transport']['data_user_bits_per_byte'] = k
+            cfg[endpoint][0]['data_user_width'] = width
+            variants.append((cfg, 'NCL_APB5_DATA_USER_WIDTH'))
     for endpoint, key, value in [('initiators', 'user_width', 129),
                                  ('initiators', 'response_user_width', 17),
                                  ('targets', 'user', [0] * 129),
@@ -664,6 +677,11 @@ def run(cli, base, clocked):
     pairs = [('apb5', 'apb5'), ('apb5', 'axi4'), ('axi4', 'apb5')]
     pairs += [('apb5', 'axi3'), ('axi3', 'apb5'), ('apb4', 'apb5'), ('apb5', 'apb4')]
     configurations = []
+    data_cfg = configuration('axi4', 'apb5', clocked, 7, 16, 16, True)
+    data_cfg['transport']['data_user_bits_per_byte'] = 3
+    data_cfg['transport']['packet_limits'] = [{'source': 's', 'target': 't', 'max_bytes': 8}]
+    data_cfg['targets'][0]['data_user_width'] = 12
+    configurations.append(data_cfg)
     for pair in pairs:
         for req, resp, transport in [(0, 0, 0), (7, 16, 9), (128, 16, 20), (1, 1, 0), (0, 16, 16)]:
             cfg = configuration(*pair, clocked, req, resp, transport, back_to_back=bool(req))
@@ -713,7 +731,10 @@ def run(cli, base, clocked):
                 continue
             prefix = f'nl_{role}_{endpoint["name"]}_'
             for field in ('pwuser', 'pruser', 'pwakeup', 'pnse'):
-                assert prefix + field not in ports
+                if field in ('pwuser', 'pruser') and endpoint.get('data_user_width'):
+                    assert ports[prefix + field]['width'] == endpoint['data_user_width']
+                else:
+                    assert prefix + field not in ports
             assert (prefix + 'pauser' in ports) == bool(endpoint.get('user_width', 0) if role == 'i' else endpoint.get('user', []))
             if prefix + 'pauser' in ports:
                 assert ports[prefix + 'pauser']['width'] == (req if role == 'i' else len(endpoint['user']))
@@ -724,3 +745,351 @@ def run(cli, base, clocked):
         log = (case / 'simulation.log').read_text()
         assert rc == 0 and 'NOCLOOM_PASS apb5 user' in log, log[-3000:]
     print(f'NOCLOOM_PASS apb5 user cases={len(configurations)} clocked={clocked}')
+
+
+def data_user_configuration(source, target, source_bits, target_bits, k, clocked, pipes):
+    cfg = configuration(source, target, clocked, 0, 0, 0, bool(pipes))
+    cfg['transport']['data_user_bits_per_byte'] = k
+    for endpoint, bits in [(cfg['initiators'][0], source_bits),
+                           (cfg['targets'][0], target_bits)]:
+        endpoint['data_width'] = bits
+        if endpoint['protocol'] == 'apb5':
+            endpoint['data_user_width'] = bits // 8 * k
+    if target.startswith('apb'):
+        cfg['targets'][0]['timeout'] = {'cycles': 256, 'completion': True}
+    if pipes:
+        cfg['initiators'][0]['pipes'] = {'packets': {'forward': True, 'backward': True},
+                                         'issue': True}
+        cfg['targets'][0]['pipes'] = {'arrival': {'forward': True, 'backward': True},
+                                      'dispatch': True, 'response': {'forward': True}}
+    if not clocked:
+        cfg['topology'] = {}
+        for direction, entry, exit_ in [('request', 's', 't'), ('response', 't', 's')]:
+            cfg['topology'][direction] = {
+                'nodes': [{'name': 'q', 'clock_domain': 'main', 'transport_word_bytes': 16}],
+                'links': [], 'entries': [{'endpoint': entry, 'node': 'q'}],
+                'exits': [{'endpoint': exit_, 'node': 'q'}]}
+    else:
+        for graph in cfg['topology'].values():
+            graph['nodes'][0]['transport_word_bytes'] = 8
+    return cfg
+
+
+def data_user_bench(mapping, cfg):
+    source, target = cfg['initiators'][0], cfg['targets'][0]
+    sa, ta = source['protocol'].startswith('apb'), target['protocol'].startswith('apb')
+    sb, tb = source['data_width'] // 8, target['data_width'] // 8
+    k = cfg['transport']['data_user_bits_per_byte']
+    su, tu = source.get('data_user_width', 0), target.get('data_user_width', 0)
+    ports = mapping['ports']
+    declarations = '\n'.join(
+        f'{"reg" if p["direction"] == "input" else "wire"} [{p["width"]-1}:0] {p["name"]};'
+        for p in ports)
+    initialize = '\n'.join(
+        f'{p["name"]} = {int(p["signal"] == "bypass")};'
+        for p in ports if p['direction'] == 'input')
+    connections = ', '.join(f'.{p["name"]}({p["name"]})' for p in ports)
+    target_clock = 'clk_target' if len(cfg['clock_domains']) > 1 else 'clk_main'
+    extra_clock = 'always #7 clk_target = ~clk_target;' if target_clock != 'clk_main' else ''
+    user_write = 'nl_i_s_pwuser = write_tags;' if su else ''
+    user_read = 'check(nl_i_s_pruser == expected_tags, "PRUSER");' if su else ''
+    # Target values depend on both the transfer and physical byte address.
+    target_tags = f'''
+  for (b = 0; b < {tb}; b = b + 1) begin
+   nl_t_t_pruser[b*{k} +: {k}] = tag(tx, nl_t_t_paddr + b);
+   if (nl_t_t_pwrite) check(nl_t_t_pwuser[b*{k} +: {k}] ==
+         (nl_t_t_pwrite && nl_t_t_pstrb[b] && {int(bool(su))} ?
+          tag(tx + 9, nl_t_t_paddr + b) : 0), "PWUSER");
+  end
+''' if tu else ''
+    if ta:
+        target_model = f'''
+integer waited = 0, b;
+reg busy = 0;
+reg [31:0] held_address;
+reg [{max(1, tu)-1}:0] held_tags;
+always @(negedge {target_clock}) begin
+ nl_t_t_pready = 0; nl_t_t_pslverr = 0; nl_t_t_prdata = 0;
+ if (!reset_n) begin busy = 0; waited = 0; end
+ else if (nl_t_t_psel) begin
+  if (tx == 12) check(nl_t_t_paddr < address, "INVALID_TARGET_NO_NEW_ACCESS");
+  if (!busy) begin
+   check(!nl_t_t_penable, "SETUP"); busy = 1; waited = 0;
+   held_address = nl_t_t_paddr;
+   {"held_tags = nl_t_t_pwuser;" if tu else ""}
+  end else begin
+   check(nl_t_t_paddr == held_address, "ADDRESS_STABLE");
+   {"check(nl_t_t_pwuser == held_tags, \"PWUSER_STABLE\");" if tu else ""}
+  end
+  for (b = 0; b < {tb}; b = b + 1) begin
+   if (nl_t_t_pwrite && nl_t_t_pstrb[b])
+    check(nl_t_t_pwdata[b*8 +: 8] == datum(tx + 9, nl_t_t_paddr + b), "PWDATA");
+   nl_t_t_prdata[b*8 +: 8] = datum(tx, nl_t_t_paddr + b);
+  end
+  {target_tags}
+  nl_t_t_pslverr = tx == 6 && (nl_t_t_paddr == (address / {tb}) * {tb} + {tb if tb < sb else 0});
+  if (nl_t_t_penable) begin
+   waited = waited + 1;
+   nl_t_t_pready = waited > 2 + tx % 3 && !(tx >= 11 &&
+                   (nl_t_t_paddr >= (address / {tb}) * {tb} + {tb if tb < sb else 0}));
+  end
+ end
+end
+always @(posedge {target_clock}) begin
+ if (reset_n && nl_t_t_psel && nl_t_t_penable && nl_t_t_pready) begin
+  completed = completed + 1; busy = 0;
+ end
+end
+'''
+    else:
+        target_model = f'''
+reg wp = 0, rp = 0;
+integer wa = 0, ra = 0, b;
+always @(negedge {target_clock}) begin
+ nl_t_t_awready = !wp; nl_t_t_wready = wp;
+ nl_t_t_arready = !rp; nl_t_t_bvalid = wp == 2; nl_t_t_bresp = 0;
+ nl_t_t_rvalid = rp; nl_t_t_rresp = 0; nl_t_t_rlast = 1;
+ for (b = 0; b < 4; b = b + 1) nl_t_t_rdata[b*8 +: 8] = datum(tx, ra + b);
+end
+always @(posedge {target_clock}) begin
+ if (!reset_n) begin wp = 0; rp = 0; end
+ else begin
+  if (nl_t_t_awvalid && nl_t_t_awready) begin wa = nl_t_t_awaddr; wp = 1; end
+  if (nl_t_t_wvalid && nl_t_t_wready) begin
+   for (b = 0; b < 4; b = b + 1)
+    if (nl_t_t_wstrb[b]) check(nl_t_t_wdata[b*8 +: 8] == datum(tx + 9, wa + b), "WDATA");
+   wp = 2;
+  end
+  if (nl_t_t_bvalid && nl_t_t_bready) begin wp = 0; completed = completed + 1; end
+  if (nl_t_t_arvalid && nl_t_t_arready) begin ra = nl_t_t_araddr; rp = 1; end
+  if (nl_t_t_rvalid && nl_t_t_rready) begin rp = 0; completed = completed + 1; end
+ end
+end
+'''.replace('reg wp = 0, rp = 0;', 'reg [1:0] wp = 0; reg rp = 0;')
+    if sa:
+        transfer = f'''
+ @(negedge clk_main); nl_i_s_psel = 1; nl_i_s_penable = 0;
+ nl_i_s_paddr = address; nl_i_s_pwrite = writing;
+ nl_i_s_pwdata = write_data; nl_i_s_pstrb = writing ? strobes : 0; {user_write}
+ @(negedge clk_main); nl_i_s_penable = 1;
+ @(posedge clk_main); while (!nl_i_s_pready) @(posedge clk_main);
+ check(nl_i_s_pslverr == failed, "PSLVERR");
+ if (!writing) begin
+  check(nl_i_s_prdata == (failed ? 0 : read_data), "PRDATA"); {user_read}
+ end
+ @(negedge clk_main); nl_i_s_psel = 0; nl_i_s_penable = 0;
+'''
+    else:
+        transfer = f'''
+ @(negedge clk_main);
+ if (writing) begin
+  nl_i_s_awaddr = address; nl_i_s_awsize = 2; nl_i_s_awburst = 1; nl_i_s_awvalid = 1;
+  nl_i_s_wdata = write_data; nl_i_s_wstrb = strobes; nl_i_s_wlast = 1; nl_i_s_wvalid = 1;
+  fork
+   begin @(posedge clk_main); while (!nl_i_s_awready) @(posedge clk_main);
+    @(negedge clk_main); nl_i_s_awvalid = 0; end
+   begin @(posedge clk_main); while (!nl_i_s_wready) @(posedge clk_main);
+    @(negedge clk_main); nl_i_s_wvalid = 0; end
+  join
+  nl_i_s_bready = 1;
+  @(posedge clk_main); while (!nl_i_s_bvalid) @(posedge clk_main);
+  check(nl_i_s_bresp == (failed ? 2 : 0), "BRESP");
+  @(negedge clk_main); nl_i_s_bready = 0;
+ end else begin
+  nl_i_s_araddr = address; nl_i_s_arsize = 2; nl_i_s_arburst = 1; nl_i_s_arvalid = 1;
+  @(posedge clk_main); while (!nl_i_s_arready) @(posedge clk_main);
+  @(negedge clk_main); nl_i_s_arvalid = 0; nl_i_s_rready = 1;
+  @(posedge clk_main); while (!nl_i_s_rvalid) @(posedge clk_main);
+  check(nl_i_s_rresp == (tx == 10 ? 3 : failed ? 2 : 0), "RRESP");
+  check(nl_i_s_rdata == (failed ? 0 : read_data), "RDATA");
+  @(negedge clk_main); nl_i_s_rready = 0;
+ end
+'''
+    return f'''`timescale 1ns/1ps
+module tb;
+{declarations}
+{mapping['module']} dut({connections});
+always #5 clk_main = ~clk_main;
+{extra_clock}
+integer tx = 0, address = 0, completed = 0, cycles = 0, byte_, before_count;
+reg writing, failed;
+reg [{sb-1}:0] strobes;
+reg [{sb*8-1}:0] write_data, read_data;
+reg [{sb*k-1}:0] write_tags, expected_tags;
+task check;
+ input condition; input [255:0] label_;
+ if (condition !== 1'b1) begin
+  $display("ASSERT_FAIL:APB5_DATA.%0s tx=%0d address=%h tags=%h expected=%h",
+           label_, tx, address, {"nl_i_s_pruser" if su else "0"}, expected_tags); $fatal(1);
+ end
+endtask
+function [{k-1}:0] tag;
+ input integer n, a;
+ begin
+  if (n == 6 || n == 8) begin
+   case (a % 4)
+    0: tag = 7; 1: tag = 'hc; 2: tag = 1; 3: tag = 6;
+   endcase
+  end else if (n == 11) tag = {12 if k == 4 else (1 << k) - 1};
+  else tag = n * 3 + (a % 4) * 5 + (a / 4) * 7 + 1;
+ end
+endfunction
+function [7:0] datum;
+ input integer n, a;
+ begin datum = n * 13 + a * 17 + 7; end
+endfunction
+{target_model}
+always @(posedge clk_main) begin
+ cycles = cycles + 1; check(cycles < 15000, "TIMEOUT");
+end
+initial begin
+ {initialize}
+ repeat (8) @(negedge clk_main); reset_n = 1;
+ for (tx = 0; tx < {13 if ta else 10}; tx = tx + 1) begin
+  address = 'h1000 + tx*8 + (tx % {max(1, 4//sb)})*{sb};
+  if ({int(ta)} && tx == 10) address = 'h4000;
+  writing = tx % 2 == 1 && tx != 11;
+  strobes = tx % 4 == 1 ? {sb}'h{((1<<sb)-1)^ (1 << (sb-1)):x} : {sb}'h{(1<<sb)-1:x};
+  if (tx == 9) strobes = 0;
+  failed = {int(ta)} && (tx == 6 || tx >= 10);
+  write_data = 0; read_data = 0; write_tags = 0; expected_tags = 0;
+  for (byte_ = 0; byte_ < {sb}; byte_ = byte_ + 1) begin
+   write_data[byte_*8 +: 8] = datum(tx + 9, address + byte_);
+   read_data[byte_*8 +: 8] = datum(tx, address + byte_);
+   write_tags[byte_*{k} +: {k}] = tag(tx + 9, address + byte_);
+   if ({int(bool(tu))} && !failed)
+    expected_tags[byte_*{k} +: {k}] = tag(tx, address + byte_);
+  end
+  before_count = completed;
+  {transfer}
+  if ({int(ta)} && !writing) begin
+   if (tx == 10) check(completed == before_count, "NO_TARGET_ACCESS");
+   else if (tx == 11) begin
+    check(completed - before_count == {int(tb < sb)}, "TIMEOUT_COMPLETIONS");
+    if ({int(bool(tu) and tb < sb)}) check(tag(tx, address) != 0, "TIMEOUT_NONZERO_GROUP");
+   end else if (tx < 10)
+    check(completed - before_count == {max(1, sb // tb)}, "PHYSICAL_COMPLETIONS");
+  end
+ end
+ repeat (12) @(negedge clk_main);
+ check(completed > 5, "COMPLETIONS");
+ $display("NOCLOOM_PASS apb5 data user"); $finish;
+end
+endmodule
+'''
+
+
+def run_data_user(cli, base, clocked):
+    base = Path(base).resolve()
+    base.mkdir(parents=True, exist_ok=True)
+    work = Path(tempfile.mkdtemp(prefix='run-', dir=base))
+    (base / 'latest.txt').write_text(str(work) + '\n')
+    configurations = [data_user_configuration('apb5', 'apb5', s, t, 4, clocked, (s != t))
+                      for s in (8, 16, 32) for t in (8, 16, 32)]
+    for source, target in [('axi4', 'apb5'), ('apb5', 'axi4'),
+                           ('apb4', 'apb5'), ('apb5', 'apb4')]:
+        configurations.append(data_user_configuration(source, target, 32, 32, 3, clocked, True))
+    for k in (1, 2, 3):
+        for s, t in ((32, 8), (32, 16), (16, 8)):
+            configurations.append(data_user_configuration('apb5', 'apb5', s, t, k, clocked, True))
+    for endpoint in ('initiators', 'targets'):
+        cfg = data_user_configuration('apb5', 'apb5', 32, 16, 4, clocked, True)
+        cfg[endpoint][0]['data_user_width'] = 0
+        configurations.append(cfg)
+    for mode in ('forward', 'backward', 'both', 'half_rate', 'bypass', 'ungated'):
+        cfg = data_user_configuration('apb5', 'apb5', 32, 8, 4, clocked, True)
+        pipe = {'forward': mode != 'backward', 'backward': mode in ('backward', 'both', 'half_rate')}
+        if mode == 'half_rate':
+            pipe['half_rate'] = True
+        if mode == 'bypass':
+            pipe['bypass_port'] = 'pipe_bypass'
+        if mode == 'ungated':
+            pipe['ungated'] = True
+        for graph in cfg['topology'].values():
+            graph['nodes'].append({'name': 'z', 'clock_domain': 'main', 'transport_word_bytes': 4})
+            graph['exits'][0]['node'] = 'z'
+            graph['links'] = [{'from': 'q', 'to': 'z', 'pipeline': pipe,
+                               'sender_pipeline': {'forward': True}, 'transport_word_bytes': 8}]
+        configurations.append(cfg)
+    results = []
+    for number, cfg in enumerate(configurations):
+        case = work / f'data_{number}'
+        case.mkdir()
+        path = case / 'input.yaml'
+        path.write_text(json.dumps(cfg))
+        dest = case / 'generated'
+        proc = subprocess.run([cli, 'generate', str(path), '--out-dir', str(dest), '--ipxact'],
+                              capture_output=True, text=True, timeout=120)
+        assert proc.returncode == 0, proc.stderr
+        mapping = json.loads((dest / 'nocloom_apb5_user.map.json').read_text())
+        ports = {p['name']: p for p in mapping['ports']}
+        for role, endpoint in [('i', cfg['initiators'][0]), ('t', cfg['targets'][0])]:
+            for signal in ('pwuser', 'pruser'):
+                name = f'nl_{role}_{endpoint["name"]}_{signal}'
+                if endpoint.get('data_user_width'):
+                    assert ports[name]['width'] == endpoint['data_user_width']
+                else:
+                    assert name not in ports
+        (case / 'network.v').write_text(generated_rtl(dest / 'nocloom_apb5_user.v'))
+        (case / 'tb.sv').write_text(data_user_bench(mapping, cfg))
+        rc = simulate(case, work / 'compiled')
+        log = (case / 'simulation.log').read_text()
+        assert rc == 0 and 'NOCLOOM_PASS apb5 data user' in log, log[-3000:]
+        results.append({'case': number, 'status': 'PASS'})
+        if number == 8:
+            data_user_controls(case, work, results)
+        if number == 6:
+            failed_read_control(case, work, results)
+        (work / 'data-results.json').write_text(json.dumps(results, indent=2) + '\n')
+    print(f'NOCLOOM_PASS apb5 data cases={len(configurations)} clocked={clocked}')
+
+
+def failed_read_control(original, work, results):
+    rtl = (original / 'network.v').read_text()
+    port = re.search(r'assign nl_i_s_pruser = (\w+);', rtl)
+    assert port
+    mux = re.search(r'assign ' + re.escape(port[1]) + r' = \((\w+) \? (\w+) : (\w+)\);', rtl)
+    assert mux
+    # Expose the gathered groups on failed reads by removing the success condition.
+    faulty = rtl.replace(port[0], 'assign nl_i_s_pruser = '
+                         f'(nl_i_s_pready && !nl_i_s_pwrite) ? {mux[2]} : 16\'d0;')
+    case = work / 'failed_read_groups'
+    case.mkdir()
+    (case / 'network.v').write_text(faulty)
+    (case / 'tb.sv').write_bytes((original / 'tb.sv').read_bytes())
+    rc = simulate(case, work / 'compiled')
+    log = (case / 'simulation.log').read_text()
+    assert 'ASSERT_FAIL:APB5_DATA.PRUSER tx=6 ' in log, log[-3000:]
+    assert 'NOCLOOM_PASS' not in log
+    results.append({'case': 'failed_read_groups', 'status': 'CAUGHT', 'simulation_exit': rc})
+
+
+def data_user_controls(original, work, results):
+    rtl = (original / 'network.v').read_text()
+    bench_text = (original / 'tb.sv').read_text()
+    # Each mutation changes only the generated PWUSER connection.
+    pattern = r'(assign nl_t_t_pwuser = )([^;]+);'
+    inactive = '{' + ', '.join('{4{!nl_t_t_pstrb[' + str(b) + ']}}' for b in reversed(range(4))) + '}'
+    faults = {
+        'adjacent_group': lambda m: m[1] + '((' + m[2] + ' << 4) | (' + m[2] + ' >> 12));',
+        'unstrobed_group': lambda m: m[1] + '(' + m[2] + ') | ' + inactive + ';',
+    }
+    for name, change in faults.items():
+        case = work / name
+        case.mkdir()
+        faulty, count = re.subn(pattern, change, rtl)
+        assert count == 1
+        (case / 'network.v').write_text(faulty)
+        (case / 'tb.sv').write_text(bench_text)
+        rc = simulate(case, work / 'compiled')
+        log = (case / 'simulation.log').read_text()
+        assert 'ASSERT_FAIL:APB5_DATA.PWUSER tx=' in log, log[-3000:]
+        assert 'NOCLOOM_PASS' not in log
+        results.append({'case': name, 'status': 'CAUGHT', 'simulation_exit': rc})
+    restored = work / 'data_restored'
+    restored.mkdir()
+    (restored / 'network.v').write_text(rtl)
+    (restored / 'tb.sv').write_text(bench_text)
+    rc = simulate(restored, work / 'compiled')
+    assert rc == 0 and 'NOCLOOM_PASS apb5 data user' in (restored / 'simulation.log').read_text()
+    results.append({'case': 'restored', 'status': 'PASS'})
