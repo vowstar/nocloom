@@ -1766,6 +1766,26 @@ void check_user_flags(Checks &c) {
           "Expected 0, 1 or a user flag of transport.user_flags");
   }
 }
+void check_endpoint_gating(Checks &c) {
+  const auto check = [&](const auto &endpoints, const std::string &kind) {
+    for (std::size_t i = 0; i < endpoints.size(); ++i) {
+      const auto &e = endpoints[i];
+      if (!e.clock_gating)
+        continue;
+      const auto domain = std::ranges::find(c.d.clock_domains, e.clock_domain, &ClockDomain::name);
+      const auto path = kind + "[" + std::to_string(i) + "].clock_gating";
+      if (!c.d.clock_gating || (domain != c.d.clock_domains.end() && !domain->gated))
+        c("NCL_ENDPOINT_CLOCK_GATING", path,
+          "An endpoint clock_gating object requires clock gating and a gated domain");
+      const auto &gates = *e.clock_gating;
+      if (gates.single_gate && !(gates.protocol && gates.transport))
+        c("NCL_ENDPOINT_CLOCK_GATING", path + ".single_gate",
+          "single_gate requires protocol and transport");
+    }
+  };
+  check(c.d.initiators, "initiators");
+  check(c.d.targets, "targets");
+}
 using PlanData = std::shared_ptr<const detail::NetworkPlan>;
 // The definition checks, then the network plan with its capability rules. Diagnostics carry
 // configuration paths; make_plan locates them.
@@ -1791,6 +1811,7 @@ Result<PlanData> plan_definition(const Definition &d) {
   if (!c.errors.empty())
     return Result<PlanData>::failure(std::move(c.errors));
   check_domains(c);
+  check_endpoint_gating(c);
   check_initiators(c);
   check_modes(c);
   check_targets(c);

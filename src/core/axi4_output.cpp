@@ -331,7 +331,7 @@ public:
                                          : "unknown";
       clocked_network(map["network"]);
     }
-    clock_gates(map["network"]);
+    clock_gates(map["network"], map["definition"]);
     if (p.cells.clock_gate || p.cells.synchronizer)
       cells(map);
     if (dangling(map, h.ir.emitted.value_or(h.ir.values.size())))
@@ -1698,13 +1698,13 @@ private:
   }
   // Each clock gate: its switch, or its endpoint and zone; the idle and wake terms behind its
   // enable; its registers.
-  void clock_gates(Json &network) const {
+  void clock_gates(Json &network, Json &semantics) const {
     for (auto it = h.bindings.lower_bound("gate/");
          it != h.bindings.end() && it->first.starts_with("gate/"); ++it) {
       if (!it->first.ends_with(".clock"))
         continue;
       const auto stem = it->first.substr(0, it->first.size() - 6), object = stem.substr(5);
-      const auto owner = object.substr(0, object.find("/protocol"));
+      const auto owner = gate_owner(object);
       Json record = {
           {"clock_domain", h.plan.clocked() ? h.plan.object_domains.at(owner) : p.domain.name},
           {"registers", std::ranges::count_if(h.ir.states, [&](const State &s) {
@@ -1716,11 +1716,39 @@ private:
         record[owner.starts_with("source/") ? "initiator" : "target"] =
             owner.substr(owner.find('/') + 1);
         record["zone"] = owner == object ? "transport" : "protocol";
+        if (const auto gates = p.endpoint_gating(owner)) {
+          record["zones"] = gates->single_gate ? Json::array({"protocol", "transport"})
+                                               : Json::array({record["zone"]});
+          if (gates->single_gate)
+            record["zone"] = "shared";
+        }
       }
       for (const auto *key : {"enable", "idle", "wake", "remaining"})
         record[key] = value_ref(h.bindings.at(stem + "." + key));
       network["clock_gates"].push_back(std::move(record));
     }
+    const auto endpoints = [&](const auto &list, const std::string &kind) {
+      for (const auto &e : list)
+        if (const auto &gates = e.clock_gating) {
+          if (!network.contains("clock_gates"))
+            network["clock_gates"] = Json::array();
+          const auto count = std::ranges::count_if(network["clock_gates"], [&](const auto &g) {
+            return g.contains(kind) && g[kind] == e.name;
+          });
+          const Json settings = {{"protocol", gates->protocol},
+                                 {"transport", gates->transport},
+                                 {"single_gate", gates->single_gate}};
+          auto &record = network["endpoint_clock_gating"][kind][e.name];
+          record = settings;
+          record["gate_count"] = count;
+          record["protocol_clock"] = gates->protocol ? "gated" : "domain";
+          record["transport_clock"] = gates->transport ? "gated" : "domain";
+          if (*gates != EndpointClockGates{})
+            semantics["endpoint_clock_gating"][kind][e.name] = settings;
+        }
+    };
+    endpoints(p.sources, "initiator");
+    endpoints(p.targets, "target");
   }
   // Each cell's binding (none: behavioral) and the path of every library cell instance below the
   // module, or of every wrapper instance of an unbound cell.
@@ -2063,10 +2091,11 @@ private:
     const auto &top = h.ir.name;
     const auto rtl = top + ".v", mapping = top + ".map.json", manifest = top + ".bundle.json",
                dependency = top + ".dependency.json";
+    // The map holds the effective definition used by both output records.
     Json bundle = {{"format_version", 1},
                    {"generator", "NocLoom"},
                    {"version", version()},
-                   {"definition", definition},
+                   {"definition", map.at("definition")},
                    {"language", "verilog_2001"},
                    {"top", top},
                    {"files",
@@ -2077,9 +2106,9 @@ private:
                    {"synthesis_sources", {rtl}},
                    {"simulation_sources", {rtl}}};
     ArtifactSet out{{rtl, emit_verilog(h.ir)}, {mapping, map.dump(2) + "\n"}};
-    out.push_back(
-        {dependency, dependency_graph_json(p.dependency, p.dependency_report, top, "NocLoom",
-                                           fnv1a64(out[0].text), fnv1a64(definition.dump()))});
+    out.push_back({dependency, dependency_graph_json(p.dependency, p.dependency_report, top,
+                                                     "NocLoom", fnv1a64(out[0].text),
+                                                     fnv1a64(map.at("definition").dump()))});
     // Cell wrappers precede the module in the sources; bound library cell models stay out.
     for (const auto &cell : cell_files(h.ir, p.cells)) {
       const bool bound = cell.path == "nocloom_clock_gate.v" ? p.cells.clock_gate.has_value()

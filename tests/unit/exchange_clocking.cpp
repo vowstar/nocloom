@@ -6,6 +6,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <iostream>
 #include <limits>
+#include <nocloom/config.hpp>
 #include <nocloom/generation.hpp>
 #include <numeric>
 #include <set>
@@ -941,6 +942,245 @@ TEST_CASE("Clock audit restricts FIFO levels to their confirmed reduction", "[ex
     REQUIRE_FALSE(checked);
     CHECK(checked.diagnostics().front().message == "FIFO confirmed level interval changed");
   }
+}
+
+TEST_CASE("Endpoint gates clock the selected zones and preserve domain synchronizers",
+          "[exchange-clocking]") {
+  using nocloom::EndpointClockGates;
+  for (const auto gates :
+       {EndpointClockGates{}, EndpointClockGates{.single_gate = true},
+        EndpointClockGates{.protocol = false}, EndpointClockGates{.transport = false},
+        EndpointClockGates{.protocol = false, .transport = false}}) {
+    auto d = placed();
+    d.reset_ports.push_back({"other_reset_n"});
+    d.clock_domains[1].reset_port = "other_reset_n";
+    const auto plain = lowered(d);
+    d.initiators[0].clock_gating = gates;
+    d.targets[0].clock_gating = gates;
+    // The other endpoints keep their independent default gates.
+    const auto h = lowered(d);
+    for (const auto &owner : {"source/s0", "target/t0"}) {
+      const std::string gate = "gate/" + std::string(owner);
+      CHECK(h.bindings.contains(gate + ".clock") == gates.transport);
+      CHECK(h.bindings.contains(gate + "/protocol.clock") ==
+            (gates.protocol && !gates.single_gate));
+      for (const bool protocol : {false, true}) {
+        const std::string zone = protocol ? "/protocol" : "";
+        const auto original_clock = plain.bindings.at(gate + zone + ".clock");
+        const auto deadline = plain.bindings.at(gate + zone + ".remaining");
+        const bool gated = protocol ? gates.protocol : gates.transport;
+        const auto expected = gated
+                                  ? h.bindings.at(gate + (gates.single_gate ? "" : zone) + ".clock")
+                                  : h.bindings.at("domain/a.clock");
+        unsigned count = 0;
+        for (std::size_t i = 0; i < plain.ir.states.size(); ++i) {
+          const auto &original = plain.ir.states[i];
+          if (original.clock.index == original_clock.index &&
+              original.output.index != deadline.index) {
+            ++count;
+            CHECK(h.ir.states.at(i).clock.index == expected.index);
+          }
+        }
+        CHECK(count > 0);
+      }
+    }
+    for (auto q : h.ir.synchronizer_stages) {
+      const auto &state = h.ir.states.at(h.ir.values.at(q.index).state.index);
+      CHECK(state.clock.index == root_clock(h.ir, state.clock).index);
+    }
+    auto corrupted = h;
+    const auto q = h.ir.synchronizer_stages.back();
+    corrupted.ir.states.at(h.ir.values.at(q.index).state.index).clock =
+        h.bindings.at("gate/source/s1.clock");
+    CHECK_FALSE(verify_axi4_exchange_composition(corrupted));
+  }
+}
+
+TEST_CASE("Endpoint gate fields reject inactive gates and invalid combinations",
+          "[exchange-clocking]") {
+  using nocloom::EndpointClockGates;
+  for (bool target : {false, true})
+    for (int option = 0; option < 4; ++option) {
+      auto d = graph_example_definition();
+      auto &mode = target ? d.targets[0].clock_gating : d.initiators[0].clock_gating;
+      mode = EndpointClockGates{.single_gate = true};
+      if (option == 0)
+        d.clock_gating = false;
+      if (option == 1)
+        d.clock_domains[0].gated = false;
+      if (option == 2)
+        mode->protocol = false;
+      if (option == 3)
+        mode->transport = false;
+      const auto result = nocloom::generate(d);
+      REQUIRE_FALSE(result);
+      CHECK(std::ranges::any_of(result.diagnostics(), [&](const auto &error) {
+        return error.code == "NCL_ENDPOINT_CLOCK_GATING" &&
+               error.field ==
+                   std::string(target ? "targets[0].clock_gating" : "initiators[0].clock_gating") +
+                       (option > 1 ? ".single_gate" : "");
+      }));
+    }
+}
+
+namespace {
+nocloom::Definition named_endpoint(const std::string &name, bool target, bool graph) {
+  using namespace nocloom;
+  Definition d;
+  d.schema_version = 10;
+  d.name = "named_gates";
+  d.reset_ports = {{"reset_n"}};
+  d.test_ports = {{"test"}};
+  d.clock_domains = {{"main", "clk_main", "reset_n", "test"}};
+  d.initiators = {graph_source(target ? "s" : name)};
+  d.targets = {graph_target(target ? name : "t", {0, 4096})};
+  d.connectivity = Connectivity{.all = true};
+  if (graph) {
+    d.clock_domains.push_back({"far", "clk_far", "reset_n", "test"});
+    d.targets[0].clock_domain = "far";
+    const auto &s = d.initiators[0].name;
+    const auto &t = d.targets[0].name;
+    d.topology = ExchangeTopology{{{{"entry"}}, {}, {{s, "entry"}}, {{t, "entry"}}},
+                                  {{{"entry"}}, {}, {{t, "entry"}}, {{s, "entry"}}}};
+    d.topology->request.nodes[0].clock_domain = "main";
+    d.topology->response.nodes[0].clock_domain = "main";
+  }
+  return d;
+}
+} // namespace
+
+TEST_CASE("Endpoint path components preserve names in gate clocks and maps",
+          "[exchange-clocking]") {
+  using nocloom::EndpointClockGates;
+  const std::array<std::optional<EndpointClockGates>, 4> modes{
+      std::nullopt, EndpointClockGates{}, EndpointClockGates{.single_gate = true},
+      EndpointClockGates{.protocol = false}};
+  for (bool target : {false, true})
+    for (bool graph : {false, true})
+      for (const auto *name :
+           {"protocol", "transport", "protocol_edge", "transport_edge", "x_protocol", "x_transport",
+            "x_protocol_edge", "x_transport_edge"}) {
+        auto d = named_endpoint(name, target, graph);
+        const auto plain = lowered(d);
+        const auto owner = std::string(target ? "target/" : "source/") + name;
+        const auto stem = "gate/" + owner;
+        for (const auto mode : modes) {
+          CAPTURE(target, graph, name, mode);
+          (target ? d.targets[0].clock_gating : d.initiators[0].clock_gating) = mode;
+          const auto h = lowered(d);
+          const auto x = public_artifacts(d);
+          const auto separate = !mode || *mode == EndpointClockGates{};
+          const auto protocol_gated = !mode || mode->protocol;
+          const auto count = separate ? 2 : 1;
+          const auto total = count + 2 + (graph ? 2 : 0);
+          CHECK(std::ranges::count(h.ir.values, Op::ClockGate, &Value::op) == total);
+          unsigned instances = 0;
+          for (auto at = x.rtl.find("nocloom_clock_gate nl_internal_"); at != std::string::npos;
+               at = x.rtl.find("nocloom_clock_gate nl_internal_", at + 1))
+            ++instances;
+          CHECK(instances == total);
+          const auto &gates = x.map["network"]["clock_gates"];
+          CHECK(gates.size() == total);
+          const auto kind = target ? "target" : "initiator";
+          CHECK(std::ranges::count_if(gates, [&](const auto &g) {
+                  return g.contains(kind) && g[kind] == name;
+                }) == count);
+          CHECK(h.bindings.contains(stem + "/protocol.clock") == separate);
+          for (const auto *zone : {"", "/protocol"}) {
+            const auto before = plain.bindings.at(stem + zone + ".clock");
+            const auto remaining = plain.bindings.at(stem + zone + ".remaining");
+            const auto expected = !protocol_gated && *zone
+                                      ? root_clock(h.ir, h.bindings.at(stem + ".clock"))
+                                      : h.bindings.at(stem + (separate ? zone : "") + ".clock");
+            unsigned states = 0;
+            for (std::size_t i = 0; i < plain.ir.states.size(); ++i) {
+              const auto &state = plain.ir.states[i];
+              if (state.clock.index == before.index && state.output.index != remaining.index) {
+                ++states;
+                CHECK(h.ir.states.at(i).clock.index == expected.index);
+              }
+            }
+            CHECK(states > 0);
+          }
+          const auto records = x.map["network"].value("endpoint_clock_gating", nlohmann::json{});
+          if (mode) {
+            CHECK(records[kind][name] ==
+                  nlohmann::json{{"protocol", mode->protocol},
+                                 {"transport", mode->transport},
+                                 {"single_gate", mode->single_gate},
+                                 {"gate_count", count},
+                                 {"protocol_clock", protocol_gated ? "gated" : "domain"},
+                                 {"transport_clock", "gated"}});
+          } else
+            CHECK(records.is_null());
+          for (const auto &g : gates)
+            if (g.contains(kind) && g[kind] == name) {
+              const auto zone = g["zone"].template get<std::string>();
+              CHECK((separate ? (zone == "protocol" || zone == "transport")
+                              : zone == (protocol_gated ? "shared" : "transport")));
+              CHECK_FALSE(g.contains("mode"));
+              if (mode) {
+                CHECK(g["zones"] == (!mode->single_gate
+                                         ? nlohmann::json::array({zone})
+                                         : nlohmann::json::array({"protocol", "transport"})));
+              } else {
+                CHECK_FALSE(g.contains("zones"));
+              }
+            }
+        }
+      }
+}
+
+TEST_CASE("Endpoint pipe ownership uses the complete endpoint name", "[exchange-clocking]") {
+  for (bool target : {false, true})
+    for (const auto *name : {"pipe", "pipe_edge", "x_pipe", "x_pipe_edge"}) {
+      CAPTURE(target, name);
+      auto d = named_endpoint(name, target, true);
+      auto &pipe = target ? d.targets[0].pipes.arrival : d.initiators[0].pipes.packets;
+      pipe = {nocloom::PipeSlice::Full};
+      const auto h = lowered(d);
+      REQUIRE(h.plan.clocked());
+      const auto x = public_artifacts(d);
+      for (const auto &place : target ? std::vector<std::string>{"arrival"}
+                                      : std::vector<std::string>{"packets/write", "packets/read"}) {
+        const auto resource = std::string(target ? "target/" : "source/") + name + "/pipe/" + place;
+        CHECK(h.plan.resource_domains.at(resource) == (target ? "far" : "main"));
+        REQUIRE(x.resource(resource));
+        CHECK((*x.resource(resource))["clock_domain"] == (target ? "far" : "main"));
+      }
+    }
+}
+
+TEST_CASE("Endpoint gating YAML values parse with source locations", "[exchange-clocking]") {
+  const std::string text = R"(schema_version: 10
+name: gates
+address_width: 32
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains: [{name: main, clock_port: clk, reset_port: reset_n, test_port: test}]
+initiators:
+  - {name: s, clock_domain: main, protocol: axi4_lite, data_width: 32, clock_gating: {single_gate: true}}
+targets:
+  - {name: t, clock_domain: main, protocol: axi4_lite, data_width: 32, attributes: amba, clock_gating: {protocol: false}, mappings: [{base: '0', size: '4096'}]}
+connectivity: all
+output: {backend: verilog, language: verilog_2001}
+)";
+  const auto parsed = nocloom::config::parse(text);
+  REQUIRE(parsed);
+  CHECK(parsed.value().definition.initiators[0].clock_gating ==
+        nocloom::EndpointClockGates{.single_gate = true});
+  CHECK(parsed.value().definition.targets[0].clock_gating ==
+        nocloom::EndpointClockGates{.protocol = false});
+  CHECK(parsed.value().sources.contains("initiators[0].clock_gating"));
+  CHECK(parsed.value().sources.contains("targets[0].clock_gating"));
+  REQUIRE(nocloom::generate(parsed.value().definition));
+  auto invalid = text;
+  const std::string object = "{single_gate: true}";
+  invalid.replace(invalid.find(object), object.size(), "shared");
+  const auto rejected = nocloom::config::parse(invalid);
+  REQUIRE_FALSE(rejected);
+  CHECK(rejected.diagnostics()[0].code == "NCL_SCHEMA_TYPE");
+  CHECK(rejected.diagnostics()[0].field == "initiators[0].clock_gating");
 }
 
 TEST_CASE("The divider uses enough bits for its ratio", "[exchange-clocking]") {

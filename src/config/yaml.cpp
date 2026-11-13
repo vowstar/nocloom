@@ -30,6 +30,21 @@ Ahb5Properties ahb5_properties(Reader &r, const YAML::Node &node, const std::str
       *value = r.integer(node[key], path + "." + key);
   return out;
 }
+std::optional<EndpointClockGates> endpoint_gating(Reader &r, const YAML::Node &node,
+                                                  const std::string &path) {
+  if (!node["clock_gating"])
+    return std::nullopt;
+  const auto at = path + ".clock_gating";
+  const auto field = r.field(node, "clock_gating", at);
+  r.object(field, at, {"protocol", "transport", "single_gate"});
+  EndpointClockGates gates;
+  for (auto [key, value] :
+       {std::pair{"protocol", &gates.protocol}, std::pair{"transport", &gates.transport},
+        std::pair{"single_gate", &gates.single_gate}})
+    if (field[key])
+      *value = r.boolean(r.field(field, key, at + "." + key), at + "." + key);
+  return gates;
+}
 // A preset name (amba, zero) or {preset, read_cache, write_cache, prot, hprot}
 // whose bit lists are 0, 1 or a flag name, optionally prefixed by ~. Only the
 // signals of the target protocol may be listed.
@@ -853,6 +868,7 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
       d.initiators.push_back({r.string(r.field(node, "name", path + ".name"), path + ".name"),
                               r.string(r.field(node, "clock_domain", path + ".clock_domain"),
                                        path + ".clock_domain")});
+      d.initiators.back().clock_gating = endpoint_gating(r, node, path);
       if (node["slverr_only"])
         d.initiators.back().slverr_only = r.boolean(node["slverr_only"], path + ".slverr_only");
       if (node["pipes"]) {
@@ -1010,6 +1026,7 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
           {r.string(r.field(node, "name", path + ".name"), path + ".name"),
            r.string(r.field(node, "clock_domain", path + ".clock_domain"), path + ".clock_domain"),
            {}});
+      d.targets.back().clock_gating = endpoint_gating(r, node, path);
       if (node["pipes"]) {
         const auto at = path + ".pipes";
         const auto item = r.field(node, "pipes", at);

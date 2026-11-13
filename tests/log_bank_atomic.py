@@ -182,6 +182,7 @@ def main():
     work = Path(tempfile.mkdtemp(prefix="run-", dir=args.work))
     run(args, work / "same_domain", crossed=False)
     run(args, work / "crossed", crossed=True)
+    check_read_wake(args.cli, work / "gated_window")
 
 
 if __name__ == "__main__":
