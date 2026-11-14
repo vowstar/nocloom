@@ -98,11 +98,11 @@ class Checker:
     # ------------------------------------------------------------------
     def run(self, events):
         bfms = self.bench["bfms"]
-        masters = [n for n, b in bfms.items() if b["kind"] in ("axi_master", "apb_master", "ahb_master", "wishbone_master")]
+        masters = [n for n, b in bfms.items() if b["kind"] in ("axi_master", "apb_master", "ahb_master", "wishbone_master", "tl_master")]
         # A case may name target BFMs whose buses carry no source traffic
         # (the rule stub drives its APB and AHB buses on its own).
         slaves = [n for n, b in bfms.items()
-                  if b["kind"] in ("axi_slave", "apb_slave", "ahb_slave", "wishbone_slave")
+                  if b["kind"] in ("axi_slave", "apb_slave", "ahb_slave", "wishbone_slave", "tl_slave")
                   and n not in self.case.get("unjudged_targets", ())]
         epoch = 0
         src = {m: dict(push=dict(w=deque(), r=deque()), aw=deque(), ar=deque(),
@@ -283,7 +283,7 @@ class Checker:
         if kind in ("apb_slave", "wishbone_slave"):
             self._apb_event(d, port, e, epoch)
             return
-        if kind == "ahb_slave":
+        if kind in ("ahb_slave", "tl_slave"):
             self._ahb_event(d, port, e, epoch)
             return
         if k != "hs":
@@ -370,6 +370,8 @@ class Checker:
                       epoch)
         lo, hi = model.lanes(addr, size, nbus)
         strb = sum(1 << j for j in range(lo, hi + 1)) if a["w"] else None
+        if a["w"] and self.bench["bfms"][port]["kind"] == "tl_slave":
+            strb = hexval(e, "s")
         t.beats = [(hexval(e, "d"), strb)]
         t.cycles = [e.get("c")]
         t.resps = [C.SLVERR if e.get("r") else C.OKAY]

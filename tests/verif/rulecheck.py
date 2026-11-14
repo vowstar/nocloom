@@ -245,6 +245,26 @@ SCENARIOS = [
 ]
 
 # Rules proven here (read by the registry gate).
+MODES["TL_0"] = 39
+SCENARIOS.append(("tl_rule_0", "TL_0", _run(), "TL.3.2.2.RESET"))
+MODES["TL_1"] = 40
+SCENARIOS.append(("tl_rule_1", "TL_1", _run(), "TL.6.4.SOURCE"))
+MODES["TL_2"] = 41
+SCENARIOS.append(("tl_rule_2", "TL_2", _run(), "TL.7.2.OPCODE"))
+MODES["TL_3"] = 42
+SCENARIOS.append(("tl_rule_3", "TL_3", _run(), "TL.7.2.SIZE"))
+MODES["TL_4"] = 43
+SCENARIOS.append(("tl_rule_4", "TL_4", _run(), "TL.4.5.ALIGN"))
+MODES["TL_5"] = 44
+SCENARIOS.append(("tl_rule_5", "TL_5", _run(), "TL.4.5.MASK"))
+MODES["TL_6"] = 45
+SCENARIOS.append(("tl_rule_6", "TL_6", _run(), "TL.7.2.PARAM"))
+MODES["TL_7"] = 46
+SCENARIOS.append(("tl_rule_7", "TL_7", _run(), "TL.4.2.RESPONSE"))
+MODES["TL_8"] = 47
+SCENARIOS.append(("tl_rule_8", "TL_8", _run(), "TL.7.2.RESPONSE"))
+MODES["TL_9"] = 48
+SCENARIOS.append(("tl_rule_9", "TL_9", _run(), "TL.4.4.CORRUPT"))
 PROVEN = sorted({rule for _, _, _, rule in SCENARIOS if rule})
 
 

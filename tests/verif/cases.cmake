@@ -117,10 +117,10 @@ nocloom_verif_case(NAME verif_soc_mixed_negative LAYER negative TIER focused TIM
 if(NOCLOOM_DETERMINISM_COMPILERS)
   nocloom_verif_case(NAME verif_determinism_compilers LAYER structure TIER release TIMEOUT 1800
     TIMEOUT_REASON "builds the CLI with a second compiler before generating every example"
-    PROCESSORS 8 FEATURES examples determinism MEMORY_MB 4096
-    COMMAND ${NLV_CONFIG} --case ${NLV_CASES}/config_examples.py
+    PROCESSORS 6 FEATURES examples determinism MEMORY_MB 4096
+    COMMAND ${NLV_CONFIG} --case ${NLV_CASES}/config_examples.py --case ${NLV_CASES}/config_tilelink.py
       --other-cxx=${nocloom_other_cxx} --source ${PROJECT_SOURCE_DIR} --cmake ${CMAKE_COMMAND}
-      "--generator=${CMAKE_GENERATOR}" --jobs 8
+      "--generator=${CMAKE_GENERATOR}" --jobs 6
       "--define=CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}" "--define=nlohmann_json_DIR=${nlohmann_json_DIR}"
       "--define=yaml-cpp_DIR=${yaml-cpp_DIR}" "--define=CLI11_DIR=${CLI11_DIR}")
   set_tests_properties(verif_determinism_compilers PROPERTIES SKIP_RETURN_CODE 77)
@@ -728,6 +728,48 @@ nocloom_verif_case(NAME verif_wishbone_checker LAYER unit TIER focused TIMEOUT 1
   FEATURES wishbone ci MEMORY_MB 512
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/wishbone_check.py)
 set_tests_properties(verif_wishbone_checker PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+# TileLink peers use the shared tape, memory model and transaction scoreboard.
+foreach(pair IN ITEMS tl_ul:tl_ul tl_ul:axi4 axi4:tl_ul tl_ul:apb4 apb4:tl_ul tl_ul:ahb_lite ahb_lite:tl_ul)
+  string(REPLACE ":" ";" ends "${pair}")
+  list(GET ends 0 source)
+  list(GET ends 1 target)
+  nocloom_verif_case(NAME verif_tilelink_${source}_${target} LAYER rtl TIER focused TIMEOUT 300
+    FEATURES tilelink MEMORY_MB 1024
+    CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.ERR.READ_ZERO AXI.W.UNSTROBED_ZERO TL.ACCESS
+    COMMAND ${NLV_RUN} --case ${NLV_CASES}/tilelink.py --cli $<TARGET_FILE:nocloom_cli>
+      --param source=${source} --param target=${target})
+  set_tests_properties(verif_tilelink_${source}_${target} PROPERTIES RESOURCE_LOCK tilelink)
+endforeach()
+nocloom_verif_case(NAME verif_tilelink_cdc LAYER rtl TIER focused TIMEOUT 300
+  FEATURES tilelink cdc MEMORY_MB 1024
+  CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.ERR.READ_ZERO AXI.W.UNSTROBED_ZERO TL.ACCESS
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/tilelink.py --cli $<TARGET_FILE:nocloom_cli> --param cdc=1)
+set_tests_properties(verif_tilelink_cdc PROPERTIES RESOURCE_LOCK tilelink LABELS "rtl;focused;tilelink;cdc;ci")
+nocloom_verif_case(NAME verif_tilelink_config LAYER config TIER quick TIMEOUT 120
+  FEATURES tilelink MEMORY_MB 512
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/config.py
+    --case ${NLV_CASES}/config_tilelink.py --cli $<TARGET_FILE:nocloom_cli>)
+nocloom_verif_case(NAME verif_tilelink_negative LAYER negative TIER focused TIMEOUT 300
+  FEATURES tilelink MEMORY_MB 1024 CONTRACTS TL.ACCESS
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_negative.py
+    --peer ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_peer_tb.sv
+    --case ${NLV_CASES}/tilelink.py --cli $<TARGET_FILE:nocloom_cli> --negative)
+set_tests_properties(verif_tilelink_negative PROPERTIES
+  RESOURCE_LOCK tilelink LABELS "negative;focused;tilelink;ci")
+
+nocloom_verif_case(NAME verif_tilelink_source16 LAYER rtl TIER focused TIMEOUT 300
+  FEATURES tilelink MEMORY_MB 1024
+  CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.ERR.READ_ZERO AXI.W.UNSTROBED_ZERO TL.ACCESS
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/tilelink.py --cli $<TARGET_FILE:nocloom_cli>
+    --param source_width=16)
+set_tests_properties(verif_tilelink_source16 PROPERTIES RESOURCE_LOCK tilelink)
+
+nocloom_verif_case(NAME verif_tilelink_source0 LAYER rtl TIER focused TIMEOUT 300
+  FEATURES tilelink MEMORY_MB 1024
+  CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.ERR.READ_ZERO AXI.W.UNSTROBED_ZERO TL.ACCESS
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/tilelink.py --cli $<TARGET_FILE:nocloom_cli>
+    --param source_width=0)
+set_tests_properties(verif_tilelink_source0 PROPERTIES RESOURCE_LOCK tilelink)
 
 foreach(protocol IN ITEMS axi4 axi3 axi4_lite apb4 logged axi4_folded axi4_compact)
   nocloom_verif_case(NAME verif_initiator_error_responses_${protocol} LAYER negative TIER focused

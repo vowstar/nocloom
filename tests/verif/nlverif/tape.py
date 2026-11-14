@@ -56,12 +56,12 @@ for _k in range(4):
 CHANNEL = dict(aw=1, w=2, ar=3, b=4, r=5)
 
 APB_MASTER_CTL = dict(seed=18, stab_n=24, stab0=32, keep0=32, keep1=33, keep2=34, keep3=35)
-COUNTERS = dict(axi_master=MASTER_COUNTERS, apb_master=MASTER_COUNTERS,
+COUNTERS = dict(tl_master=MASTER_COUNTERS, tl_slave=dict(addr=0, data=1, active=8, trans=9, err_next=10, retry_next=11, sideband=15, cycle=20, same_cycle=21, a_stalls=22), axi_master=MASTER_COUNTERS, apb_master=MASTER_COUNTERS,
                 ahb_master=MASTER_COUNTERS, axi_slave=SLAVE_COUNTERS, apb_slave=APB_COUNTERS,
                 ahb_slave=dict(addr=0, data=1, active=8, trans=9, err_next=10, retry_next=11,
                                sideband=15, cycle=20),
                 stream=STREAM_COUNTERS)
-CONTROLS = dict(axi_master=MASTER_CTL, apb_master=APB_MASTER_CTL, ahb_master={},
+CONTROLS = dict(tl_master=MASTER_CTL, tl_slave=dict(wait=0, wait_mode=1, err_default=15, quiet=35, base=41, seed=54, corrupt_only=77, immediate_error=78), axi_master=MASTER_CTL, apb_master=APB_MASTER_CTL, ahb_master={},
                 axi_slave=SLAVE_CTL, apb_slave=APB_CTL,
                 ahb_slave=dict(wait=0, wait_mode=1, idle_mode=2, err_default=15, quiet=35, base=41,
                                response_one_cycle=55,
@@ -71,6 +71,8 @@ CONTROLS = dict(axi_master=MASTER_CTL, apb_master=APB_MASTER_CTL, ahb_master={},
                                slow_mask=57, slow_match=58, slow_wait=59, busy_hold=62,
                                busy_from=63), stream={})
 
+COUNTERS["tl_master"] = dict(MASTER_COUNTERS, peak=21, retracted=22, read_denied=23, read_corrupt=24, write_denied=25, d_stalls=26)
+CONTROLS["tl_master"] = dict(MASTER_CTL, opcode=96, corrupt=97, withdraw=98, repeat_source=99, size_override=100, param=101)
 
 # Records a tape may hold (the bench's tape memory has one more for the header).
 RECORDS = 32767
@@ -137,7 +139,7 @@ class Tape:
                 raise TapeError("keep needs strobe keep and at most 128 lanes")
             for k in range(4):
                 self.set(port, f"keep{k}", keep >> (32 * k) & 0xFFFFFFFF)
-        if b["kind"] not in ("axi_master", "apb_master", "ahb_master", "wishbone_master"):
+        if b["kind"] not in ("axi_master", "apb_master", "ahb_master", "wishbone_master", "tl_master"):
             raise TapeError(port + " is not an initiator BFM")
         size = b["size"] if size is None else size
         if size > b["size"] or not 1 <= beats <= 1 << b.get("len_bits", 8):
@@ -158,7 +160,7 @@ class Tape:
     def read(self, port, addr, beats=1, size=None, burst="incr", id=0, lock=0, cache=0,
              prot=0, qos=0, **expect):
         b = self._bfm(port)
-        if b["kind"] not in ("axi_master", "apb_master", "ahb_master", "wishbone_master"):
+        if b["kind"] not in ("axi_master", "apb_master", "ahb_master", "wishbone_master", "tl_master"):
             raise TapeError(port + " is not an initiator BFM")
         size = b["size"] if size is None else size
         if size > b["size"] or not 1 <= beats <= 1 << b.get("len_bits", 8):
@@ -190,7 +192,7 @@ class Tape:
         record: R acceptance that depends on B (premise E2). "beats"
         (initiator R only) takes a1 R beats after this record, then holds
         RREADY low."""
-        prefix = {"axi_master": {"b": "b", "r": "r"},
+        prefix = {"tl_master": {"b": "b", "r": "r"}, "axi_master": {"b": "b", "r": "r"},
                   "axi_slave": {"aw": "aw", "w": "w", "ar": "ar"}}[self._bfm(port)["kind"]]
         p = prefix[channel]
         if mode == "await_b":

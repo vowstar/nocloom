@@ -33,7 +33,8 @@ module nlv_ahb_slave #(
     parameter DATA_W = 32,
     parameter HRESP_W = 1,
     parameter MEM_BYTES = 65536,
-    parameter SALT = 0
+    parameter SALT = 0,
+    parameter MASKED_WRITES = 0
 ) (
     input wire clk,
     input wire rst_n,
@@ -50,7 +51,8 @@ module nlv_ahb_slave #(
     output reg hreadyout,
     output reg [HRESP_W-1:0] hresp,
     output reg [DATA_W-1:0] hrdata,
-    input wire sideband
+    input wire sideband,
+    input wire [DATA_W/8-1:0] write_mask
 );
   `include "nlv_common.svh"
   localparam NB = DATA_W / 8;
@@ -84,6 +86,8 @@ module nlv_ahb_slave #(
   reg [31:0] pend_wait, lfsr;
   reg [63:0] pend_addr;
   reg [2:0] pend_size;
+  reg [NB-1:0] pend_mask;
+  string mask_event;
   reg [31:0] waited, low_run;
   reg [ADDR_W+10:0] prev_ctrl;
   reg [1:0] prev_trans;
@@ -213,12 +217,16 @@ module nlv_ahb_slave #(
         la = pend_addr & ~(NB - 1);
         if (pend_write && err_now == 0)
           for (i = 0; i < NB; i = i + 1)
-            if (i >= pend_addr % NB && i < (pend_addr % NB) + (1 << pend_size))
+            if (MASKED_WRITES ? pend_mask[i] :
+                (i >= pend_addr % NB && i < (pend_addr % NB) + (1 << pend_size)))
               mem[(la + i) % MEM_BYTES] = hwdata[i*8+:8];
+        mask_event="";
+        if (MASKED_WRITES) mask_event=$sformatf(",\"s\":\"%0h\"", pend_mask);
         $fwrite(tb.nlv_fd,
-                "{\"t\":%0.0f,\"c\":%0d,\"p\":\"%0s\",\"k\":\"ahb_data\",\"a\":\"%0h\",\"w\":%0d,\"d\":\"%0h\",\"r\":%0d,\"waits\":%0d}\n",
+                "{\"t\":%0.0f,\"c\":%0d,\"p\":\"%0s\",\"k\":\"ahb_data\",\"a\":\"%0h\",\"w\":%0d,\"d\":\"%0h\",\"r\":%0d,\"waits\":%0d%0s}\n",
                 ($realtime * 1000.0), cyc, NAME, pend_addr, pend_write,
-                pend_write ? hwdata : hrdata, err_now, waited);
+                pend_write ? hwdata : hrdata, err_now, waited,
+                mask_event);
         n_data = n_data + 1;
         // A FIFO word: every read of it returns a new value.
         if (!pend_write && ctl[FIFO_EN] != 0 && la == ctl[FIFO_ADDR])
@@ -235,6 +243,7 @@ module nlv_ahb_slave #(
         pend_write = hwrite;
         pend_addr = haddr;
         pend_size = hsize;
+        pend_mask = write_mask;
         waited = 0;
         n_addr = n_addr + 1;
         err_now = ctl[ERR_DEFAULT];

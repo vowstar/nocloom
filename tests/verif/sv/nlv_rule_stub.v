@@ -315,4 +315,25 @@ module nlv_rule_stub (
   assign x_valid = str == 1 && !(mode == STREAM_HOLD && str_cycles == 1);
   assign x_ready = str == 1 && str_cycles >= 2;
   assign x_data = 8'hA5;
+
+  // TileLink 1.8.1 checker controls. Mode zero has no TileLink traffic.
+  integer tl_cycle=0;
+  always @(posedge clk) begin
+    if (!rst_n) tl_cycle<=0;
+    else tl_cycle<=tl_cycle+1;
+  end
+  wire tl_selected = mode>=39 && mode<=48;
+  wire tl_av = tl_selected && (tl_cycle==2 || (mode==40 && tl_cycle==3));
+  wire tl_dv = tl_selected && ((mode==46 && tl_cycle==1) || tl_cycle==4);
+  nlv_tl_checker #(.NAME("tl_rules"), .SOURCE_W(1)) tl_rules (
+    .clk(clk), .rst_n(rst_n), .allow_reject(1'b0),
+    .a_valid((mode==39 && !rst_n) || tl_av), .a_ready(1'b1),
+    .a_opcode(mode==41 ? 3'd2 : 3'd4), .a_param(mode==45 ? 3'd1 : 3'd0),
+    .a_size(mode==42 ? 2'd3 : 2'd2), .a_source(1'b0),
+    .a_address(mode==43 ? 32'd1 : 32'd0), .a_mask(mode==44 ? 4'd7 : 4'd15),
+    .a_data(32'd0), .a_corrupt(1'b0),
+    .d_valid(tl_dv), .d_ready(1'b1), .d_opcode(mode==47 ? 3'd0 : 3'd1),
+    .d_param(2'd0), .d_size(2'd2), .d_source(1'b0), .d_data(32'd0),
+    .d_denied(mode==48), .d_corrupt(1'b0)
+  );
 endmodule

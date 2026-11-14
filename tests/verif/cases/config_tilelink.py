@@ -1,0 +1,180 @@
+"""TileLink endpoint fields and explicit configuration rejection."""
+from copy import deepcopy
+from nlverif.config import ENDPOINT_GATE_SETTINGS
+
+BASE = dict(schema_version=10, name="tilelink_fields", address_width=32,
+            reset_ports=[dict(name="reset_n")], test_ports=[dict(name="test")],
+            clock_domains=[dict(name="main", clock_port="clk", reset_port="reset_n", test_port="test")],
+            initiators=[dict(name="s", protocol="tl_ul", data_width=32, clock_domain="main")],
+            targets=[dict(name="t", protocol="tl_ul", data_width=32, clock_domain="main",
+                          mappings=[dict(base="0x0", size="0x1000")])],
+            connectivity="all", output=dict(backend="verilog", language="verilog_2001"))
+
+
+def ports(mapping, out, peers):
+    pins = {p["name"]: p for p in mapping["ports"]}
+    assert pins["nl_i_s_a_size"]["width"] == 2
+    assert pins["nl_i_s_a_source"]["width"] == 4
+    assert "nl_t_t_a_source" not in pins
+    assert "nl_i_s_d_sink" not in pins
+    assert not any(p.endswith("awvalid") for p in pins)
+    assert mapping["definition"]["endpoint_protocols"]["initiators"]["s"] == "tl_ul"
+    assert mapping["definition"]["endpoint_protocols"]["targets"]["t"] == "tl_ul"
+    assert mapping["definition"]["tilelink"]["initiators"]["s"]["source_width"] == 4
+    assert "ahb_hresp_widths" not in mapping["definition"]
+    assert "ahb_targets" not in mapping["definition"]["contract"]
+
+
+CASES = [dict(name="defaults", config=BASE, expect="accept", check=ports)]
+for source_width in (0, 1, 16):
+    cfg = deepcopy(BASE)
+    cfg["initiators"][0].update(source_width=source_width, size_width=4, sink_width=16)
+    cfg["targets"][0].update(source_width=16, size_width=4, sink_width=16,
+                              max_transfer_bytes=4, max_outstanding=1)
+    CASES.append(dict(name=f"widths_{source_width}", config=cfg, expect="accept"))
+for kind in ("initiators", "targets"):
+    for field, value, code in (
+            ("protocol", "tl_uh", "NCL_UNSUPPORTED_PROTOCOL"),
+            ("data_width", 64, "NCL_TILELINK_PROFILE"),
+            ("source_width", 17, "NCL_TILELINK_PROFILE"),
+            ("size_width", 1, "NCL_TILELINK_PROFILE"),
+            ("size_width", 5, "NCL_TILELINK_PROFILE"),
+            ("sink_width", 17, "NCL_TILELINK_PROFILE"),
+            ("max_transfer_bytes", 8, "NCL_TILELINK_PROFILE"),
+            ("len_width", 4, "NCL_TILELINK_PROFILE"),
+            ("id_width", 4, "NCL_TILELINK_PROFILE"),
+            ("atomics", True, "NCL_SCHEMA_UNKNOWN_FIELD")):
+        cfg = deepcopy(BASE)
+        cfg[kind][0][field] = value
+        CASES.append(dict(name=f"{kind}_{field}_{value}", config=cfg, expect="reject", code=code))
+for field, value in (("max_outstanding", 2), ("flows", 2),
+                     ("timeout", dict(cycles=16, completion=True)),
+                     ("attributes", "amba")):
+    cfg = deepcopy(BASE)
+    cfg["targets"][0][field] = value
+    CASES.append(dict(name=f"target_{field}", config=cfg, expect="reject", code="NCL_TILELINK_PROFILE"))
+for kind in ("initiators", "targets"):
+    for field in ("source_width", "sink_width", "size_width", "max_transfer_bytes"):
+        cfg = deepcopy(BASE)
+        cfg[kind][0].update(protocol="axi4", **{field: 4})
+        if kind == "targets":
+            cfg[kind][0]["attributes"] = "amba"
+        CASES.append(dict(name=f"other_{kind}_{field}", config=cfg, expect="reject", code="NCL_TILELINK_PROFILE"))
+
+for address_width in (2, 12, 40, 48):
+    cfg = deepcopy(BASE)
+    cfg["address_width"] = address_width
+    cfg["targets"][0]["address_width"] = min(32, address_width)
+    if address_width == 2:
+        cfg["targets"][0]["mappings"][0]["size"] = "0x4"
+    CASES.append(dict(name=f"address_{address_width}", config=cfg, expect="accept"))
+
+
+def logging_config(source, target, whole=False, flags=False, observed=True):
+    cfg = deepcopy(BASE)
+    cfg["initiators"][0]["protocol"] = source
+    cfg["initiators"].append(dict(name="host", protocol="apb4", data_width=32,
+                                   clock_domain="main"))
+    cfg["targets"][0]["protocol"] = target
+    if target != "tl_ul":
+        cfg["targets"][0]["attributes"] = "amba"
+    cfg["connectivity"] = dict(s=["t"], host=["csr"])
+    cfg["error_logging"] = dict(
+        registers=dict(name="csr", base="0x10000", size="0x1000", clock_domain="main"),
+        logs=[dict(name="log", watch=["t"], whole_record=whole)])
+    if not observed:
+        cfg["targets"].append(dict(name="other", protocol="tl_ul", data_width=32,
+                                   clock_domain="main", mappings=[dict(base="0x2000", size="0x1000")]))
+        cfg["connectivity"] = dict(s=["other"], host=["t", "csr"])
+    if flags:
+        cfg["error_logging"]["audit_flags"] = ["flag"]
+        for initiator in cfg["initiators"]:
+            initiator["audit_flags"] = dict(flag="0")
+    return cfg
+
+
+for target in ("axi4", "apb4", "tl_ul"):
+    for whole in (False, True):
+        CASES.append(dict(name=f"logging_tl_source_{target}_{whole}",
+                          config=logging_config("tl_ul", target, whole),
+                          expect="reject", code="NCL_UNSUPPORTED_TOPOLOGY"))
+for source in ("axi4", "apb4"):
+    for whole in (False, True):
+        CASES.append(dict(name=f"logging_control_{source}_{whole}",
+                          config=logging_config(source, source, whole), expect="accept"))
+    CASES.append(dict(name=f"logging_tl_target_{source}",
+                      config=logging_config(source, "tl_ul"), expect="reject",
+                      code="NCL_UNSUPPORTED_TOPOLOGY"))
+for source in ("tl_ul", "axi4", "apb4"):
+    CASES.append(dict(name=f"audit_flags_{source}",
+                      config=logging_config(source, "apb4", flags=True, observed=False),
+                      expect="reject" if source == "tl_ul" else "accept",
+                      code="NCL_UNSUPPORTED_TOPOLOGY"))
+cfg = logging_config("tl_ul", "apb4", observed=False)
+CASES.append(dict(name="unobserved_tl_source", config=cfg, expect="reject",
+                  code="NCL_UNSUPPORTED_TOPOLOGY"))
+cfg = deepcopy(cfg)
+cfg["connectivity"]["s"].append("csr")
+CASES.append(dict(name="tl_service_access", config=cfg, expect="reject",
+                  code="NCL_UNSUPPORTED_TOPOLOGY"))
+
+for role in ("initiators", "targets"):
+    # A scheduling check must see both external endpoint roles.
+    for qos in (dict(levels=dict(read=1, write=2)), dict(axqos_map=[0, 1]),
+                dict(shaper=dict(bytes_per_1024_cycles=16, burst_bytes=32)),
+                dict(shaper=dict(bytes_per_1024_cycles=16, burst_bytes=32),
+                     scheduler=dict(under_level=1, over_level=2, threshold_percent=50))):
+        cfg = deepcopy(BASE)
+        other = "targets" if role == "initiators" else "initiators"
+        cfg[other][0]["protocol"] = "axi4"
+        if other == "targets":
+            cfg[other][0]["attributes"] = "amba"
+        cfg["initiators"][0]["qos"] = qos
+        code = "NCL_QOS_PROFILE"
+        if role == "initiators" and "axqos_map" in qos:
+            code = "NCL_QOS_MAP"
+        CASES.append(dict(name=f"qos_{role}_{next(reversed(qos))}", config=cfg,
+                          expect="reject", code=code))
+    for mode, settings in ENDPOINT_GATE_SETTINGS.items():
+        cfg = deepcopy(BASE)
+        cfg["clock_gating"] = True
+        cfg[role][0]["clock_gating"] = settings
+        CASES.append(dict(name=f"gating_{role}_{mode}", config=cfg, expect="accept"))
+
+for field, value, code in (
+        ("hresp_width", 2, "NCL_TARGET_AHB_HRESP"),
+        ("not_a_field", True, "NCL_SCHEMA_UNKNOWN_FIELD"),
+        ("undefined_length_bursts", False, "NCL_TARGET_AHB_BURSTS"),
+        ("apb_back_to_back", True, "NCL_TARGET_APB_ACCESS"),
+        ("exclusive", "target", "NCL_TARGET_EXCLUSIVE"),
+        ("pipes", dict(request=dict(slice="full")), "NCL_ENDPOINT_PIPE")):
+    cfg = deepcopy(BASE)
+    cfg["targets"][0][field] = value
+    CASES.append(dict(name=f"target_protocol_{field}", config=cfg,
+                      expect="reject", code=code))
+for field, value in (("fixed_bursts", "single"), ("read_side_effects", True),
+                     ("timeout", dict(cycles=16, completion=False)),
+                     ("pipes", dict(arrival=dict(slice="forward"), dispatch=True,
+                                    response=dict(slice="forward")))):
+    cfg = deepcopy(BASE)
+    cfg["targets"][0][field] = value
+    CASES.append(dict(name=f"target_supported_{field}", config=cfg, expect="accept"))
+cfg = deepcopy(BASE)
+cfg["initiators"][0]["qos"] = dict(levels=dict(read=0, write=0))
+CASES.append(dict(name="zero_levels", config=cfg, expect="accept", same_as="defaults"))
+cfg = deepcopy(BASE)
+cfg["initiators"][0].update(protocol="apb4", qos=dict(
+    shaper=dict(bytes_per_1024_cycles=16, burst_bytes=32)))
+CASES.append(dict(name="apb_shaper_tl_target", config=cfg, expect="accept"))
+cfg = deepcopy(BASE)
+cfg["transport"] = dict(user_flags=["owner"])
+cfg["initiators"][0]["user_flags"] = dict(owner="0")
+CASES.append(dict(name="constant_user_flag", config=cfg, expect="accept"))
+cfg = deepcopy(cfg)
+cfg["initiators"][0]["protocol"] = "axi4"
+cfg["targets"][0].update(exclusive="network", exclusive_owner_flags=["owner"])
+CASES.append(dict(name="network_exclusive_tl_target", config=cfg, expect="accept"))
+cfg = deepcopy(BASE)
+cfg["initiators"][0].update(route_classes=["data"], default_class="data")
+CASES.append(dict(name="tl_source_route_class", config=cfg, expect="reject",
+                  code="NCL_SOURCE_PATH"))

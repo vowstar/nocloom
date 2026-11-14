@@ -23,7 +23,7 @@ set_tests_properties(command_agreement PROPERTIES TIMEOUT 30 LABELS "config;quic
 add_executable(nocloom_unit unit/core.cpp unit/message.cpp unit/wishbone.cpp)
 target_sources(nocloom_unit PRIVATE unit/switch_graph.cpp)
 target_sources(nocloom_unit PRIVATE unit/connectivity.cpp)
-target_sources(nocloom_unit PRIVATE unit/canonical.cpp)
+target_sources(nocloom_unit PRIVATE unit/canonical.cpp unit/tilelink.cpp)
 target_sources(nocloom_unit PRIVATE unit/address_table.cpp unit/modes.cpp unit/routes.cpp unit/c_header.cpp)
 add_test(NAME address_selector_apertures COMMAND nocloom_unit "[apertures]")
 set_tests_properties(address_selector_apertures PROPERTIES

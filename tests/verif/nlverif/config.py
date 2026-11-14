@@ -95,7 +95,7 @@ def mode_routes(cfg, values):
     return {tuple(enumerate(v)): routes(cfg, dict(zip(names, v))) for v in values}
 
 
-DEDICATED = {"wishbone": "apb", "axi4_lite": "lite", "apb4": "apb", "apb3": "apb", "apb2": "apb", "ahb_lite": "ahb"}
+DEDICATED = {"wishbone": "apb", "axi4_lite": "lite", "apb4": "apb", "apb3": "apb", "apb2": "apb", "ahb_lite": "ahb", "tl_ul": "ahb"}
 
 
 def response_runs(mapping):
