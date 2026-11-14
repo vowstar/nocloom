@@ -95,7 +95,7 @@ def mode_routes(cfg, values):
     return {tuple(enumerate(v)): routes(cfg, dict(zip(names, v))) for v in values}
 
 
-DEDICATED = {"axi4_lite": "lite", "apb4": "apb", "apb3": "apb", "apb2": "apb", "ahb_lite": "ahb"}
+DEDICATED = {"wishbone": "apb", "axi4_lite": "lite", "apb4": "apb", "apb3": "apb", "apb2": "apb", "ahb_lite": "ahb"}
 
 
 def response_runs(mapping):
@@ -133,7 +133,7 @@ def targets(cfg, **extra):
                          fixed=t.get("fixed_bursts", "reject"), prot=False)
             if protocol in ("apb3", "apb2"):
                 entry.update(dialect=int(protocol[-1]))
-            else:
+            elif protocol != "wishbone":
                 entry.update(attributes=t.get("attributes"))
         for flow in range(t.get("flows", 1)):
             out[interface(t, flow)] = dict(entry, **extra)

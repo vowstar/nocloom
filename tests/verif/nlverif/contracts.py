@@ -169,6 +169,7 @@ CONTRACTS = {
 # listed in that fault's expectation. LIVE.* rules are raised only when a
 # tape wait times out (stall_report of the AXI BFMs).
 RULES = (
+    "WB.RULE_3_20", "WB.RULE_3_25", "WB.RULE_3_30", "WB.RULE_3_35", "WB.RULE_3_45", "WB.RULE_3_50", "WB.RULE_3_60",
     "AXI.AW.HOLD", "AXI.W.HOLD", "AXI.AR.HOLD", "AXI.B.HOLD", "AXI.R.HOLD",
     "AXI.RESET.QUIET", "AXI.X.AWVALID", "AXI.X.WVALID", "AXI.X.ARVALID", "AXI.X.BVALID",
     "AXI.X.RVALID", "AXI.W.LAST", "AXI.R.LAST", "AXI.B.UNEXPECTED", "AXI.R.UNEXPECTED",
@@ -188,7 +189,8 @@ RULES = (
 
 # Rules that only a four-state engine can raise; excluded from cross-engine
 # count comparison and from two-state engines of the rule self-test.
-FOUR_STATE_RULES = ("AXI.X.AWVALID", "AXI.X.WVALID", "AXI.X.ARVALID", "AXI.X.BVALID",
+FOUR_STATE_RULES = (
+    "AXI.X.AWVALID", "AXI.X.WVALID", "AXI.X.ARVALID", "AXI.X.BVALID",
                     "AXI.X.RVALID", "APB.X.PSEL", "AHB.X.HTRANS", "AHB.X.CONTROL",
                     "AHB.X.DATA", "AHB.X.RESPONSE")
 

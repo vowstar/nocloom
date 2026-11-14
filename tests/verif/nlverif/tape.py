@@ -55,7 +55,7 @@ for _k in range(4):
     APB_CTL[f"ovr_c{_k}"] = 21 + _k
 CHANNEL = dict(aw=1, w=2, ar=3, b=4, r=5)
 
-APB_MASTER_CTL = dict(seed=18, stab_n=24, stab0=32)
+APB_MASTER_CTL = dict(seed=18, stab_n=24, stab0=32, keep0=32, keep1=33, keep2=34, keep3=35)
 COUNTERS = dict(axi_master=MASTER_COUNTERS, apb_master=MASTER_COUNTERS,
                 ahb_master=MASTER_COUNTERS, axi_slave=SLAVE_COUNTERS, apb_slave=APB_COUNTERS,
                 ahb_slave=dict(addr=0, data=1, active=8, trans=9, err_next=10, retry_next=11,
@@ -137,7 +137,7 @@ class Tape:
                 raise TapeError("keep needs strobe keep and at most 128 lanes")
             for k in range(4):
                 self.set(port, f"keep{k}", keep >> (32 * k) & 0xFFFFFFFF)
-        if b["kind"] not in ("axi_master", "apb_master", "ahb_master"):
+        if b["kind"] not in ("axi_master", "apb_master", "ahb_master", "wishbone_master"):
             raise TapeError(port + " is not an initiator BFM")
         size = b["size"] if size is None else size
         if size > b["size"] or not 1 <= beats <= 1 << b.get("len_bits", 8):
@@ -158,7 +158,7 @@ class Tape:
     def read(self, port, addr, beats=1, size=None, burst="incr", id=0, lock=0, cache=0,
              prot=0, qos=0, **expect):
         b = self._bfm(port)
-        if b["kind"] not in ("axi_master", "apb_master", "ahb_master"):
+        if b["kind"] not in ("axi_master", "apb_master", "ahb_master", "wishbone_master"):
             raise TapeError(port + " is not an initiator BFM")
         size = b["size"] if size is None else size
         if size > b["size"] or not 1 <= beats <= 1 << b.get("len_bits", 8):
@@ -323,3 +323,9 @@ class Tape:
     def metadata(self):
         return dict(labels=self.labels, marks=self.marks, expect=self.expect,
                     checks=self.checks, records=len(self.records), tags=self.tag)
+
+COUNTERS["wishbone_master"] = dict(MASTER_COUNTERS, response_aborts=23)
+COUNTERS["wishbone_slave"] = APB_COUNTERS
+CONTROLS["wishbone_master"] = dict(APB_MASTER_CTL, read_sel=70, continuous=71, abort=72,
+                                   abort_response=73)
+CONTROLS["wishbone_slave"] = dict(APB_CTL, ack_mode=62)

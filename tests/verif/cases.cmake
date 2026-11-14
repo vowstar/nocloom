@@ -710,6 +710,25 @@ if(TARGET nocloom_mesh_example)
       --case ${NLV_CASES}/mesh_topology.py)
 endif()
 
+nocloom_verif_case(NAME verif_wishbone_classic LAYER rtl TIER focused TIMEOUT 600
+  FEATURES wishbone ci MEMORY_MB 2048
+  CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.ERR.READ_ZERO AXI.W.UNSTROBED_ZERO AXI.TIMEOUT.EXACT
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/wishbone.py --cli $<TARGET_FILE:nocloom_cli>)
+set_tests_properties(verif_wishbone_classic PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_verif_case(NAME verif_wishbone_classic_negative LAYER negative TIER focused TIMEOUT 600
+  FEATURES wishbone MEMORY_MB 2048
+  CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.W.UNSTROBED_ZERO AXI.TIMEOUT.EXACT
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/wishbone.py --cli $<TARGET_FILE:nocloom_cli> --negative)
+set_tests_properties(verif_wishbone_classic_negative PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+
+nocloom_verif_case(NAME verif_wishbone_configuration LAYER config TIER focused TIMEOUT 180
+  FEATURES wishbone ci MEMORY_MB 512
+  COMMAND ${NLV_CONFIG} --case ${NLV_CASES}/config_wishbone.py --cli $<TARGET_FILE:nocloom_cli>)
+nocloom_verif_case(NAME verif_wishbone_checker LAYER unit TIER focused TIMEOUT 180
+  FEATURES wishbone ci MEMORY_MB 512
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/wishbone_check.py)
+set_tests_properties(verif_wishbone_checker PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+
 foreach(protocol IN ITEMS axi4 axi3 axi4_lite apb4 logged axi4_folded axi4_compact)
   nocloom_verif_case(NAME verif_initiator_error_responses_${protocol} LAYER negative TIER focused
     TIMEOUT 60 FEATURES errors MEMORY_MB 1024

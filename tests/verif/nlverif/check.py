@@ -98,11 +98,11 @@ class Checker:
     # ------------------------------------------------------------------
     def run(self, events):
         bfms = self.bench["bfms"]
-        masters = [n for n, b in bfms.items() if b["kind"] in ("axi_master", "apb_master", "ahb_master")]
+        masters = [n for n, b in bfms.items() if b["kind"] in ("axi_master", "apb_master", "ahb_master", "wishbone_master")]
         # A case may name target BFMs whose buses carry no source traffic
         # (the rule stub drives its APB and AHB buses on its own).
         slaves = [n for n, b in bfms.items()
-                  if b["kind"] in ("axi_slave", "apb_slave", "ahb_slave")
+                  if b["kind"] in ("axi_slave", "apb_slave", "ahb_slave", "wishbone_slave")
                   and n not in self.case.get("unjudged_targets", ())]
         epoch = 0
         src = {m: dict(push=dict(w=deque(), r=deque()), aw=deque(), ar=deque(),
@@ -280,7 +280,7 @@ class Checker:
             d["aw"], d["wbursts"], d["wcur"] = [], [], []
             d["bq"].clear(); d["rq"].clear(); d["ahb"].clear()
             return
-        if kind == "apb_slave":
+        if kind in ("apb_slave", "wishbone_slave"):
             self._apb_event(d, port, e, epoch)
             return
         if kind == "ahb_slave":
@@ -845,7 +845,7 @@ class Checker:
         code = (t.local_error if t.local_error is not None and t.local_error >= 0
                 else model.merge(codes))
         # APB PSLVERR and AHB-Lite HRESP cannot distinguish decode errors.
-        simple = self.bench["bfms"][t.port]["kind"] in ("apb_master", "ahb_master")
+        simple = self.bench["bfms"][t.port]["kind"] in ("apb_master", "ahb_master", "wishbone_master")
         return {C.SLVERR if code == C.DECERR and (simple or not self._keeps_decerr()) else code}
 
     def _judge_write(self, t, kind, exp):

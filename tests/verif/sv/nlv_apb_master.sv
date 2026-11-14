@@ -12,6 +12,7 @@ module nlv_apb_master #(
     parameter ADDR_W = 32,
     parameter DATA_W = 32,
     parameter DIALECT = 4,
+    parameter CLASSIC = 0,
     parameter DEPTH = 64
 ) (
     input wire clk,
@@ -32,6 +33,7 @@ module nlv_apb_master #(
   localparam [2:0] SIZE = NB == 4 ? 3'd2 : NB == 2 ? 3'd1 : 3'd0;
   reg [63:0] q_addr[0:DEPTH-1];
   reg q_write[0:DEPTH-1];
+  reg [2:0] q_size[0:DEPTH-1];
   reg [2:0] q_prot[0:DEPTH-1];
   reg [7:0] q_strb[0:DEPTH-1];
   reg [31:0] q_salt[0:DEPTH-1];
@@ -76,6 +78,7 @@ module nlv_apb_master #(
     input wr;
     input [63:0] addr;
     input [2:0] prot;
+    input [2:0] size;
     input [7:0] strb_mode;
     input [31:0] salt;
     input [31:0] tag;
@@ -86,6 +89,7 @@ module nlv_apb_master #(
       q_addr[slot] = addr;
       q_write[slot] = wr;
       q_prot[slot] = prot;
+      q_size[slot] = wr ? SIZE : size;
       q_strb[slot] = strb_mode;
       q_salt[slot] = salt;
       q_tag[slot] = tag;
@@ -94,7 +98,7 @@ module nlv_apb_master #(
       else n_rpush = n_rpush + 1;
       $fwrite(tb.nlv_fd,
               "{\"t\":%0.0f,\"c\":%0d,\"p\":\"%0s\",\"k\":\"push\",\"ch\":\"%0s\",\"tag\":%0d,\"a\":\"%0h\",\"len\":0,\"sz\":%0d,\"bu\":1,\"id\":0,\"lk\":0,\"ca\":0,\"pr\":%0d,\"qo\":0}\n",
-              ($realtime * 1000.0), cyc, NAME, wr ? "w" : "r", tag, addr, SIZE, eff_prot(prot));
+              ($realtime * 1000.0), cyc, NAME, wr ? "w" : "r", tag, addr, wr ? SIZE : size, eff_prot(prot));
     end
   endtask
 
@@ -113,7 +117,7 @@ module nlv_apb_master #(
     input [31:0] salt;
     input [31:0] tag;
     begin
-      push(1'b1, addr, prot, strb_mode, salt, tag);
+      push(1'b1, addr, prot, size, strb_mode, salt, tag);
     end
   endtask
 
@@ -129,7 +133,7 @@ module nlv_apb_master #(
     input [3:0] qos;
     input [31:0] tag;
     begin
-      push(1'b0, addr, prot, 8'd0, 32'd0, tag);
+      push(1'b0, addr, prot, size, 8'd0, 32'd0, tag);
     end
   endtask
 
@@ -159,11 +163,39 @@ module nlv_apb_master #(
         8'd1: strobe_of = (lane % 3) == 0;
         8'd2: strobe_of = 1'b0;
         8'd3: strobe_of = lane == 0;
-        8'd6: strobe_of = ctl[32][lane % 32];
+        8'd5, 8'd6: strobe_of = ctl[32][lane % 32];
         default: strobe_of = 1'b1;
       endcase
     end
   endfunction
+
+  task start_descriptor;
+    begin
+
+          j = head % DEPTH;
+          psel <= 1'b1;
+          penable <= CLASSIC && ctl[71] != 0;
+          pwrite <= q_write[j];
+          paddr <= q_addr[j];
+          pprot <= DIALECT == 4 ? q_prot[j] : 3'd0;
+          state = 1;
+          // The address handshake of the transfer: its SETUP cycle.
+          if (q_write[j])
+            $fwrite(tb.nlv_fd,
+                    "{\"t\":%0.0f,\"c\":%0d,\"p\":\"%0s\",\"k\":\"hs\",\"ch\":\"aw\",\"tag\":%0d,\"id\":0,\"a\":\"%0h\",\"len\":0,\"sz\":%0d,\"bu\":1,\"lk\":0,\"ca\":0,\"pr\":%0d,\"qo\":0}\n",
+                    ($realtime * 1000.0), cyc, NAME, q_tag[j], q_addr[j], q_size[j], eff_prot(q_prot[j]));
+          else
+            $fwrite(tb.nlv_fd,
+                    "{\"t\":%0.0f,\"c\":%0d,\"p\":\"%0s\",\"k\":\"hs\",\"ch\":\"ar\",\"tag\":%0d,\"id\":0,\"a\":\"%0h\",\"len\":0,\"sz\":%0d,\"bu\":1,\"lk\":0,\"ca\":0,\"pr\":%0d,\"qo\":0}\n",
+                    ($realtime * 1000.0), cyc, NAME, q_tag[j], q_addr[j], q_size[j], eff_prot(q_prot[j]));
+
+          for (integer lane = 0; lane < NB; lane = lane + 1) begin
+            pwdata[lane*8+:8] <= nlv_source_byte((q_addr[j] & ~(NB - 1)) + lane, q_salt[j]);
+            pstrb[lane] <= q_write[j] && strobe_of(q_strb[j], lane);
+          end
+          if (CLASSIC && ctl[71] != 0) state = 2;
+    end
+  endtask
 
   initial begin
     head = 0; tail = 0; state = 0;
@@ -194,24 +226,7 @@ module nlv_apb_master #(
       prev_rst = 1'b1;
       case (state)
         0: if (head < tail) begin
-          // SETUP of the oldest descriptor.
-          j = head % DEPTH;
-          psel <= 1'b1;
-          penable <= 1'b0;
-          pwrite <= q_write[j];
-          paddr <= q_addr[j];
-          pprot <= DIALECT == 4 ? q_prot[j] : 3'd0;
-          state = 1;
-          // The address handshake of the transfer: its SETUP cycle.
-          if (q_write[j])
-            $fwrite(tb.nlv_fd,
-                    "{\"t\":%0.0f,\"c\":%0d,\"p\":\"%0s\",\"k\":\"hs\",\"ch\":\"aw\",\"tag\":%0d,\"id\":0,\"a\":\"%0h\",\"len\":0,\"sz\":%0d,\"bu\":1,\"lk\":0,\"ca\":0,\"pr\":%0d,\"qo\":0}\n",
-                    ($realtime * 1000.0), cyc, NAME, q_tag[j], q_addr[j], SIZE, eff_prot(q_prot[j]));
-          else
-            $fwrite(tb.nlv_fd,
-                    "{\"t\":%0.0f,\"c\":%0d,\"p\":\"%0s\",\"k\":\"hs\",\"ch\":\"ar\",\"tag\":%0d,\"id\":0,\"a\":\"%0h\",\"len\":0,\"sz\":%0d,\"bu\":1,\"lk\":0,\"ca\":0,\"pr\":%0d,\"qo\":0}\n",
-                    ($realtime * 1000.0), cyc, NAME, q_tag[j], q_addr[j], SIZE, eff_prot(q_prot[j]));
-
+          start_descriptor();
         end
         1: begin
           penable <= 1'b1;
@@ -238,6 +253,7 @@ module nlv_apb_master #(
           psel <= 1'b0;
           penable <= 1'b0;
           state = 0;
+          if (CLASSIC && ctl[71] != 0 && head < tail) start_descriptor();
         end
       endcase
       // Write data and strobes of the descriptor entering SETUP.

@@ -174,7 +174,15 @@ def check_rule_evidence(reg, src, C, errors, report):
                     errors.append(f"{f}:{fault['id']}: unknown expectation {name}")
                 if base.startswith("TAPE.") and ":" not in name:
                     errors.append(f"{f}:{fault['id']}: unlabeled expectation {name}")
+    designated = {expect.split(":")[0] for c in reg["cases"] if c["layer"] == "negative"
+                  for f in c.get("files", []) if f.startswith("cases/")
+                  for fault in case_faults(load_module(src / f, "nlv_negative_" + Path(f).stem,
+                                                       c.get("params", [])).CASE)
+                  for expect in fault.get("expect", [])}
     online = set(rulecheck.PROVEN)
+    if "wishbone_check.py" in registered:
+        wishbone = load_module(src / "wishbone_check.py", "nlv_registry_wishbone")
+        online.update(rule.split(":")[-1] for rules in wishbone.EXPECTED.values() for rule in rules)
     offline = set(selftest.OFFLINE_PROVEN)
     for rule in sorted(raised_rules(src) ^ set(C.RULES)):
         errors.append(f"rule table and sources differ: {rule}")
@@ -186,6 +194,8 @@ def check_rule_evidence(reg, src, C, errors, report):
         evidence = []
         if name in online:
             evidence.append("rulecheck")
+        elif name in designated:
+            evidence.append("designated_fault")
         if name in offline:
             evidence.append("selftest")
         gap = C.GAPS.get(name)

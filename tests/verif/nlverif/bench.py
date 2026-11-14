@@ -34,12 +34,18 @@ AHB_SLAVE = [("hsel", "i", 1), ("haddr", "i", "ADDR_W"), ("htrans", "i", 2), ("h
 AHB_MASTER = [(n, "o" if d == "i" else "i", w) for n, d, w in AHB_SLAVE
               if n != "hready"] + [("hready", "o", 1)]
 APB_MASTER = [(n, "o" if d == "i" else "i", w) for n, d, w in APB_SLAVE]
-KINDS = {"axi_master": ("nlv_axi_master", AXI_MASTER), "axi_slave": ("nlv_axi_slave", AXI_SLAVE),
+WB_MASTER = [("cyc", "o", 1), ("stb", "o", 1), ("we", "o", 1),
+             ("adr", "o", "ADDR_W"), ("dat_w", "o", 32), ("sel", "o", 4),
+             ("dat_r", "i", 32), ("ack", "i", 1), ("err", "i", 1)]
+WB_SLAVE = [(n, "i" if d == "o" else "o", w) for n, d, w in WB_MASTER] + [("rty", "o", 1)]
+KINDS = {"wishbone_master": ("nlv_wishbone_master", WB_MASTER),
+         "wishbone_slave": ("nlv_wishbone_slave", WB_SLAVE), "axi_master": ("nlv_axi_master", AXI_MASTER), "axi_slave": ("nlv_axi_slave", AXI_SLAVE),
          "apb_master": ("nlv_apb_master", APB_MASTER),
          "ahb_master": ("nlv_ahb_master", AHB_MASTER),
          "apb_slave": ("nlv_apb_slave", APB_SLAVE), "ahb_slave": ("nlv_ahb_slave", AHB_SLAVE)}
 SOURCES = ["nlv_axi_master.sv", "nlv_axi_slave.sv", "nlv_apb_master.sv", "nlv_apb_slave.sv",
            "nlv_ahb_slave.sv", "nlv_ahb_master.sv",
+           "nlv_wishbone_check.sv", "nlv_wishbone_master.sv", "nlv_wishbone_slave.sv",
            "nlv_stream_mon.sv"]
 
 
@@ -233,7 +239,7 @@ def generate(case, components, faulted=False, probes=None):
                     return ports[n]["width"]
             return default
         params = dict(ID_W=width_of("awid", "arid", "bid", "rid", default=1),
-                      ADDR_W=width_of("awaddr", "araddr", "paddr", "haddr", default=32),
+                      ADDR_W=width_of("awaddr", "araddr", "paddr", "haddr", "adr", default=32),
                       DATA_W=width_of("wdata", "rdata", "pwdata", "prdata", "hwdata", "hrdata",
                                       default=32),
                       LEN_W=width_of("awlen", "arlen", default=8),
@@ -272,7 +278,7 @@ def generate(case, components, faulted=False, probes=None):
         extra = set(ports) - used
         if extra:
             raise BenchError(f"{spec['name']}: DUT signals without BFM pins {sorted(extra)}")
-        if kind == "axi_slave" or kind in ("apb_slave", "ahb_slave"):
+        if kind == "axi_slave" or kind in ("apb_slave", "ahb_slave", "wishbone_slave"):
             sb = spec.get("sideband")
             if sb:
                 sc, se, ss = sb
@@ -291,11 +297,15 @@ def generate(case, components, faulted=False, probes=None):
             overrides += [f".ADDR_W({params['ADDR_W']})", f".DATA_W({params['DATA_W']})"]
         if kind == "axi_master":
             overrides.append(f".QOS_W({params['QOS_W']})")
+        if kind.startswith("wishbone_"):
+            overrides.append(f".WORD({int(spec.get('word', False))})")
+        if kind == "wishbone_slave":
+            overrides.append(f".RETRY({int(spec.get('retry', False))})")
         if kind == "ahb_slave":
             overrides.append(f".HRESP_W({params['HRESP_W']})")
         if kind in ("apb_slave", "apb_master"):
             overrides.append(f".DIALECT({spec.get('dialect', 4)})")
-        if kind not in ("axi_master", "apb_master", "ahb_master"):
+        if kind not in ("axi_master", "apb_master", "ahb_master", "wishbone_master"):
             overrides += [f".MEM_BYTES({spec.get('mem_bytes', 65536)})", f".SALT({spec.get('salt', index)})"]
         bfm_text.append(f"{module} #({', '.join(overrides)}) bfm_{spec['name']} (\n    "
                         + ",\n    ".join(conns) + ");")
@@ -308,7 +318,7 @@ def generate(case, components, faulted=False, probes=None):
                                   # An endpoint without ID ports (AXI4-Lite) carries none.
                                   id_bits=params["ID_W"] if {"awid", "arid", "bid", "rid"} & set(ports)
                                   else 0,
-                                  lite=bool(spec.get("lite", False)) or kind == "apb_master",
+                                  lite=bool(spec.get("lite", False)) or kind in ("apb_master", "wishbone_master"),
                                   period_ps=round(clock_period(periods, clock) * 1000))
         for name in used:
             n = net_name(case, comp["label"], ports[name])
@@ -383,7 +393,7 @@ def generate(case, components, faulted=False, probes=None):
             f"  if (!rst_n) begin nlv_cnt_{net} <= 0; {net} <= 1'b0; end\n"
             f"  else begin nlv_cnt_{net} <= nlv_cnt_{net} == {ratio - 1} ? 0 : nlv_cnt_{net} + 1; "
             f"{net} <= nlv_cnt_{net} == {ratio - 1}; end")
-    masters = [b for b in bfms.values() if b["kind"] in ("axi_master", "apb_master", "ahb_master")]
+    masters = [b for b in bfms.values() if b["kind"] in ("axi_master", "apb_master", "ahb_master", "wishbone_master")]
     probe_text, probe_meta = probe_monitors(case, probes, "clk_" + case.get("main_clock", "main"))
     tb = TEMPLATE
     names = sorted(bfms.values(), key=lambda b: b["index"])
@@ -397,11 +407,11 @@ def generate(case, components, faulted=False, probes=None):
         "@TAPE_WORDS@": str(TAPE_WORDS),
         "@MAIN_CLOCK@": "clk_" + case.get("main_clock", "main"),
         "@PUSH_WRITE@": cases("{i}.push_write(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11);",
-                              ("axi_master", "apb_master", "ahb_master")),
+                              ("axi_master", "apb_master", "ahb_master", "wishbone_master")),
         "@PUSH_READ@": cases("{i}.push_read(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9);",
-                             ("axi_master", "apb_master", "ahb_master")),
+                             ("axi_master", "apb_master", "ahb_master", "wishbone_master")),
         "@SET@": cases("{i}.set_ctl(r, v);", ("axi_master", "axi_slave", "apb_slave", "ahb_slave",
-                                               "apb_master", "ahb_master")),
+                                               "apb_master", "ahb_master", "wishbone_master", "wishbone_slave")),
         "@COUNTER@": cases("nlv_counter = {i}.counter(idx);", tuple(KINDS) + ("stream",)),
         "@STALL@": "\n".join(f"    {b['instance']}.stall_report(NLV_STALL_MIN);" for b in names
                              if b["kind"] in ("axi_master", "axi_slave")),

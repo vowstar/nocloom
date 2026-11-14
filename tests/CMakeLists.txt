@@ -20,7 +20,7 @@ add_test(NAME command_agreement
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/command_agreement.py
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/command_agreement)
 set_tests_properties(command_agreement PROPERTIES TIMEOUT 30 LABELS "config;quick;ci")
-add_executable(nocloom_unit unit/core.cpp unit/message.cpp)
+add_executable(nocloom_unit unit/core.cpp unit/message.cpp unit/wishbone.cpp)
 target_sources(nocloom_unit PRIVATE unit/switch_graph.cpp)
 target_sources(nocloom_unit PRIVATE unit/connectivity.cpp)
 target_sources(nocloom_unit PRIVATE unit/canonical.cpp)
