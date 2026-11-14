@@ -893,6 +893,8 @@ private:
         if (e.external_protocol != Protocol::Wishbone)
           return std::nullopt;
         Json fields = {{"address_unit", e.wishbone_word ? "word" : "byte"}};
+        if (e.wishbone_pipelined)
+          fields["cycles"] = "pipelined";
         if (target && e.wishbone_retry)
           fields["retry"] = "error";
         return fields;
@@ -901,8 +903,11 @@ private:
     auto sources = endpoints(p.sources, false), targets = endpoints(p.targets, true);
     if (!sources.empty() || !targets.empty()) {
       definition["wishbone"] = {{"initiators", sources}, {"targets", targets}};
+      const auto pipelined = [](const auto &list) {
+        return std::ranges::any_of(list, [](const auto &e) { return e.wishbone_pipelined; });
+      };
       contract()["wishbone"] = {
-          {"cycles", "classic"},
+          {"cycles", pipelined(p.sources) || pipelined(p.targets) ? "per_endpoint" : "classic"},
           {"data_bits", 32},
           {"granularity_bits", 8},
           {"outputs",

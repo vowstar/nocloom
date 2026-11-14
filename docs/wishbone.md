@@ -1,7 +1,8 @@
-# Wishbone classic cycles
+# Wishbone cycles
 
 Set `protocol: wishbone` on an initiator or target. Each endpoint requires
 `address_unit: byte` or `word`. There is no default address unit.
+`cycles` selects `classic` or `pipelined` and defaults to `classic`.
 
 ```yaml
 initiators:
@@ -15,10 +16,12 @@ targets:
 ## Initiators
 
 An external Wishbone MASTER drives this port. The port is a Wishbone SLAVE.
+In classic mode, a transfer starts with CYC and STB high.
+It completes with one ACK or ERR pulse and keeps one transfer in flight.
+Pipelined mode also requires STALL low to accept a request.
 
-A transfer starts with CYC and STB high. It completes with one ACK or ERR
-pulse. Only one transfer is in flight. STB can remain high between
-completed transfers, and CYC can remain high across independent transfers.
+STB can remain high between completed transfers, and CYC can remain high
+across independent transfers.
 Neither signal reserves a network path or provides atomic read-modify-write.
 
 Writes use SEL as byte strobes. A zero-SEL write enters the network with
@@ -43,26 +46,28 @@ Failed reads return zero data. There is always an ERR output. A manager
 without ERR_I must combine ERR with ACK externally. Ignoring ERR can leave
 that manager waiting indefinitely.
 
-Dropping CYC or STB before completion abandons the response. The admitted
+In classic mode, dropping CYC or STB before completion abandons the response.
+The admitted
 request still reaches the target and its side effects remain. The port
 drains that response before it accepts another transfer.
 
-ACK and ERR are registered values gated by CYC and STB. Dropping either input
-immediately clears both outputs. A suppressed response is discarded and is
-not replayed when activity resumes.
+ACK and ERR are registered values gated by CYC and, in classic mode, STB.
+Dropping either qualifying input immediately clears both outputs.
+A suppressed response is discarded and is not replayed when activity resumes.
 
-The paths from CYC and STB to termination outputs are combinational.
+Pipelined responses can arrive with STB low while CYC remains high.
+The paths from CYC and classic STB to termination outputs are combinational.
 Include these paths in integration timing checks.
 
 ## Targets
 
-This port is a Wishbone MASTER. Each requested target word uses one classic
+This port is a Wishbone MASTER. In classic mode, each target word uses one
 transfer. STB stays high, with ADR, WE, SEL and write data stable, until ACK,
 ERR or an enabled RTY is sampled on a rising edge. It then stays low for at
 least one cycle. CYC remains high within a packet and falls when no work
 remains. There are no combinational paths from response inputs to outputs.
 
-The target accepts combinational ACK, registered ACK and an ACK that stays
+A classic target accepts combinational ACK, registered ACK and ACK that stays
 high, as permitted by B4 RULE 3.55 and PERMISSION 3.30. Only a rising edge
 with STB high completes a transfer. ERR marks that word as failed, and remaining
 words continue. Completed side effects are not rolled back. A failed read word
@@ -86,7 +91,9 @@ and each packet uses its own CYC.
 
 The target accepts `timeout`, `fixed_bursts`, `read_side_effects` and
 `access`. Capacity and flow count are one. A refused direction makes no
-bus access. `fixed_bursts: reject` is the default. With `single`, each FIXED
+bus access.
+
+`fixed_bursts: reject` is the default. With `single`, each FIXED
 beat uses a separate transfer at the same address. A FIXED beat wider than
 the target fails.
 
@@ -94,7 +101,8 @@ A network exclusive monitor can serve AXI exclusive accesses.
 `exclusive: target` is rejected.
 
 A timeout uses the [target timer](timeout-and-progress.md#target-timeouts).
-It does not withdraw an asserted STB or CYC. A late termination is drained,
+In classic mode, it does not withdraw an asserted STB or CYC.
+A late termination is drained,
 and the target remains failed until common reset. Without timeout completion,
 an unresponsive device can stop progress.
 
@@ -108,10 +116,10 @@ any output is written.
 | --- | --- | --- |
 | Classic SINGLE read and write | Supported | One request and one termination per target word |
 | Classic BLOCK read and write | Supported | Each phase is independent, with STB gaps at targets |
-| Pipelined cycles and STALL | Rejected | `cycles` is an unknown field. Only classic handshake is available |
+| Pipelined cycles and STALL | Supported | `cycles: pipelined`, ordered responses |
 | Registered feedback bursts, CTI and BTE | Rejected | `burst_tags`, `cti` and `bte` are unknown fields. There are no tag pins |
 | SEL | Supported | Four byte enables on writes, requested byte lanes on reads |
-| ACK and wait states | Supported | Termination is sampled while STB is high |
+| ACK and wait states | Supported | Classic termination requires STB high. Pipelined termination completes the oldest accepted request |
 | ERR | Supported | Word failure becomes an error response. Later words continue |
 | Target RTY | Supported | Optional `retry: error` input maps to an error |
 | Initiator RTY | Not applicable | No RTY output, each transfer returns ACK or ERR |
@@ -143,7 +151,7 @@ This table supplies the interface information of RULE 2.00 and RULE 2.15.
 | Signal names | Signal table below | Signal table below |
 | ERR | Decode, target or local failure, zero read data | Ends the word with an error, continues the packet |
 | RTY | Absent | Optional input, handled as ERR |
-| Termination timing | Registered ACK and ERR gated by CYC and STB | Response inputs are sampled on rising edges |
+| Termination timing | Registered ACK and ERR gated by CYC, and by STB in classic mode | Response inputs are sampled on rising edges |
 | TAG signals | Absent | Absent |
 | Port size | 32 bits | 32 bits |
 | Port granularity | 8 bits | 8 bits |
@@ -157,8 +165,10 @@ This table supplies the interface information of RULE 2.00 and RULE 2.15.
 Ports use `nl_i_<name>_` for initiators and `nl_t_<name>_` for targets.
 The map lists their widths and directions. Wishbone signals are active high.
 IP-XACT lists Wishbone signals as plain model ports without a bus abstraction.
+
 The map and bundle record each address unit and enabled retry input under
-`definition.wishbone`.
+`definition.wishbone`. Pipelined endpoints also record `cycles: pipelined`.
+An omitted `cycles` means classic mode.
 
 | Suffix | Direction at network initiator | Direction at network target |
 | --- | --- | --- |
@@ -172,6 +182,7 @@ The map and bundle record each address unit and enabled retry input under
 | `ack` | Output to MASTER ACK_I | Input from SLAVE ACK_O |
 | `err` | Output to MASTER ERR_I | Input from SLAVE ERR_O |
 | `rty` | Absent | Optional SLAVE RTY_O input |
+| `stall` | Output to MASTER STALL_I, pipelined only | Input from SLAVE STALL_O, pipelined only |
 | Domain `clock_port` | MASTER CLK_I | SLAVE CLK_I |
 | Domain reset | External RST_I integration | External RST_I integration |
 
@@ -200,7 +211,7 @@ synchronous network reset asserted for at least two rising edges. See
 | Write and SEL | One beat and WSTRB | PSTRB on APB4 | Transfer shaping for selected bytes |
 | ACK | OKAY | PSLVERR low | OKAY |
 | ERR or enabled RTY | SLVERR | PSLVERR high | ERROR |
-| Source traffic to a Wishbone target | Burst words become classic transfers in packet order | No bursts, one transfer per requested word | Shaped accesses become classic transfers |
+| Source traffic to a Wishbone target | Burst words use the target cycle mode in packet order | No bursts, one transfer per requested word | Shaped accesses use the target cycle mode |
 | Protection at a Wishbone source | PROT `010`, CACHE `0000` | PPROT `010` on APB4 | HPROT from the request attributes |
 | Attributes at a Wishbone target | ID, CACHE, PROT, QoS and user are not bus signals | No protection signal | No HPROT signal |
 | Exclusive or locked sequence | Only a network monitor can preserve AXI exclusive semantics | No atomic RMW | No atomic RMW |

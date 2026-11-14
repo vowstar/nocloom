@@ -371,6 +371,7 @@ void plan_endpoints(NetworkPlan &plan, const Definition &d) {
     s.name = initiator.name;
     s.slverr_only = initiator.slverr_only.value_or(false);
     s.external_protocol = initiator.protocol.value_or(Protocol::Axi4);
+    s.wishbone_pipelined = initiator.cycles == WishboneCycles::Pipelined;
     s.wishbone_word = initiator.address_unit == AddressUnit::Word;
     s.clock_gating = initiator.clock_gating;
     s.qos = initiator.qos;
@@ -472,6 +473,7 @@ void plan_endpoints(NetworkPlan &plan, const Definition &d) {
       plan.placement->objects["target/" + t.name] = t.clock_domain;
     x.local_bits = t.address_width.value_or(d.address_width);
     x.external_protocol = t.protocol.value_or(Protocol::Axi4);
+    x.wishbone_pipelined = t.cycles == WishboneCycles::Pipelined;
     x.wishbone_word = t.address_unit == AddressUnit::Word;
     x.wishbone_retry = t.retry.has_value();
     x.tl_source_bits = t.source_width.value_or(0);

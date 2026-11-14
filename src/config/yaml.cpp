@@ -24,6 +24,17 @@ void wishbone_fields(Reader &r, const YAML::Node &node, const std::string &path,
     else
       r.fail("NCL_WISHBONE_ADDRESS_UNIT", at, "Expected byte or word", value.Mark());
   }
+  if (node["cycles"]) {
+    const auto at = path + ".cycles";
+    const auto value = r.field(node, "cycles", at);
+    const auto mode = r.string(value, at);
+    if (mode == "classic")
+      out.cycles = WishboneCycles::Classic;
+    else if (mode == "pipelined")
+      out.cycles = WishboneCycles::Pipelined;
+    else
+      r.fail("NCL_WISHBONE_CYCLES", at, "Expected classic or pipelined", value.Mark());
+  }
   if (node["retry"]) {
     const auto at = path + ".retry";
     const auto value = r.field(node, "retry", at);

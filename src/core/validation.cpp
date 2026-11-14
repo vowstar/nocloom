@@ -1058,6 +1058,10 @@ void check_ahb5(Checks &c, std::optional<Protocol> protocol,
 template <class Endpoint>
 void check_wishbone(Checks &c, const Endpoint &e, const std::string &field, bool source) {
   const bool wb = e.protocol == Protocol::Wishbone;
+  if (e.cycles &&
+      (!wb || (*e.cycles != WishboneCycles::Classic && *e.cycles != WishboneCycles::Pipelined)))
+    c("NCL_WISHBONE_CYCLES", field + ".cycles",
+      "cycles requires wishbone and must be classic or pipelined");
   if (e.address_unit && !wb)
     c("NCL_WISHBONE_OPTION", field + ".address_unit", "address_unit requires wishbone");
   if (e.retry && (!wb || source || *e.retry != WishboneRetry::Error))
@@ -1087,8 +1091,9 @@ void check_wishbone_source(Checks &c, const Initiator &e, const std::string &fie
                                  {e.pipes.request != InitiatorPipes{}.request, "pipes.request"}})
     if (set)
       c("NCL_WISHBONE_OPTION", field + "." + key,
-        "This field does not apply to a classic Wishbone initiator");
-  if (const auto [capacity, at] = capacity_at(c.d, e, field); capacity != 1)
+        "This field does not apply to a Wishbone initiator");
+  if (const auto [capacity, at] = capacity_at(c.d, e, field);
+      capacity != 1 && e.cycles != WishboneCycles::Pipelined)
     c("NCL_AXI4_CAPACITY_COMBINATION", at, "Classic Wishbone keeps one transfer in flight");
 }
 // The protocol, data width and address width of an initiator.

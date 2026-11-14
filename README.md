@@ -140,7 +140,7 @@ traffic crosses its boundary.
 | --- | --- |
 | Initiator protocols | `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `apb3`, `ahb_lite` (AHB-Lite), `ahb5`, `wishbone` and `tl_ul` |
 | Target protocols | `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `apb3`, `apb2`, `ahb_lite` (AHB-Lite), `ahb5`, `wishbone` and `tl_ul` |
-| [Wishbone classic cycles](docs/wishbone.md) | 32-bit single reads and writes, byte SEL, ERR, optional target RTY as error, explicit byte or word addresses |
+| [Wishbone cycles](docs/wishbone.md) | 32-bit classic and pipelined reads and writes, byte SEL, ERR, optional target RTY as error, explicit byte or word addresses |
 | TileLink TL-UL | 32-bit single-beat Get, PutFullData and PutPartialData, with AccessAck and AccessAckData. Initiators can keep multiple sources in flight |
 | AHB5 properties | HPROT is 4 bits by default or 7 bits. HNONSEC is optional and defaults to absent. HMASTER is 0 to 32 bits |
 | Endpoint count | 1 to 256 initiators, 1 to 256 targets |
@@ -162,7 +162,7 @@ See [Documentation](#documentation) for field definitions and limits.
 
 | Not supported | Detail |
 | --- | --- |
-| Wishbone options | No pipelined cycles, registered feedback bursts, LOCK or user tags. See [Wishbone](docs/wishbone.md) |
+| Wishbone options | No registered feedback bursts, LOCK or user tags. Pipelined targets accept one request at a time. See [Wishbone](docs/wishbone.md) |
 | Other protocols | For example AXI5, ACE and APB2 initiators |
 | TileLink | TL-UL targets support one message in flight and one flow. TL-UH, atomic operations and coherent channels are unsupported. See [TileLink](docs/tilelink.md) for error and progress rules |
 | AHB5 optional signals | HEXCL, HEXOKAY and HAUSER, HWUSER, HRUSER and HBUSER are unsupported. See [AHB5 properties](docs/ahb.md#ahb5-basic-properties) |

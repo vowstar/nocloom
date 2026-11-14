@@ -2429,6 +2429,16 @@ private:
       if (const auto it = side.ep.bound.find(hint); it != side.ep.bound.end())
         zone.wake.push_back(it->second);
   }
+  // The protocol zone of a source idles when its face holds no request or response.
+  void rest_source_face(const SourcePlan &sp, const Imported &ep, GateRegion &zone) {
+    zone.idle.push_back(ep.states.contains("rr.offered")
+                            ? at_rest(b, ep.states, initiator_multi_rest)
+                            : at_rest(b, ep.states, initiator_rest));
+    if (sp.external_protocol == Protocol::TlUl)
+      zone.idle.push_back(at_rest(b, ep.states, "tl.pending tl.full tl.local tl.drain"));
+    if (sp.wishbone_pipelined)
+      zone.idle.push_back(c.eq(ep.states.at("wb.count"), 0));
+  }
   void wake_source_face(const SourcePlan &sp, const Imported &ep, GateRegion &zone) {
     for (const auto *signal : {"awvalid", "wvalid", "arvalid", "psel", "a_valid"})
       if (ep.axi.contains(signal))
@@ -2486,9 +2496,10 @@ private:
     // wakes on the clamp's fragment in front instead (r.up_wake, a splitter's held word).
     const auto read_wake = convert && expands_reads(sp) ? c.wire(1) : init_rrsp.valid;
     const auto profile = initiator_profile(plan, si);
-    const auto initiator = admitted(sp.external_protocol == Protocol::Wishbone
-                                        ? lower_wishbone_initiator(profile, sp.wishbone_word)
-                                        : lower_axi4_initiator(profile));
+    const auto initiator =
+        admitted(sp.external_protocol == Protocol::Wishbone
+                     ? lower_wishbone_initiator(profile, sp.wishbone_word, sp.wishbone_pipelined)
+                     : lower_axi4_initiator(profile));
     // Narrower ID/length ports and one-direction sources change only the
     // external face; the endpoint keeps the network-wide widths.
     std::map<std::string, unsigned> source_ports;
@@ -2527,11 +2538,7 @@ private:
     if (auto *zone = c.region(key + "/protocol")) {
       zone->claim(b, first);
       c.hold_open(zone, stores);
-      zone->idle.push_back(side.ep.states.contains("rr.offered")
-                               ? at_rest(b, side.ep.states, initiator_multi_rest)
-                               : at_rest(b, side.ep.states, initiator_rest));
-      if (sp.external_protocol == Protocol::TlUl)
-        zone->idle.push_back(at_rest(b, side.ep.states, "tl.pending tl.full tl.local tl.drain"));
+      rest_source_face(sp, side.ep, *zone);
       wake_source_face(sp, side.ep, *zone);
       zone->wake.insert(zone->wake.end(), {init_wrsp.valid, read_wake});
       add_waiting_wakes(side, *zone);
@@ -5054,7 +5061,8 @@ private:
     const auto &tp = plan.targets[o];
     auto lowered =
         tp.external_protocol == Protocol::Wishbone
-            ? lower_wishbone_target(profile, tp.wishbone_word, tp.wishbone_retry)
+            ? lower_wishbone_target(profile, tp.wishbone_word, tp.wishbone_retry,
+                                    tp.wishbone_pipelined)
         : tp.external_protocol == Protocol::TlUl
             ? lower_tilelink_outlet(profile, tp.tl_source_bits, tp.tl_size_bits, tp.tl_sink_bits)
         : apb  ? lower_apb_burst_outlet(profile)

@@ -44,6 +44,7 @@ inline std::string supported_protocols(bool initiator) {
 } // namespace detail
 enum class AddressUnit { Byte, Word };
 enum class WishboneRetry { Error };
+enum class WishboneCycles { Classic, Pipelined };
 // Each endpoint zone has its own gate by default. Both zones must be gated to share one gate.
 struct EndpointClockGates {
   bool protocol = true;
@@ -512,6 +513,7 @@ struct Initiator {
   // Wishbone requires an explicit address unit. Only targets accept retry: error.
   std::optional<AddressUnit> address_unit = std::nullopt;
   std::optional<WishboneRetry> retry = std::nullopt;
+  std::optional<WishboneCycles> cycles = std::nullopt;
   bool operator==(const Initiator &) const = default;
   // TL-UL only. Source defaults to 4 bits on an initiator and 0 on a target.
   // A zero width omits the port. Size defaults to 2 bits and sink to 0 bits.
@@ -654,6 +656,7 @@ struct Target {
   // Wishbone requires an explicit address unit. Only targets accept retry: error.
   std::optional<AddressUnit> address_unit = std::nullopt;
   std::optional<WishboneRetry> retry = std::nullopt;
+  std::optional<WishboneCycles> cycles = std::nullopt;
   bool operator==(const Target &) const = default;
   // TL-UL only. Source defaults to 4 bits on an initiator and 0 on a target.
   // A zero width omits the port. Size defaults to 2 bits and sink to 0 bits.

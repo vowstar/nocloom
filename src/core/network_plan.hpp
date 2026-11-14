@@ -66,7 +66,6 @@ struct EndpointPipe {
   bool operator==(const EndpointPipe &) const = default;
 };
 struct SourcePlan {
-  bool slverr_only = false;
   unsigned tl_source_bits = 0, tl_size_bits = 2, tl_sink_bits = 0;
   std::string name;
   // The network carries an APB initiator as an AXI4-Lite source; apb names its face. An AHB
@@ -74,7 +73,8 @@ struct SourcePlan {
   // AXI3 initiator an AXI4 source behind AXI3 ports (axi3).
   // The declared port protocol is independent of the internal engine protocol.
   Protocol external_protocol = Protocol::Axi4;
-  bool wishbone_word = false, wishbone_retry = false;
+  bool slverr_only = false;
+  bool wishbone_word = false, wishbone_retry = false, wishbone_pipelined = false;
   Protocol protocol = Protocol::Axi4;
   std::optional<Protocol> apb;
   bool ahb = false, axi3 = false, ahb5 = false;
@@ -145,7 +145,7 @@ struct TargetPlan {
   // An AXI3 target is an AXI4 target behind AXI3 ports (axi3).
   // The declared port protocol is independent of the internal engine protocol.
   Protocol external_protocol = Protocol::Axi4;
-  bool wishbone_word = false, wishbone_retry = false;
+  bool wishbone_word = false, wishbone_retry = false, wishbone_pipelined = false;
   Protocol protocol = Protocol::Axi4;
   bool axi3 = false, ahb5 = false;
   unsigned hmaster_bits = 0, hprot_bits = 4;

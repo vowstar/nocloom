@@ -68,7 +68,9 @@ TEST_CASE("Wishbone termination outputs qualify registers with bus activity", "[
   target.wishbone = true;
   for (bool word : {false, true}) {
     for (const auto &node :
-         {lower_wishbone_initiator(source, word), lower_wishbone_target(target, word, true)}) {
+         {lower_wishbone_initiator(source, word), lower_wishbone_target(target, word, true),
+          lower_wishbone_initiator(source, word, true),
+          lower_wishbone_target(target, word, true, true)}) {
       REQUIRE(node);
       for (const auto &driver : node.value().ir.drivers) {
         const auto &port = node.value().ir.ports.at(driver.port.index);
@@ -100,15 +102,16 @@ TEST_CASE("Wishbone optional artifacts have no unresolved bus links", "[wishbone
 }
 
 TEST_CASE("Wishbone rejects unknown cycle and tag fields", "[wishbone]") {
-  for (const auto *field :
-       {"cycles: classic", "cycles: pipelined", "burst_tags: true", "granularity: 16",
-        "endianness: big", "lock: true", "cti: 0", "bte: 0", "tags: true"}) {
+  for (const auto *field : {"cycles: invalid", "burst_tags: true", "granularity: 16",
+                            "endianness: big", "lock: true", "cti: 0", "bte: 0", "tags: true"}) {
     std::string text = yaml;
     const auto at = text.find("address_unit: byte");
     text.insert(at, std::string(field) + ", ");
     const auto parsed = nocloom::config::parse(text, "wb.yaml");
     REQUIRE_FALSE(parsed);
-    CHECK(parsed.diagnostics().front().code == "NCL_SCHEMA_UNKNOWN_FIELD");
+    CHECK(parsed.diagnostics().front().code == (std::string(field).starts_with("cycles:")
+                                                    ? "NCL_WISHBONE_CYCLES"
+                                                    : "NCL_SCHEMA_UNKNOWN_FIELD"));
   }
 }
 
@@ -203,4 +206,76 @@ TEST_CASE("Attribute diagnostics retain the APB message", "[wishbone]") {
   });
   REQUIRE(at != result.diagnostics().end());
   CHECK(at->message == "APB3 and APB2 targets have no PPROT to map");
+}
+
+TEST_CASE("Wishbone pipeline capacity and ports are explicit", "[wishbone]") {
+  using namespace nocloom;
+  auto d = definition();
+  const auto classic = generate(d);
+  REQUIRE(classic);
+  d.initiators[0].cycles = WishboneCycles::Classic;
+  d.targets[0].cycles = WishboneCycles::Classic;
+  const auto explicit_classic = generate(d);
+  REQUIRE(explicit_classic);
+  REQUIRE(classic.value().size() == explicit_classic.value().size());
+  for (std::size_t i = 0; i < classic.value().size(); ++i)
+    CHECK(classic.value()[i].text == explicit_classic.value()[i].text);
+  d.initiators[0].cycles = WishboneCycles::Pipelined;
+  d.targets[0].cycles = WishboneCycles::Pipelined;
+  for (unsigned capacity : {1U, 2U, 4U, 64U}) {
+    d.initiators[0].max_outstanding = capacity;
+    const auto result = generate(d);
+    REQUIRE(result);
+    for (const auto *port : {"nl_i_cpu_stall", "nl_t_mem_stall"})
+      CHECK(std::ranges::any_of(result.value(), [&](const auto &file) {
+        return file.path.ends_with(".v") && file.text.find(port) != std::string::npos;
+      }));
+  }
+  for (const bool target : {false, true}) {
+    auto invalid = definition();
+    invalid.initiators[0].max_outstanding = 1;
+    auto &cycles = target ? invalid.targets[0].cycles : invalid.initiators[0].cycles;
+    cycles = static_cast<WishboneCycles>(9);
+    const auto result = generate(invalid);
+    REQUIRE_FALSE(result);
+    const auto *field = target ? "targets[0].cycles" : "initiators[0].cycles";
+    CHECK(std::ranges::any_of(result.diagnostics(), [&](const auto &x) {
+      return x.code == "NCL_WISHBONE_CYCLES" && x.field == field;
+    }));
+  }
+}
+
+TEST_CASE("Pipelined Wishbone retains external protocol limits", "[wishbone]") {
+  using namespace nocloom;
+  auto d = definition();
+  d.initiators[0].cycles = WishboneCycles::Pipelined;
+  d.targets[0].cycles = WishboneCycles::Pipelined;
+  for (const bool source : {false, true}) {
+    auto invalid = d;
+    if (source)
+      invalid.initiators[0].data_width = 64;
+    else
+      invalid.targets[0].data_width = 64;
+    const auto result = generate(invalid);
+    REQUIRE_FALSE(result);
+    CHECK(std::ranges::any_of(result.diagnostics(), [](const auto &x) {
+      return x.code == "NCL_ENDPOINT_DATA_WIDTH" &&
+             x.message == "Wishbone requires 32-bit data and network widths";
+    }));
+  }
+  d.initiators[0].protocol = Protocol::Apb4;
+  d.initiators[0].cycles.reset();
+  d.initiators[0].address_unit.reset();
+  for (const bool scheduled : {false, true}) {
+    d.initiators[0].qos = {};
+    if (scheduled) {
+      d.initiators[0].qos.shaper = QosShaper{64, 64};
+      d.initiators[0].qos.scheduler = QosScheduler{3, 0, 50};
+    } else
+      d.initiators[0].qos.levels = QosLevels{1, 1};
+    const auto result = generate(d);
+    REQUIRE_FALSE(result);
+    CHECK(std::ranges::any_of(result.diagnostics(),
+                              [](const auto &x) { return x.code == "NCL_QOS_PROFILE"; }));
+  }
 }

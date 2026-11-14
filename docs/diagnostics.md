@@ -48,7 +48,8 @@ The codes of the C++ tree helper are in
 | `NCL_TARGET_TIMEOUT` | `timeout.cycles` is outside 16 to 1048576, or the target protocol has no timeout |
 | `NCL_TARGET_APB_ACCESS`, `NCL_TARGET_FIXED_BURSTS` | Back-to-back access on a target that is not APB, or an invalid `fixed_bursts` value |
 | `NCL_WISHBONE_ADDRESS_UNIT` | Wishbone has no address unit, or the unit is not `byte` or `word` |
-| `NCL_WISHBONE_OPTION` | A Wishbone field is set on another protocol, an initiator requests retry or unsupported classic options, or a target requests multiple flows |
+| `NCL_WISHBONE_CYCLES` | `cycles` is set on another protocol or is not `classic` or `pipelined` |
+| `NCL_WISHBONE_OPTION` | A Wishbone field is set on another protocol, an initiator requests retry or unsupported endpoint options, or a target requests multiple flows |
 | `NCL_AHB5_PROPERTIES` | The `ahb5` object requires AHB5. HPROT width must be 4 or 7. HMASTER width must be 0 to 32. A nonzero target width must hold each reaching source. Exclusive and user signals are unsupported. Targets accept only `attributes: amba`, without per-bit overrides |
 | `NCL_TARGET_AHB_BURSTS`, `NCL_TARGET_AHB_HRESP` | Burst shaping or `hresp_width` on a target that is not AHB, an invalid value, or two-bit HRESP on AHB5 |
 | `NCL_ENDPOINT_ACCESS` | `access` is not `read_write`, `read_only` or `write_only` |

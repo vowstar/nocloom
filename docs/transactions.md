@@ -9,12 +9,18 @@ Related manuals: [Read response interleaving](read-responses.md),
 | Initiator | `max_outstanding` |
 | --- | --- |
 | AXI4, AXI3, AXI4-Lite | 1 to 64, reads and writes combined |
-| APB, AHB-Lite, AHB5, Wishbone | 1 |
+| APB, AHB-Lite, AHB5, classic Wishbone | 1 |
+| Pipelined Wishbone | 1 to 64, includes the request held before network admission |
 
-An initiator's `max_outstanding` overrides `transport.max_outstanding`. A burst
-takes one capacity entry when its first packet leaves and releases it when its
-final response packet returns. A burst completed locally takes no capacity
-entry. Each single-beat piece of a narrow-split burst uses its own entry.
+An initiator's `max_outstanding` overrides `transport.max_outstanding`.
+Pipelined Wishbone counts each accepted request until its response completes,
+including the request held before network admission. See
+[Wishbone](wishbone.md).
+
+For the other initiators, a burst takes one capacity entry when its first
+packet leaves and releases it when its final response packet returns. A burst
+completed locally takes no capacity entry. Each single-beat piece of a
+narrow-split burst uses its own entry.
 
 An ordering key is direction plus AxID, or just direction for AXI4-Lite. It can
 have several bursts at one destination but drains them before changing

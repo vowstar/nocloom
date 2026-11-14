@@ -455,6 +455,13 @@ private:
   // (after the count chain, announce and on) resets to all ones. A division counter
   // restarts at ratio - 1.
   std::optional<std::uint64_t> reset_value(const std::string &store, std::size_t i) const {
+    for (const auto &source : h.plan.sources) {
+      if (!source.wishbone_pipelined || !store.starts_with("source/" + source.name + "/"))
+        continue;
+      const auto stall = h.bindings.find("source/" + source.name + "/wb.stall");
+      if (stall != h.bindings.end() && stall->second.index == stores.at(store)->control[i].index)
+        return 1;
+    }
     const auto cut_name = store.ends_with("/receive") ? store.substr(0, store.size() - 8) : store;
     if (const auto admission = h.bindings.find(cut_name + "/admission_open");
         admission != h.bindings.end() &&

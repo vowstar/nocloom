@@ -155,9 +155,15 @@ C++ uses `Protocol::Wishbone`. Set both `Initiator::address_unit` and
 `Target::address_unit` to `AddressUnit::Byte` or `AddressUnit::Word`.
 Target `retry` optionally takes `WishboneRetry::Error`.
 
-Data width and network width must be 32 bits. Capacity is one. There are no
-`cycles`, `burst_tags`, `granularity` or `endianness` fields. See
-[Wishbone](wishbone.md).
+Data width and network width must be 32 bits.
+`cycles` takes `classic` or `pipelined`, with
+`classic` as the default. C++ uses `WishboneCycles::Classic` or
+`WishboneCycles::Pipelined` in each endpoint's optional `cycles` member.
+
+Pipelined initiators accept `max_outstanding` from 1 to 64. If omitted,
+it uses `transport.max_outstanding`, whose default is 1.
+Targets and classic initiators have capacity one. There are no `burst_tags`,
+`granularity` or `endianness` fields. See [Wishbone](wishbone.md).
 
 ## Endpoint templates
 
