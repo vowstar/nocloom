@@ -12,6 +12,8 @@ a defect and include the definition.
 
 | Code | Condition |
 | --- | --- |
+| `NCL_CERTIFICATE_EDGE_FORMAT` | A Lean certificate import edge lacks four columns or its group is not a nonnegative integer |
+| `NCL_CERTIFICATE_ALTERNATIVE_GROUP` | A Lean certificate import edge has a nonzero alternative group |
 | `NCL_SCHEMA_SYNTAX` | The YAML text cannot be parsed |
 | `NCL_SCHEMA_DUPLICATE_KEY` | A mapping repeats a key |
 | `NCL_SCHEMA_YAML_FEATURE` | Anchors, aliases, merge keys, explicit tags or more than one YAML document |

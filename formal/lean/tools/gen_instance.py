@@ -69,12 +69,21 @@ def load(path):
 def read_graph(graph):
     if graph.get("format") != "nocloom.dependency":
         fail("not a dependency artifact")
-    if graph.get("format_version") != 1:
+    if type(graph.get("format_version")) is not int or graph["format_version"] != 1:
         fail("format_version %r is not supported" % graph.get("format_version"))
     if graph.get("orientation") != "blocker_to_blocked":
         fail("orientation %r is not supported" % graph.get("orientation"))
     if graph.get("groups"):
         fail("or-groups are not in the model")
+    for index, edge in enumerate(graph["edges"]):
+        if (not isinstance(edge, list) or len(edge) != 4
+                or type(edge[3]) is not int or edge[3] < 0):
+            fail("NCL_CERTIFICATE_EDGE_FORMAT: edge %d must have four columns "
+                 "(source, destination, rule, nonnegative integer group)" % index)
+        if edge[3] != 0:
+            fail("NCL_CERTIFICATE_ALTERNATIVE_GROUP: edge %d has alternative "
+                 "group %d, which the certificate model does not support"
+                 % (index, edge[3]))
     status = graph.get("result", {}).get("status")
     if status != "no_cycle":
         fail("artifact status is %r, so it has no rank" % status)
