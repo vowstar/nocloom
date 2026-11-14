@@ -326,7 +326,8 @@ class Tape:
         return dict(labels=self.labels, marks=self.marks, expect=self.expect,
                     checks=self.checks, records=len(self.records), tags=self.tag)
 
-COUNTERS["wishbone_master"] = dict(MASTER_COUNTERS, response_aborts=23)
+COUNTERS["wishbone_master"] = dict(MASTER_COUNTERS, pipe_peak=21, pipe_pending=22,
+                                   response_aborts=23)
 COUNTERS["wishbone_slave"] = APB_COUNTERS
 CONTROLS["wishbone_master"] = dict(APB_MASTER_CTL, read_sel=70, continuous=71, abort=72,
                                    abort_response=73)

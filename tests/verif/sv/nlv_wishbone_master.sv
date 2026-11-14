@@ -1,7 +1,7 @@
-// The shared tape driver supplies classic Wishbone requests.
+// The shared tape driver supplies classic and pipelined Wishbone requests.
 module nlv_wishbone_master #(
     parameter NAME = "m", parameter ADDR_W = 32, parameter DATA_W = 32,
-    parameter WORD = 0
+    parameter WORD = 0, parameter PIPELINED = 0
 ) (
     input wire clk, rst_n,
     output wire cyc, stb, we,
@@ -9,7 +9,7 @@ module nlv_wishbone_master #(
     output wire [31:0] dat_w,
     output wire [3:0] sel,
     input wire [31:0] dat_r,
-    input wire ack, err
+    input wire ack, err, stall
 );
   wire [31:0] address;
   wire [3:0] mask;
@@ -28,14 +28,14 @@ module nlv_wishbone_master #(
       response_aborts = response_aborts + 1;
     end
   end
-  nlv_apb_master #(.NAME(NAME), .ADDR_W(32), .DATA_W(32), .CLASSIC(1)) driver (
+  nlv_apb_master #(.NAME(NAME), .ADDR_W(32), .DATA_W(32), .CLASSIC(1), .PIPELINED(PIPELINED)) driver (
       .clk(clk), .rst_n(rst_n && !abort_hold && !response_abort), .psel(driver_cyc), .penable(driver_stb), .pwrite(we),
       .paddr(address), .pwdata(dat_w), .pstrb(mask), .pprot(prot),
-      .prdata(dat_r), .pready(ack | err), .pslverr(err));
+      .stall(stall), .prdata(dat_r), .pready(ack | err), .pslverr(err));
   assign adr = WORD ? address >> 2 : address;
   assign sel = we ? mask : read_sel;
-  nlv_wishbone_check #(.NAME(NAME), .ADDR_W(ADDR_W), .ALLOW_ABORT(1)) wb_check (
-      .clk(clk), .rst_n(rst_n), .cyc(cyc), .stb(stb), .we(we), .adr(adr),
+  nlv_wishbone_check #(.NAME(NAME), .ADDR_W(ADDR_W), .ALLOW_ABORT(1), .PIPELINED(PIPELINED)) wb_check (
+      .stall(stall), .clk(clk), .rst_n(rst_n), .cyc(cyc), .stb(stb), .we(we), .adr(adr),
       .dat_w(dat_w), .dat_r(dat_r), .sel(sel), .ack(ack), .err(err), .rty(1'b0), .constant_ack(1'b0));
   function [63:0] counter(input integer index);
     counter = index == 23 ? response_aborts : driver.counter(index);

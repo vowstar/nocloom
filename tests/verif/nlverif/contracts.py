@@ -171,7 +171,7 @@ CONTRACTS = {
 # listed in that fault's expectation. LIVE.* rules are raised only when a
 # tape wait times out (stall_report of the AXI BFMs).
 RULES = (
-    "WB.RULE_3_20", "WB.RULE_3_25", "WB.RULE_3_30", "WB.RULE_3_35", "WB.RULE_3_45", "WB.RULE_3_50", "WB.RULE_3_60",
+    "WB.RULE_3_20", "WB.RULE_3_25", "WB.RULE_3_30", "WB.RULE_3_35", "WB.RULE_3_45", "WB.RULE_3_50", "WB.RULE_3_59", "WB.RULE_3_60",
     "TL.3.2.2.RESET", "TL.6.4.SOURCE", "TL.7.2.OPCODE", "TL.7.2.SIZE", "TL.4.5.ALIGN", "TL.4.5.MASK", "TL.7.2.PARAM", "TL.4.2.RESPONSE", "TL.7.2.RESPONSE", "TL.4.4.CORRUPT",
     "AXI.AW.HOLD", "AXI.W.HOLD", "AXI.AR.HOLD", "AXI.B.HOLD", "AXI.R.HOLD",
     "AXI.RESET.QUIET", "AXI.X.AWVALID", "AXI.X.WVALID", "AXI.X.ARVALID", "AXI.X.BVALID",

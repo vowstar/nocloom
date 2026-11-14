@@ -728,6 +728,30 @@ nocloom_verif_case(NAME verif_wishbone_checker LAYER unit TIER focused TIMEOUT 1
   FEATURES wishbone ci MEMORY_MB 512
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/wishbone_check.py)
 set_tests_properties(verif_wishbone_checker PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_verif_case(NAME verif_wishbone_pipelined LAYER rtl TIER focused TIMEOUT 600
+  FEATURES wishbone ci MEMORY_MB 2048
+  CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.ERR.READ_ZERO AXI.W.UNSTROBED_ZERO
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/wishbone_pipelined.py --cli $<TARGET_FILE:nocloom_cli>)
+set_tests_properties(verif_wishbone_pipelined PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_verif_case(NAME verif_wishbone_pipelined_negative LAYER negative TIER release TIMEOUT 600
+  FEATURES wishbone MEMORY_MB 2048
+  CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.W.UNSTROBED_ZERO
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/wishbone_pipelined.py --cli $<TARGET_FILE:nocloom_cli> --negative)
+set_tests_properties(verif_wishbone_pipelined_negative PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_verif_case(NAME verif_wishbone_pipelined_short_faults LAYER negative TIER focused TIMEOUT 180
+  FEATURES wishbone ci MEMORY_MB 2048
+  CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.W.UNSTROBED_ZERO
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/wishbone_pipelined.py --cli $<TARGET_FILE:nocloom_cli>
+    --negative --param short=true)
+set_tests_properties(verif_wishbone_pipelined_short_faults PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_verif_case(NAME verif_wishbone_pipelined_checker LAYER unit TIER focused TIMEOUT 180
+  FEATURES wishbone ci MEMORY_MB 512
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/wishbone_pipelined_check.py)
+set_tests_properties(verif_wishbone_pipelined_checker PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_verif_case(NAME verif_wishbone_pipelined_configuration LAYER config TIER focused TIMEOUT 180
+  FEATURES wishbone ci MEMORY_MB 512
+  COMMAND ${NLV_CONFIG} --case ${NLV_CASES}/config_wishbone_pipelined.py
+    --cli $<TARGET_FILE:nocloom_cli>)
 # TileLink peers use the shared tape, memory model and transaction scoreboard.
 foreach(pair IN ITEMS tl_ul:tl_ul tl_ul:axi4 axi4:tl_ul tl_ul:apb4 apb4:tl_ul tl_ul:ahb_lite ahb_lite:tl_ul)
   string(REPLACE ":" ";" ends "${pair}")

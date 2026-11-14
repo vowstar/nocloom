@@ -13,6 +13,7 @@ module nlv_apb_master #(
     parameter DATA_W = 32,
     parameter DIALECT = 4,
     parameter CLASSIC = 0,
+    parameter PIPELINED = 0,
     parameter DEPTH = 64
 ) (
     input wire clk,
@@ -26,6 +27,7 @@ module nlv_apb_master #(
     output reg [2:0] pprot,
     input wire [DATA_W-1:0] prdata,
     input wire pready,
+    input wire stall,
     input wire pslverr
 );
   `include "nlv_common.svh"
@@ -39,6 +41,7 @@ module nlv_apb_master #(
   reg [31:0] q_salt[0:DEPTH-1];
   reg [31:0] q_tag[0:DEPTH-1];
   integer head, tail, state, j;
+  integer issued = 0, peak = 0;
   reg [31:0] ctl[0:95];
   localparam SEED = 18, STAB_N = 24;
   reg [63:0] cyc, n_w, n_b, n_r, n_wpush, n_rpush, n_cancel;
@@ -61,6 +64,8 @@ module nlv_apb_master #(
         11: counter = n_rpush - n_r;
         18: counter = cyc;
         19: counter = n_cancel;
+        21: counter = peak;
+        22: counter = issued - head;
         default: counter = 0;
       endcase
     end
@@ -172,9 +177,9 @@ module nlv_apb_master #(
   task start_descriptor;
     begin
 
-          j = head % DEPTH;
+          j = (PIPELINED ? issued : head) % DEPTH;
           psel <= 1'b1;
-          penable <= CLASSIC && ctl[71] != 0;
+          penable <= PIPELINED || (CLASSIC && ctl[71] != 0);
           pwrite <= q_write[j];
           paddr <= q_addr[j];
           pprot <= DIALECT == 4 ? q_prot[j] : 3'd0;
@@ -197,6 +202,27 @@ module nlv_apb_master #(
     end
   endtask
 
+  task finish_response;
+    begin
+      j = head % DEPTH;
+          if (q_write[j]) begin
+            if (!PIPELINED) $fwrite(tb.nlv_fd,
+                    "{\"t\":%0.0f,\"c\":%0d,\"p\":\"%0s\",\"k\":\"hs\",\"ch\":\"w\",\"tag\":%0d,\"d\":\"%0h\",\"s\":\"%0h\",\"l\":1}\n",
+                    ($realtime * 1000.0), cyc, NAME, q_tag[j], pwdata,
+                    DIALECT == 4 ? pstrb : {NB{1'b1}});
+            $fwrite(tb.nlv_fd,
+                    "{\"t\":%0.0f,\"c\":%0d,\"p\":\"%0s\",\"k\":\"hs\",\"ch\":\"b\",\"id\":0,\"r\":%0d}\n",
+                    ($realtime * 1000.0), cyc, NAME, pslverr === 1'b1 ? 2 : 0);
+            n_b = n_b + 1;
+          end else begin
+            $fwrite(tb.nlv_fd,
+                    "{\"t\":%0.0f,\"c\":%0d,\"p\":\"%0s\",\"k\":\"hs\",\"ch\":\"r\",\"id\":0,\"d\":\"%0h\",\"r\":%0d,\"l\":1}\n",
+                    ($realtime * 1000.0), cyc, NAME, prdata, pslverr === 1'b1 ? 2 : 0);
+            n_r = n_r + 1;
+          end
+    end
+  endtask
+
   initial begin
     head = 0; tail = 0; state = 0;
     for (j = 0; j < 96; j = j + 1) ctl[j] = 0;
@@ -216,7 +242,7 @@ module nlv_apb_master #(
       if (prev_rst) n_cancel = n_cancel + (n_wpush - n_b) + (n_rpush - n_r);
       n_wpush = n_b;
       n_rpush = n_r;
-      head = 0; tail = 0; state = 0;
+      head = 0; tail = 0; state = 0; issued = 0;
       psel <= 0; penable <= 0;
       prev_rst = 1'b0;
     end else begin
@@ -224,6 +250,26 @@ module nlv_apb_master #(
         $fwrite(tb.nlv_fd, "{\"t\":%0.0f,\"c\":%0d,\"p\":\"%0s\",\"k\":\"rst\",\"v\":1}\n",
                 ($realtime * 1000.0), cyc, NAME);
       prev_rst = 1'b1;
+      if (PIPELINED) begin
+        if (psel && penable && !stall) begin
+          j = issued % DEPTH;
+          if (q_write[j])
+            $fwrite(tb.nlv_fd,
+              "{\"t\":%0.0f,\"c\":%0d,\"p\":\"%0s\",\"k\":\"hs\",\"ch\":\"w\",\"tag\":%0d,\"d\":\"%0h\",\"s\":\"%0h\",\"l\":1}\n",
+              ($realtime * 1000.0), cyc, NAME, q_tag[j], pwdata, pstrb);
+          issued = issued + 1;
+          penable <= 0;
+          state = 0;
+        end
+        if (pready && psel && head < issued) begin
+          finish_response();
+          head = head + 1;
+        end
+        // Count the net change at this edge, including a simultaneous response.
+        if (issued - head > peak) peak = issued - head;
+        if (state == 0 && issued < tail) start_descriptor();
+        if (head == tail) psel <= 0;
+      end else begin
       case (state)
         0: if (head < tail) begin
           start_descriptor();
@@ -234,21 +280,7 @@ module nlv_apb_master #(
         end
         default: if (pready === 1'b1) begin
           j = head % DEPTH;
-          if (q_write[j]) begin
-            $fwrite(tb.nlv_fd,
-                    "{\"t\":%0.0f,\"c\":%0d,\"p\":\"%0s\",\"k\":\"hs\",\"ch\":\"w\",\"tag\":%0d,\"d\":\"%0h\",\"s\":\"%0h\",\"l\":1}\n",
-                    ($realtime * 1000.0), cyc, NAME, q_tag[j], pwdata,
-                    DIALECT == 4 ? pstrb : {NB{1'b1}});
-            $fwrite(tb.nlv_fd,
-                    "{\"t\":%0.0f,\"c\":%0d,\"p\":\"%0s\",\"k\":\"hs\",\"ch\":\"b\",\"id\":0,\"r\":%0d}\n",
-                    ($realtime * 1000.0), cyc, NAME, pslverr === 1'b1 ? 2 : 0);
-            n_b = n_b + 1;
-          end else begin
-            $fwrite(tb.nlv_fd,
-                    "{\"t\":%0.0f,\"c\":%0d,\"p\":\"%0s\",\"k\":\"hs\",\"ch\":\"r\",\"id\":0,\"d\":\"%0h\",\"r\":%0d,\"l\":1}\n",
-                    ($realtime * 1000.0), cyc, NAME, prdata, pslverr === 1'b1 ? 2 : 0);
-            n_r = n_r + 1;
-          end
+          finish_response();
           head = head + 1;
           psel <= 1'b0;
           penable <= 1'b0;
@@ -256,8 +288,9 @@ module nlv_apb_master #(
           if (CLASSIC && ctl[71] != 0 && head < tail) start_descriptor();
         end
       endcase
+      end
       // Write data and strobes of the descriptor entering SETUP.
-      if (state == 1) begin
+      if (state == 1 && !PIPELINED) begin
         j = head % DEPTH;
         for (integer l = 0; l < NB; l = l + 1) begin
           pwdata[l*8+:8] <= nlv_source_byte((q_addr[j] & ~(NB - 1)) + l, q_salt[j]);

@@ -4,6 +4,7 @@ module nlv_wishbone_slave #(
     parameter ADDR_W = 32,
     parameter DATA_W = 32,
     parameter DIALECT = 4, parameter WORD = 0, parameter RETRY = 0,
+    parameter PIPELINED = 0,
     parameter MEM_BYTES = 65536,
     parameter SALT = 0
 ) (
@@ -14,24 +15,48 @@ module nlv_wishbone_slave #(
     input wire [31:0] dat_w,
     input wire [3:0] sel,
     output wire [31:0] dat_r,
-    output wire ack, err, rty,
+    output wire ack, err, rty, stall,
     input wire sideband
 );
   reg [31:0] ctl[0:63];
   reg last_cyc = 0;
-  wire psel = cyc && stb, penable = stb, pwrite = we;
-  wire [31:0] paddr = WORD ? {adr, 2'b00} : adr;
-  wire [31:0] pwdata = dat_w;
-  wire [3:0] pstrb = sel;
-  wire [2:0] pprot = 0;
+  reg [63:0] cycle_count;
   wire pready, pslverr;
+  reg pending = 0;
+  reg held_we = 0;
+  reg [ADDR_W-1:0] held_adr = 0;
+  reg [31:0] held_data = 0;
+  reg [3:0] held_sel = 0;
+  assign stall = PIPELINED && (ctl[62] == 2 ? 1'b0 :
+      ctl[62] == 3 ? cyc && !pready : pending || cycle_count % 5 == 2 || !rst_n);
+  wire psel = PIPELINED && ctl[62] != 3 ? pending : cyc && stb;
+  wire penable = PIPELINED && ctl[62] != 3 ? pending : stb;
+  wire pwrite = PIPELINED && ctl[62] != 3 ? held_we : we;
+  wire [ADDR_W-1:0] address = PIPELINED && ctl[62] != 3 ? held_adr : adr;
+  wire [31:0] paddr = WORD ? {address, 2'b00} : address;
+  wire [31:0] pwdata = PIPELINED && ctl[62] != 3 ? held_data : dat_w;
+  wire [3:0] pstrb = PIPELINED && ctl[62] != 3 ? held_sel : sel;
+  always @(posedge clk) begin
+    if (!rst_n) pending <= 0;
+    else if (PIPELINED) begin
+      if (cyc && stb && !stall) begin
+        pending <= 1;
+        held_we <= we;
+        held_adr <= adr;
+        held_data <= dat_w;
+        held_sel <= sel;
+      end
+      if (pending && pready) pending <= 0;
+    end
+  end
+  wire [2:0] pprot = 0;
   reg [31:0] prdata;
   assign dat_r = prdata;
   assign ack = ctl[62] == 1 ? 1'b1 : psel && pready && !pslverr;
   assign err = psel && pslverr && !RETRY;
   assign rty = psel && pslverr && RETRY;
-  nlv_wishbone_check #(.NAME(NAME), .ADDR_W(ADDR_W)) wb_check (
-      .clk(clk), .rst_n(rst_n), .cyc(cyc), .stb(stb), .we(we), .adr(adr),
+  nlv_wishbone_check #(.NAME(NAME), .ADDR_W(ADDR_W), .PIPELINED(PIPELINED)) wb_check (
+      .stall(stall), .clk(clk), .rst_n(rst_n), .cyc(cyc), .stb(stb), .we(we), .adr(adr),
       .dat_w(dat_w), .dat_r(dat_r), .sel(sel), .ack(ack), .err(err), .rty(rty), .constant_ack(ctl[62] == 1));
   `include "nlv_common.svh"
   localparam NB = DATA_W / 8;
@@ -42,14 +67,14 @@ module nlv_wishbone_slave #(
       ERRM_MATCH = 56, SLOW_MASK = 57, SLOW_MATCH = 58, SLOW_WAIT = 59, FIFO_EN = 60,
       FIFO_ADDR = 61, GAP_HI = 40;
   reg [63:0] n_b2b;
-  reg [63:0] cycle_count, n_access, n_write, n_read, base;
+  reg [63:0] n_access, n_write, n_read, base;
   reg [31:0] waited, lfsr, low_run;
   reg ready_r, err_r, prev_psel, prev_penable, prev_rst, prev_pready, prev_done;
   reg [ADDR_W+DATA_W+DATA_W/8+3:0] held;
   integer i;
   reg [63:0] la;
 
-  assign pready = (DIALECT == 2 || ctl[62] != 0) ? 1'b1 : ready_r;
+  assign pready = (DIALECT == 2 || (ctl[62] == 1 || ctl[62] == 2)) ? 1'b1 : ready_r;
   assign pslverr = DIALECT == 2 ? 1'b0 : (ready_r && err_r);
 
   function [63:0] counter;
@@ -128,6 +153,10 @@ module nlv_wishbone_slave #(
     if (cyc != last_cyc)
       $fwrite(tb.nlv_fd, "{\"t\":%0.0f,\"p\":\"%0s\",\"k\":\"lv\",\"ch\":\"cyc\",\"v\":%0d}\n",
               ($realtime * 1000.0), NAME, cyc);
+    if (PIPELINED && RETRY && rst_n && cyc && (stb || rty))
+      $fwrite(tb.nlv_fd,
+              "{\"t\":%0.0f,\"p\":\"%0s\",\"k\":\"wb\",\"stb\":%0d,\"stall\":%0d,\"rty\":%0d}\n",
+              ($realtime * 1000.0), NAME, stb, stall, rty);
     last_cyc = cyc;
     cycle_count = cycle_count + 1;
     lfsr = nlv_lfsr_next(lfsr);
