@@ -238,7 +238,7 @@ def isolation(t, g, backbone):
     complete before any common reset."""
     b = gen_base(g)
     pairs = [("s1", "t3")] + ([] if backbone else [("s1", "t1"), ("s2", "t2")])
-    snaps = {(s, c): t.snap(s, c) for s in {p[0] for p in pairs} for c in ("b", "r")}
+    snaps = {(s, c): t.snap(s, c) for s in sorted({p[0] for p in pairs}) for c in ("b", "r")}
     for k, (s, tg) in enumerate(pairs):
         t.write(s, BASE[tg] + b + 0x40 * (k + 1))
         t.read(s, BASE[tg] + b + 0x40 * (k + 1))
