@@ -13,6 +13,38 @@ targets:
      address_unit: word, mappings: [{base: '0x1000', size: '0x1000'}]}
 ```
 
+## Pipelined cycles
+
+Set `cycles: pipelined` on each pipelined endpoint. Only these ports have
+STALL. Requests are accepted on rising edges with CYC and STB high and
+STALL low. Responses terminate requests in acceptance order. STB can be
+low when ACK or ERR arrives. ERR ends one request and the sequence continues.
+
+| Property | Initiator port | Target port |
+| --- | --- | --- |
+| Capacity | `max_outstanding`, 1 to 64, inherits `transport.max_outstanding` (default 1) | One accepted request |
+| Full capacity | STALL is high | No new STB until the response is stored |
+| Same-cycle response | The new request responds later. An older response can coincide with acceptance | ACK, ERR or enabled RTY can complete a request on its acceptance edge |
+| Direction or destination change | The held request waits for earlier network responses to drain | Direction changes after the accepted request completes |
+| Reset | STALL is high, ACK and ERR are low | CYC and STB are low |
+
+The initiator port holds one request before the network accepts it.
+`max_outstanding` counts this request and accepted requests in the network
+whose responses have not completed. Responses have no backpressure.
+Dropping STB inserts a request gap. Dropping CYC abandons responses and
+blocks new requests until the accepted work drains.
+
+A target timeout keeps CYC high until common reset and discards late responses.
+A request already blocked by STALL remains stable until acceptance.
+No further STB is issued. Timeout completion follows the target
+[timer rules](timeout-and-progress.md#target-timeouts).
+
+An external classic slave connects to a pipelined target through a wrapper.
+The wrapper holds its request until termination, asserts STALL while busy and
+returns one response per accepted request.
+An external slave can connect directly if each accepted request produces one
+response, including when STB is low.
+
 ## Initiators
 
 An external Wishbone MASTER drives this port. The port is a Wishbone SLAVE.
@@ -28,9 +60,8 @@ Writes use SEL as byte strobes. A zero-SEL write enters the network with
 zero strobes. AXI targets can receive a zero-strobe access, while APB and
 Wishbone targets skip it.
 
-Reads cover the smallest naturally aligned block that contains every selected
-byte. For example, SEL `0010` reads one byte and
-`0110` reads the whole word. SEL zero reads the whole word.
+Reads cover the smallest naturally aligned block containing all selected bytes.
+SEL `0010` reads one byte. SEL `0110` or zero reads the whole word.
 A read with disjoint selected bytes, or no selected bytes, can read additional
 bytes with side effects. Returned bytes keep their positions in the 32-bit data
 word.
@@ -47,9 +78,8 @@ without ERR_I must combine ERR with ACK externally. Ignoring ERR can leave
 that manager waiting indefinitely.
 
 In classic mode, dropping CYC or STB before completion abandons the response.
-The admitted
-request still reaches the target and its side effects remain. The port
-drains that response before it accepts another transfer.
+The admitted request still reaches the target and its side effects remain.
+The port drains that response before it accepts another transfer.
 
 ACK and ERR are registered values gated by CYC and, in classic mode, STB.
 Dropping either qualifying input immediately clears both outputs.
@@ -67,8 +97,8 @@ ERR or an enabled RTY is sampled on a rising edge. It then stays low for at
 least one cycle. CYC remains high within a packet and falls when no work
 remains. There are no combinational paths from response inputs to outputs.
 
-A classic target accepts combinational ACK, registered ACK and ACK that stays
-high, as permitted by B4 RULE 3.55 and PERMISSION 3.30. Only a rising edge
+A classic target accepts combinational ACK, registered ACK and held ACK,
+as permitted by B4 RULE 3.55 and PERMISSION 3.30. Only a rising edge
 with STB high completes a transfer. ERR marks that word as failed, and remaining
 words continue. Completed side effects are not rolled back. A failed read word
 returns zero data.
@@ -100,11 +130,9 @@ the target fails.
 A network exclusive monitor can serve AXI exclusive accesses.
 `exclusive: target` is rejected.
 
-A timeout uses the [target timer](timeout-and-progress.md#target-timeouts).
-In classic mode, it does not withdraw an asserted STB or CYC.
-A late termination is drained,
-and the target remains failed until common reset. Without timeout completion,
-an unresponsive device can stop progress.
+A [timeout](timeout-and-progress.md#target-timeouts) holds classic STB and CYC.
+Late termination is drained. The target stays failed until common reset.
+Without timeout completion, an unresponsive device can stop progress.
 
 ## B4 options
 
