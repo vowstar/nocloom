@@ -45,7 +45,7 @@ formats. Profile-specific JSON records appear only for that profile.
 | `definition.exclusive_targets` | Exclusive modes and owner flag order. Network monitors also list reservation counts and granule sizes in bytes |
 | `definition.target_timeouts` | Target watchdog settings |
 | `definition.ahb_bursts`, `definition.ahb_hresp_widths` | AHB burst shaping and response widths |
-| `definition.ahb5_properties`, `definition.wishbone` | Protocol properties and endpoint options |
+| `definition.ahb5_properties`, `definition.tilelink`, `definition.wishbone` | Protocol properties and endpoint options |
 | `definition.apb_back_to_back_targets` | APB targets with back-to-back access enabled |
 | `definition.fixed_bursts_single` | Dedicated targets serving FIXED beats individually |
 | `definition.read_side_effects_targets` | Targets using exact packet shapes |

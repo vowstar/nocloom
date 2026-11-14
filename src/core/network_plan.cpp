@@ -337,6 +337,16 @@ void plan_ahb5_metadata(NetworkPlan &plan, const Definition &d) {
   if (plan.ahb5)
     plan.burst_user_bits += 8 + plan.hmaster_bits;
 }
+void tilelink_source(SourcePlan &s, const Initiator &initiator) {
+  if (initiator.protocol != Protocol::TlUl)
+    return;
+  s.tl_source_bits = initiator.source_width.value_or(4);
+  s.tl_size_bits = initiator.size_width.value_or(2);
+  s.tl_sink_bits = initiator.sink_width.value_or(0);
+  s.protocol = Protocol::Axi4;
+  s.id_bits = s.tl_source_bits;
+  s.len_bits = 4;
+}
 // The endpoint settings of the definition, in name order.
 static void wishbone_engine(SourcePlan &s) {
   if (s.external_protocol == Protocol::Wishbone) {
@@ -393,6 +403,7 @@ void plan_endpoints(NetworkPlan &plan, const Definition &d) {
     // A source wider than the network word attaches at its own width: its packets carry whole
     // source beats, and the transport adapters on its link step them down to the network word.
     plan.per_endpoint = plan.per_endpoint || s.engine_bits != plan.burst_data_bits;
+    tilelink_source(s, initiator);
     if (full_axi(initiator.protocol)) {
       s.id_bits = initiator.id_width.value_or(4);
       s.len_bits = initiator.len_width.value_or(4);
@@ -426,7 +437,7 @@ void plan_endpoints(NetworkPlan &plan, const Definition &d) {
         s.engine_slots += extra;
     }
     if (s.outstanding > 1) {
-      const unsigned per_direction = 1U << std::min(initiator.id_width.value_or(4), 6U);
+      const unsigned per_direction = 1U << std::min(s.id_bits.value_or(4), 6U);
       s.outstanding_ids =
           initiator.protocol == Protocol::Axi4Lite ? 1U : std::min(s.outstanding, per_direction);
       const unsigned keys_per_direction =
@@ -463,6 +474,9 @@ void plan_endpoints(NetworkPlan &plan, const Definition &d) {
     x.external_protocol = t.protocol.value_or(Protocol::Axi4);
     x.wishbone_word = t.address_unit == AddressUnit::Word;
     x.wishbone_retry = t.retry.has_value();
+    x.tl_source_bits = t.source_width.value_or(0);
+    x.tl_size_bits = t.size_width.value_or(2);
+    x.tl_sink_bits = t.sink_width.value_or(0);
     x.axi3 = t.protocol == Protocol::Axi3;
     x.protocol = x.axi3 ? Protocol::Axi4 : t.protocol.value_or(Protocol::Axi4);
     x.protocol = target_engine(x.protocol);
@@ -470,7 +484,7 @@ void plan_endpoints(NetworkPlan &plan, const Definition &d) {
     x.hmaster_bits = t.ahb5.value_or(Ahb5Properties{}).hmaster_width;
     x.hprot_bits = t.ahb5.value_or(Ahb5Properties{}).hprot_width;
     x.hnonsec = t.ahb5.value_or(Ahb5Properties{}).hnonsec;
-    if (x.ahb5)
+    if (x.ahb5 || t.protocol == Protocol::TlUl)
       x.protocol = Protocol::AhbLite;
     // Absent id_width: the default ID width for several bursts or a target monitor.
     if (x.protocol == Protocol::Axi4) {

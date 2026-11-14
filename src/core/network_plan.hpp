@@ -67,6 +67,7 @@ struct EndpointPipe {
 };
 struct SourcePlan {
   bool slverr_only = false;
+  unsigned tl_source_bits = 0, tl_size_bits = 2, tl_sink_bits = 0;
   std::string name;
   // The network carries an APB initiator as an AXI4-Lite source; apb names its face. An AHB
   // initiator is an AXI4 source behind an AHB-Lite face (ahb), with no ID or length ports, and an
@@ -139,6 +140,7 @@ inline std::string service_branch_suffix(const ServicePlan &service, unsigned br
   return service.banks.back().branch == 0 ? std::string{} : "/branch" + std::to_string(branch);
 }
 struct TargetPlan {
+  unsigned tl_source_bits = 0, tl_size_bits = 2, tl_sink_bits = 0;
   std::string name;
   // An AXI3 target is an AXI4 target behind AXI3 ports (axi3).
   // The declared port protocol is independent of the internal engine protocol.

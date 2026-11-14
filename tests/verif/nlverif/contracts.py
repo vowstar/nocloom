@@ -15,7 +15,7 @@ CONTRACTS = {
     "FABRIC.ERR.DECODE_MISS": dict(
         text="A decode miss preserves transaction framing, identity and response order, returns "
              "zero read data, and makes no target access. AXI returns DECERR by default and "
-             "SLVERR with slverr_only. APB, AHB and Wishbone report their protocol errors",
+             "SLVERR with slverr_only. APB, AHB, Wishbone and TileLink report their protocol errors",
         source="docs/address-map.md#decode-misses"),
     "AXI.ROUTE.LOCAL_OFFSET": dict(
         text="A target receives the source address minus its window base, once",

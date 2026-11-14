@@ -174,3 +174,13 @@ The C++ function `mesh_topology` returns these codes. It also returns
 | `NCL_MESH_CONNECTIVITY` | `all` with a pair list, an unknown endpoint, an invalid flow index, a repeated admitted flow pair or an endpoint without an admitted pair |
 
 See the [mesh topology helper](library.md#mesh-topology-helper).
+
+## TileLink
+
+| Code | Condition |
+| --- | --- |
+| `NCL_TILELINK_PROFILE` | Invalid TileLink field, width, port option, target capacity or flow count. TileLink target timeout completion is rejected. TileLink fields on other protocols are rejected |
+
+`tl_uh` produces `NCL_UNSUPPORTED_PROTOCOL`, with a message that this protocol
+value is unsupported. Unknown protocol options produce
+`NCL_SCHEMA_UNKNOWN_FIELD`.

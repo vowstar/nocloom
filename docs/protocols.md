@@ -3,7 +3,8 @@
 Byte lanes use little-endian ordering. The manuals use full AXI for AXI4 and
 AXI3, and Lite for AXI4-Lite.
 
-Related manuals: [Wishbone](wishbone.md), [AHB-Lite and AHB5](ahb.md),
+Related manuals: [Wishbone](wishbone.md), [TileLink TL-UL](tilelink.md),
+[AHB-Lite and AHB5](ahb.md),
 [APB and AXI4-Lite targets](dedicated-targets.md),
 [Widths and AXI target interfaces](width-conversion.md),
 [Attributes and user signals](user-signals.md).
@@ -12,6 +13,7 @@ Related manuals: [Wishbone](wishbone.md), [AHB-Lite and AHB5](ahb.md),
 
 | YAML value | Role | Data width in bits |
 | --- | --- | --- |
+| `tl_ul` | Initiator or target | 32 |
 | `axi4` | Initiator or target | 32, 64, 128, 256, 512, 1024 |
 | `axi3` | Initiator or target | 32, 64, 128, 256, 512, 1024 |
 | `axi4_lite` | Initiator or target | 32, 64 |
@@ -23,14 +25,13 @@ Related manuals: [Wishbone](wishbone.md), [AHB-Lite and AHB5](ahb.md),
 | `ahb_lite` | AHB-Lite initiator or target | 32, 64, 128, 256, 512, 1024 |
 | `ahb5` | AHB5 initiator or target with basic properties | 32, 64, 128, 256, 512, 1024 |
 
-APB and Wishbone endpoints require a 32-bit network.
+APB, Wishbone and TL-UL endpoints require a 32-bit network.
 Wishbone requires an explicit `address_unit: byte` or `word`. See
 [Wishbone classic cycles](wishbone.md) for options, signals and reset integration.
 
-AHB targets require a 32-bit network. APB, AHB, Wishbone and AXI4-Lite targets
-support at most 32 local address bits. When the global address width exceeds
-32, set each
-such target's `address_width` to 32 or less.
+AHB targets require a 32-bit network. APB, AHB, Wishbone, TL-UL and AXI4-Lite
+targets support at most 32 local address bits. When the global address width
+exceeds 32, set each such target's `address_width` to 32 or less.
 
 ## Endpoint ports
 
@@ -160,3 +161,10 @@ targets](dedicated-targets.md#dedicated-apb-and-axi4-lite-targets).
 See [Beat rates](width-conversion.md#beat-rates).
 
 See [AHB-Lite initiators](ahb.md#ahb-lite-initiators).
+
+## TileLink TL-UL
+
+TL-UL supports single-beat Get and Put on A, with AccessAck and
+AccessAckData on D. Initiators support multiple sources in flight. Targets
+support one message in flight. See [TileLink](tilelink.md) for fields, error
+semantics, progress requirements and the TL-UL and TL-UH option table.

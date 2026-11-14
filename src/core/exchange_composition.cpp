@@ -16,6 +16,7 @@
 #include "qos_budget.hpp"
 #include "qos_pipeline.hpp"
 #include "related_clock.hpp"
+#include "tilelink.hpp"
 #include "treadle.hpp"
 #include "width_adapter.hpp"
 #include "wishbone.hpp"
@@ -1546,7 +1547,7 @@ public:
     };
     const auto external = [](const Port &port) {
       return port.endpoint == "axi" || port.endpoint == "ahb" || port.endpoint == "apb" ||
-             port.endpoint == "axil" || port.endpoint == "wb";
+             port.endpoint == "axil" || port.endpoint == "wb" || port.endpoint == "tl";
     };
     ImportedEndpoint result;
     // Pipes on the AXI channels aw, w, ar, r and b between the ports and the component (into
@@ -2209,6 +2210,9 @@ bool axi4_outlet_control(const std::string &name) {
 
 // A full AXI4 or AXI3 source with one burst in flight and no width conversion holds a request at
 // its engine while the request merger cannot take it.
+bool adapted_source(const SourcePlan &sp) {
+  return sp.apb.has_value() || sp.ahb || sp.external_protocol == Protocol::TlUl;
+}
 bool holds_requests(const SourcePlan &sp, bool convert) {
   return sp.outstanding == 1 && !sp.ahb && !convert &&
          (sp.protocol == Protocol::Axi4 || sp.protocol == Protocol::Axi3);
@@ -2426,7 +2430,7 @@ private:
         zone.wake.push_back(it->second);
   }
   void wake_source_face(const SourcePlan &sp, const Imported &ep, GateRegion &zone) {
-    for (const auto *signal : {"awvalid", "wvalid", "arvalid", "psel"})
+    for (const auto *signal : {"awvalid", "wvalid", "arvalid", "psel", "a_valid"})
       if (ep.axi.contains(signal))
         zone.wake.push_back(ep.axi.at(signal));
     if (sp.external_protocol == Protocol::Wishbone)
@@ -2526,6 +2530,8 @@ private:
       zone->idle.push_back(side.ep.states.contains("rr.offered")
                                ? at_rest(b, side.ep.states, initiator_multi_rest)
                                : at_rest(b, side.ep.states, initiator_rest));
+      if (sp.external_protocol == Protocol::TlUl)
+        zone->idle.push_back(at_rest(b, side.ep.states, "tl.pending tl.full tl.local tl.drain"));
       wake_source_face(sp, side.ep, *zone);
       zone->wake.insert(zone->wake.end(), {init_wrsp.valid, read_wake});
       add_waiting_wakes(side, *zone);
@@ -3253,10 +3259,24 @@ private:
   ValueId source_write_consume(const SourcePlan &sp, const Imported &ep) {
     if (sp.external_protocol == Protocol::Wishbone)
       return ep.bound.at("wb.b_take");
-    if (sp.apb || sp.ahb)
+    if (adapted_source(sp))
       return ep.bound.at("wr.b_take");
     return c.and_(ep.axi.at("bvalid"), ep.axi.at("bready"));
   }
+  void register_tilelink_storage(const Imported &ep, const std::string &key,
+                                 std::set<std::string> &assigned) {
+    Names words;
+    for (const auto &[name, value] : ep.states)
+      if (name.starts_with("tl."))
+        words.first.push_back(name);
+    if (words.first.empty())
+      return;
+    std::vector<ValueId> payload, control;
+    consume_states(ep, words, assigned, payload, control);
+    c.out.storage.push_back({key + "/tilelink", c.clock, payload, control, ep.bound.at("tl.a_take"),
+                             ep.bound.at("tl.d_take")});
+  }
+
   void register_source_storage(unsigned si, const SourceSide &side, const Imported &converter,
                                const Imported &splitter) {
     const auto &sp = plan.sources[si];
@@ -3400,6 +3420,7 @@ private:
                                bound.at(read ? "rr.rsp_load" : "wr.wrsp_fire"),
                                read ? bound.at("rr.accept") : consume});
     }
+    register_tilelink_storage(side.ep, key, assigned);
     if (assigned.size() != side.ep.states.size())
       throw std::logic_error("Unowned initiator state word at " + key);
   }
@@ -4259,8 +4280,10 @@ private:
     if (auto *zone = c.region("target/" + target + "/protocol")) {
       zone->claim(b, first, ep.states, outlet_free);
       zone->idle.push_back(at_rest(b, ep.states, outlet_rest));
+      if (plan.targets[o].external_protocol == Protocol::TlUl)
+        zone->idle.push_back(at_rest(b, ep.states, "tl.phase"));
       c.hold_open(zone, stores);
-      for (const auto *signal : {"bvalid", "rvalid"})
+      for (const auto *signal : {"bvalid", "rvalid", "d_valid"})
         if (ep.axi.contains(signal))
           zone->wake.push_back(ep.axi.at(signal));
       zone->wake.insert(zone->wake.end(), {out_wreq.valid, out_rreq.valid});
@@ -5029,11 +5052,14 @@ private:
     const bool apb = apb_target(plan, target), lite = lite_target(plan, target);
     const auto profile = outlet_profile(plan, o);
     const auto &tp = plan.targets[o];
-    auto lowered = tp.external_protocol == Protocol::Wishbone
-                       ? lower_wishbone_target(profile, tp.wishbone_word, tp.wishbone_retry)
-                   : apb  ? lower_apb_burst_outlet(profile)
-                   : lite ? lower_axi_lite_outlet(profile)
-                          : lower_ahb_outlet(profile);
+    auto lowered =
+        tp.external_protocol == Protocol::Wishbone
+            ? lower_wishbone_target(profile, tp.wishbone_word, tp.wishbone_retry)
+        : tp.external_protocol == Protocol::TlUl
+            ? lower_tilelink_outlet(profile, tp.tl_source_bits, tp.tl_size_bits, tp.tl_sink_bits)
+        : apb  ? lower_apb_burst_outlet(profile)
+        : lite ? lower_axi_lite_outlet(profile)
+               : lower_ahb_outlet(profile);
     const auto ep = import_outlet(o, t, admitted(std::move(lowered)), {});
     // The arrival count holds the packets of one direction between
     // acquisition and release: one in an APB engine, up to the configured
@@ -5370,6 +5396,7 @@ private:
     c.bind(t.key + "/bus.release", ep.bound.at("bus.complete"));
     c.out.storage.push_back({t.key + "/bus", c.clock, payload, control, ep.bound.at("bus.issue"),
                              ep.bound.at("bus.complete")});
+    register_tilelink_storage(ep, t.key, assigned);
     for (const auto &[name, value] : ep.states)
       if (!assigned.contains(name))
         throw std::logic_error("Unowned dedicated outlet state " + name + " at " + t.key);

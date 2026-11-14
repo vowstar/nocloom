@@ -1175,7 +1175,12 @@ Axi4InitiatorProfile initiator_profile(const NetworkPlan &plan, unsigned index) 
   profile.data_user_port_bits = sp.data_user_bits;
   profile.ahb = sp.ahb;
   profile.axi3 = sp.axi3;
-  profile.port_pipes = !sp.ahb && !sp.apb && sp.protocol != Protocol::Axi4Lite &&
+  profile.tilelink = sp.external_protocol == Protocol::TlUl;
+  profile.tl_source_bits = sp.tl_source_bits;
+  profile.tl_size_bits = sp.tl_size_bits;
+  profile.tl_sink_bits = sp.tl_sink_bits;
+  profile.port_pipes = !profile.tilelink && !sp.ahb && !sp.apb &&
+                       sp.protocol != Protocol::Axi4Lite &&
                        sp.external_protocol != Protocol::Wishbone;
   // A full AXI4 source admits whole pages; its splitter sends the misses of a cut page on.
   // A window of a target flow reached by some flows of a source of several admits those alone.

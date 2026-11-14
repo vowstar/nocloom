@@ -318,7 +318,7 @@ public:
           &MapWriter::error_responses, &MapWriter::routing, &MapWriter::width_conversion,
           &MapWriter::ingress, &MapWriter::target_contracts, &MapWriter::target_options,
           &MapWriter::exclusive_access, &MapWriter::outstanding, &MapWriter::target_id_record,
-          &MapWriter::error_encoding, &MapWriter::wishbone_fields})
+          &MapWriter::error_encoding, &MapWriter::wishbone_fields, &MapWriter::tilelink})
       (this->*stage)();
     if (h.plan.clocked())
       clock_record();
@@ -356,6 +356,7 @@ private:
                                  : *s.apb == Protocol::Apb5 ? "apb5"
                                                             : "apb4"
                          : s.external_protocol == Protocol::Wishbone ? "wishbone"
+                         : s.external_protocol == Protocol::TlUl     ? "tl_ul"
                          : s.ahb5                                    ? "ahb5"
                          : s.ahb                                     ? "ahb_lite"
                          : s.axi3                                    ? "axi3"
@@ -366,7 +367,8 @@ private:
   Json &contract() { return definition["contract"]; }
   bool uses(Protocol protocol) const {
     return any(p.targets, [&](const auto &t) {
-      return t.external_protocol != Protocol::Wishbone && t.protocol == protocol;
+      return t.external_protocol != Protocol::Wishbone && t.external_protocol != Protocol::TlUl &&
+             t.protocol == protocol;
     });
   }
   // Sub-page windows and non-32-bit addresses extend the dedicated profiles;
@@ -499,11 +501,32 @@ private:
     if (h.ir.synchronous_reset)
       definition["register_reset"] = "synchronous";
   }
+  void tilelink() {
+    const auto record = [](const auto &endpoint) -> std::optional<Json> {
+      if (endpoint.external_protocol != Protocol::TlUl)
+        return std::nullopt;
+      return Json{{"source_width", endpoint.tl_source_bits},
+                  {"size_width", endpoint.tl_size_bits},
+                  {"sink_width", endpoint.tl_sink_bits},
+                  {"max_transfer_bytes", 4},
+                  {"max_outstanding", endpoint.outstanding}};
+    };
+    const auto sources = by_name(p.sources, record), targets = by_name(p.targets, record);
+    if (sources.empty() && targets.empty())
+      return;
+    definition["tilelink"] = {{"initiators", sources}, {"targets", targets}};
+    contract()["tilelink"] = {
+        {"operations", "single_beat_Get_PutFullData_PutPartialData"},
+        {"source", "initiator_source_is_network_transaction_id_target_source_zero_one_in_flight"},
+        {"read_error", "local_rejection_denied_and_corrupt_network_error_corrupt_only_zero_data"},
+        {"write_error", "denied_no_rollback_of_completed_target_accesses"},
+        {"progress", "target_completes_and_master_accepts_D_in_finite_time"}};
+  }
   void endpoint_transactions() {
     Json endpoints = Json::object(), targets = Json::object();
     for (const auto &s : p.sources) {
       Json entry = Json::object();
-      if (s.id_bits)
+      if (s.id_bits && s.external_protocol != Protocol::TlUl)
         entry = {{"id_width", *s.id_bits}, {"len_width", *s.len_bits}};
       if (s.read_only || s.write_only)
         entry["access"] = s.read_only ? "read_only" : "write_only";
@@ -529,7 +552,11 @@ private:
       transactions["initiators"] = endpoints;
     if (!targets.empty())
       transactions["targets"] = targets;
-    if (any(p.sources, [](const auto &s) { return s.id_bits.has_value(); }) || !targets.empty()) {
+    if (any(p.sources,
+            [](const auto &s) {
+              return s.id_bits.has_value() && s.external_protocol != Protocol::TlUl;
+            }) ||
+        !targets.empty()) {
       transactions["id"] = "source_port_zero_extended_into_the_network_id_target_port_carries_"
                            "the_target_id_of_contract_target_id";
       transactions["len"] = "source_port_limits_its_bursts_target_port_limits_its_packets";
@@ -888,7 +915,7 @@ private:
     const auto lite_face = [](const auto &s) { return s.protocol == Protocol::Axi4Lite && !s.apb; };
     if (any(p.sources, [](const auto &s) {
           return s.protocol == Protocol::Axi4Lite || s.ahb || s.axi3 ||
-                 s.external_protocol == Protocol::Wishbone;
+                 s.external_protocol == Protocol::Wishbone || s.external_protocol == Protocol::TlUl;
         }))
       definition["endpoint_protocols"] = {{"initiators", source_protocols}, {"targets", "axi4"}};
     if (any(p.sources, &SourcePlan::axi3))
@@ -995,8 +1022,9 @@ private:
     const bool has_axi3 = any(p.targets, &TargetPlan::axi3);
     const bool has_dialects =
         uses(Protocol::Apb3) || uses(Protocol::Apb2) || uses(Protocol::Axi4Lite) || has_axi3;
-    if (!has_ahb && !has_apb && !has_dialects &&
-        !any(p.targets, [](const auto &t) { return t.external_protocol == Protocol::Wishbone; }))
+    if (!has_ahb && !has_apb && !has_dialects && !any(p.targets, [](const auto &t) {
+          return t.external_protocol == Protocol::Wishbone || t.external_protocol == Protocol::TlUl;
+        }))
       return;
     if (!definition.contains("endpoint_protocols"))
       definition["endpoint_protocols"]["initiators"] = source_protocols;
@@ -1007,6 +1035,7 @@ private:
       return std::optional{t.service                                   ? "service"
                            : t.axi3                                    ? "axi3"
                            : t.external_protocol == Protocol::Wishbone ? "wishbone"
+                           : t.external_protocol == Protocol::TlUl     ? "tl_ul"
                            : t.ahb5 ? "ahb5"
                                     : protocols[static_cast<int>(t.protocol)]};
     });
@@ -1089,7 +1118,9 @@ private:
     }
     // HRESP port width of every AHB target: 1 (AHB-Lite/AHB5) or 2 (AMBA 2).
     definition["ahb_hresp_widths"] = by_name(p.targets, [](const auto &t) {
-      return t.protocol == Protocol::AhbLite ? std::optional{t.hresp_bits} : std::nullopt;
+      return t.protocol == Protocol::AhbLite && t.external_protocol != Protocol::TlUl
+                 ? std::optional{t.hresp_bits}
+                 : std::nullopt;
     });
     // Listed only with a 2-bit target; 1-bit outlets keep the text above.
     if (any(p.targets, [](const auto &t) { return t.hresp_bits == 2; }))

@@ -282,10 +282,14 @@ public:
     w_.leaf("library", o_.library);
     w_.leaf("name", map_.module);
     w_.leaf("version", o_.version.empty() ? std::string("1.0") : o_.version);
-    w_.open("busInterfaces");
-    for (const auto &e : endpoints_)
-      bus_interface(e);
-    w_.close("busInterfaces");
+    if (std::ranges::any_of(endpoints_,
+                            [](const Endpoint &e) { return e.protocol != Protocol::TlUl; })) {
+      w_.open("busInterfaces");
+      for (const auto &e : endpoints_)
+        if (e.protocol != Protocol::TlUl)
+          bus_interface(e);
+      w_.close("busInterfaces");
+    }
     remap_states();
     address_spaces();
     memory_maps();
@@ -376,7 +380,10 @@ private:
       if (!connected(e).empty())
         w_.empty("memoryMapRef", " spirit:memoryMapRef=\"" + e.name + "_map\"");
       for (const auto &target : connected(e))
-        w_.empty("bridge", " spirit:masterRef=\"" + target + "\" spirit:opaque=\"true\"");
+        if (std::ranges::none_of(endpoints_, [&](const Endpoint &t) {
+              return t.name == target && t.protocol == Protocol::TlUl;
+            }))
+          w_.empty("bridge", " spirit:masterRef=\"" + target + "\" spirit:opaque=\"true\"");
       w_.close("slave");
     } else {
       w_.open("master");

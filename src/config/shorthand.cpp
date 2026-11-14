@@ -10,7 +10,7 @@
 
 namespace nocloom::config::detail {
 namespace {
-constexpr std::array<std::string_view, 27> initiator_keys{"name",
+constexpr std::array<std::string_view, 31> initiator_keys{"name",
                                                           "clock_domain",
                                                           "clock_gating",
                                                           "address_width",
@@ -36,8 +36,12 @@ constexpr std::array<std::string_view, 27> initiator_keys{"name",
                                                           "id_ranges",
                                                           "ahb5",
                                                           "address_unit",
-                                                          "retry"};
-constexpr std::array<std::string_view, 31> target_keys{"name",
+                                                          "retry",
+                                                          "source_width",
+                                                          "size_width",
+                                                          "sink_width",
+                                                          "max_transfer_bytes"};
+constexpr std::array<std::string_view, 35> target_keys{"name",
                                                        "clock_domain",
                                                        "clock_gating",
                                                        "mappings",
@@ -67,7 +71,11 @@ constexpr std::array<std::string_view, 31> target_keys{"name",
                                                        "flows",
                                                        "ahb5",
                                                        "address_unit",
-                                                       "retry"};
+                                                       "retry",
+                                                       "source_width",
+                                                       "size_width",
+                                                       "sink_width",
+                                                       "max_transfer_bytes"};
 constexpr std::array<const char *, 2> kinds{"initiators", "targets"};
 constexpr std::array<const char *, 2> singular{"initiator", "target"};
 

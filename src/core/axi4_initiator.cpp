@@ -6,6 +6,7 @@
 #include "logic.hpp"
 #include "network_plan.hpp"
 #include "strobe_lanes.hpp"
+#include "tilelink.hpp"
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -661,9 +662,9 @@ void initiator_width_errors(const Axi4InitiatorProfile &profile, std::vector<Dia
         initiator_error("NCL_AXI4_INITIATOR_ADDRESS_WIDTH", "address_bits",
                         "Ingress addresses support 1..48 bits; AXI4-Lite requires at least 2"));
   if (profile.transport_address_bits &&
-      (profile.address_bits < (profile.apb    ? 1U
-                               : profile.lite ? 2U
-                                              : 12U) ||
+      (profile.address_bits < (profile.apb                          ? 1U
+                               : (profile.lite || profile.tilelink) ? 2U
+                                                                    : 12U) ||
        profile.transport_address_bits < std::max(32U, profile.address_bits) ||
        profile.transport_address_bits > 48))
     errors.push_back(initiator_error(
@@ -920,11 +921,11 @@ struct InitiatorLowering {
     return slot_field(l, t, "", slot_of(in, t));
   }
   ValueId axi_input(const std::string &signal, unsigned width) {
-    return p.apb || p.ahb ? face_in.at(signal)
-                          : l.b.input("nl_axi_" + signal, width, "axi", signal);
+    return p.apb || p.ahb || p.tilelink ? face_in.at(signal)
+                                        : l.b.input("nl_axi_" + signal, width, "axi", signal);
   }
   void axi_output(const std::string &signal, ValueId value) {
-    if (p.apb || p.ahb)
+    if (p.apb || p.ahb || p.tilelink)
       face_out[signal] = value;
     else
       l.b.output("nl_axi_" + signal, value, "axi", signal);
@@ -2085,6 +2086,11 @@ Result<NodeHardware> lower_axi4_initiator(const Axi4InitiatorProfile &profile) {
   InitiatorLowering engine(l, p);
   engine.apb_face();
   engine.ahb_face();
+  std::optional<TileLinkIngress> tilelink;
+  if (p.tilelink) {
+    tilelink.emplace(l, p);
+    engine.face_in = tilelink->inputs;
+  }
 
   // ---------------- write direction ----------------
   if (p.write) {
@@ -2100,6 +2106,8 @@ Result<NodeHardware> lower_axi4_initiator(const Axi4InitiatorProfile &profile) {
 
   engine.apb_tail();
   engine.ahb_tail();
+  if (tilelink)
+    tilelink->finish(engine.face_out);
   return l.finish("nocloom_axi4_initiator_" + p.name);
 }
 

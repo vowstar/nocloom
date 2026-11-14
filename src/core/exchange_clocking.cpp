@@ -305,6 +305,9 @@ void plan_clocking(NetworkPlan &p) {
       for (const auto *suffix : {"", "/return", "/consumer"})
         p.resource_domains.emplace(id + suffix, owner("source/" + source));
     }
+  for (const auto &s : p.sources)
+    if (s.external_protocol == Protocol::TlUl)
+      p.resource_domains.emplace("source/" + s.name + "/tilelink", owner("source/" + s.name));
   // A source's shaper or scheduler, in its domain.
   for (const auto &s : p.sources)
     for (const auto &[on, unit] :
@@ -313,6 +316,8 @@ void plan_clocking(NetworkPlan &p) {
         p.resource_domains.emplace("source/" + s.name + unit, owner("source/" + s.name));
   for (const auto &target : names(p.targets)) {
     const auto id = "burst_service/" + target;
+    if (p.target(target).external_protocol == Protocol::TlUl)
+      p.resource_domains.emplace(id + "/tilelink", owner("target/" + target));
     for (const auto *suffix : {"/write", "/read", "/target"})
       p.resource_domains.emplace(id + suffix, owner("target/" + target));
     if (dedicated_protocol(p.target(target).protocol))

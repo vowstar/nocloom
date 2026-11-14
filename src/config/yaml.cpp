@@ -894,6 +894,19 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
       d.initiators.back().clock_gating = endpoint_gating(r, node, path);
       if (node["slverr_only"])
         d.initiators.back().slverr_only = r.boolean(node["slverr_only"], path + ".slverr_only");
+      if (node["source_width"])
+        d.initiators.back().source_width = r.integer(
+            r.field(node, "source_width", path + ".source_width"), path + ".source_width");
+      if (node["size_width"])
+        d.initiators.back().size_width =
+            r.integer(r.field(node, "size_width", path + ".size_width"), path + ".size_width");
+      if (node["sink_width"])
+        d.initiators.back().sink_width =
+            r.integer(r.field(node, "sink_width", path + ".sink_width"), path + ".sink_width");
+      if (node["max_transfer_bytes"])
+        d.initiators.back().max_transfer_bytes =
+            r.integer(r.field(node, "max_transfer_bytes", path + ".max_transfer_bytes"),
+                      path + ".max_transfer_bytes");
       if (node["pipes"]) {
         const auto at = path + ".pipes";
         const auto item = r.field(node, "pipes", at);
@@ -1054,6 +1067,19 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
            r.string(r.field(node, "clock_domain", path + ".clock_domain"), path + ".clock_domain"),
            {}});
       d.targets.back().clock_gating = endpoint_gating(r, node, path);
+      if (node["source_width"])
+        d.targets.back().source_width = r.integer(
+            r.field(node, "source_width", path + ".source_width"), path + ".source_width");
+      if (node["size_width"])
+        d.targets.back().size_width =
+            r.integer(r.field(node, "size_width", path + ".size_width"), path + ".size_width");
+      if (node["sink_width"])
+        d.targets.back().sink_width =
+            r.integer(r.field(node, "sink_width", path + ".sink_width"), path + ".sink_width");
+      if (node["max_transfer_bytes"])
+        d.targets.back().max_transfer_bytes =
+            r.integer(r.field(node, "max_transfer_bytes", path + ".max_transfer_bytes"),
+                      path + ".max_transfer_bytes");
       if (node["pipes"]) {
         const auto at = path + ".pipes";
         const auto item = r.field(node, "pipes", at);

@@ -590,6 +590,7 @@ private:
                                                  : h.plan.domain.name) +
                                "/init";
           fault(owner != id && owner != id + "/return" && owner != release &&
+                    owner != "source/" + source + "/tilelink" &&
                     !owner.starts_with("source/" + source + "/pipe/"),
                 "The response-face readiness of " + id +
                     " depends on state outside its own lifecycle");

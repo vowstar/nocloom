@@ -116,6 +116,16 @@ Verilog-2001 and asynchronous reset.
 
 CLI switches select optional output files. See [output files](outputs.md).
 
+## TileLink endpoint fields
+
+`protocol: tl_ul` accepts 32-bit data on both endpoint roles. Its fields are
+`source_width`, `size_width`, `sink_width` and `max_transfer_bytes`. See the
+[TileLink field table](tilelink.md#endpoint-fields) for meanings, ranges and
+defaults. Other protocols reject these fields.
+
+Initiator `max_outstanding` is 1 to 64, with the transport default. Target
+`max_outstanding` and `flows` must be 1. `tl_uh` is rejected.
+
 ## AHB5 endpoint fields
 
 `protocol: ahb5` has four-bit HPROT by default. The optional `ahb5` object

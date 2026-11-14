@@ -93,6 +93,8 @@ struct Axi4InitiatorProfile {
   // Single-beat AXI4-Lite ports with independently held AW/W. AxADDR is cleared to the bus width
   // before every check; WSTRB passes as given.
   bool lite = false;
+  bool tilelink = false;
+  unsigned tl_source_bits = 0, tl_size_bits = 2, tl_sink_bits = 0;
   // Apb5, Apb4 or Apb3: an APB completer face replaces the Lite ports of a 32-bit Lite engine (lite
   // set, at most 32 address bits). PSEL offers AW and W, or AR, which the idle engine takes in
   // SETUP; BREADY and RREADY are PSEL & PENABLE, so PREADY is the registered B or R valid and the

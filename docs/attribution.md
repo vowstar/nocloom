@@ -50,6 +50,12 @@ Wishbone names identify the implemented interfaces. NocLoom does not claim
 certification or endorsement by OpenCores. See the
 [Wishbone specification](https://opencores.org/howto/wishbone).
 
+TileLink protocol names identify the implemented interfaces described in the
+[SiFive TileLink Specification 1.8.1][tilelink-spec]. NocLoom does not claim
+TileLink certification or endorsement.
+
+[tilelink-spec]: https://sifive.cdn.prismic.io/sifive/7bef6f5c-ed3a-4712-866a-1a2e0c6b7b13_tilelink_spec_1.8.1.pdf
+
 ## Logo
 
 The letters in the NocLoom logo are outlines of the Roboto typeface, version 2,

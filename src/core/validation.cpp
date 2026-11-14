@@ -6,6 +6,7 @@
 #include "message.hpp"
 #include "nocloom/generation.hpp"
 #include "switch_graph.hpp"
+#include "tilelink.hpp"
 #include <algorithm>
 #include <bit>
 #include <limits>
@@ -1127,9 +1128,10 @@ void check_initiator_face(Checks &c, const Initiator &initiator, const std::stri
       c("NCL_ENDPOINT_DATA_WIDTH", field + ".data_width",
         "Source width must match its target or use the admitted wide-to32 profile");
   }
-  const unsigned source_address_min = apb_initiator(initiator)                   ? 1U
-                                      : initiator.protocol == Protocol::Axi4Lite ? 2U
-                                                                                 : 12U;
+  const unsigned source_address_min =
+      apb_initiator(initiator)                                                             ? 1U
+      : (initiator.protocol == Protocol::Axi4Lite || initiator.protocol == Protocol::TlUl) ? 2U
+                                                                                           : 12U;
   if (!initiator.address_width && d.address_width < source_address_min)
     c("NCL_ENDPOINT_ADDRESS_WIDTH", field + ".address_width",
       "The source address width is below its protocol minimum; widen the global address or "
@@ -1864,6 +1866,9 @@ Result<PlanData> plan_definition(const Definition &d) {
     return Result<PlanData>::failure(detail::error("NCL_SCHEMA_VERSION", "schema_version",
                                                    "Only schema version 10 is supported"));
   Checks c(d);
+  std::ranges::move(detail::check_tilelink(d), std::back_inserter(c.errors));
+  if (!c.errors.empty())
+    return Result<PlanData>::failure(std::move(c.errors));
   check_v10_shape(d, c);
   check_connectivity(d, c);
   if (!c.errors.empty())

@@ -236,6 +236,15 @@ struct Obligations {
   void sources() {
     for (const auto &sp : plan.sources) {
       const auto &source = sp.name;
+      if (sp.external_protocol == Protocol::TlUl) {
+        const unsigned source_bits = std::max(1U, sp.tl_source_bits);
+        const unsigned reject_bits = (1U << sp.tl_size_bits) - 3;
+        const unsigned bits = 84 + 2 * reject_bits + sp.address_bits +
+                              2 * (source_bits + sp.tl_size_bits) +
+                              sp.engine_slots * (1 + source_bits + sp.tl_size_bits);
+        resource("source/" + source + "/tilelink", "protocol_adapter", bits,
+                 "single-beat request and response", "D channel consumption");
+      }
       auto source_state = axi4_burst_state_bits(
           plan.burst_id_bits, plan.burst_len_bits, plan.burst_address_bits, sp.engine_bits,
           sp.engine_slots, plan.exclusive, sp.protocol == Protocol::Axi4Lite,
@@ -323,6 +332,10 @@ struct Obligations {
     for (const auto &target : names(plan.targets)) {
       const auto service = "burst_service/" + target;
       const auto target_env = service + "/target";
+      const auto &tp = plan.target(target);
+      if (tp.external_protocol == Protocol::TlUl)
+        resource(service + "/tilelink", "protocol_adapter", 69 + tp.local_bits + tp.tl_size_bits,
+                 "single-beat request and response", "D channel consumption");
       const bool ahb = ahb_target(plan, target);
       const bool apb = apb_target(plan, target);
       const bool lite = lite_target(plan, target);

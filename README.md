@@ -7,9 +7,9 @@
 An open-source on-chip interconnect generator.
 
 NocLoom is a command-line tool (CLI) and a C++20 library. Define AXI4, AXI3,
-AXI4-Lite, APB, AHB-Lite, AHB5 and Wishbone networks in YAML or C++. NocLoom
-generates synthesizable Verilog-2001 with switches, protocol adapters, width
-converters and clock domain crossings (CDC).
+AXI4-Lite, APB, AHB-Lite, AHB5, Wishbone and TileLink TL-UL networks in YAML or
+C++. NocLoom generates synthesizable Verilog-2001 with switches, protocol
+adapters, width converters and clock domain crossings (CDC).
 
 NocLoom 0.2.0 is the latest release.
 
@@ -24,11 +24,10 @@ See [soc_mixed.yaml](examples/soc_mixed.yaml) for this network.
 
 ## Quick start
 
-Run all commands from the repository root. The build needs CMake, Ninja, a C++20
-compiler, nlohmann_json, yaml-cpp and CLI11. The packages of Ubuntu 24.04,
-Debian 13 and Fedora 43 are new enough. See the
-[build requirements](docs/library.md#build-requirements) for the versions and
-the install commands.
+Run from the repository root. The build needs CMake, Ninja, a C++20 compiler,
+nlohmann_json, yaml-cpp and CLI11. Ubuntu 24.04, Debian 13 and Fedora 43 have
+suitable packages. See [build requirements](docs/library.md#build-requirements)
+for versions and install commands.
 
 ```sh
 cmake -S . -B build -G Ninja -DNOCLOOM_BUILD_TESTS=OFF -DNOCLOOM_BUILD_EXAMPLES=OFF
@@ -88,11 +87,10 @@ If the output directory exists, `generate` stops with `NCL_IO_EXISTS` and exit
 code 3. Remove that directory or use another one. See
 [CLI](docs/cli.md#validation-and-generation) for the output path rules.
 
-The top module `nocloom_soc_fabric` is in
-`build/generated/nocloom_soc_fabric.v`. A simulation also needs
-`nocloom_clock_gate.v` and `nocloom_synchronizer.v` from the same directory.
-Initiator ports have names such as `nl_i_cpu_awaddr`, and target ports have
-names such as `nl_t_mem_awaddr`.
+`nocloom_soc_fabric` is the top module in `build/generated/nocloom_soc_fabric.v`.
+Simulation also needs `nocloom_clock_gate.v` and `nocloom_synchronizer.v` from
+that directory. Initiator ports have names such as `nl_i_cpu_awaddr`, and target
+ports have names such as `nl_t_mem_awaddr`.
 
 More definitions are in [examples](examples). Start with `apb_domains.yaml` for
 two clock domains and `axi4_graph.yaml` for a declared topology.
@@ -140,15 +138,16 @@ traffic crosses its boundary.
 
 | Area | Supported |
 | --- | --- |
-| Initiator protocols | `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `apb3`, `ahb_lite` (AHB-Lite), `ahb5` and `wishbone` |
-| Target protocols | `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `apb3`, `apb2`, `ahb_lite` (AHB-Lite), `ahb5` and `wishbone` |
+| Initiator protocols | `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `apb3`, `ahb_lite` (AHB-Lite), `ahb5`, `wishbone` and `tl_ul` |
+| Target protocols | `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `apb3`, `apb2`, `ahb_lite` (AHB-Lite), `ahb5`, `wishbone` and `tl_ul` |
 | [Wishbone classic cycles](docs/wishbone.md) | 32-bit single reads and writes, byte SEL, ERR, optional target RTY as error, explicit byte or word addresses |
+| TileLink TL-UL | 32-bit single-beat Get, PutFullData and PutPartialData, with AccessAck and AccessAckData. Initiators can keep multiple sources in flight |
 | AHB5 properties | HPROT is 4 bits by default or 7 bits. HNONSEC is optional and defaults to absent. HMASTER is 0 to 32 bits |
 | Endpoint count | 1 to 256 initiators, 1 to 256 targets |
 | Topology | One generated request switch and one generated response switch, or declared request and response graphs of 1 to 128 switches each |
-| Endpoint data width | AXI4, AXI3, AHB-Lite and AHB5: 32, 64, 128, 256, 512 or 1024 bits. AXI4-Lite: 32 or 64 bits. APB: 8, 16 or 32 bits. Wishbone: 32 bits |
-| Network data width | 32 or 64 bits (`transport.data_width`). The default is the narrowest endpoint data width, where APB counts as 32 bits and the maximum is 64 bits. A 64-bit network accepts only 64-bit initiators, and no APB or Wishbone endpoint or AHB target. Other definitions need a 32-bit network. Therefore, an initiator wider than 64 bits needs `transport.data_width: 32`, unless a 32-bit or APB endpoint already makes 32 bits the default |
-| Address width | 2 to 48 bits. AXI4, AXI3, AHB and Wishbone initiators need at least 12 bits. APB initiators use at most 32 bits. APB, AHB, Wishbone and AXI4-Lite targets use at most 32 bits |
+| Endpoint data width | AXI4, AXI3, AHB-Lite and AHB5: 32, 64, 128, 256, 512 or 1024 bits. AXI4-Lite: 32 or 64 bits. APB: 8, 16 or 32 bits. Wishbone and TL-UL: 32 bits |
+| Network data width | 32 or 64 bits (`transport.data_width`). The default is the narrowest endpoint data width, where APB counts as 32 bits and the maximum is 64 bits. A 64-bit network accepts only 64-bit initiators, and no APB, Wishbone or TL-UL endpoint or AHB target. Other definitions need a 32-bit network. Therefore, an initiator wider than 64 bits needs `transport.data_width: 32`, unless a 32-bit or APB endpoint already makes 32 bits the default |
+| Address width | 2 to 48 bits. AXI4, AXI3, AHB and Wishbone initiators need at least 12 bits. APB initiators use at most 32 bits. APB, AHB, Wishbone, TL-UL and AXI4-Lite targets use at most 32 bits |
 | Clock domains | 1 to 64. More than one domain needs a `topology` whose switches name their clock domains. Clock domain crossings connect asynchronous clocks, or related clocks divided from one root |
 | Endpoint clock gating | Separate protocol and transport gates, one shared gate, or a transport gate with the protocol side on the domain clock |
 | Transactions | Several AXI transactions in flight, exclusive access, target timeouts and an error response on a decode miss |
@@ -165,6 +164,7 @@ See [Documentation](#documentation) for field definitions and limits.
 | --- | --- |
 | Wishbone options | No pipelined cycles, registered feedback bursts, LOCK or user tags. See [Wishbone](docs/wishbone.md) |
 | Other protocols | For example AXI5, ACE and APB2 initiators |
+| TileLink | TL-UL targets support one message in flight and one flow. TL-UH, atomic operations and coherent channels are unsupported. See [TileLink](docs/tilelink.md) for error and progress rules |
 | AHB5 optional signals | HEXCL, HEXOKAY and HAUSER, HWUSER, HRUSER and HBUSER are unsupported. See [AHB5 properties](docs/ahb.md#ahb5-basic-properties) |
 | AHB arbitration and responses | No multi-manager arbitration or HSPLIT. RETRY and SPLIT on two-bit `ahb_lite` targets fail the packet |
 | Other RTL languages | The output is Verilog-2001 only |
@@ -188,6 +188,7 @@ known. [Diagnostics](docs/diagnostics.md) lists the codes.
 | [Network](docs/network.md) | Connectivity, graphs, routes, flows, arbitration and pipes |
 | [Address map](docs/address-map.md) | Mappings, address inputs, decode misses and error responses |
 | [Protocols](docs/protocols.md) | Initiator and target protocols, width conversion and packets |
+| [TileLink](docs/tilelink.md) | TL-UL fields, error and progress rules, option table and protocol mappings |
 | [Transactions](docs/transactions.md) | Bursts in flight, target IDs, read interleaving, exclusive access and timeouts |
 | [Scheduling](docs/scheduling.md) | Levels, AxQOS maps, bandwidth shapers and bandwidth schedulers |
 | [Output files](docs/outputs.md) | Map, bundle, dependency graph, IP-XACT, address table, CDC constraints and C headers |
@@ -199,11 +200,10 @@ known. [Diagnostics](docs/diagnostics.md) lists the codes.
 
 ## Development
 
-The test build also needs Catch2, Python 3, Make, Icarus Verilog, Yosys,
-Verilator, clang-format, cppcheck and a second C++20 compiler. One test builds
-the CLI with the second compiler and compares the output files.
-`-DNOCLOOM_DETERMINISM_COMPILERS=OFF` removes that test and the need for the
-second compiler.
+Tests also need Catch2, Python 3, Make, Icarus Verilog, Yosys, Verilator,
+clang-format, cppcheck and a second C++20 compiler. A test builds the CLI with
+that compiler and compares outputs. Set
+`-DNOCLOOM_DETERMINISM_COMPILERS=OFF` to omit that test and compiler requirement.
 
 ```sh
 cmake -S . -B build -G Ninja -DNOCLOOM_BUILD_TESTS=ON -DNOCLOOM_BUILD_EXAMPLES=ON
