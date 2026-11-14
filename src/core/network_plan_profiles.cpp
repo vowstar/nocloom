@@ -1175,7 +1175,8 @@ Axi4InitiatorProfile initiator_profile(const NetworkPlan &plan, unsigned index) 
   profile.data_user_port_bits = sp.data_user_bits;
   profile.ahb = sp.ahb;
   profile.axi3 = sp.axi3;
-  profile.port_pipes = !sp.ahb && !sp.apb && sp.protocol != Protocol::Axi4Lite;
+  profile.port_pipes = !sp.ahb && !sp.apb && sp.protocol != Protocol::Axi4Lite &&
+                       sp.external_protocol != Protocol::Wishbone;
   // A full AXI4 source admits whole pages; its splitter sends the misses of a cut page on.
   // A window of a target flow reached by some flows of a source of several admits those alone.
   auto &admitted = profile.admitted_windows.emplace();
@@ -1399,6 +1400,7 @@ BurstOutletProfile outlet_profile(const NetworkPlan &plan, unsigned index) {
                                        plan.burst_len_bits, plan.source_bits, outlet_mappings(tp),
                                        tp.local_bits, plan.burst_address_bits},
                     plan, tp);
+  profile.wishbone = tp.external_protocol == Protocol::Wishbone;
   profile.response_run_bits = plan.response_run_bits();
   if (protocol_caps(tp.protocol).apb) {
     profile.dialect = tp.protocol;

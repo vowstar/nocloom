@@ -6,10 +6,10 @@
 
 An open-source on-chip interconnect generator.
 
-NocLoom is a command-line tool (CLI) and a C++20 library. You define a network
-of AXI4, AXI3, AXI4-Lite, APB, AHB-Lite and AHB5 interfaces in YAML or C++.
-NocLoom generates synthesizable Verilog-2001 with switches, protocol adapters,
-width converters and clock domain crossings (CDC).
+NocLoom is a command-line tool (CLI) and a C++20 library. Define AXI4, AXI3,
+AXI4-Lite, APB, AHB-Lite, AHB5 and Wishbone networks in YAML or C++. NocLoom
+generates synthesizable Verilog-2001 with switches, protocol adapters, width
+converters and clock domain crossings (CDC).
 
 NocLoom 0.2.0 is the latest release.
 
@@ -114,27 +114,24 @@ The top-level field `clock_gating: false` removes the clock gates. It does not
 remove the synchronizer. Set `clock_gating: false` for an FPGA, because the
 behavioral clock gate model contains a latch.
 
-The top module is one flat module. Its only instances are the clock gate and
-synchronizer cells, and its internal signals have generated names of the form
-`nl_internal_v<N>`. To find the signals of an initiator, a target or a switch,
-read the map. `value/<N>` in the map is the signal `nl_internal_v<N>`, except
-for a stage inside a synchronizer. For example, `network.storage` lists the
-signals of each resource, such as `source/cpu/pipe/aw`. See
+The flat top module contains only clock gate and synchronizer instances. Its
+internal signals use `nl_internal_v<N>`. To find the signals of an endpoint or
+switch, read the map. `value/<N>` in the map is the signal `nl_internal_v<N>`,
+except for a stage inside a synchronizer. For example, `network.storage` lists
+the signals of each resource, such as `source/cpu/pipe/aw`. See
 [Map fields](docs/map-fields.md).
 
 With its default warning settings, Verilator reports `CMPCONST` and `UNSIGNED`
 warnings for most generated networks and exits with a nonzero code. Add
 `-Wno-CMPCONST -Wno-UNSIGNED` to the Verilator command.
 
-If the network has clock domain crossings, run `generate` with
-`--cdc-constraints` and apply the
+For clock domain crossings, use `generate --cdc-constraints` and apply the
 [CDC constraints](docs/timing-constraints.md#cdc-constraints).
 
 The external managers and subordinates must meet the
 [progress requirements](docs/timeout-and-progress.md#shared-request-and-response-paths).
-For example, a manager must deliver every W beat of a write that it started,
-and it must accept R beats in finite time. A violation can stop the network
-until reset.
+A manager must deliver every W beat of a write it started and accept R beats
+in finite time. A violation can stop the network until reset.
 
 Reset all domains together. If you reset one domain alone, make sure that no
 traffic crosses its boundary.
@@ -143,14 +140,15 @@ traffic crosses its boundary.
 
 | Area | Supported |
 | --- | --- |
-| Initiator protocols | `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `apb3`, `ahb_lite` (AHB-Lite) and `ahb5` |
-| Target protocols | `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `apb3`, `apb2`, `ahb_lite` (AHB-Lite) and `ahb5` |
+| Initiator protocols | `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `apb3`, `ahb_lite` (AHB-Lite), `ahb5` and `wishbone` |
+| Target protocols | `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `apb3`, `apb2`, `ahb_lite` (AHB-Lite), `ahb5` and `wishbone` |
+| [Wishbone classic cycles](docs/wishbone.md) | 32-bit single reads and writes, byte SEL, ERR, optional target RTY as error, explicit byte or word addresses |
 | AHB5 properties | HPROT is 4 bits by default or 7 bits. HNONSEC is optional and defaults to absent. HMASTER is 0 to 32 bits |
 | Endpoint count | 1 to 256 initiators, 1 to 256 targets |
 | Topology | One generated request switch and one generated response switch, or declared request and response graphs of 1 to 128 switches each |
-| Endpoint data width | AXI4, AXI3, AHB-Lite and AHB5: 32, 64, 128, 256, 512 or 1024 bits. AXI4-Lite: 32 or 64 bits. APB: 8, 16 or 32 bits |
-| Network data width | 32 or 64 bits (`transport.data_width`). The default is the narrowest endpoint data width, where APB counts as 32 bits and the maximum is 64 bits. A 64-bit network accepts only 64-bit initiators, and no APB endpoint or AHB target. Other definitions need a 32-bit network. Therefore, an initiator wider than 64 bits needs `transport.data_width: 32`, unless a 32-bit or APB endpoint already makes 32 bits the default |
-| Address width | 2 to 48 bits. AXI4, AXI3 and AHB initiators need at least 12 bits. APB initiators use at most 32 bits. APB, AHB and AXI4-Lite targets use at most 32 bits |
+| Endpoint data width | AXI4, AXI3, AHB-Lite and AHB5: 32, 64, 128, 256, 512 or 1024 bits. AXI4-Lite: 32 or 64 bits. APB: 8, 16 or 32 bits. Wishbone: 32 bits |
+| Network data width | 32 or 64 bits (`transport.data_width`). The default is the narrowest endpoint data width, where APB counts as 32 bits and the maximum is 64 bits. A 64-bit network accepts only 64-bit initiators, and no APB or Wishbone endpoint or AHB target. Other definitions need a 32-bit network. Therefore, an initiator wider than 64 bits needs `transport.data_width: 32`, unless a 32-bit or APB endpoint already makes 32 bits the default |
+| Address width | 2 to 48 bits. AXI4, AXI3, AHB and Wishbone initiators need at least 12 bits. APB initiators use at most 32 bits. APB, AHB, Wishbone and AXI4-Lite targets use at most 32 bits |
 | Clock domains | 1 to 64. More than one domain needs a `topology` whose switches name their clock domains. Clock domain crossings connect asynchronous clocks, or related clocks divided from one root |
 | Endpoint clock gating | Separate protocol and transport gates, one shared gate, or a transport gate with the protocol side on the domain clock |
 | Transactions | Several AXI transactions in flight, exclusive access, target timeouts and an error response on a decode miss |
@@ -165,6 +163,7 @@ See [Documentation](#documentation) for field definitions and limits.
 
 | Not supported | Detail |
 | --- | --- |
+| Wishbone options | No pipelined cycles, registered feedback bursts, LOCK or user tags. See [Wishbone](docs/wishbone.md) |
 | Other protocols | For example AXI5, ACE and APB2 initiators |
 | AHB5 optional signals | HEXCL, HEXOKAY and HAUSER, HWUSER, HRUSER and HBUSER are unsupported. See [AHB5 properties](docs/ahb.md#ahb5-basic-properties) |
 | AHB arbitration and responses | No multi-manager arbitration or HSPLIT. RETRY and SPLIT on two-bit `ahb_lite` targets fail the packet |

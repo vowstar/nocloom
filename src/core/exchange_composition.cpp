@@ -18,6 +18,7 @@
 #include "related_clock.hpp"
 #include "treadle.hpp"
 #include "width_adapter.hpp"
+#include "wishbone.hpp"
 #include <algorithm>
 #include <bit>
 #include <map>
@@ -1545,7 +1546,7 @@ public:
     };
     const auto external = [](const Port &port) {
       return port.endpoint == "axi" || port.endpoint == "ahb" || port.endpoint == "apb" ||
-             port.endpoint == "axil";
+             port.endpoint == "axil" || port.endpoint == "wb";
     };
     ImportedEndpoint result;
     // Pipes on the AXI channels aw, w, ar, r and b between the ports and the component (into
@@ -2428,6 +2429,8 @@ private:
     for (const auto *signal : {"awvalid", "wvalid", "arvalid", "psel"})
       if (ep.axi.contains(signal))
         zone.wake.push_back(ep.axi.at(signal));
+    if (sp.external_protocol == Protocol::Wishbone)
+      zone.wake.push_back(c.and_(ep.axi.at("cyc"), ep.axi.at("stb")));
     if (sp.ahb)
       zone.wake.push_back(c.and_(ep.axi.at("hsel"), c.not_(c.eq(ep.axi.at("htrans"), 0))));
   }
@@ -2479,7 +2482,9 @@ private:
     // wakes on the clamp's fragment in front instead (r.up_wake, a splitter's held word).
     const auto read_wake = convert && expands_reads(sp) ? c.wire(1) : init_rrsp.valid;
     const auto profile = initiator_profile(plan, si);
-    const auto initiator = admitted(lower_axi4_initiator(profile));
+    const auto initiator = admitted(sp.external_protocol == Protocol::Wishbone
+                                        ? lower_wishbone_initiator(profile, sp.wishbone_word)
+                                        : lower_axi4_initiator(profile));
     // Narrower ID/length ports and one-direction sources change only the
     // external face; the endpoint keeps the network-wide widths.
     std::map<std::string, unsigned> source_ports;
@@ -3240,6 +3245,18 @@ private:
         fields.push_back("ahb.master");
     }
   }
+  static void wishbone_words(const Imported &ep, Names &words) {
+    for (const auto &[name, value] : ep.states)
+      if (name.starts_with("wb."))
+        words.second.push_back(name);
+  }
+  ValueId source_write_consume(const SourcePlan &sp, const Imported &ep) {
+    if (sp.external_protocol == Protocol::Wishbone)
+      return ep.bound.at("wb.b_take");
+    if (sp.apb || sp.ahb)
+      return ep.bound.at("wr.b_take");
+    return c.and_(ep.axi.at("bvalid"), ep.axi.at("bready"));
+  }
   void register_source_storage(unsigned si, const SourceSide &side, const Imported &converter,
                                const Imported &splitter) {
     const auto &sp = plan.sources[si];
@@ -3263,8 +3280,7 @@ private:
       const auto state = states.at(dir + ".state");
       ValueId capture, consume, full;
       if (!read) {
-        consume = sp.apb || sp.ahb ? bound.at("wr.b_take")
-                                   : c.and_(side.ep.axi.at("bvalid"), side.ep.axi.at("bready"));
+        consume = source_write_consume(sp, side.ep);
         capture = bound.at("wr.aw_fire");
         if (lite)
           capture = c.or_(c.and_(capture, c.not_(states.at("wr.beat_full"))),
@@ -3301,6 +3317,8 @@ private:
                        plan.burst_audit_bits != 0);
       add_source_progress(words, read, sp.apb.has_value(), lite, outstanding > 1);
       plane_words(side.ep.states, dir, words);
+      if (read)
+        wishbone_words(side.ep, words);
       // The AHB face's data phase and its open piece count with the read engine: its R readiness
       // reads them, and its B readiness is constant.
       if (read && sp.ahb) {
@@ -5010,7 +5028,10 @@ private:
     const auto &target = plan.targets[o].name;
     const bool apb = apb_target(plan, target), lite = lite_target(plan, target);
     const auto profile = outlet_profile(plan, o);
-    auto lowered = apb    ? lower_apb_burst_outlet(profile)
+    const auto &tp = plan.targets[o];
+    auto lowered = tp.external_protocol == Protocol::Wishbone
+                       ? lower_wishbone_target(profile, tp.wishbone_word, tp.wishbone_retry)
+                   : apb  ? lower_apb_burst_outlet(profile)
                    : lite ? lower_axi_lite_outlet(profile)
                           : lower_ahb_outlet(profile);
     const auto ep = import_outlet(o, t, admitted(std::move(lowered)), {});
@@ -5337,7 +5358,8 @@ private:
              release, payload, control);
     }
     std::vector<ValueId> payload, control;
-    const auto bus = bus_names(o, profile, ep);
+    auto bus = bus_names(o, profile, ep);
+    wishbone_words(ep, bus);
     consume_states(ep, bus, assigned, payload, control);
     control.insert(control.end(), {t.count, t.turn});
     if (t.flow)

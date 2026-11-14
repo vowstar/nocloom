@@ -81,8 +81,8 @@ Endpoint `data_width` sets physical bus width. Nodes and links can override the
 | `data_user_bits_per_byte` | Data user bits per data byte | 0 to 4, default 0 |
 | `compact_failure_responses` | Use one internal failure class | `true` or `false`, default `false`. Set `true` only if every AXI initiator sets `slverr_only: true` and no log records failure classes |
 
-An APB endpoint requires a 32-bit network. Endpoint widths can differ from the
-network width under the [protocol rules](protocols.md). The
+APB and Wishbone endpoints require a 32-bit network. Endpoint widths can
+differ from the network width under the [protocol rules](protocols.md). The
 [transactions manual](transactions.md) describes capacity and ordering keys.
 
 APB5 uses endpoint `user_width`, `user_flags`, `user` and
@@ -134,6 +134,20 @@ C++ endpoints use `Protocol::Ahb5` and optional `Ahb5Properties ahb5`.
 protocol: ahb5
 ahb5: {hprot_width: 7, hnonsec: true, hmaster_width: 32}
 ```
+
+## Wishbone endpoint fields
+
+`protocol: wishbone` requires `address_unit: byte` or `word` on both endpoint
+roles. There is no default. Targets can set `retry: error` to add RTY as an
+error input. Its default is no RTY port. Other protocols reject both fields.
+
+C++ uses `Protocol::Wishbone`. Set both `Initiator::address_unit` and
+`Target::address_unit` to `AddressUnit::Byte` or `AddressUnit::Word`.
+Target `retry` optionally takes `WishboneRetry::Error`.
+
+Data width and network width must be 32 bits. Capacity is one. There are no
+`cycles`, `burst_tags`, `granularity` or `endianness` fields. See
+[Wishbone](wishbone.md).
 
 ## Endpoint templates
 
@@ -193,9 +207,9 @@ Only `schema_version: 10` is accepted. Values 1 through 9 produce
 A derived invalid network width also reports `NCL_NETWORK_DATA_WIDTH` at
 `transport.data_width`. With a 64-bit network, every initiator must be 64 bits.
 A 32-bit endpoint makes the derived network width 32. Set
-`transport.data_width: 64` to use a 64-bit network with 32-bit AXI targets. Full
-AXI and AHB initiator addresses are 12 to 48 bits. AXI4-Lite initiator addresses
-are 2 to 48 bits.
+`transport.data_width: 64` to use a 64-bit network with 32-bit AXI targets.
+Full AXI, AHB and Wishbone initiator addresses are 12 to 48 bits. AXI4-Lite
+initiator addresses are 2 to 48 bits.
 
 APB initiator addresses are 1 to 32 bits. Initiator widths cannot exceed the
 global width. Omitted endpoint address widths inherit the global width.

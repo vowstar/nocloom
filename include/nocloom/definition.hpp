@@ -17,7 +17,7 @@ namespace nocloom {
 // network); Apb2 is never a valid initiator protocol. Axi4 is the full AXI4 burst profile. AhbLite
 // is AMBA 3 AHB-Lite: a target outlet, or an initiator's subordinate port. Axi3 is an AMBA 3 AXI
 // port of an initiator or a target: AXI4 bursts of at most 16 beats with WID and a two-bit AxLOCK.
-enum class Protocol { Apb4, Axi4Lite, Apb3, Apb2, Axi4, AhbLite, Axi3, Ahb5, Apb5 };
+enum class Protocol { Apb4, Axi4Lite, Apb3, Apb2, Axi4, AhbLite, Axi3, Ahb5, Apb5, Wishbone };
 namespace detail {
 // Internal. The name of each protocol in a definition file, in the order of the manual. Every
 // protocol serves a target; initiator is false for a protocol that does not serve an initiator.
@@ -31,7 +31,7 @@ inline constexpr ProtocolName protocol_names[] = {
     {Protocol::Axi4Lite, "axi4_lite", true}, {Protocol::Apb5, "apb5", true},
     {Protocol::Apb4, "apb4", true}, {Protocol::Apb3, "apb3", true},
     {Protocol::Apb2, "apb2", false}, {Protocol::AhbLite, "ahb_lite", true},
-    {Protocol::Ahb5, "ahb5", true}};
+    {Protocol::Ahb5, "ahb5", true}, {Protocol::Wishbone, "wishbone", true}};
 // The protocol names that an initiator, or a target, accepts, as in "axi4, axi3 or apb4".
 inline std::string supported_protocols(bool initiator) {
   std::string list;
@@ -41,6 +41,8 @@ inline std::string supported_protocols(bool initiator) {
   return list.replace(list.rfind(','), 1, " or");
 }
 } // namespace detail
+enum class AddressUnit { Byte, Word };
+enum class WishboneRetry { Error };
 // Each endpoint zone has its own gate by default. Both zones must be gated to share one gate.
 struct EndpointClockGates {
   bool protocol = true;
@@ -506,6 +508,9 @@ struct Initiator {
   std::optional<Ahb5Properties> ahb5 = std::nullopt;
   // By default, the zones have separate gates. An override requires a gated domain.
   std::optional<EndpointClockGates> clock_gating = std::nullopt;
+  // Wishbone requires an explicit address unit. Only targets accept retry: error.
+  std::optional<AddressUnit> address_unit = std::nullopt;
+  std::optional<WishboneRetry> retry = std::nullopt;
   bool operator==(const Initiator &) const = default;
   // AXI4, AXI3 and AXI4-Lite only. True returns SLVERR for every failure.
   // Omission and false preserve DECERR.
@@ -638,6 +643,9 @@ struct Target {
   std::optional<Ahb5Properties> ahb5 = std::nullopt;
   // By default, the zones have separate gates. An override requires a gated domain.
   std::optional<EndpointClockGates> clock_gating = std::nullopt;
+  // Wishbone requires an explicit address unit. Only targets accept retry: error.
+  std::optional<AddressUnit> address_unit = std::nullopt;
+  std::optional<WishboneRetry> retry = std::nullopt;
   bool operator==(const Target &) const = default;
 };
 struct TreeNode {

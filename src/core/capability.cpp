@@ -13,6 +13,7 @@ using P = Protocol;
 constexpr std::uint32_t narrow = 0xFF, wide = 0xFC; // 8 to 1024 bits, 32 to 1024 bits
 // protocol, ingress, egress, their widths, timeout, attributes, fixed, apb, ahb, lock, max
 constexpr ProtocolCaps caps[] = {
+    {P::Wishbone, true, true, 4, 4, true, false, true, false, false, false, 1},
     {P::Apb5, true, true, narrow, narrow, true, true, true, true, false, false, 1},
     {P::Apb4, true, true, narrow, narrow, true, true, true, true, false, false, 1},
     {P::Axi4Lite, true, true, wide, wide, true, true, true, false, false, false, 256},
@@ -185,9 +186,7 @@ constexpr CapabilityRule rules[] = {
        };
        const auto apb_source = [](const SourcePlan &s) { return s.apb && s.apb_bits == 32; };
        const auto apb_target = [](const TargetPlan &t) {
-         return (t.protocol == P::Apb5 || t.protocol == P::Apb4 || t.protocol == P::Apb3 ||
-                 t.protocol == P::Apb2) &&
-                t.apb_bits == 32 && !t.timeout;
+         return protocol_caps(t.external_protocol).apb && t.apb_bits == 32 && !t.timeout;
        };
        const bool axi =
            std::ranges::all_of(p.sources, axi_source) && std::ranges::all_of(p.targets, axi_target);

@@ -3,7 +3,7 @@
 Byte lanes use little-endian ordering. The manuals use full AXI for AXI4 and
 AXI3, and Lite for AXI4-Lite.
 
-Related manuals: [AHB-Lite and AHB5](ahb.md),
+Related manuals: [Wishbone](wishbone.md), [AHB-Lite and AHB5](ahb.md),
 [APB and AXI4-Lite targets](dedicated-targets.md),
 [Widths and AXI target interfaces](width-conversion.md),
 [Attributes and user signals](user-signals.md).
@@ -18,14 +18,18 @@ Related manuals: [AHB-Lite and AHB5](ahb.md),
 | `apb5` | Initiator or target | 8, 16, 32 |
 | `apb4` | Initiator or target | 8, 16, 32 |
 | `apb3` | Initiator or target | 8, 16, 32 |
+| `wishbone` | Initiator or target, classic cycles | 32 |
 | `apb2` | Target only | 8, 16, 32 |
 | `ahb_lite` | AHB-Lite initiator or target | 32, 64, 128, 256, 512, 1024 |
 | `ahb5` | AHB5 initiator or target with basic properties | 32, 64, 128, 256, 512, 1024 |
 
-APB endpoints require a 32-bit network.
+APB and Wishbone endpoints require a 32-bit network.
+Wishbone requires an explicit `address_unit: byte` or `word`. See
+[Wishbone classic cycles](wishbone.md) for options, signals and reset integration.
 
-AHB targets require a 32-bit network. APB, AHB and AXI4-Lite targets support at
-most 32 local address bits. When the global address width exceeds 32, set each
+AHB targets require a 32-bit network. APB, AHB, Wishbone and AXI4-Lite targets
+support at most 32 local address bits. When the global address width exceeds
+32, set each
 such target's `address_width` to 32 or less.
 
 ## Endpoint ports
@@ -36,9 +40,9 @@ signal has no port.
 
 AXI endpoints can select `access: read_write`, `read_only` or `write_only`. The
 default is `read_write`. A read-only AXI initiator or full AXI target omits AW,
-W and B. A write-only AXI initiator or full AXI target omits AR and R. APB, AHB
-and AXI4-Lite targets retain their signals but never access the refused
-direction. APB and AHB initiators reject this option.
+W and B. A write-only AXI initiator or full AXI target omits AR and R. APB, AHB,
+Wishbone and AXI4-Lite targets retain their signals but never access the refused
+direction. APB, AHB and Wishbone initiators reject this option.
 
 A target refuses the direction it does not support without bus access. Refused
 writes return one error after consuming W. Refused reads return zero data and an

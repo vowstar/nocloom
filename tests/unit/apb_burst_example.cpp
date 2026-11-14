@@ -614,8 +614,8 @@ TEST_CASE("The map gives internal failure classes and the response at each AXI p
 TEST_CASE("Only AXI initiators may set slverr_only", "[apb-burst-example]") {
   auto d = public_apb();
   auto &source = d.initiators[1];
-  source.protocol = nocloom::Protocol::Apb4;
-  source.data_width = 32;
+  source.protocol = nocloom::Protocol::Wishbone;
+  source.address_unit = nocloom::AddressUnit::Byte;
   source.id_width.reset();
   source.len_width.reset();
   REQUIRE(nocloom::generate(d));

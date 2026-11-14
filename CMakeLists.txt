@@ -151,7 +151,8 @@ target_sources(nocloom_core PRIVATE src/core/width_adapter.cpp)
 
 target_sources(nocloom_core PRIVATE src/core/axi4_initiator.cpp src/core/axi4_output.cpp)
 target_sources(nocloom_core PRIVATE src/core/axi4_outlet.cpp)
-target_sources(nocloom_core PRIVATE src/core/ahb_outlet.cpp)
+target_sources(nocloom_core PRIVATE src/core/ahb_outlet.cpp
+  src/core/wishbone.cpp)
 target_sources(nocloom_core PRIVATE src/core/exclusive_monitor.cpp)
 target_sources(nocloom_core PRIVATE src/core/axi4_width_clamp.cpp)
 target_sources(nocloom_core PRIVATE src/core/axi4_packetizer.cpp)

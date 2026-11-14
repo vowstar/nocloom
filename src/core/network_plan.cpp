@@ -308,11 +308,13 @@ void plan_source_pipes(SourcePlan &s, const Initiator &initiator) {
   const auto &pipes = initiator.pipes;
   // An AHB face has no AXI channels to pipe.
   for (const auto *channel : {"aw", "w", "ar"})
-    if (s.protocol == Protocol::Axi4 && !s.ahb && one_way_keeps(s.read_only, s.write_only, channel))
+    if (s.protocol == Protocol::Axi4 && !s.ahb && s.external_protocol != Protocol::Wishbone &&
+        one_way_keeps(s.read_only, s.write_only, channel))
       endpoint_pipe(s.pipes, "source/" + s.name + "/pipe/" + channel, pipes.request);
   // The forward stage of R and B is the engine's own response register.
   for (const auto *channel : {"r", "b"})
-    if (s.protocol == Protocol::Axi4 && !s.ahb && one_way_keeps(s.read_only, s.write_only, channel))
+    if (s.protocol == Protocol::Axi4 && !s.ahb && s.external_protocol != Protocol::Wishbone &&
+        one_way_keeps(s.read_only, s.write_only, channel))
       endpoint_pipe(s.pipes, "source/" + s.name + "/pipe/" + channel,
                     {pipes.response.backward_stage() ? PipeSlice::Backward : PipeSlice::None});
   if (s.qos.picks() && pipes.packets.slice != PipeSlice::None) {
@@ -336,6 +338,16 @@ void plan_ahb5_metadata(NetworkPlan &plan, const Definition &d) {
     plan.burst_user_bits += 8 + plan.hmaster_bits;
 }
 // The endpoint settings of the definition, in name order.
+static void wishbone_engine(SourcePlan &s) {
+  if (s.external_protocol == Protocol::Wishbone) {
+    s.protocol = Protocol::Axi4;
+    s.id_bits = 0;
+    s.len_bits = 4;
+  }
+}
+static Protocol target_engine(Protocol protocol) {
+  return protocol == Protocol::Wishbone ? Protocol::Apb4 : protocol;
+}
 void plan_endpoints(NetworkPlan &plan, const Definition &d) {
   const auto options = d.transport.value_or(TransportOptions{});
   const auto layout = layout_mappings(d);
@@ -349,6 +361,7 @@ void plan_endpoints(NetworkPlan &plan, const Definition &d) {
     s.name = initiator.name;
     s.slverr_only = initiator.slverr_only.value_or(false);
     s.external_protocol = initiator.protocol.value_or(Protocol::Axi4);
+    s.wishbone_word = initiator.address_unit == AddressUnit::Word;
     s.clock_gating = initiator.clock_gating;
     s.qos = initiator.qos;
     if (plan.placement)
@@ -375,6 +388,7 @@ void plan_endpoints(NetworkPlan &plan, const Definition &d) {
     s.axi3 = initiator.protocol == Protocol::Axi3;
     if (s.axi3)
       s.protocol = Protocol::Axi4;
+    wishbone_engine(s);
     s.engine_bits = source_engine_width(initiator, plan.burst_source_data_bits);
     // A source wider than the network word attaches at its own width: its packets carry whole
     // source beats, and the transport adapters on its link step them down to the network word.
@@ -447,8 +461,11 @@ void plan_endpoints(NetworkPlan &plan, const Definition &d) {
       plan.placement->objects["target/" + t.name] = t.clock_domain;
     x.local_bits = t.address_width.value_or(d.address_width);
     x.external_protocol = t.protocol.value_or(Protocol::Axi4);
+    x.wishbone_word = t.address_unit == AddressUnit::Word;
+    x.wishbone_retry = t.retry.has_value();
     x.axi3 = t.protocol == Protocol::Axi3;
     x.protocol = x.axi3 ? Protocol::Axi4 : t.protocol.value_or(Protocol::Axi4);
+    x.protocol = target_engine(x.protocol);
     x.ahb5 = t.protocol == Protocol::Ahb5;
     x.hmaster_bits = t.ahb5.value_or(Ahb5Properties{}).hmaster_width;
     x.hprot_bits = t.ahb5.value_or(Ahb5Properties{}).hprot_width;
@@ -750,8 +767,8 @@ static Status check_service_targets(const NetworkPlan &plan) {
         return bad(t.name, "The banks of a window are aligned and apart");
     }
     // The bank serves one packet at a time, whatever K would allow.
-    if (t.protocol != Protocol::Apb4 || t.outstanding != 1 || t.flows != 1 || t.back_to_back ||
-        t.read_only || t.write_only || t.timeout || !t.pipes.empty() ||
+    if (t.external_protocol != Protocol::Apb4 || t.outstanding != 1 || t.flows != 1 ||
+        t.back_to_back || t.read_only || t.write_only || t.timeout || !t.pipes.empty() ||
         t.exclusive.mode != ExclusiveAccess::None || t.apb_bits != 32)
       return bad(t.name, "A window has one packet, one flow and no options");
     if (t.mappings.size() != 1 || !t.mappings.front().when.empty())
@@ -766,7 +783,7 @@ static Status check_service_targets(const NetworkPlan &plan) {
       return bad(t.name, "A window holds its banks in an aligned block of at most 1 MiB");
     if (std::ranges::any_of(plan.sources, [&](const SourcePlan &source) {
           return reaches(plan, source.name, t.name) &&
-                 (source.apb != Protocol::Apb4 || source.apb_bits != 32);
+                 (source.external_protocol != Protocol::Apb4 || source.apb_bits != 32);
         }))
       return bad(t.name, "Only 32-bit APB4 sources reach a window");
   }
@@ -841,7 +858,7 @@ static Status check_service_domains(const NetworkPlan &plan) {
       const auto &own = plan.placement->objects.at("target/" + t.name);
       if (own == domain || own != first)
         return bad(t.name, "The targets of a crossed log share a domain apart from it");
-      if (t.protocol != Protocol::Apb4)
+      if (t.external_protocol != Protocol::Apb4)
         return bad(t.name, "A crossed log watches APB4 targets");
       if (!period_of(own))
         return bad(t.name, "A crossed log's clocks need known periods");
@@ -878,9 +895,8 @@ static Status plan_audit_flags(NetworkPlan &plan, const InternalNetwork &interna
     const auto of = request.drivers.find(source.name);
     if (of == request.drivers.end() || of->second.size() != flags.size())
       return bad(source.name, "Every source drives every audit flag");
-    const bool apb4 = source.apb == Protocol::Apb4;
-    const bool axi4 =
-        !source.apb && !source.ahb && !source.axi3 && source.protocol == Protocol::Axi4;
+    const bool apb4 = source.external_protocol == Protocol::Apb4;
+    const bool axi4 = source.external_protocol == Protocol::Axi4;
     if (!apb4 && !axi4)
       return bad(source.name, "Only APB4 and AXI4 sources drive audit flags");
     if (source.clamp)
@@ -914,8 +930,8 @@ static Status check_observed_target(const NetworkPlan &plan, const ErrorLogPlan 
   const auto bad = [&](const std::string &message) {
     return Status::failure(error("NCL_UNSUPPORTED_TOPOLOGY", "error_logging." + t.name, message));
   };
-  const bool apb4 = t.protocol == Protocol::Apb4 && t.apb_bits == 32 && !t.back_to_back;
-  const bool axi4 = t.protocol == Protocol::Axi4 && !t.axi3 && t.data_bits == 32;
+  const bool apb4 = t.external_protocol == Protocol::Apb4 && t.apb_bits == 32 && !t.back_to_back;
+  const bool axi4 = t.external_protocol == Protocol::Axi4 && t.data_bits == 32;
   if ((!apb4 && !axi4) || (apb4 && t.outstanding != 1) || t.flows != 1 || t.read_only ||
       t.write_only || t.timeout || !t.pipes.empty() || t.exclusive.mode != ExclusiveAccess::None ||
       t.upsize)
@@ -927,9 +943,8 @@ static Status check_observed_target(const NetworkPlan &plan, const ErrorLogPlan 
     return bad("Only AXI4 targets keep a record's fields");
   for (const auto &row : observed.sources) {
     const auto &source = plan.sources[row.source];
-    const bool plain_apb = source.apb == Protocol::Apb4 && source.apb_bits == 32;
-    const bool plain_axi = !source.apb && source.protocol == Protocol::Axi4 && !source.ahb &&
-                           !source.axi3 && source.engine_bits == 32;
+    const bool plain_apb = source.external_protocol == Protocol::Apb4 && source.apb_bits == 32;
+    const bool plain_axi = source.external_protocol == Protocol::Axi4 && source.engine_bits == 32;
     if ((!plain_apb && !plain_axi) || source.flows.size() > 1 || source.default_target)
       return bad("Only plain 32-bit APB4 and AXI4 sources reach an observed target");
     if (flags_alone && !plain_axi)
@@ -946,7 +961,7 @@ static Status check_error_logs(const NetworkPlan &plan) {
   if (plan.error_logs.empty())
     return Status::success({});
   if (plan.burst_record_bits && std::ranges::any_of(plan.sources, [](const SourcePlan &source) {
-        return source.ahb || (source.protocol == Protocol::Axi4Lite && !source.apb);
+        return !protocol_caps(source.external_protocol).apb && !full_axi(source.external_protocol);
       }))
     return bad("sources", "A logger of varying lengths needs APB and AXI4 sources");
   if (plan.plane_bits != 0)

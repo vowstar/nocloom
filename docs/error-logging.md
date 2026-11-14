@@ -26,7 +26,7 @@ The global base aligns to the window size. At 64 bytes per bank, 64 logs of
 A network with error logs has one register window with one unconditional
 mapping. It requires a 32-bit network without scheduling levels. Access
 initiators use APB4 in one domain. A window has at most 64 logs. Logs observe
-supported 32-bit APB4 and AXI4 targets.
+supported 32-bit APB4 and AXI4 targets. Error logs exclude Wishbone initiators.
 
 Observed APB4 targets allow one packet in flight and reject back-to-back
 mode. AXI4 targets can allow several packets. Observed targets reject flows,

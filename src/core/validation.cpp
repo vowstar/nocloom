@@ -321,7 +321,9 @@ template <typename Reject> void check_v10_shape(const Definition &d, Reject &rej
                                                                      : caps.ingress_widths,
                                  *list[i].data_width))
         reject("NCL_ENDPOINT_DATA_WIDTH", field + ".data_width",
-               "Endpoint data width must be 32, 64, 128, 256, 512 or 1024");
+               list[i].protocol == Protocol::Wishbone
+                   ? "Wishbone requires 32-bit data and network widths"
+                   : "Endpoint data width must be 32, 64, 128, 256, 512 or 1024");
     }
   };
   endpoint(d.initiators, "initiators");
@@ -1052,12 +1054,50 @@ void check_ahb5(Checks &c, std::optional<Protocol> protocol,
       "AHB5 requires hprot_width 4 or 7 and hmaster_width 0..32, without exclusive or user "
       "signals");
 }
+template <class Endpoint>
+void check_wishbone(Checks &c, const Endpoint &e, const std::string &field, bool source) {
+  const bool wb = e.protocol == Protocol::Wishbone;
+  if (e.address_unit && !wb)
+    c("NCL_WISHBONE_OPTION", field + ".address_unit", "address_unit requires wishbone");
+  if (e.retry && (!wb || source || *e.retry != WishboneRetry::Error))
+    c("NCL_WISHBONE_OPTION", field + ".retry", "retry: error requires a Wishbone target");
+  if (!wb)
+    return;
+  if (!e.address_unit ||
+      (*e.address_unit != AddressUnit::Byte && *e.address_unit != AddressUnit::Word))
+    c("NCL_WISHBONE_ADDRESS_UNIT", field + ".address_unit",
+      "Wishbone requires address_unit: byte or word");
+  if (e.data_width.value_or(32) != 32 || c.network_bits != 32)
+    c("NCL_ENDPOINT_DATA_WIDTH", field + ".data_width",
+      "Wishbone requires 32-bit data and network widths");
+  const auto bits = e.address_width.value_or(c.d.address_width);
+  if ((!source && bits > 32) || (e.address_unit == AddressUnit::Word && bits < 3))
+    c("NCL_ENDPOINT_ADDRESS_WIDTH", field + ".address_width",
+      "Wishbone targets use at most 32 byte-address bits and word addressing needs at least 3");
+}
+void check_wishbone_source(Checks &c, const Initiator &e, const std::string &field) {
+  if (e.protocol != Protocol::Wishbone)
+    return;
+  for (const auto &[set, key] : {std::pair{e.id_width.has_value(), "id_width"},
+                                 {e.len_width.has_value(), "len_width"},
+                                 {e.access.has_value(), "access"},
+                                 {e.narrow_bursts.has_value(), "narrow_bursts"},
+                                 {e.id_table_entries.has_value(), "id_table_entries"},
+                                 {e.pipes.request != InitiatorPipes{}.request, "pipes.request"}})
+    if (set)
+      c("NCL_WISHBONE_OPTION", field + "." + key,
+        "This field does not apply to a classic Wishbone initiator");
+  if (const auto [capacity, at] = capacity_at(c.d, e, field); capacity != 1)
+    c("NCL_AXI4_CAPACITY_COMBINATION", at, "Classic Wishbone keeps one transfer in flight");
+}
 // The protocol, data width and address width of an initiator.
 void check_initiator_face(Checks &c, const Initiator &initiator, const std::string &field) {
   const auto &d = c.d;
   if (initiator.slverr_only && !detail::axi_response_protocol(initiator.protocol))
     c("NCL_UNSUPPORTED_PROTOCOL", field + ".slverr_only",
       "This protocol has its own error signal. slverr_only applies to AXI initiators");
+  check_wishbone(c, initiator, field, true);
+  check_wishbone_source(c, initiator, field);
   check_ahb5(c, initiator.protocol, initiator.ahb5, field);
   if (initiator.protocol) {
     if (*initiator.protocol == Protocol::Apb2)
@@ -1097,8 +1137,8 @@ void check_initiator_face(Checks &c, const Initiator &initiator, const std::stri
   if (initiator.address_width &&
       (*initiator.address_width < source_address_min || *initiator.address_width > d.address_width))
     c("NCL_ENDPOINT_ADDRESS_WIDTH", field + ".address_width",
-      "Source addresses require at least 1 bit for APB, 2 for AXI4-Lite or 12 for AXI4 and AHB, "
-      "and no more than the global width");
+      "Source addresses require at least 1 bit for APB, 2 for AXI4-Lite or 12 for full AXI, AHB "
+      "and Wishbone, and no more than the global width");
 }
 // The transaction ports, narrow bursts, capacity and ID table of an initiator. Returns whether
 // it is a full AXI4 or AXI3 initiator with more than one outstanding burst.
@@ -1106,7 +1146,8 @@ bool check_initiator_bursts(Checks &c, const Initiator &initiator, const std::st
   const auto options = c.d.transport.value_or(TransportOptions{});
   const bool lite_source = initiator.protocol == Protocol::Axi4Lite;
   // check_apb_initiator and check_ahb_initiator own the port and burst rules of their faces.
-  const bool face_source = apb_initiator(initiator) || detail::ahb_protocol(initiator.protocol);
+  const bool face_source = apb_initiator(initiator) || detail::ahb_protocol(initiator.protocol) ||
+                           initiator.protocol == Protocol::Wishbone;
   // An AXI3 AxLEN has four bits: bursts of at most 16 beats.
   const bool axi3 = initiator.protocol == Protocol::Axi3;
   for (const auto &[name, value, limit] :
@@ -1153,7 +1194,7 @@ bool check_initiator_bursts(Checks &c, const Initiator &initiator, const std::st
       initiator.id_table_entries ? initiator.id_table_entries : options.id_table_entries;
   if (face_source && initiator.id_table_entries)
     c("NCL_AXI4_ID_CAPACITY", field + ".id_table_entries",
-      "APB and AHB initiators have no source ID table");
+      "APB, AHB and Wishbone initiators have no source ID table");
   else if (ids && !face_source && (capacity > 1 || initiator.id_table_entries)) {
     const auto ids_at = initiator.id_table_entries ? field + ".id_table_entries"
                                                    : std::string("transport.id_table_entries");
@@ -1375,7 +1416,9 @@ void check_target_attributes(Checks &c, const Target &t, const std::string &fiel
   };
   const bool axi = full_axi(protocol), ahb = detail::ahb_protocol(protocol);
   if (!caps.attributes)
-    c("NCL_TARGET_ATTRIBUTES", field + ".attributes", "APB3 and APB2 targets have no PPROT to map");
+    c("NCL_TARGET_ATTRIBUTES", field + ".attributes",
+      protocol == Protocol::Wishbone ? "Wishbone targets have no protection or cache signals"
+                                     : "APB3 and APB2 targets have no PPROT to map");
   else if (!valid(t.attributes->read_cache) || !valid(t.attributes->write_cache) ||
            !valid(t.attributes->prot) || !valid(t.attributes->hprot))
     c("NCL_TARGET_ATTRIBUTES", field + ".attributes", "Unknown attribute source");
@@ -1389,6 +1432,9 @@ void check_target_attributes(Checks &c, const Target &t, const std::string &fiel
 // HRESP width, the timeout and the in-flight capacity. Burst shaping exists only on the AHB
 // outlet: other targets have no HBURST, so even an explicit default is rejected there.
 void check_target_options(Checks &c, const Target &t, const std::string &field) {
+  check_wishbone(c, t, field, false);
+  if (t.protocol == Protocol::Wishbone && t.flows != 1)
+    c("NCL_WISHBONE_OPTION", field + ".flows", "Wishbone targets require one flow");
   check_ahb5(c, t.protocol, t.ahb5, field);
   if (t.protocol == Protocol::Ahb5 && t.hresp_width.value_or(1) != 1)
     c("NCL_TARGET_AHB_HRESP", field + ".hresp_width", "AHB5 requires one-bit HRESP");
@@ -1435,7 +1481,7 @@ void check_target_options(Checks &c, const Target &t, const std::string &field) 
            : "The in-flight capacity of a target (reads and writes combined) must be 1 to 16");
   else if (t.max_outstanding > caps.max_outstanding)
     c("NCL_AXI4_CAPACITY_COMBINATION", field + ".max_outstanding",
-      "Dedicated APB and AHB targets keep one burst in flight");
+      "Dedicated APB, AHB and Wishbone targets keep one burst in flight");
 }
 // The exclusive access mode and monitors of a target.
 void check_target_exclusive(Checks &c, const Target &t, const std::string &field) {
@@ -1458,9 +1504,8 @@ void check_target_exclusive(Checks &c, const Target &t, const std::string &field
   else if (mode == ExclusiveAccess::Target &&
            !detail::protocol_caps(t.protocol.value_or(Protocol::Axi4)).lock)
     c("NCL_TARGET_EXCLUSIVE", at,
-      "exclusive: target passes AxLOCK to an AXI4 or AXI3 target; APB, AHB and AXI4-Lite targets "
-      "have "
-      "no exclusive signal and use exclusive: network");
+      "Only full AXI4 or AXI3 targets have AxLOCK. APB, AHB, AXI4-Lite and Wishbone targets use "
+      "exclusive: network");
   else if (t.access == Access::ReadOnly)
     c("NCL_TARGET_EXCLUSIVE", at, "A read-only target supports no exclusive access (AXI A10.2.2)");
   else if (t.access == Access::WriteOnly)

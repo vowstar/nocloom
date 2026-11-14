@@ -9,7 +9,7 @@ Related manuals: [Read response interleaving](read-responses.md),
 | Initiator | `max_outstanding` |
 | --- | --- |
 | AXI4, AXI3, AXI4-Lite | 1 to 64, reads and writes combined |
-| APB, AHB-Lite | 1 |
+| APB, AHB-Lite, AHB5, Wishbone | 1 |
 
 An initiator's `max_outstanding` overrides `transport.max_outstanding`. A burst
 takes one capacity entry when its first packet leaves and releases it when its
@@ -32,9 +32,9 @@ AXI4 and AXI3 targets accept `max_outstanding` from 1 to 16. Reads and writes
 share that packet capacity. AXI4-Lite targets accept `max_outstanding` from 1 to
 256 packets per direction.
 
-APB and AHB-Lite targets accept only `max_outstanding: 1`. An AHB target can
-accept another packet before the previous packet's final response leaves. The
-default is 1. Targets do not inherit `transport.max_outstanding`.
+APB, AHB-Lite, AHB5 and Wishbone targets accept only `max_outstanding: 1`. An
+AHB target can accept another packet before the previous packet's final response
+leaves. The default is 1. Targets do not inherit `transport.max_outstanding`.
 
 AXI4 and AXI3 requests hold their entry until their final response leaves the
 target adapter. Their writes can overlap across target IDs. Read overlap follows
@@ -64,7 +64,9 @@ that does not reach the target has no index.
 | Initiator | ID bits that count for W |
 | --- | --- |
 | AXI4, AXI3 | `id_width` |
-| APB, AHB, AXI4-Lite | 0 |
+| TL-UL | `source_width` |
+| TL-UH | `ceil(log2(max_outstanding))`, at least 1 |
+| APB, AHB, AXI4-Lite, Wishbone | 0 |
 
 | Map field in `ports.<target>` | Meaning |
 | --- | --- |
@@ -174,8 +176,8 @@ BREADY low until it matches a pending write.
 Refused directions still occupy target capacity entries until their local
 responses leave. A target-local write completion precedes later writes of its
 target ID. A target-local read completion waits until earlier reads are
-received. APB and AHB reject multi-packet configured capacity. Lite can overlap
-packets in one direction only.
+received. APB, AHB and Wishbone reject multi-packet configured capacity. Lite
+can overlap packets in one direction only.
 
 Splitting, conversion and crossings preserve per-ID order. Split bursts progress
 independently of unrelated earlier bursts. Later bursts follow once their

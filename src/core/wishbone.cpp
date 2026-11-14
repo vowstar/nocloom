@@ -1,0 +1,157 @@
+#include "wishbone.hpp"
+#include "ir_component.hpp"
+#include "logic.hpp"
+#include <stdexcept>
+
+namespace nocloom::detail {
+namespace {
+using logic::Fields;
+using logic::Logic;
+// Preserve the kernel's transport faces and bindings. Only its bus face is replaced.
+Fields import_kernel(Logic &l, const NodeHardware &kernel, const std::string &face,
+                     const Fields &inputs) {
+  IrComponent c(l.b, kernel.ir);
+  for (const auto &v : kernel.ir.values) {
+    if (v.op != Op::Input)
+      continue;
+    const auto &port = kernel.ir.ports.at(v.input_port.index);
+    const auto id = ValueId{static_cast<std::size_t>(&v - kernel.ir.values.data())};
+    if (port.endpoint.starts_with("domain:"))
+      c.replace(id, port.signal == "clock" ? l.clock : l.reset);
+    else if (port.endpoint == face)
+      c.replace(id, inputs.at(port.signal));
+    else
+      c.replace(id, l.b.input(port.name, port.width, port.endpoint, port.signal));
+  }
+  Fields outputs;
+  for (const auto &driver : kernel.ir.drivers) {
+    const auto &port = kernel.ir.ports.at(driver.port.index);
+    const auto value = c.get(driver.value);
+    if (port.endpoint == face || (port.endpoint == "hint" && port.signal.starts_with("wb_")))
+      outputs.emplace(port.signal, value);
+    else
+      l.b.output(port.name, value, port.endpoint, port.signal);
+  }
+  for (const auto &[name, value] : kernel.bindings)
+    l.bind(name, c.get(value));
+  c.finish();
+  return outputs;
+}
+// Register the next value of a kernel state expression without adding a bus cycle.
+// Substituting every state with its D input preserves the kernel's completion edge.
+void registered_face(Logic &l, const Fields &outputs) {
+  const auto snapshot = l.b.ir;
+  IrComponent next(l.b, snapshot);
+  for (std::size_t i = 0; i < snapshot.values.size(); ++i)
+    if (snapshot.values[i].op == Op::Input)
+      next.replace(ValueId{i}, ValueId{i});
+  for (const auto &state : snapshot.states)
+    next.replace(state.output, state.next);
+  for (const auto &[name, value] : outputs) {
+    const auto reg = l.state("wb." + name, l.width(value));
+    l.b.update(reg, next.get(value));
+    l.out("wb", name, reg);
+  }
+  next.finish();
+}
+Fields read_shape(Logic &l, ValueId sel, ValueId base) {
+  auto offset = l.num(2, 0), size = l.num(3, 2);
+  for (unsigned lane = 0; lane < 4; ++lane) {
+    offset = l.pick(l.eq(sel, 1U << lane), l.num(2, lane), offset);
+    size = l.pick(l.eq(sel, 1U << lane), l.num(3, 0), size);
+  }
+  size = l.pick(l.either(l.eq(sel, 3), l.eq(sel, 12)), l.num(3, 1), size);
+  offset = l.pick(l.eq(sel, 12), l.num(2, 2), offset);
+  return {{"address", l.either(base, l.fit(offset, l.width(base)))}, {"size", size}};
+}
+} // namespace
+
+Result<NodeHardware> lower_wishbone_initiator(const Axi4InitiatorProfile &profile, bool word) {
+  auto kernel = lower_axi4_initiator(profile);
+  if (!kernel)
+    return kernel;
+  Logic l;
+  const auto cyc = l.in("wb", "cyc", 1), stb = l.in("wb", "stb", 1);
+  const auto we = l.in("wb", "we", 1), sel = l.in("wb", "sel", 4);
+  const auto adr = l.in("wb", "adr", profile.address_bits - (word ? 2 : 0));
+  const auto base = word ? l.b.concat(adr, l.num(2, 0))
+                         : l.both(adr, l.num(profile.address_bits,
+                                             (std::uint64_t{1} << profile.address_bits) - 4));
+  const auto data = l.in("wb", "dat_w", 32);
+  const auto busy = l.state("wb.busy", 1), abandoned = l.state("wb.abandoned", 1);
+  const auto ack = l.state("wb.ack", 1), err = l.state("wb.err", 1);
+  const auto response = l.either(ack, err);
+  const auto live = l.both(cyc, stb);
+  const auto take = l.both(l.active(live), l.inv(l.either(busy, response)));
+  const auto addr = l.latch("wb.address", base, take);
+  const auto write = l.latch("wb.write", we, take);
+  const auto mask = l.latch("wb.mask", sel, take);
+  const auto payload = l.latch("wb.data", data, take);
+  const auto shape = read_shape(l, mask, addr);
+  const auto aw = l.state("wb.aw", 1), w = l.state("wb.w", 1), ar = l.state("wb.ar", 1);
+  Fields inputs;
+  // The full AXI kernel accepts one naturally aligned beat. It supplies all routing and errors.
+  for (const auto &p : kernel.value().ir.ports)
+    if (p.input && p.endpoint == "axi")
+      inputs[p.signal] = l.num(p.width, 0);
+  inputs["awaddr"] = addr;
+  inputs["araddr"] = shape.at("address");
+  inputs["awsize"] = l.num(3, 2);
+  inputs["arsize"] = shape.at("size");
+  inputs["awburst"] = inputs["arburst"] = l.num(2, 1);
+  inputs["awprot"] = inputs["arprot"] = l.num(3, 2);
+  inputs["awvalid"] = aw;
+  inputs["wvalid"] = w;
+  inputs["arvalid"] = ar;
+  inputs["wdata"] = payload;
+  inputs["wstrb"] = mask;
+  inputs["wlast"] = inputs["bready"] = inputs["rready"] = l.bit(1);
+  const auto out = import_kernel(l, kernel.value(), "axi", inputs);
+  l.bind("wb.b_take", out.at("bvalid"));
+  for (const auto &[valid, ready, direction] :
+       {std::tuple{aw, out.at("awready"), we}, std::tuple{w, out.at("wready"), we},
+        std::tuple{ar, out.at("arready"), l.inv(we)}})
+    l.b.update(valid, l.pick(take, direction, l.both(valid, l.inv(ready))));
+  // Network completion drains the request even if its bus response is abandoned.
+  const auto done = l.both(busy, l.either(out.at("bvalid"), out.at("rvalid")));
+  const auto failed =
+      l.pick(write, l.b.slice(out.at("bresp"), 1, 1), l.b.slice(out.at("rresp"), 1, 1));
+  const auto answer = l.every(std::array{done, live, l.inv(abandoned)});
+  l.b.update(busy, l.pick(take, l.bit(1), l.both(busy, l.inv(done))));
+  l.b.update(abandoned, l.pick(take, l.bit(0), l.either(abandoned, l.both(busy, l.inv(live)))));
+  l.b.update(ack, l.both(answer, l.inv(failed)));
+  l.b.update(err, l.both(answer, failed));
+  const auto rdata = l.state("wb.dat_r", 32);
+  l.b.update(rdata,
+             l.pick(l.both(answer, l.inv(l.either(write, failed))), out.at("rdata"), l.num(32, 0)));
+  l.out("wb", "ack", l.both(ack, live));
+  l.out("wb", "err", l.both(err, live));
+  l.out("wb", "dat_r", rdata);
+  return Result<NodeHardware>::success({std::move(l.b.ir), std::move(l.bindings)});
+}
+
+Result<NodeHardware> lower_wishbone_target(const BurstOutletProfile &profile, bool word,
+                                           bool retry) {
+  auto kernel = lower_apb_burst_outlet(profile);
+  if (!kernel)
+    return kernel;
+  Logic l;
+  const auto ack = l.in("wb", "ack", 1), err = l.in("wb", "err", 1);
+  const auto rty = retry ? l.in("wb", "rty", 1) : l.bit(0);
+  const auto error = l.either(err, rty);
+  const auto out = import_kernel(
+      l, kernel.value(), "apb",
+      {{"pready", l.either(ack, error)}, {"pslverr", error}, {"prdata", l.in("wb", "dat_r", 32)}});
+  auto address = out.at("paddr");
+  address = word ? l.b.slice(address, 2, profile.address_bits - 2)
+                 : l.both(address, l.num(profile.address_bits,
+                                         (std::uint64_t{1} << profile.address_bits) - 4));
+  registered_face(l, {{"cyc", out.at("wb_cycle")},
+                      {"stb", l.both(out.at("psel"), out.at("penable"))},
+                      {"we", out.at("pwrite")},
+                      {"adr", address},
+                      {"sel", out.at("wb_sel")},
+                      {"dat_w", out.at("pwdata")}});
+  return Result<NodeHardware>::success({std::move(l.b.ir), std::move(l.bindings)});
+}
+} // namespace nocloom::detail

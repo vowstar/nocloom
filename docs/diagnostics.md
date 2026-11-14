@@ -40,13 +40,15 @@ The codes of the C++ tree helper are in
 
 | Code | Condition |
 | --- | --- |
-| `NCL_ENDPOINT_DATA_WIDTH`, `NCL_NETWORK_DATA_WIDTH` | Unsupported endpoint or resolved network width |
+| `NCL_ENDPOINT_DATA_WIDTH`, `NCL_NETWORK_DATA_WIDTH` | Unsupported endpoint or resolved network width. Wishbone requires 32-bit data and network widths |
 | `NCL_ENDPOINT_ADDRESS_WIDTH` | Endpoint address port width outside its protocol limits, or a mapping's local interval outside that width, including `error_logging.registers.local_address` |
 | `NCL_ENDPOINT_TRANSACTION_WIDTH` | Unsupported ID or length width for the endpoint protocol |
 | `NCL_UNSUPPORTED_WIDTH`, `NCL_WIDTH_CONVERSION` | `transport.data_width` is not 32 or 64, or an endpoint width conversion that the network does not support |
 | `NCL_AXI4_TRANSPORT_WORD` | `transport_word_bytes` is not 4, 8, 16 or 32 |
 | `NCL_TARGET_TIMEOUT` | `timeout.cycles` is outside 16 to 1048576, or the target protocol has no timeout |
 | `NCL_TARGET_APB_ACCESS`, `NCL_TARGET_FIXED_BURSTS` | Back-to-back access on a target that is not APB, or an invalid `fixed_bursts` value |
+| `NCL_WISHBONE_ADDRESS_UNIT` | Wishbone has no address unit, or the unit is not `byte` or `word` |
+| `NCL_WISHBONE_OPTION` | A Wishbone field is set on another protocol, an initiator requests retry or unsupported classic options, or a target requests multiple flows |
 | `NCL_AHB5_PROPERTIES` | The `ahb5` object requires AHB5. HPROT width must be 4 or 7. HMASTER width must be 0 to 32. A nonzero target width must hold each reaching source. Exclusive and user signals are unsupported. Targets accept only `attributes: amba`, without per-bit overrides |
 | `NCL_TARGET_AHB_BURSTS`, `NCL_TARGET_AHB_HRESP` | Burst shaping or `hresp_width` on a target that is not AHB, an invalid value, or two-bit HRESP on AHB5 |
 | `NCL_ENDPOINT_ACCESS` | `access` is not `read_write`, `read_only` or `write_only` |
@@ -55,7 +57,7 @@ The codes of the C++ tree helper are in
 | `NCL_AHB_OUTLET_PROFILE`, `NCL_APB_BURST_OUTLET_PROFILE` | An AHB-Lite or APB target needs a 32-bit network and at most 32 local address bits |
 | `NCL_AXI_LITE_OUTLET_PROFILE` | An AXI4-Lite target needs 32-bit or 64-bit data and at most 32 local address bits |
 | `NCL_AXI4_CAPACITY` | Capacity outside the initiator or target range |
-| `NCL_AXI4_CAPACITY_COMBINATION` | Unsupported capacity combination, including a multi-burst initiator with more than 256 routing windows |
+| `NCL_AXI4_CAPACITY_COMBINATION` | Unsupported capacity combination, including a multi-burst initiator with more than 256 routing windows. APB, AHB and Wishbone targets keep one burst in flight |
 | `NCL_AXI4_ID_CAPACITY` | Invalid, unused or unsupported ID table configuration |
 | `NCL_AXI4_EXCHANGE_ID_WIDTH` | Target ID cannot hold required flow or exclusive-owner bits |
 | `NCL_AXI4_NARROW_BURSTS` | Unsupported narrow mode or conflict with target read side effects |

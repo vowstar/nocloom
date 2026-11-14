@@ -29,6 +29,7 @@ struct BurstOutletProfile {
   unsigned response_run_bits = 0;
   // APB dialect for lower_apb_burst_outlet: apb5, apb4, apb3 or apb2.
   Protocol dialect = Protocol::Apb4;
+  bool wishbone = false;
   // Mapped PPROT, AXI4-Lite AxPROT or AHB HPROT; absent carries AxPROT through
   // (AHB HPROT = {cache[1:0], prot[0], ~prot[2]}).
   std::optional<TargetAttributes> attributes = std::nullopt;

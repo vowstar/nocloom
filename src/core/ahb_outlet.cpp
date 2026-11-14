@@ -1157,6 +1157,10 @@ void ApbOutlet::bus_drive() {
   wcomplete = l.both(complete, owner);
   rcomplete = l.both(complete, l.inv(owner));
   bus_result = l.b.select(continuous ? hresp : l.both(hresp, l.inv(empty)), target_error, ok);
+  if (p.wishbone) {
+    out("hint", "wb_cycle", active(l.either(l.either(wb, rb), l.inv(l.eq(phase, 0)))));
+    out("hint", "wb_sel", bus_mask);
+  }
   out("apb", "paddr", bus_address);
   if (!strobeless)
     out("apb", "pprot", bus_prot);

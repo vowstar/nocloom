@@ -10,7 +10,7 @@
 
 namespace nocloom::config::detail {
 namespace {
-constexpr std::array<std::string_view, 25> initiator_keys{"name",
+constexpr std::array<std::string_view, 27> initiator_keys{"name",
                                                           "clock_domain",
                                                           "clock_gating",
                                                           "address_width",
@@ -34,8 +34,10 @@ constexpr std::array<std::string_view, 25> initiator_keys{"name",
                                                           "route_classes",
                                                           "default_class",
                                                           "id_ranges",
-                                                          "ahb5"};
-constexpr std::array<std::string_view, 29> target_keys{"name",
+                                                          "ahb5",
+                                                          "address_unit",
+                                                          "retry"};
+constexpr std::array<std::string_view, 31> target_keys{"name",
                                                        "clock_domain",
                                                        "clock_gating",
                                                        "mappings",
@@ -63,7 +65,9 @@ constexpr std::array<std::string_view, 29> target_keys{"name",
                                                        "response_user_width",
                                                        "data_user_width",
                                                        "flows",
-                                                       "ahb5"};
+                                                       "ahb5",
+                                                       "address_unit",
+                                                       "retry"};
 constexpr std::array<const char *, 2> kinds{"initiators", "targets"};
 constexpr std::array<const char *, 2> singular{"initiator", "target"};
 

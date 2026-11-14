@@ -1,7 +1,8 @@
 # Attribution
 
 The generator is under the [Apache License 2.0](../LICENSE). The unchanged
-project license is also in [LICENSES/Apache-2.0.txt](../LICENSES/Apache-2.0.txt).
+project license is also in
+[LICENSES/Apache-2.0.txt](../LICENSES/Apache-2.0.txt).
 The content that NocLoom supplies in the output files is under the
 [NocLoom Output Permission 1.0](../LICENSES/LicenseRef-NocLoom-Output-1.0.txt).
 The permission does not cover user material, third party material or the
@@ -44,6 +45,10 @@ US and/or elsewhere. NocLoom does not claim Arm certification or endorsement.
 See [Arm trademark guidance](https://www.arm.com/company/policies/trademarks)
 and
 [AMBA trademark guidance](https://www.arm.com/company/policies/trademarks/arm-trademark-list/amba-trademark).
+
+Wishbone names identify the implemented interfaces. NocLoom does not claim
+certification or endorsement by OpenCores. See the
+[Wishbone specification](https://opencores.org/howto/wishbone).
 
 ## Logo
 

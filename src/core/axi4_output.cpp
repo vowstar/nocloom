@@ -318,7 +318,7 @@ public:
           &MapWriter::error_responses, &MapWriter::routing, &MapWriter::width_conversion,
           &MapWriter::ingress, &MapWriter::target_contracts, &MapWriter::target_options,
           &MapWriter::exclusive_access, &MapWriter::outstanding, &MapWriter::target_id_record,
-          &MapWriter::error_encoding})
+          &MapWriter::error_encoding, &MapWriter::wishbone_fields})
       (this->*stage)();
     if (h.plan.clocked())
       clock_record();
@@ -352,30 +352,33 @@ private:
   // APB initiators travel as AXI4-Lite sources, AHB and AXI3 initiators as AXI4 sources; their
   // own protocol names them.
   const Json source_protocols = by_name(p.sources, [](const auto &s) {
-    return std::optional{s.apb                              ? *s.apb == Protocol::Apb3   ? "apb3"
-                                                              : *s.apb == Protocol::Apb5 ? "apb5"
-                                                                                         : "apb4"
-                         : s.ahb5                           ? "ahb5"
-                         : s.ahb                            ? "ahb_lite"
-                         : s.axi3                           ? "axi3"
-                         : s.protocol == Protocol::Axi4Lite ? "axi4_lite"
-                                                            : "axi4"};
+    return std::optional{s.apb ? *s.apb == Protocol::Apb3   ? "apb3"
+                                 : *s.apb == Protocol::Apb5 ? "apb5"
+                                                            : "apb4"
+                         : s.external_protocol == Protocol::Wishbone ? "wishbone"
+                         : s.ahb5                                    ? "ahb5"
+                         : s.ahb                                     ? "ahb_lite"
+                         : s.axi3                                    ? "axi3"
+                         : s.protocol == Protocol::Axi4Lite          ? "axi4_lite"
+                                                                     : "axi4"};
   });
   Json definition;
   Json &contract() { return definition["contract"]; }
   bool uses(Protocol protocol) const {
-    return any(p.targets, [&](const auto &t) { return t.protocol == protocol; });
+    return any(p.targets, [&](const auto &t) {
+      return t.external_protocol != Protocol::Wishbone && t.protocol == protocol;
+    });
   }
   // Sub-page windows and non-32-bit addresses extend the dedicated profiles;
   // configurations without them state the basic contract text.
   bool extended(Protocol protocol) const {
     return any(p.targets, [&](const auto &t) {
-      return t.protocol == protocol && (any(t.mappings,
-                                            [](const MappingPlan &m) {
-                                              return m.window.base % 4096 != 0 ||
-                                                     m.window.size % 4096 != 0;
-                                            }) ||
-                                        t.local_bits != 32 || p.address_bits != 32);
+      return t.external_protocol != Protocol::Wishbone && t.protocol == protocol &&
+             (any(t.mappings,
+                  [](const MappingPlan &m) {
+                    return m.window.base % 4096 != 0 || m.window.size % 4096 != 0;
+                  }) ||
+              t.local_bits != 32 || p.address_bits != 32);
     });
   }
   // What every target AxID port carries (docs/transactions.md#target-identifiers), and the
@@ -857,10 +860,36 @@ private:
         "ID_preserved_CACHE_PROT_follow_target_attributes_default_amba_ADDR_LEN_SIZE_BURST_"
         "follow_narrow_to_wide_clamp_and_packets";
   }
+  void wishbone_fields() {
+    const auto endpoints = [](const auto &list, bool target) {
+      return by_name(list, [&](const auto &e) -> std::optional<Json> {
+        if (e.external_protocol != Protocol::Wishbone)
+          return std::nullopt;
+        Json fields = {{"address_unit", e.wishbone_word ? "word" : "byte"}};
+        if (target && e.wishbone_retry)
+          fields["retry"] = "error";
+        return fields;
+      });
+    };
+    auto sources = endpoints(p.sources, false), targets = endpoints(p.targets, true);
+    if (!sources.empty() || !targets.empty()) {
+      definition["wishbone"] = {{"initiators", sources}, {"targets", targets}};
+      contract()["wishbone"] = {
+          {"cycles", "classic"},
+          {"data_bits", 32},
+          {"granularity_bits", 8},
+          {"outputs",
+           {{"initiators", "registered_terminations_gated_by_bus"}, {"targets", "registered"}}},
+          {"retry", "error_without_retry"},
+          {"read_sel_zero", "whole_word"}};
+    }
+  }
   void ingress() {
     const auto lite_face = [](const auto &s) { return s.protocol == Protocol::Axi4Lite && !s.apb; };
-    if (any(p.sources,
-            [](const auto &s) { return s.protocol == Protocol::Axi4Lite || s.ahb || s.axi3; }))
+    if (any(p.sources, [](const auto &s) {
+          return s.protocol == Protocol::Axi4Lite || s.ahb || s.axi3 ||
+                 s.external_protocol == Protocol::Wishbone;
+        }))
       definition["endpoint_protocols"] = {{"initiators", source_protocols}, {"targets", "axi4"}};
     if (any(p.sources, &SourcePlan::axi3))
       contract()["axi3_ingress"] = {
@@ -966,7 +995,8 @@ private:
     const bool has_axi3 = any(p.targets, &TargetPlan::axi3);
     const bool has_dialects =
         uses(Protocol::Apb3) || uses(Protocol::Apb2) || uses(Protocol::Axi4Lite) || has_axi3;
-    if (!has_ahb && !has_apb && !has_dialects)
+    if (!has_ahb && !has_apb && !has_dialects &&
+        !any(p.targets, [](const auto &t) { return t.external_protocol == Protocol::Wishbone; }))
       return;
     if (!definition.contains("endpoint_protocols"))
       definition["endpoint_protocols"]["initiators"] = source_protocols;
@@ -974,10 +1004,11 @@ private:
                                             "ahb_lite", "axi3",      "ahb5", "apb5"};
     // An AXI3 target travels as an AXI4 target; its own protocol names it.
     definition["endpoint_protocols"]["targets"] = by_name(p.targets, [](const TargetPlan &t) {
-      return std::optional{t.service ? "service"
-                           : t.axi3  ? "axi3"
-                           : t.ahb5  ? "ahb5"
-                                     : protocols[static_cast<int>(t.protocol)]};
+      return std::optional{t.service                                   ? "service"
+                           : t.axi3                                    ? "axi3"
+                           : t.external_protocol == Protocol::Wishbone ? "wishbone"
+                           : t.ahb5 ? "ahb5"
+                                    : protocols[static_cast<int>(t.protocol)]};
     });
     if (has_axi3)
       contract()["axi3_egress"] = {

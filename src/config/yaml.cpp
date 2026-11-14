@@ -11,6 +11,28 @@ namespace nocloom::config {
 namespace {
 using detail::ParseFailure;
 using detail::Reader;
+template <class Endpoint>
+void wishbone_fields(Reader &r, const YAML::Node &node, const std::string &path, Endpoint &out) {
+  if (node["address_unit"]) {
+    const auto at = path + ".address_unit";
+    const auto value = r.field(node, "address_unit", at);
+    const auto unit = r.string(value, at);
+    if (unit == "byte")
+      out.address_unit = AddressUnit::Byte;
+    else if (unit == "word")
+      out.address_unit = AddressUnit::Word;
+    else
+      r.fail("NCL_WISHBONE_ADDRESS_UNIT", at, "Expected byte or word", value.Mark());
+  }
+  if (node["retry"]) {
+    const auto at = path + ".retry";
+    const auto value = r.field(node, "retry", at);
+    if (r.string(value, at) != "error")
+      r.fail("NCL_WISHBONE_OPTION", at, "Only retry: error is supported", value.Mark());
+    out.retry = WishboneRetry::Error;
+  }
+}
+
 Ahb5Properties ahb5_properties(Reader &r, const YAML::Node &node, const std::string &path) {
   r.object(node, path,
            {"hprot_width", "hnonsec", "hmaster_width", "exclusive", "hauser_width", "hwuser_width",
@@ -927,6 +949,7 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
               QosScheduler{get("under_level"), get("over_level"), get("threshold_percent")};
         }
       }
+      wishbone_fields(r, node, path, d.initiators.back());
       if (node["ahb5"])
         d.initiators.back().ahb5 = ahb5_properties(r, node["ahb5"], path + ".ahb5");
       if (node["address_width"])
@@ -1069,6 +1092,7 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
           }
         }
       }
+      wishbone_fields(r, node, path, d.targets.back());
       if (node["ahb5"])
         d.targets.back().ahb5 = ahb5_properties(r, node["ahb5"], path + ".ahb5");
       if (node["address_width"])

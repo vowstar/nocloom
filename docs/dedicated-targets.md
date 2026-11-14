@@ -2,13 +2,13 @@
 
 ## Dedicated APB and AXI4-Lite targets
 
-Dedicated targets are APB5, APB4, APB3, APB2, AXI4-Lite, AHB-Lite and AHB5
-targets.
+Dedicated targets are APB5, APB4, APB3, APB2, AXI4-Lite, AHB-Lite, AHB5 and
+Wishbone. See [Wishbone classic cycles](wishbone.md) for its bus signals.
 AXI4-Lite issues one access per touched target word.
 
 | Write strobes | Target behavior |
 | --- | --- |
-| All zero at APB or AHB | Complete without bus access. At APB3 and APB2 the empty word adds no error |
+| All zero at APB, AHB or Wishbone | Complete without bus access. At APB3 and APB2 the empty word adds no error |
 | Partial at APB5 or APB4 | Drive the selected PSTRB byte strobes |
 | Partial at APB3 or APB2 | Skip that physical word and record SLVERR for the packet. Keep completed write effects and execute later full words, including those in the same beat |
 | Zero or partial at AXI4 or AXI4-Lite | Drive WSTRB with those bits |
@@ -32,7 +32,8 @@ pressure can add idle cycles.
 An 8-bit or 16-bit APB target visits enabled physical words of its 32-bit
 internal container in ascending byte order. Addresses align to each physical
 word. Reads gather only requested bytes into one internal response. Any physical
-access failure zeros the whole collected data word. Later accesses still execute.
+access failure zeros the whole collected data word. Later accesses still
+execute.
 
 A default APB target adapter starts another word after the current write
 completes or the current read response leaves. It starts the next packet after

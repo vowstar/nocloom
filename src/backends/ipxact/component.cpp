@@ -306,6 +306,10 @@ private:
     });
   }
   bool reaches(const std::string &initiator, const Window &w) const {
+    const auto source = std::ranges::find_if(
+        endpoints_, [&](const Endpoint &e) { return e.initiator && e.name == initiator; });
+    if (source->protocol == Protocol::Wishbone || interface_of(w).protocol == Protocol::Wishbone)
+      return false;
     const auto at = map_.flows.find({initiator, w.target});
     return map_.pairs.contains({initiator, w.target}) &&
            (at == map_.flows.end() || at->second.contains(w.flow));
@@ -360,6 +364,8 @@ private:
     w_.close("portMap");
   }
   void bus_interface(const Endpoint &e) {
+    if (e.protocol == Protocol::Wishbone)
+      return;
     const auto &bus = bus_type(e.protocol, e.initiator);
     w_.open("busInterface");
     w_.leaf("name", e.name);

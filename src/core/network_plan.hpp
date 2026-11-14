@@ -73,6 +73,7 @@ struct SourcePlan {
   // AXI3 initiator an AXI4 source behind AXI3 ports (axi3).
   // The declared port protocol is independent of the internal engine protocol.
   Protocol external_protocol = Protocol::Axi4;
+  bool wishbone_word = false, wishbone_retry = false;
   Protocol protocol = Protocol::Axi4;
   std::optional<Protocol> apb;
   bool ahb = false, axi3 = false, ahb5 = false;
@@ -142,6 +143,7 @@ struct TargetPlan {
   // An AXI3 target is an AXI4 target behind AXI3 ports (axi3).
   // The declared port protocol is independent of the internal engine protocol.
   Protocol external_protocol = Protocol::Axi4;
+  bool wishbone_word = false, wishbone_retry = false;
   Protocol protocol = Protocol::Axi4;
   bool axi3 = false, ahb5 = false;
   unsigned hmaster_bits = 0, hprot_bits = 4;
