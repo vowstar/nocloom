@@ -20,6 +20,12 @@ differs from the pinned version.
 It writes beneath `.lake/build/checks`, or `--work DIR`, and deletes nothing.
 CTest registers it as `formal_lean` in tier `release`.
 
+`dependency_certificate_import` checks generated four-column edges without
+Lean and has the `quick` and `ci` labels.
+`dependency_certificate_lean` checks generated certificates and rank rejection
+with Lean. It has the `formal` and `release` labels and fails if Lean or lake
+is missing or the Lean version differs from the pinned version.
+
 ## Model and assumptions
 
 `Wormhole.lean` defines a transition system. Each slot presents one head word.
@@ -142,9 +148,46 @@ Contention pairs grow cubically without helper nodes. With `contention` rows,
 `Wormhole.row_paths` derives pairs from checked helper edges.
 
 `tools/gen_instance.py` converts a `nocloom.dependency` artifact to Lean. With a
-model file, it also checks the transport rules.
-Without a model file, it checks graph acyclicity only. It rejects cycles and
-or-groups.
+`model` table in the artifact or a `--model` file, it also checks the transport
+rules. Without a model, or with `--graph-only`, it checks graph acyclicity only.
+
+Use the CLI output `nocloom_<name>.dependency.json` as `GRAPH.json`.
+See [output files](../../docs/outputs.md).
+From this directory, convert the artifact and check the proof with Lean:
+
+```sh
+python3 tools/gen_instance.py GRAPH.json Network OUT.lean
+lake env lean OUT.lean
+```
+
+| Import field | Supported value |
+| --- | --- |
+| `format` | `nocloom.dependency` |
+| `format_version` | JSON integer `1`. The importer rejects booleans and floats |
+| `orientation` | `blocker_to_blocked` |
+| `result.status` | `no_cycle` |
+| `nodes` | Nodes with a `rank` checked by Lean |
+| `edges` | Four columns: `[source, destination, rule, group]` |
+| Edge `group` | Nonnegative integer. Only `0`, an ordinary edge, is supported |
+| Top-level `groups` | Absent or empty |
+
+Each edge points from a blocker to a blocked node. Source and destination are
+node indexes. The rule identifies the wait relation.
+The importer sorts and removes duplicate source and destination pairs.
+It checks every fourth column before it removes duplicates.
+
+An edge with a nonzero group fails with
+`NCL_CERTIFICATE_ALTERNATIVE_GROUP`. An edge with a wrong column count or a
+group that is not a nonnegative integer fails with
+`NCL_CERTIFICATE_EDGE_FORMAT`. A nonempty top-level `groups` or a status other
+than `no_cycle` also fails conversion. These failures return exit code `3`
+before creating or changing the proof source, including with `--graph-only`
+and `--kernel`. Exit code `0` means the source was written. Exit code `2`
+reports argument parsing errors.
+
+Conversion does not validate a certificate. Lean must accept the generated
+proof. Ranks that do not increase along an edge fail its certificate theorem
+even when the artifact claims `no_cycle`.
 
 `Instances/TwoTargets.lean` compares `perWord`, `contiguous` and `holding`
 release policies. The first two satisfy the rules.
@@ -155,7 +198,7 @@ corresponding multi-hop hang.
 Files in `tests/fail` and designated `tests/data` cases must fail for the reason
 checked by `run_checks.py`.
 
-Or-groups have no model representation. A timeout rule requires timer expiry in
-`env` and a corresponding rule lemma.
+Alternative groups have no model representation. A timeout rule requires timer
+expiry in `env` and a corresponding rule lemma.
 During the timer, the slow blocker contributes a bounded `ready` delay. Only the
 certificate-selected branch contributes a `need`.
