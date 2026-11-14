@@ -89,6 +89,29 @@ add_test(NAME formal_lean
   COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/formal/lean/tools/run_checks.py
     --work ${CMAKE_CURRENT_BINARY_DIR}/formal_lean)
 set_tests_properties(formal_lean PROPERTIES TIMEOUT 900 LABELS "formal;release")
+add_executable(nocloom_certificate_graphs generate_certificate_graphs.cpp)
+target_link_libraries(nocloom_certificate_graphs PRIVATE nocloom_config)
+target_include_directories(nocloom_certificate_graphs PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_compile_options(nocloom_certificate_graphs PRIVATE
+  $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>)
+foreach(case IN ITEMS import lean)
+  if(case STREQUAL "lean")
+    set(certificate_case proof)
+    set(certificate_labels "formal;release")
+    set(certificate_timeout 900)
+  else()
+    set(certificate_case import)
+    set(certificate_labels "quick;focused;ci")
+    set(certificate_timeout 120)
+  endif()
+  add_test(NAME dependency_certificate_${case}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/certificate_import_test.py
+      --source ${PROJECT_SOURCE_DIR} --fixture $<TARGET_FILE:nocloom_certificate_graphs>
+      --work ${CMAKE_CURRENT_BINARY_DIR}/dependency_certificate_${case} --case ${certificate_case})
+  set_tests_properties(dependency_certificate_${case} PROPERTIES
+    TIMEOUT ${certificate_timeout} PROCESSORS 1 LABELS "${certificate_labels}"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} RESOURCE_LOCK dependency_certificate)
+endforeach()
 target_sources(nocloom_unit PRIVATE unit/width_adapter.cpp)
 target_sources(nocloom_unit PRIVATE unit/axi4_config.cpp unit/axi3.cpp)
 # The shorthand pairs read tests/shorthand and examples from the source tree.
