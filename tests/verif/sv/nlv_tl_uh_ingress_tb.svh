@@ -4,7 +4,8 @@
   // width query of a net to zero inside a parameter value.
   localparam BUS_BYTES=BUS_BITS/8;
   reg [BUS_BITS-1:0] bus_word;
-  reg hold_w=0, defer_drain=0;
+  reg hold_w=0, defer_drain=0, keep_a=0, capacity_guard=0;
+  integer last_a_cycle=-2, consecutive_a=0;
   integer actual_reads[0:65535], expected_reads[0:65535];
   integer rejecting_a_left=0, reject_source=0, retractions=0;
 
@@ -39,6 +40,11 @@
     if(reset_n) begin
       s_d_ready <= !hold_d && cycle%4!=0;
       if(s_a_valid && !s_a_ready) stall_count=stall_count+1;
+      if(s_a_valid && s_a_ready) begin
+        if(capacity_guard) $fatal(1,"ASSERT_FAIL:UH.CAPACITY.ACCEPTED_FULL");
+        if(last_a_cycle==cycle-1) consecutive_a=consecutive_a+1;
+        last_a_cycle=cycle;
+      end
       if(s_a_valid && s_a_ready && rejecting_a_left>0) rejecting_a_left=rejecting_a_left-1;
       if(s_d_valid && s_d_source==reject_source && rejecting_a_left>0) $fatal(1,"ASSERT_FAIL:UH.LOCAL.EARLY_D");
       if(s_d_valid && s_d_ready) begin
@@ -134,7 +140,7 @@
     reg retracted;
     begin
       retracted=0;
-      @(negedge clk);
+      if(!keep_a) @(negedge clk);
       s_a_opcode=opcode; s_a_param=prm; s_a_size=sz; s_a_source=(source & ((1<<SOURCE_BITS)-1)) | (SOURCE_BITS==16 ? 32768:0);
       s_a_address=address; s_a_mask=mask; s_a_data=data; s_a_corrupt=corrupt; s_a_valid=1;
       @(posedge clk);
@@ -183,6 +189,7 @@
     end
   endtask
   initial begin
+    keep_a=$test$plusargs("UH_BACK_TO_BACK");
     if($bits(t_wdata)!=BUS_BITS || $bits(t_rdata)!=BUS_BITS || $bits(s_a_size)!=SIZE_BITS ||
         $bits(s_a_source)!=(SOURCE_BITS>0 ? SOURCE_BITS:1))
       $fatal(1,"ASSERT_FAIL:UH.TEST.WIDTHS");
@@ -232,6 +239,28 @@
           drain;
         end
     if(aw_count!=before_aw || ar_count!=before_ar) $fatal(1,"ASSERT_FAIL:UH.LOCAL.FOOTPRINT");
+    if(MAX_SIZE>2) begin
+      // An odd number of rejected continuation beats must leave W empty.
+      expect_message(1,3,3,0,1);
+      rejecting_a_left=2; reject_source=(3 & ((1<<SOURCE_BITS)-1)) | (SOURCE_BITS==16 ? 32768:0);
+      send_a(2,0,3,3,0,15,32'h0badf00d,0);
+      send_a(2,0,3,3,0,15,32'hdeadbeef,0);
+      drain;
+      put(0,3,3,4096,-1); get(3,3,4096);
+    end
+    if(MAX_SIZE+1 < (1<<SIZE_BITS)) begin : oversize
+      integer sz, count, aw_base, ar_base;
+      sz=MAX_SIZE+1; count=1<<(sz-2);
+      aw_base=aw_count; ar_base=ar_count;
+      expect_message(1,sz,3,0,1); send_a(4,0,sz,3,0,15,0,0); drain;
+      expect_message(0,sz,3,0,1); rejecting_a_left=count;
+      for(integer j=0;j<count;j=j+1) send_a(0,0,sz,3,0,15,j,0);
+      drain;
+      expect_message(2,sz,3,0,1); send_a(5,0,sz,3,0,15,0,0); drain;
+      if(aw_count!=aw_base || ar_count!=ar_base) $fatal(1,"ASSERT_FAIL:UH.OVERSIZE.FOOTPRINT");
+      get(2,3,4096);
+      $display("UH_OVERSIZE max=%0d size=%0d",1<<MAX_SIZE,sz);
+    end
     get(2,2,4096);
     if(MAX_SIZE>2) begin : reuse_source
       integer early_source, wait_cycles;
@@ -257,9 +286,10 @@
         expect_message(2,2,k,0,0); send_a(5,0,2,k,0,15,0,0);
       end
       expect_message(2,2,MESSAGE_SLOTS,0,0);
+      capacity_guard=1;
       fork
         begin send_a(5,0,2,MESSAGE_SLOTS,0,15,0,0); end
-        begin repeat(30) @(negedge clk); hold_d=0; end
+        begin repeat(30) @(negedge clk); capacity_guard=0; hold_d=0; end
       join
       drain;
     end
@@ -267,6 +297,8 @@
     for(integer b=0;b<65536;b=b+1)
       if(actual_reads[b]!=expected_reads[b])
         $fatal(1,"ASSERT_FAIL:UH.READ.FOOTPRINT address=%h actual=%0d expected=%0d",b,actual_reads[b],expected_reads[b]);
+    if(keep_a && consecutive_a==0) $fatal(1,"ASSERT_FAIL:UH.A.CONSECUTIVE_UNREACHED");
+    $display("UH_A_CONSECUTIVE count=%0d",consecutive_a);
     $display("UH_PASS completions=%0d A_stalls=%0d AW=%0d AR=%0d D_beats=%0d",completions,stall_count,aw_count,ar_count,d_beats);
     $finish;
   end

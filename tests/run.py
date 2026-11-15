@@ -19,6 +19,7 @@ parser.add_argument("--c-compiler")
 parser.add_argument("--definition-generator")
 parser.add_argument("--generator", default="Ninja")
 parser.add_argument("--make-program")
+parser.add_argument("--toolchain")
 parser.add_argument("--schema")
 parser.add_argument("--xmllint")
 args = parser.parse_args()
@@ -264,6 +265,8 @@ def install():
                    "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
                    f"-DCMAKE_PREFIX_PATH={moved}", "-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF",
                    "-DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF"]
+        if args.toolchain:
+            command += ["-DCMAKE_TOOLCHAIN_FILE=" + args.toolchain]
         if args.compiler:
             command += ["-DCMAKE_CXX_COMPILER=" + args.compiler]
         if args.make_program:

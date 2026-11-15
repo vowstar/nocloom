@@ -7,6 +7,7 @@ Each case file defines CASES, a list of entries:
   commands  the CLI commands to run, default ("validate", "generate")
   expect    "accept" or "reject"
   code      a diagnostic code the rejection must name (stderr)
+  field     the field path on the same diagnostic line
   files     accepted generate: the number of artifacts (exactly the bundle's)
   check     accepted generate: a function of (mapping, out_dir, peers) that
             raises AssertionError when the artifacts break the case's
@@ -103,6 +104,9 @@ def run_entry(cli, root, entry, outputs, second_cli=None, tools=None):
                 return row, f"{command} accepted"
             if entry.get("code") and entry["code"] not in r.stderr:
                 return row, f"{command} did not name {entry['code']}: {r.stderr[-400:]}"
+            if entry.get("field") and not any(entry["code"] in line and f"[{entry['field']}]" in line
+                                               for line in r.stderr.splitlines()):
+                return row, f"{command} did not name diagnostic field {entry['field']}: {r.stderr[-400:]}"
             if command == "generate" and out.exists():
                 return row, "rejected generate left an output directory"
             continue

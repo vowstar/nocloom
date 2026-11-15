@@ -11,6 +11,7 @@ import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import sim_engine
+from nlverif.config import ENDPOINT_GATE_SETTINGS
 
 
 def target_mux(pins, count):
@@ -107,7 +108,7 @@ def ul_target(body):
 """
     return body[:start] + model + body[end:]
 
-def bench(mapping, body, cfg, windows, miss_last):
+def bench(mapping, body, cfg, windows, miss_last, bus_model=None):
     axi = cfg["targets"][0]["protocol"]=="axi4"
     declarations, connections = [], []
     pins = mapping["ports"]
@@ -129,7 +130,8 @@ def bench(mapping, body, cfg, windows, miss_last):
         declarations += ["reg clk_far=0;"]
     if not axi:
         declarations += ["wire [31:0] t_wdata=0;", "wire [31:0] t_rdata=0;"]
-        body = ul_target(body)
+        body = (ul_target(body) if cfg["targets"][0]["protocol"]=="tl_ul" else
+                runpy.run_path(str(bus_model))["replace_model"](body,cfg["targets"][0]["protocol"]))
     if windows:
         declarations.append(target_mux(pins, len(cfg["targets"])))
         body = body.replace("t_awready<=0; writing=1;", "t_awready<=0; w_target=aw_select; writing=1;")
@@ -150,15 +152,25 @@ def run(args, maximum):
     case = runpy.run_path(str(args.case))
     cfg = case["configuration"](maximum, args.source_width, args.slots)
     cfg["initiators"][0]["sink_width"] = args.sink_width
+    if args.gating:
+        cfg["initiators"][0]["clock_gating"] = ENDPOINT_GATE_SETTINGS[args.gating]
     cfg["targets"][0].update(data_width=args.target_width, read_side_effects=True,
                               max_outstanding=max(4, args.slots))
-    if args.all_maxima:
+    if args.all_maxima and not args.oversize:
         cfg["initiators"][0]["size_width"] = 2 if maximum<=8 else 3 if maximum<=128 else 4
     if args.target_protocol=="tl_ul":
         target = cfg["targets"][0]
         for field in ("attributes", "id_width", "len_width"):
             target.pop(field)
         target.update(protocol="tl_ul", max_outstanding=1)
+    if args.target_protocol in ("apb4", "ahb_lite", "wishbone"):
+        target=cfg["targets"][0]
+        for field in ("id_width", "len_width", "read_side_effects"):
+            target.pop(field,None)
+        target.update(protocol=args.target_protocol,max_outstanding=1)
+        if args.target_protocol=="wishbone":
+            target.pop("attributes")
+            target["address_unit"]="byte"
     if args.windows:
         template = cfg["targets"][0]
         cfg["targets"] = []
@@ -189,12 +201,23 @@ def run(args, maximum):
     assert profile["max_outstanding"] == args.slots
     assert profile["internal_transaction_capacity"] == min(64, max(4, args.slots))
     assert mapping["definition"]["outstanding"]["initiators"]["s"] == args.slots
+    fixture_rtl = None
+    if args.gating:
+        probe_dir = work / "probes"
+        subprocess.run([str(args.fixture.resolve()), "tilelink_uh_probe", str(probe_dir),
+                        "--param", f"config={work / 'input.yaml'}", "--param", "observe=true",
+                        "--param", f"gate={args.gating}"], check=True)
+        ports = json.loads((probe_dir / "ports.json").read_text())[0]["ports"]
+        for port in ports:
+            if port["endpoint"] == "probe":
+                mapping["ports"].append(dict(port, direction="input" if port["input"] else "output"))
+        fixture_rtl = (probe_dir / "network.v").read_text() + (probe_dir / "cells.v").read_text()
     body = args.bench.read_text()
     if args.extra:
         body = body.replace('    $display("UH_PASS', args.extra.read_text() + '\n    $display("UH_PASS')
-    (work / "tb.sv").write_text(bench(mapping, body, cfg, args.windows, args.miss_last))
+    (work / "tb.sv").write_text(bench(mapping, body, cfg, args.windows, args.miss_last, args.bus_model))
     checker = Path(__file__).parent / "sv/nlv_tl_checker.sv"
-    rtl = (sim_engine.generated_rtl(generated / "nocloom_uh_ingress.v")
+    rtl = ((fixture_rtl if fixture_rtl is not None else sim_engine.generated_rtl(generated / "nocloom_uh_ingress.v"))
            + checker.read_text() + args.axi_check.read_text())
     (work / "network.v").write_text(rtl)
     compile_argv = None
@@ -204,7 +227,7 @@ def run(args, maximum):
     sim = sim_engine.Simulation(work, "network.v", engine=args.sim, config=args.sim_config,
                                 compile_argv=compile_argv, compile_timeout=180,
                                 run_timeout=120, success=("UH_PASS",))
-    result = sim.run()
+    result = sim.run(["+UH_BACK_TO_BACK"] if args.back_to_back else [])
     print(json.dumps(dict(maximum=maximum, source_width=args.source_width, slots=args.slots,
                           target_width=args.target_width, cdc=args.cdc,
                           rtl_sha256=hashlib.sha256(rtl.encode()).hexdigest())))
@@ -219,18 +242,23 @@ def main():
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--bench", type=Path, required=True)
     parser.add_argument("--extra", type=Path)
+    parser.add_argument("--fixture", type=Path)
+    parser.add_argument("--bus-model", type=Path)
+    parser.add_argument("--gating", choices=("independent", "combined"))
     parser.add_argument("--axi-check", type=Path,
                         default=Path(__file__).parent / "sv/nlv_tl_uh_axi_check.sv")
     parser.add_argument("--maximum", type=int, default=1024)
     parser.add_argument("--source-width", type=int, default=4)
     parser.add_argument("--sink-width", type=int, default=0)
     parser.add_argument("--slots", type=int, default=4)
-    parser.add_argument("--target-protocol", choices=("axi4", "tl_ul"), default="axi4")
+    parser.add_argument("--target-protocol", choices=("axi4", "tl_ul", "apb4", "ahb_lite", "wishbone"), default="axi4")
     parser.add_argument("--target-width", type=int, default=32)
     parser.add_argument("--cdc", action="store_true")
     parser.add_argument("--windows", type=int, choices=(0,4), default=0)
     parser.add_argument("--miss-last", action="store_true")
     parser.add_argument("--all-maxima", action="store_true")
+    parser.add_argument("--oversize", action="store_true")
+    parser.add_argument("--back-to-back", action="store_true")
     sim_engine.add_arguments(parser)
     args = parser.parse_args()
     args.work.mkdir(parents=True, exist_ok=True)

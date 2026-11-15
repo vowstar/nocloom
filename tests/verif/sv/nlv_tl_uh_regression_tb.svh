@@ -9,7 +9,10 @@
   integer opcode[0:15], size[0:15], denied[0:15];
   reg busy[0:15];
   reg [7:0] memory[0:4095];
-  reg writing=0, hold_r=0;
+  reg writing=0, hold_r=0, hold_w=0, hold_ar=0, hold_b=0;
+  integer b_count=0, fail_b=-1;
+  integer b_errors[0:2047];
+  reg [31:0] expected_word[0:15];
   reg [3:0] seen_strobe[0:2047];
   reg [31:0] read_word;
   integer address, lane;
@@ -27,7 +30,7 @@
           s_d_size!=size[s_d_source] || s_d_denied!=denied[s_d_source] ||
           s_d_param!=0 || s_d_corrupt!=(denied[s_d_source] && s_d_opcode==1))
         $fatal(1,"ASSERT_FAIL:UH.REGRESSION.D_IDENTITY source=%0d",s_d_source);
-      if(s_d_opcode==1 && s_d_data!=(s_d_denied ? 32'b0:32'h11111111))
+      if(s_d_opcode==1 && s_d_data!=(s_d_denied ? 32'b0:expected_word[s_d_source]))
         $fatal(1,"ASSERT_FAIL:UH.REGRESSION.D_DATA");
       left[s_d_source]=left[s_d_source]-1;
       d_count[s_d_source]=d_count[s_d_source]+1;
@@ -41,7 +44,7 @@
     if(!reset_n) begin
       t_awready<=0; t_wready<=0; t_arready<=0; t_bvalid<=0; t_rvalid<=0;
     end else begin
-      t_awready<=!writing; t_wready<=writing; t_arready<=1;
+      t_awready<=!writing; t_wready<=writing && !hold_w; t_arready<=!hold_ar;
       if(t_awvalid && t_awready) begin
         if(writing || t_awburst!=1) $fatal(1,"ASSERT_FAIL:UH.REGRESSION.AW");
         writing=1; t_awready<=0;
@@ -59,12 +62,12 @@
         write_beat=write_beat+1;
         if(t_wlast) begin
           writing=0; t_wready<=0;
-          b_ids[b_write]=write_id; b_write=b_write+1;
+          b_ids[b_write]=write_id; b_errors[b_write]=(aw_count-1==fail_b ? 2:0); b_write=b_write+1;
         end
       end
-      if(t_bvalid && t_bready) t_bvalid<=0;
-      if(!t_bvalid && b_read<b_write) begin
-        t_bvalid<=1; t_bid<=b_ids[b_read]; t_bresp<=0; b_read=b_read+1;
+      if(t_bvalid && t_bready) begin t_bvalid<=0; b_count=b_count+1; end
+      if(!t_bvalid && b_read<b_write && !hold_b) begin
+        t_bvalid<=1; t_bid<=b_ids[b_read]; t_bresp<=b_errors[b_read]; b_read=b_read+1;
       end
       if(t_arvalid && t_arready) begin
         if(t_arburst!=1 || t_arsize!=2) $fatal(1,"ASSERT_FAIL:UH.REGRESSION.AR");
@@ -87,7 +90,7 @@
   task expect_d(input integer op, sz, source, beats, error);
     if(busy[source]) $fatal(1,"ASSERT_FAIL:UH.REGRESSION.SOURCE");
     busy[source]=1; opcode[source]=op; size[source]=sz;
-    left[source]=beats; denied[source]=error;
+    left[source]=beats; denied[source]=error; expected_word[source]=32'h11111111;
   endtask
   task send_a(input integer op, sz, source, addr, mask, data);
     integer wait_cycles;

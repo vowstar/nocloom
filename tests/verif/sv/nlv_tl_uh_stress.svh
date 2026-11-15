@@ -67,7 +67,8 @@
         while(b_count<b_base+4 && deadline<4000) begin @(negedge clk); deadline=deadline+1; end
         if(b_count!=b_base+4) $fatal(1,"ASSERT_FAIL:UH.OWNER.B b=%0d base=%0d aw=%0d",b_count,b_base,aw_count);
         repeat(24) @(negedge clk);
-        if(!exp_busy[1] || !exp_busy[source3]) $fatal(1,"ASSERT_FAIL:UH.D.INTERLEAVE");
+        if(!s_d_valid || s_d_source!=source2 || s_d_opcode!=1 || s_d_size!=12)
+          $fatal(1,"ASSERT_FAIL:UH.D.HELD_OWNER");
         s_a_opcode=5; s_a_param=0; s_a_size=2; s_a_source=source2;
         s_a_address=0; s_a_mask=15; s_a_data=0; s_a_corrupt=0; s_a_valid=1;
         repeat(24) begin

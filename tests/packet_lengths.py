@@ -2,8 +2,10 @@
 import argparse
 from pathlib import Path
 import re
+import runpy
 import subprocess
 
+import sim_engine
 from sim_engine import PASS_MARKERS, Simulation
 
 
@@ -159,13 +161,13 @@ def bench(work, kind, words):
     (work / "tb.sv").write_text(text)
 
 
-def simulate(work, engine):
+def simulate(work, engine, config):
     command = None
-    if engine == "verilator":
+    if sim_engine.selection(engine) == "verilator":
         command = ["verilator", "--binary", "--timing", "-Wno-fatal",
                    "--top-module", "tb", "--build-jobs", "2", "-o", "sim",
                    "tb.sv", "network.v"]
-    sim = Simulation(work, "network.v", engine=engine, compile_argv=command,
+    sim = Simulation(work, "network.v", engine=engine, config=config, compile_argv=command,
                      compile_timeout=240, run_timeout=60, success=PASS_MARKERS)
     result = sim.run(())
     if result.returncode:
@@ -176,9 +178,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--fixture", required=True, type=Path)
     parser.add_argument("--work", required=True, type=Path)
-    parser.add_argument("--engine", default="iverilog")
+    parser.add_argument("--case", required=True, type=Path)
+    sim_engine.add_arguments(parser)
     args = parser.parse_args()
-    for bits in (9, 10):
+    case = runpy.run_path(str(args.case))
+    for bits in case["PACKET_BITS"]:
         work = args.work.resolve() / f"markers-{bits}"
         subprocess.run([str(args.fixture.resolve()), str(work), "markers", str(bits)], check=True)
         (work / "tb.sv").write_text(f'''
@@ -211,7 +215,7 @@ initial begin
 end
 endmodule
 ''')
-        simulate(work, args.engine)
+        simulate(work, args.sim, args.sim_config)
         print(f"PASS markers-{bits}", flush=True)
         for kind in ("packetizer", "cut", "cut_axi", "clamp", "upsize"):
             sizes = ([n for n in (255, 256, 257, 511, 512, 513, 1023, 1024)
@@ -220,7 +224,7 @@ endmodule
                 work = args.work.resolve() / f"{kind}-{bits}-{words}"
                 subprocess.run([str(args.fixture.resolve()), str(work), kind, str(bits)], check=True)
                 bench(work, kind, words)
-                simulate(work, args.engine)
+                simulate(work, args.sim, args.sim_config)
                 print(f"PASS {kind}-{bits}-{words}", flush=True)
 
 

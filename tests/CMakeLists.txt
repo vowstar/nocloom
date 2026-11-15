@@ -31,14 +31,6 @@ target_link_libraries(nocloom_packet_lengths_fixture PRIVATE nocloom_core)
 target_include_directories(nocloom_packet_lengths_fixture PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_options(nocloom_packet_lengths_fixture PRIVATE
   $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>)
-add_test(NAME packet_lengths_transactions
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/packet_lengths.py
-    --fixture $<TARGET_FILE:nocloom_packet_lengths_fixture>
-    --work ${CMAKE_CURRENT_BINARY_DIR}/packet_lengths_transactions)
-set_tests_properties(packet_lengths_transactions PROPERTIES
-  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 600
-  LABELS "rtl;focused;ci" PROCESSORS 1 RESOURCE_LOCK packet_lengths_sim
-  ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
 target_sources(nocloom_unit PRIVATE unit/switch_graph.cpp)
 target_sources(nocloom_unit PRIVATE unit/connectivity.cpp)
 target_sources(nocloom_unit PRIVATE unit/canonical.cpp unit/tilelink.cpp)
@@ -226,6 +218,9 @@ foreach(case IN ITEMS cli install)
   set(case_toolchain)
   if(case STREQUAL "install")
     list(APPEND case_toolchain --generator "${CMAKE_GENERATOR}")
+    if(CMAKE_TOOLCHAIN_FILE)
+      list(APPEND case_toolchain --toolchain "${CMAKE_TOOLCHAIN_FILE}")
+    endif()
     if(CMAKE_CXX_COMPILER)
       list(APPEND case_toolchain --compiler "${CMAKE_CXX_COMPILER}")
     endif()

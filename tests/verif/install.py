@@ -135,6 +135,7 @@ target_link_libraries(consumer PRIVATE {target})
                       "-DCMAKE_PREFIX_PATH=" + str(self.prefix),
                       "-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF",
                       "-DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF",
+                      *(["-DCMAKE_TOOLCHAIN_FILE=" + a.toolchain] if a.toolchain else []),
                       *["-DCMAKE_DISABLE_FIND_PACKAGE_" + d + "=ON" for d in self.DISABLED]],
                      "configure", cwd=directory)
             self.run(["cmake", "--build", directory / "build", "-j2"], "build", cwd=directory)
@@ -323,6 +324,7 @@ def main():
     p.add_argument("--param", action="append", default=[])
     for key in ("source", "build", "compiler", "generator", "make-program", "work"):
         p.add_argument("--" + key, required=True)
+    p.add_argument("--toolchain")
     sim_engine.add_arguments(p)
     a = p.parse_args()
     top = Path(a.work).resolve()

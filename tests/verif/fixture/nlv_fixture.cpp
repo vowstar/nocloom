@@ -1551,14 +1551,38 @@ std::vector<Component> wishbone_source(const Params &params) {
   return {{"dut", std::move(source.ir), std::move(source.bindings)}};
 }
 
+std::vector<Component> tilelink_uh_probe(const Params &params) {
+  std::ifstream file(param(params, "config", ""));
+  std::stringstream text;
+  text << file.rdbuf();
+  const auto d = take(config::parse(text.str()), "definition").definition;
+  auto h = compose(d, "TileLink UH probes");
+  if (param(params, "observe", "false") == "true") {
+    const auto gate =
+        "gate/source/s" +
+        std::string(param(params, "gate", "independent") == "combined" ? "" : "/protocol");
+    for (const auto &[port, binding] : std::vector<std::pair<std::string, std::string>>{
+             {"probe_idle", gate + ".idle"},
+             {"probe_enable", gate + ".enable"},
+             {"probe_collecting", "source/s/tl.collecting"},
+             {"probe_busy", "source/s/tl.busy"}}) {
+      const auto value = h.bindings.at(binding);
+      h.ir.ports.push_back({port, false, h.ir.values.at(value.index).width, "probe", binding});
+      h.ir.drivers.push_back({PortId{h.ir.ports.size() - 1}, value});
+    }
+  }
+  return {{"dut", std::move(h.ir), std::move(h.bindings)}};
+}
+
 std::vector<Component> wishbone_idle(const Params &params) {
   std::ifstream file(param(params, "config", ""));
   std::stringstream text;
   text << file.rdbuf();
   const auto d = take(config::parse(text.str()), "definition").definition;
   auto h = compose(d, "wishbone idle");
-  const auto gate = "gate/source/s0" +
-                    std::string(param(params, "gate", "independent") == "combined" ? "" : "/protocol");
+  const auto gate =
+      "gate/source/s0" +
+      std::string(param(params, "gate", "independent") == "combined" ? "" : "/protocol");
   for (const auto &[port, binding] : std::vector<std::pair<std::string, std::string>>{
            {"probe_idle", gate + ".idle"},
            {"probe_enable", gate + ".enable"},
@@ -1600,6 +1624,7 @@ std::vector<Component> build(const std::string &recipe, const Params &p) {
       {"wishbone_unit", wishbone_unit},
       {"wishbone_source", wishbone_source},
       {"wishbone_idle", wishbone_idle},
+      {"tilelink_uh_probe", tilelink_uh_probe},
       {"ahb_outlet", ahb_outlet},
       {"explicit_routes", explicit_routes},
       {"flow_remap", flow_remap},
