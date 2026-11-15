@@ -202,3 +202,15 @@ cfg["address_width"] = 2
 cfg["targets"][0]["mappings"][0]["size"] = "0x4"
 cfg["initiators"][0]["protocol"] = "tl_uh"
 CASES.append(dict(name="uh_address_two_bits", config=cfg, expect="accept"))
+
+for capacity in (1, 3, 64):
+    for source_width in (0, 16):
+        cfg = deepcopy(BASE)
+        cfg["initiators"][0].update(protocol="tl_uh", source_width=source_width,
+                                     max_outstanding=capacity, max_transfer_bytes=4096,
+                                     size_width=4)
+        CASES.append(dict(name=f"uh_capacity_{capacity}_source_{source_width}",
+                          config=cfg, expect="accept"))
+for target in ("axi4", "apb4", "tl_ul"):
+    CASES.append(dict(name=f"uh_logging_{target}", config=logging_config("tl_uh", target),
+                      expect="reject", code="NCL_UNSUPPORTED_TOPOLOGY"))

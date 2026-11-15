@@ -805,7 +805,8 @@ nocloom_verif_case(NAME verif_tilelink_uh_ingress LAYER rtl TIER focused TIMEOUT
   FEATURES tilelink ci MEMORY_MB 1024 CONTRACTS TL.ACCESS
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh.py
     --case ${NLV_CASES}/tilelink_uh.py --cli $<TARGET_FILE:nocloom_cli>
-    --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_ingress_tb.svh)
+    --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_ingress_tb.svh
+    --axi-check ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_axi_check.sv)
 set_tests_properties(verif_tilelink_uh_ingress PROPERTIES RESOURCE_LOCK tilelink)
 
 nocloom_verif_case(NAME verif_tilelink_uh_long LAYER rtl TIER focused TIMEOUT 300
@@ -815,6 +816,57 @@ nocloom_verif_case(NAME verif_tilelink_uh_long LAYER rtl TIER focused TIMEOUT 30
     --maximum 4096 --slots 1
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_ingress_tb.svh)
 set_tests_properties(verif_tilelink_uh_long PROPERTIES RESOURCE_LOCK tilelink)
+
+foreach(variant IN ITEMS sizes width64 cdc128 source0 source16)
+  set(uh_args "")
+  if(variant STREQUAL "sizes")
+    set(uh_args --all-maxima)
+  elseif(variant STREQUAL "width64")
+    set(uh_args --maximum 4096 --target-width 64)
+  elseif(variant STREQUAL "cdc128")
+    set(uh_args --maximum 4096 --target-width 128 --cdc)
+  elseif(variant STREQUAL "source0")
+    set(uh_args --maximum 4096 --source-width 0 --slots 1)
+  elseif(variant STREQUAL "source16")
+    set(uh_args --source-width 16 --sink-width 16)
+  endif()
+  nocloom_verif_case(NAME verif_tilelink_uh_${variant} LAYER rtl TIER focused TIMEOUT 300
+    FEATURES tilelink ci MEMORY_MB 1024 CONTRACTS TL.ACCESS
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh.py
+      --case ${NLV_CASES}/tilelink_uh.py --cli $<TARGET_FILE:nocloom_cli>
+      --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_ingress_tb.svh ${uh_args})
+  set_tests_properties(verif_tilelink_uh_${variant} PROPERTIES RESOURCE_LOCK tilelink)
+endforeach()
+
+nocloom_verif_case(NAME verif_tilelink_uh_order LAYER rtl TIER focused TIMEOUT 300
+  FEATURES tilelink ci MEMORY_MB 1536 CONTRACTS TL.ACCESS
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh.py
+    --case ${NLV_CASES}/tilelink_uh.py --cli $<TARGET_FILE:nocloom_cli>
+    --maximum 4096 --slots 8
+    --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_ingress_tb.svh
+    --extra ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_stress.svh)
+set_tests_properties(verif_tilelink_uh_order PROPERTIES RESOURCE_LOCK tilelink)
+
+foreach(variant IN ITEMS windows tail_miss)
+  set(uh_args --windows 4)
+  if(variant STREQUAL "tail_miss")
+    list(APPEND uh_args --miss-last)
+  endif()
+  nocloom_verif_case(NAME verif_tilelink_uh_${variant} LAYER rtl TIER focused TIMEOUT 300
+    FEATURES tilelink ci MEMORY_MB 1024 CONTRACTS TL.ACCESS
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh.py
+      --case ${NLV_CASES}/tilelink_uh.py --cli $<TARGET_FILE:nocloom_cli>
+      --maximum 4096 --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_ingress_tb.svh ${uh_args})
+  set_tests_properties(verif_tilelink_uh_${variant} PROPERTIES RESOURCE_LOCK tilelink)
+endforeach()
+
+nocloom_verif_case(NAME verif_tilelink_uh_tl_ul LAYER rtl TIER focused TIMEOUT 300
+  FEATURES tilelink ci MEMORY_MB 1024 CONTRACTS TL.ACCESS
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh.py
+    --case ${NLV_CASES}/tilelink_uh.py --cli $<TARGET_FILE:nocloom_cli>
+    --maximum 4096 --target-protocol tl_ul
+    --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_ingress_tb.svh)
+set_tests_properties(verif_tilelink_uh_tl_ul PROPERTIES RESOURCE_LOCK tilelink)
 
 foreach(protocol IN ITEMS axi4 axi3 axi4_lite apb4 logged axi4_folded axi4_compact)
   nocloom_verif_case(NAME verif_initiator_error_responses_${protocol} LAYER negative TIER focused

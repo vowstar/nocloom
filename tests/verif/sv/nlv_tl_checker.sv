@@ -47,7 +47,10 @@ module nlv_tl_checker #(
         if (a_opcode!=a_owner_opcode || a_param!=a_owner_param || a_size!=a_owner_size ||
             a_source!=a_owner_source || a_address!=a_owner_address)
           tb.nlv_fail_report("TL.4.1.A_OWNER", NAME, a_source);
-        if (a_ready) a_left=a_left-1;
+        if (a_ready) begin
+          if (a_opcode!=1 && a_mask!=15) tb.nlv_fail_report("TL.4.5.MASK", NAME, a_mask);
+          a_left=a_left-1;
+        end
       end
       else if (a_valid && a_ready) begin
         // Section 6.4: the source remains unique through the response edge.
