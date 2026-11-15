@@ -929,32 +929,31 @@ static std::uint64_t read_packing_bytes(const TargetPlan &target, std::uint64_t 
                    target.protocol == Protocol::Apb3 || target.protocol == Protocol::Apb2;
   return apb ? std::min<std::uint64_t>(pack, target.apb_bits / 8) : pack;
 }
-Axi4PacketizerProfile packet_profile(const NetworkPlan &plan, unsigned index) {
+static void wishbone_packet_limits(const NetworkPlan &plan, Axi4PacketizerProfile &profile) {
+  for (auto &window : profile.windows)
+    for (unsigned k = 0; k < plan.targets.size(); ++k)
+      if (plan.targets[k].wishbone_burst_tags && window.group == plan.flow_group(k, 0)) {
+        window.physical_words = 32;
+        window.wrap_container_limit = std::min<std::uint64_t>(window.wrap_container_limit, 128);
+        profile.decompose_wrap_bursts = true;
+      }
+  if (profile.fallback)
+    for (unsigned k = 0; k < plan.targets.size(); ++k)
+      if (plan.targets[k].wishbone_burst_tags && profile.fallback->group == plan.flow_group(k, 0)) {
+        profile.fallback->physical_words = 32;
+        profile.fallback->wrap_container_limit =
+            std::min<std::uint64_t>(profile.fallback->wrap_container_limit, 128);
+        profile.decompose_wrap_bursts = true;
+      }
+}
+
+static void packet_windows(const NetworkPlan &plan, unsigned index,
+                           Axi4PacketizerProfile &profile) {
   const auto &source = plan.sources[index];
-  auto profile = burst_fields<Axi4PacketizerProfile>(plan, "s" + std::to_string(index));
-  profile.data_bits = source.engine_bits;
-  profile.split_narrow = source.split_narrow;
-  profile.write = !source.read_only; // a read-only source has no write face to cut
-  profile.level_bits = plan.burst_level_bits;
-  profile.exclusive = plan.exclusive;
-  profile.max_outstanding = source.engine_slots;
-  profile.tag_bits = profile.max_outstanding > 1 ? plan.burst_tag_bits : 0;
   const auto source_wrap = source_wrap_limit(source), largest = wrap_container(source);
   const auto missed = *miss_route(plan, source.name);
   const auto fallback = missed.target;
-  // The mapping a miss is cut as: the implicit_miss one, or a named default target's smallest.
   const auto &implicit = plan.route_index.implicit_misses[index];
-  // The source moves an admission miss into its miss window (initiator_profile) and hands its own
-  // addresses over (address_hints).
-  if (source.protocol != Protocol::Axi4Lite)
-    profile.source_miss = missed.window;
-  if (plan.observes_miss_address)
-    profile.miss_kept_bits =
-        kept_of_miss(plan, index).bits & ((std::uint64_t{1} << source.address_bits) - 1);
-  profile.record_bits = plan.burst_record_bits;
-  profile.audit_bits = plan.burst_audit_bits;
-  // A width clamp behind plans its pieces from the hints.
-  profile.packet_hints = source.clamp.has_value();
   bool across = false;
   Axi4PacketWindow miss{};
   std::vector<Axi4PacketWindow> outer;
@@ -1058,6 +1057,32 @@ Axi4PacketizerProfile packet_profile(const NetworkPlan &plan, unsigned index) {
   }
   if (profile.source_miss)
     profile.fallback = miss;
+}
+
+Axi4PacketizerProfile packet_profile(const NetworkPlan &plan, unsigned index) {
+  const auto &source = plan.sources[index];
+  auto profile = burst_fields<Axi4PacketizerProfile>(plan, "s" + std::to_string(index));
+  profile.data_bits = source.engine_bits;
+  profile.split_narrow = source.split_narrow;
+  profile.write = !source.read_only; // a read-only source has no write face to cut
+  profile.level_bits = plan.burst_level_bits;
+  profile.exclusive = plan.exclusive;
+  profile.max_outstanding = source.engine_slots;
+  profile.tag_bits = profile.max_outstanding > 1 ? plan.burst_tag_bits : 0;
+  const auto missed = *miss_route(plan, source.name);
+  // The source moves an admission miss into its miss window (initiator_profile) and hands its own
+  // addresses over (address_hints).
+  if (source.protocol != Protocol::Axi4Lite)
+    profile.source_miss = missed.window;
+  if (plan.observes_miss_address)
+    profile.miss_kept_bits =
+        kept_of_miss(plan, index).bits & ((std::uint64_t{1} << source.address_bits) - 1);
+  profile.record_bits = plan.burst_record_bits;
+  profile.audit_bits = plan.burst_audit_bits;
+  // A width clamp behind plans its pieces from the hints.
+  profile.packet_hints = source.clamp.has_value();
+  packet_windows(plan, index, profile);
+  wishbone_packet_limits(plan, profile);
   miss_drop_flags(source, profile);
   // Behind a packets pipe the packet waits at the request merger (as the pipe already holds it).
   const auto packets_pipe = [](const EndpointPipe &pipe) {

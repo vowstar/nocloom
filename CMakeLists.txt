@@ -151,7 +151,7 @@ target_sources(nocloom_core PRIVATE src/core/width_adapter.cpp)
 
 target_sources(nocloom_core PRIVATE src/core/axi4_initiator.cpp src/core/axi4_output.cpp)
 target_sources(nocloom_core PRIVATE src/core/axi4_outlet.cpp)
-target_sources(nocloom_core PRIVATE src/core/ahb_outlet.cpp
+target_sources(nocloom_core PRIVATE src/core/wishbone_bursts.cpp src/core/ahb_outlet.cpp
   src/core/tilelink_ingress.cpp src/core/tilelink_uh.cpp
   src/core/tilelink_outlet.cpp src/core/tilelink_validation.cpp
   src/core/wishbone.cpp)

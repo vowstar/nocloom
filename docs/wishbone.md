@@ -45,6 +45,46 @@ returns one response per accepted request.
 An external slave can connect directly if each accepted request produces one
 response, including when STB is low.
 
+## Registered feedback bursts
+
+Both roles accept optional `burst_tags: true` in classic mode. Omission or
+`false` omits CTI and BTE and uses the classic transfer rules. Other protocols
+reject this field, including explicit `false`. Tags with `cycles: pipelined`
+produce `NCL_WISHBONE_OPTION`.
+A tagged target also rejects its own `timeout` with this code.
+
+| Interface | Behavior with tags |
+| --- | --- |
+| Initiator | The port accepts every CTI and BTE value and ignores it. Each accepted word is a classic transfer and one network request at its supplied address. RULE 4.10 covers CTI 001 and reserved values |
+| Target INCR | At least two consecutive full words form a linear burst. CTI is 010 before the last word and 111 on the last word. BTE is 00 |
+| Target WRAP | Complete physical WRAP4, WRAP8 and WRAP16 with full SEL use BTE 01, 10 and 11. Nonfinal transfers have CTI 010. The final data transfer has CTI 111 |
+| Target FIXED | With `fixed_bursts: single`, at least two 32-bit physical transfers with constant nonzero SEL use CTI 001 and a final 111. BTE is 00 |
+| Other target shapes | Classic CTI 000 and BTE 00. A full-word INCR prefix can form a burst. Its remaining partial words stay classic. Zero-SEL write words make no bus access |
+
+Burst tags apply after packet splitting and width conversion. Packets carry
+at most 128 bytes. Narrow INCR and split WRAP packets also hold at most 32
+physical words.
+
+The target buffers complete write packets in two banks of 32 physical words.
+The active write packet holds one bank until its result is stored. The other
+bank can receive the next packet while the bus serves the active packet.
+Reads do not use a write bank. The bus serves packets in arrival order,
+one packet at a time.
+
+Within a tagged burst, data and read response space allow the target to keep
+STB high and complete one word per clock edge. A resource wait between words
+lowers STB and keeps CYC high. A cycle with CYC and STB low separates bursts,
+classic transfers and packets. Until a word terminates, the target holds
+address, data, SEL, WE, CTI and BTE stable and keeps STB high. The target does
+not accept a termination while STB is low.
+
+ERR and enabled RTY end only the current word. Later words continue. Each tagged
+burst ends with a data transfer with CTI 111. Failed reads return zero. Writes
+merge the errors into one packet response and do not roll back completed writes.
+
+RTY does not retry. Without a response from the slave, the transfer can wait
+indefinitely.
+
 ## Initiators
 
 An external Wishbone MASTER drives this port. The port is a Wishbone SLAVE.
@@ -93,9 +133,12 @@ Include these paths in integration timing checks.
 
 This port is a Wishbone MASTER. In classic mode, each target word uses one
 transfer. STB stays high, with ADR, WE, SEL and write data stable, until ACK,
-ERR or an enabled RTY is sampled on a rising edge. It then stays low for at
-least one cycle. CYC remains high within a packet and falls when no work
-remains. There are no combinational paths from response inputs to outputs.
+ERR or an enabled RTY is sampled on a rising edge. There are no combinational
+paths from response inputs to outputs.
+
+Without burst tags, STB then stays low for at least one cycle. CYC stays high
+within a packet and falls when no work remains. For tagged targets, see
+[registered feedback bursts](#registered-feedback-bursts).
 
 A classic target accepts combinational ACK, registered ACK and held ACK,
 as permitted by B4 RULE 3.55 and PERMISSION 3.30. Only a rising edge
@@ -143,9 +186,9 @@ any output is written.
 | Option | Class | Reason or behavior |
 | --- | --- | --- |
 | Classic SINGLE read and write | Supported | One request and one termination per target word |
-| Classic BLOCK read and write | Supported | Each phase is independent, with STB gaps at targets |
+| Classic BLOCK read and write | Supported | Each phase is independent. Targets without tags insert STB gaps |
 | Pipelined cycles and STALL | Supported | `cycles: pipelined`, ordered responses |
-| Registered feedback bursts, CTI and BTE | Rejected | `burst_tags`, `cti` and `bte` are unknown fields. There are no tag pins |
+| Registered feedback bursts, CTI and BTE | Supported | `burst_tags: true` in classic mode. A tagged target rejects its own timeout. Types and fallback rules are listed above |
 | SEL | Supported | Four byte enables on writes, requested byte lanes on reads |
 | ACK and wait states | Supported | Classic termination requires STB high. Pipelined termination completes the oldest accepted request |
 | ERR | Supported | Word failure becomes an error response. Later words continue |
@@ -180,7 +223,7 @@ This table supplies the interface information of RULE 2.00 and RULE 2.15.
 | ERR | Decode, target or local failure, zero read data | Ends the word with an error, continues the packet |
 | RTY | Absent | Optional input, handled as ERR |
 | Termination timing | Registered ACK and ERR gated by CYC, and by STB in classic mode | Response inputs are sampled on rising edges |
-| TAG signals | Absent | Absent |
+| TAG signals | Optional CTI and BTE | Optional CTI and BTE |
 | Port size | 32 bits | 32 bits |
 | Port granularity | 8 bits | 8 bits |
 | Maximum operand size | 32 bits | 32 bits per transfer |
@@ -196,7 +239,18 @@ IP-XACT lists Wishbone signals as plain model ports without a bus abstraction.
 
 The map and bundle record each address unit and enabled retry input under
 `definition.wishbone`. Pipelined endpoints also record `cycles: pipelined`.
-An omitted `cycles` means classic mode.
+An omitted `cycles` means classic mode. Tagged endpoints record `burst_tags:
+true`.
+
+Tagged targets also record these values at
+`definition.wishbone.targets.<name>.buffering` in the map and bundle.
+
+| Field | Value | Meaning |
+| --- | --- | --- |
+| `write_banks` | 2 | Complete write packets can wait in two banks |
+| `physical_words_per_bank` | 32 | Each bank holds at most 32 physical words, including zero-SEL words |
+| `read_response_slots` | 2 | A bus read reserves space before STB is asserted |
+| `active_packets` | 1 | One packet at a time owns the bus |
 
 | Suffix | Direction at network initiator | Direction at network target |
 | --- | --- | --- |
@@ -210,6 +264,8 @@ An omitted `cycles` means classic mode.
 | `ack` | Output to MASTER ACK_I | Input from SLAVE ACK_O |
 | `err` | Output to MASTER ERR_I | Input from SLAVE ERR_O |
 | `rty` | Absent | Optional SLAVE RTY_O input |
+| `cti` | Optional 3-bit input from MASTER CTI_O | Optional 3-bit output to SLAVE CTI_I |
+| `bte` | Optional 2-bit input from MASTER BTE_O | Optional 2-bit output to SLAVE BTE_I |
 | `stall` | Output to MASTER STALL_I, pipelined only | Input from SLAVE STALL_O, pipelined only |
 | Domain `clock_port` | MASTER CLK_I | SLAVE CLK_I |
 | Domain reset | External RST_I integration | External RST_I integration |

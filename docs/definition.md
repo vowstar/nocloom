@@ -87,8 +87,8 @@ differ from the network width under the [protocol rules](protocols.md). The
 
 APB5 uses endpoint `user_width`, `user_flags`, `user` and
 `response_user_width` for [user signals](user-signals.md#apb5-user-ports).
-The request port is at most 128 bits and the response port is at most 16 bits.
-Both default to zero width.
+The request port is at most 128 bits and the response port at most 16 bits.
+Both default to zero.
 
 Endpoint `data_user_width` enables PWUSER and PRUSER. On APB5 endpoints it is 0
 or `transport.data_user_bits_per_byte * data_width / 8` and defaults to 0.
@@ -126,8 +126,9 @@ CLI switches select optional output files. See [output files](outputs.md).
 protocols reject these fields.
 
 Initiator `max_outstanding` is 1 to 64, with the transport default. Target
-`max_outstanding` and `flows` must be 1. TL-UH targets are rejected.
-TL-UH `max_transfer_bytes` is a power of two from 4 to 4096, default 64.
+`max_outstanding` and `flows` must be 1. TL-UH targets are rejected. TL-UH
+`max_transfer_bytes` is a power of two from 4 to 4096, default 64.
+
 TL-UH `size_width` is 2 to 4, default 3, and must encode the maximum size.
 TL-UH source and sink widths use the TL-UL ranges and defaults.
 
@@ -135,11 +136,10 @@ TL-UH source and sink widths use the TL-UL ranges and defaults.
 
 `protocol: ahb5` has four-bit HPROT by default. The optional `ahb5` object
 accepts `hprot_width: 4` or `7`, `hnonsec: false` or `true`, and
-`hmaster_width` from 0 to 32. HNONSEC defaults to false and HMASTER width to
-zero. The object also accepts `exclusive: false`
-and zero `hauser_width`, `hwuser_width`, `hruser_width` and `hbuser_width`.
-Other values produce `NCL_AHB5_PROPERTIES`. The object is rejected on other
-protocols, including explicit defaults.
+`hmaster_width` from 0 to 32. HNONSEC defaults to false and HMASTER width to 0.
+Use `exclusive: false` and zero for `hauser_width`, `hwuser_width`,
+`hruser_width` and `hbuser_width`. Other values produce `NCL_AHB5_PROPERTIES`.
+Other protocols reject the object, including explicit defaults.
 
 AHB5 targets require `attributes: amba` and `hresp_width: 1`, or an omitted
 `hresp_width`. See [AHB5 basic properties](ahb.md#ahb5-basic-properties).
@@ -160,15 +160,21 @@ C++ uses `Protocol::Wishbone`. Set both `Initiator::address_unit` and
 `Target::address_unit` to `AddressUnit::Byte` or `AddressUnit::Word`.
 Target `retry` optionally takes `WishboneRetry::Error`.
 
-Data width and network width must be 32 bits.
-`cycles` takes `classic` or `pipelined`, with
-`classic` as the default. C++ uses `WishboneCycles::Classic` or
-`WishboneCycles::Pipelined` in each endpoint's optional `cycles` member.
+Data and network widths must be 32 bits. `cycles` defaults to `classic` and
+also accepts `pipelined`. The C++ endpoint field takes `WishboneCycles::Classic`
+or `WishboneCycles::Pipelined`.
 
-Pipelined initiators accept `max_outstanding` from 1 to 64. If omitted,
-it uses `transport.max_outstanding`, whose default is 1.
-Targets and classic initiators have capacity one. There are no `burst_tags`,
-`granularity` or `endianness` fields. See [Wishbone](wishbone.md).
+Pipelined initiators accept `max_outstanding` from 1 to 64 and inherit the
+transport default of 1. Targets and classic initiators have capacity 1.
+
+`burst_tags` is an optional boolean on both roles. `true` adds CTI and BTE
+ports in classic mode. Omission and `false` omit them. C++ uses optional
+`bool burst_tags` on `Initiator` and `Target`.
+
+These cases produce `NCL_WISHBONE_OPTION`: the field on another protocol,
+including `false`, `burst_tags: true` with `cycles: pipelined`, and a tagged
+target with `timeout`. There are no `granularity` or `endianness` fields.
+See [Wishbone](wishbone.md).
 
 ## Endpoint templates
 
@@ -177,8 +183,6 @@ A template contains endpoint fields under `templates.initiators` or
 with `use: [cpu, fast]`. A template cannot set `name` or `use`. Templates and
 the endpoint must set disjoint fields. Unknown templates and unused templates
 are rejected.
-
-A diagnostic for a template field points to that template.
 
 The [short AXI example](../examples/scale_axi_12_short.yaml) uses templates and
 a mirrored response graph. Its expanded form is
@@ -235,9 +239,9 @@ initiator addresses are 2 to 48 bits.
 APB initiator addresses are 1 to 32 bits. Initiator widths cannot exceed the
 global width. Omitted endpoint address widths inherit the global width.
 
-Every YAML map, sequence, key and value counts toward the node limit. Exceeding
-input size, nesting or node limits produces `NCL_RESOURCE_LIMIT`. Empty
-templates are rejected.
+Every YAML map, sequence, key and value counts toward the node limit. Size,
+depth and node limit violations produce `NCL_RESOURCE_LIMIT`. Empty templates
+produce `NCL_TEMPLATE_FIELD`.
 
 Expanded diagnostics point to the template or group name that produced the field
 or pair.

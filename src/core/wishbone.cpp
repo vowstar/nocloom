@@ -1,4 +1,5 @@
 #include "wishbone.hpp"
+#include "diagnostic.hpp"
 #include "ir_component.hpp"
 #include "logic.hpp"
 #include <stdexcept>
@@ -171,7 +172,10 @@ static Result<NodeHardware> pipelined_initiator(const Axi4InitiatorProfile &prof
 }
 
 Result<NodeHardware> lower_wishbone_initiator(const Axi4InitiatorProfile &profile, bool word,
-                                              bool pipelined) {
+                                              bool pipelined, bool burst_tags) {
+  if (pipelined && burst_tags)
+    return Result<NodeHardware>::failure(
+        error("NCL_WISHBONE_OPTION", "burst_tags", "Burst tags require classic Wishbone cycles"));
   if (pipelined)
     return pipelined_initiator(profile, word, true);
   auto kernel = lower_axi4_initiator(profile);
@@ -188,6 +192,10 @@ Result<NodeHardware> lower_wishbone_initiator(const Axi4InitiatorProfile &profil
   const auto busy = l.state("wb.busy", 1), abandoned = l.state("wb.abandoned", 1);
   const auto ack = l.state("wb.ack", 1), err = l.state("wb.err", 1);
   const auto response = l.either(ack, err);
+  if (burst_tags) {
+    l.in("wb", "cti", 3);
+    l.in("wb", "bte", 2);
+  }
   const auto live = l.both(cyc, stb);
   const auto take = l.both(l.active(live), l.inv(l.either(busy, response)));
   const auto addr = l.latch("wb.address", base, take);
@@ -238,7 +246,12 @@ Result<NodeHardware> lower_wishbone_initiator(const Axi4InitiatorProfile &profil
 }
 
 Result<NodeHardware> lower_wishbone_target(const BurstOutletProfile &profile, bool word, bool retry,
-                                           bool pipelined) {
+                                           bool pipelined, bool burst_tags) {
+  if (pipelined && burst_tags)
+    return Result<NodeHardware>::failure(
+        error("NCL_WISHBONE_OPTION", "burst_tags", "Burst tags require classic Wishbone cycles"));
+  if (burst_tags)
+    return lower_wishbone_burst_target(profile, word, retry);
   if (pipelined) {
     auto kernel = lower_wishbone_target(profile, word, retry, false);
     if (!kernel)
@@ -283,10 +296,11 @@ Result<NodeHardware> lower_wishbone_target(const BurstOutletProfile &profile, bo
   Logic l;
   const auto ack = l.in("wb", "ack", 1), err = l.in("wb", "err", 1);
   const auto rty = retry ? l.in("wb", "rty", 1) : l.bit(0);
-  const auto error = l.either(err, rty);
-  const auto out = import_kernel(
-      l, kernel.value(), "apb",
-      {{"pready", l.either(ack, error)}, {"pslverr", error}, {"prdata", l.in("wb", "dat_r", 32)}});
+  const auto bus_error = l.either(err, rty);
+  const auto out = import_kernel(l, kernel.value(), "apb",
+                                 {{"pready", l.either(ack, bus_error)},
+                                  {"pslverr", bus_error},
+                                  {"prdata", l.in("wb", "dat_r", 32)}});
   auto address = out.at("paddr");
   address = word ? l.b.slice(address, 2, profile.address_bits - 2)
                  : l.both(address, l.num(profile.address_bits,

@@ -2,6 +2,7 @@
 #include "diagnostic.hpp"
 #include "network_plan_profiles.hpp"
 #include "width_adapter.hpp"
+#include "wishbone.hpp"
 #include <algorithm>
 #include <bit>
 #include <numeric>
@@ -127,9 +128,25 @@ unsigned apb_data_user_state(const NetworkPlan &plan, const TargetPlan &target, 
   const auto single = !target.back_to_back && !target.timeout;
   return width * ((single ? 1U : 2U) + (target.data_user_bits && target.apb_bits < 32 ? 1U : 0U));
 }
+unsigned wishbone_storage_bits(const NetworkPlan &plan, const TargetPlan &target, unsigned group) {
+  const auto index = static_cast<unsigned>(&target - plan.targets.data());
+  const auto node = lower_wishbone_burst_target(outlet_profile(plan, index), target.wishbone_word,
+                                                target.wishbone_retry)
+                        .value();
+  unsigned bits = 0;
+  for (const auto &[name, value] : node.bindings) {
+    const auto &v = node.ir.values.at(value.index);
+    const auto own = name.starts_with("w.") ? 0U : name.starts_with("r.") ? 1U : 2U;
+    if (v.op == Op::State && own == group)
+      bits += v.width;
+  }
+  return bits;
+}
 unsigned dedicated_engine_bits(const NetworkPlan &plan, const std::string &target,
                                unsigned direction) {
   const auto &t = plan.target(target);
+  if (t.wishbone_burst_tags)
+    return wishbone_storage_bits(plan, t, direction);
   const bool monitored = t.exclusive.mode == ExclusiveAccess::Network;
   // The pipelined AXI4-Lite engine: a one-entry response stage and one packet queue per
   // direction; a write packet's slot keeps its local answer, and the head packet its B error.
@@ -206,6 +223,8 @@ unsigned dedicated_bus_bits(const NetworkPlan &plan, const std::string &target) 
   // address phase (address, HSIZE and a four-bit HPROT, no mask) and the data phase's HWDATA. A
   // target of several flows latches the transfer's flow.
   const auto &t = plan.target(target);
+  if (t.wishbone_burst_tags)
+    return wishbone_storage_bits(plan, t, 2);
   if (t.service)
     return 0U;
   if (t.protocol == Protocol::AhbLite)
@@ -357,16 +376,19 @@ struct Obligations {
         const auto operation = direction == 0 ? "write" : "read";
         const auto engine = service + "/" + operation;
         resource(engine,
-                 apb    ? "burst_apb_outlet"
-                 : lite ? "burst_axi_lite_outlet"
-                 : ahb  ? "burst_ahb_outlet"
-                        : "burst_axi_outlet",
+                 tp.wishbone_burst_tags ? "burst_wishbone_outlet"
+                 : apb                  ? "burst_apb_outlet"
+                 : lite                 ? "burst_axi_lite_outlet"
+                 : ahb                  ? "burst_ahb_outlet"
+                                        : "burst_axi_outlet",
                  shared_bus ? dedicated_engine_bits(plan, target, direction)
                             : outlet_engine_bits(plan, target, direction),
                  "admitted burst", "the response stream is accepted by the response switches");
         if (shared_bus)
           wait(engine, service + "/bus", CrossWaitKind::Capacity,
-               apb    ? "the beat waits for its shared APB SETUP/ACCESS transfer grant"
+               tp.wishbone_burst_tags
+                   ? "the word waits for Wishbone termination and response credit"
+               : apb  ? "the beat waits for its shared APB SETUP/ACCESS transfer grant"
                : lite ? "the beat waits for its shared AXI4-Lite single-transfer grant"
                       : "the beat waits for its shared AHB address/data transfer grant");
         else
@@ -385,13 +407,15 @@ struct Obligations {
       if (shared_bus) {
         resource(
             service + "/bus",
-            apb    ? "burst_apb_grant"
-            : lite ? "burst_axi_lite_grant"
-                   : "burst_ahb_grant",
+            tp.wishbone_burst_tags ? "burst_wishbone_grant"
+            : apb                  ? "burst_apb_grant"
+            : lite                 ? "burst_axi_lite_grant"
+                                   : "burst_ahb_grant",
             dedicated_bus_bits(plan, target),
             apb || lite ? "one read or write beat" : "one read or write subtransfer",
-            apb2 ? "PSEL && PENABLE releases the bus after one ACCESS cycle independently of "
-                   "response consumption"
+            tp.wishbone_burst_tags ? "ACK, ERR or enabled RTY completes only the current word"
+            : apb2 ? "PSEL && PENABLE releases the bus after one ACCESS cycle independently of "
+                     "response consumption"
             : apb
                 ? "PSEL && PENABLE && PREADY releases the bus independently of response consumption"
             : lite ? "the accepted B or R response releases the bus independently of response "
@@ -399,19 +423,21 @@ struct Obligations {
                    : "the completed AHB data phase releases the bus independently of response "
                      "consumption");
         wait(service + "/bus", target_env, CrossWaitKind::Environment,
-             apb2   ? "PSEL && PENABLE"
-             : apb  ? "PSEL && PENABLE && PREADY"
-             : lite ? "the AXI4-Lite B or R handshake"
-                    : "legal AHB data phase completion");
+             tp.wishbone_burst_tags ? "ACK, ERR or enabled RTY while STB is high"
+             : apb2                 ? "PSEL && PENABLE"
+             : apb                  ? "PSEL && PENABLE && PREADY"
+             : lite                 ? "the AXI4-Lite B or R handshake"
+                                    : "legal AHB data phase completion");
         wait(service + "/bus", init, CrossWaitKind::Startup,
              "local reset release before bus issue");
       }
       resource(target_env, "environment", 0, "target",
-               apb2   ? "PSEL && PENABLE"
-               : apb  ? "PSEL && PENABLE && PREADY"
-               : lite ? "the AXI4-Lite B or R handshake"
-               : ahb  ? "legal AHB data phase completion"
-                      : "legal AXI burst completion");
+               tp.wishbone_burst_tags ? "ACK, ERR or enabled RTY while STB is high"
+               : apb2                 ? "PSEL && PENABLE"
+               : apb                  ? "PSEL && PENABLE && PREADY"
+               : lite                 ? "the AXI4-Lite B or R handshake"
+               : ahb                  ? "legal AHB data phase completion"
+                                      : "legal AXI burst completion");
     }
   }
   void grants() {

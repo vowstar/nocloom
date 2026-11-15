@@ -913,6 +913,14 @@ private:
         if (e.external_protocol != Protocol::Wishbone)
           return std::nullopt;
         Json fields = {{"address_unit", e.wishbone_word ? "word" : "byte"}};
+        if (e.wishbone_burst_tags) {
+          fields["burst_tags"] = true;
+          if (target)
+            fields["buffering"] = {{"write_banks", 2},
+                                   {"physical_words_per_bank", 32},
+                                   {"read_response_slots", 2},
+                                   {"active_packets", 1}};
+        }
         if (e.wishbone_pipelined)
           fields["cycles"] = "pipelined";
         if (target && e.wishbone_retry)
@@ -934,6 +942,11 @@ private:
            {{"initiators", "registered_terminations_gated_by_bus"}, {"targets", "registered"}}},
           {"retry", "error_without_retry"},
           {"read_sel_zero", "whole_word"}};
+      if (std::ranges::any_of(p.sources, [](const auto &e) { return e.wishbone_burst_tags; }) ||
+          std::ranges::any_of(p.targets, [](const auto &e) { return e.wishbone_burst_tags; }))
+        contract()["wishbone"]["registered_feedback"] = {{"termination", "level_with_stb"},
+                                                         {"packet_order", "arrival"},
+                                                         {"error", "word_only_continue_packet"}};
     }
   }
   void ingress() {

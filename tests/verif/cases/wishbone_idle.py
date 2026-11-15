@@ -19,6 +19,8 @@ def configuration(unit, mode, gate):
                   address_unit=unit, clock_gating=ENDPOINT_GATE_SETTINGS[gate])
     if mode == "pipelined":
         source.update(cycles="pipelined", max_outstanding=3)
+    elif mode == "tags":
+        source["burst_tags"] = True
     return dict(schema_version=10, name="wb_idle", address_width=16,
                 reset_ports=[dict(name="reset_n")], test_ports=[dict(name="test")],
                 clock_domains=[dict(name="main", clock_port="clk_main", reset_port="reset_n",
@@ -29,7 +31,8 @@ def configuration(unit, mode, gate):
 
 
 def bench(unit, mode):
-    extra = ".nl_i_s0_stall(stall), .probe_count(count)," if mode == "pipelined" else ""
+    extra = ".nl_i_s0_cti(3'b010), .nl_i_s0_bte(2'b01)," if mode == "tags" else ""
+    extra += ".nl_i_s0_stall(stall), .probe_count(count)," if mode == "pipelined" else ""
     return r'''
 `timescale 1ns/1ps
 module tb;
@@ -193,7 +196,7 @@ def main():
     args = parser.parse_args()
     args.work.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="run-", dir=args.work)).resolve()
-    for unit, mode, gate in itertools.product(("byte", "word"), ("classic", "pipelined"),
+    for unit, mode, gate in itertools.product(("byte", "word"), ("classic", "tags", "pipelined"),
                                               ("independent", "combined")):
         directory = work / f"{unit}-{mode}-{gate}"
         directory.mkdir()

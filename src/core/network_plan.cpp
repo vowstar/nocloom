@@ -431,6 +431,7 @@ void plan_source(NetworkPlan &plan, const Definition &d, const TransportOptions 
   s.slverr_only = initiator.slverr_only.value_or(false);
   s.wishbone_pipelined = initiator.cycles == WishboneCycles::Pipelined;
   s.wishbone_word = initiator.address_unit == AddressUnit::Word;
+  s.wishbone_burst_tags = initiator.burst_tags.value_or(false);
   s.clock_gating = initiator.clock_gating;
   s.qos = initiator.qos;
   if (plan.placement)
@@ -469,6 +470,7 @@ void target_engine(TargetPlan &x, const Target &t) {
   x.external_protocol = t.protocol.value_or(Protocol::Axi4);
   x.wishbone_pipelined = t.cycles == WishboneCycles::Pipelined;
   x.wishbone_word = t.address_unit == AddressUnit::Word;
+  x.wishbone_burst_tags = t.burst_tags.value_or(false);
   x.wishbone_retry = t.retry.has_value();
   x.tl_source_bits = t.source_width.value_or(0);
   x.tl_size_bits = t.size_width.value_or(2);

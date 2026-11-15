@@ -70,7 +70,9 @@ TEST_CASE("Wishbone termination outputs qualify registers with bus activity", "[
     for (const auto &node :
          {lower_wishbone_initiator(source, word), lower_wishbone_target(target, word, true),
           lower_wishbone_initiator(source, word, true),
-          lower_wishbone_target(target, word, true, true)}) {
+          lower_wishbone_target(target, word, true, true),
+          lower_wishbone_initiator(source, word, false, true),
+          lower_wishbone_target(target, word, true, false, true)}) {
       REQUIRE(node);
       for (const auto &driver : node.value().ir.drivers) {
         const auto &port = node.value().ir.ports.at(driver.port.index);
@@ -102,8 +104,8 @@ TEST_CASE("Wishbone optional artifacts have no unresolved bus links", "[wishbone
 }
 
 TEST_CASE("Wishbone rejects unknown cycle and tag fields", "[wishbone]") {
-  for (const auto *field : {"cycles: invalid", "burst_tags: true", "granularity: 16",
-                            "endianness: big", "lock: true", "cti: 0", "bte: 0", "tags: true"}) {
+  for (const auto *field : {"cycles: invalid", "granularity: 16", "endianness: big", "lock: true",
+                            "cti: 0", "bte: 0", "tags: true"}) {
     std::string text = yaml;
     const auto at = text.find("address_unit: byte");
     text.insert(at, std::string(field) + ", ");
@@ -278,4 +280,74 @@ TEST_CASE("Pipelined Wishbone retains external protocol limits", "[wishbone]") {
     CHECK(std::ranges::any_of(result.diagnostics(),
                               [](const auto &x) { return x.code == "NCL_QOS_PROFILE"; }));
   }
+}
+
+TEST_CASE("Wishbone burst tags are opt in and reject conflicting options", "[wishbone]") {
+  using namespace nocloom;
+  auto d = definition();
+  const auto original = generate(d);
+  REQUIRE(original);
+  d.initiators[0].burst_tags = false;
+  d.targets[0].burst_tags = false;
+  const auto unchanged = generate(d);
+  REQUIRE(unchanged);
+  REQUIRE(original.value().size() == unchanged.value().size());
+  for (std::size_t i = 0; i < original.value().size(); ++i)
+    CHECK(original.value()[i].text == unchanged.value()[i].text);
+  d.initiators[0].burst_tags = true;
+  d.targets[0].burst_tags = true;
+  const auto tagged = generate(d);
+  REQUIRE(tagged);
+  for (const auto *pin : {"nl_i_cpu_cti", "nl_i_cpu_bte", "nl_t_mem_cti", "nl_t_mem_bte"})
+    CHECK(std::ranges::any_of(tagged.value(), [&](const auto &file) {
+      return file.path.ends_with(".v") && file.text.find(pin) != std::string::npos;
+    }));
+  const auto xml = add_ipxact(d, tagged.value());
+  REQUIRE(xml);
+  CHECK(std::ranges::any_of(xml.value(), [](const auto &file) {
+    return file.path.ends_with(".ipxact.xml") &&
+           file.text.find("nl_t_mem_cti") != std::string::npos &&
+           file.text.find("nl_i_cpu_bte") != std::string::npos;
+  }));
+  const auto fails = [](const auto &invalid, const std::string &field) {
+    const auto result = generate(invalid);
+    REQUIRE_FALSE(result);
+    CHECK(std::ranges::any_of(result.diagnostics(), [&](const auto &x) {
+      return x.code == "NCL_WISHBONE_OPTION" && x.field == field;
+    }));
+  };
+  for (const bool source : {false, true}) {
+    auto invalid = d;
+    if (source)
+      invalid.initiators[0].cycles = WishboneCycles::Pipelined;
+    else
+      invalid.targets[0].cycles = WishboneCycles::Pipelined;
+    fails(invalid, source ? "initiators[0].burst_tags" : "targets[0].burst_tags");
+    for (const bool value : {false, true}) {
+      invalid = definition();
+      if (source) {
+        invalid.initiators[0].protocol = Protocol::Axi4;
+        invalid.initiators[0].address_unit.reset();
+        invalid.initiators[0].burst_tags = value;
+      } else {
+        invalid.targets[0].protocol = Protocol::Apb4;
+        invalid.targets[0].address_unit.reset();
+        invalid.targets[0].burst_tags = value;
+      }
+      fails(invalid, source ? "initiators[0].burst_tags" : "targets[0].burst_tags");
+    }
+  }
+  for (bool completion : {false, true}) {
+    auto invalid = d;
+    invalid.targets[0].timeout = TargetTimeout{32, completion};
+    fails(invalid, "targets[0].timeout");
+  }
+  std::string text = yaml;
+  text.insert(text.find("address_unit: byte"), "burst_tags: true, ");
+  text.insert(text.find("address_unit: word"), "burst_tags: true, ");
+  const auto parsed = config::parse(text, "wb.yaml");
+  REQUIRE(parsed);
+  CHECK(parsed.value().definition.initiators[0].burst_tags == true);
+  CHECK(parsed.value().definition.targets[0].burst_tags == true);
+  REQUIRE(generate(parsed.value().definition));
 }

@@ -78,6 +78,8 @@ struct Axi4PacketWindow {
   std::uint64_t read_pack_bytes = 0;
   // Pack ordinary reads only from an aligned word, avoiding a split physical suffix.
   bool read_pack_aligned = false;
+  // Maximum physical replay items, zero means no additional bound.
+  unsigned physical_words = 0;
 };
 struct Axi4PacketizerProfile : ComponentProfileBase {
   unsigned data_bits = 32; // source width: 32..1024

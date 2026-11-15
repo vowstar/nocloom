@@ -27,8 +27,10 @@ Related manuals: [Wishbone](wishbone.md), [TileLink TL-UL](tilelink.md),
 | `ahb5` | AHB5 initiator or target with basic properties | 32, 64, 128, 256, 512, 1024 |
 
 APB, Wishbone and TL-UL endpoints require a 32-bit network.
-Wishbone requires an explicit `address_unit: byte` or `word`. See
-[Wishbone cycles](wishbone.md) for options, signals and reset integration.
+Wishbone requires an explicit `address_unit: byte` or `word`. Optional
+`burst_tags: true` adds CTI and BTE to classic endpoints. See
+[Wishbone cycles](wishbone.md) for fields, signals, rejected combinations and
+reset integration.
 
 AHB targets require a 32-bit network. APB, AHB, Wishbone, TL-UL and AXI4-Lite
 targets support at most 32 local address bits. When the global address width

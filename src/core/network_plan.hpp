@@ -76,6 +76,7 @@ struct SourcePlan {
   Protocol external_protocol = Protocol::Axi4;
   bool slverr_only = false;
   bool wishbone_word = false, wishbone_retry = false, wishbone_pipelined = false;
+  bool wishbone_burst_tags = false;
   Protocol protocol = Protocol::Axi4;
   std::optional<Protocol> apb;
   bool ahb = false, axi3 = false, ahb5 = false;
@@ -147,6 +148,7 @@ struct TargetPlan {
   // The declared port protocol is independent of the internal engine protocol.
   Protocol external_protocol = Protocol::Axi4;
   bool wishbone_word = false, wishbone_retry = false, wishbone_pipelined = false;
+  bool wishbone_burst_tags = false;
   Protocol protocol = Protocol::Axi4;
   bool axi3 = false, ahb5 = false;
   unsigned hmaster_bits = 0, hprot_bits = 4;

@@ -247,6 +247,22 @@ struct PacketizerLowering {
   ValueId shift_down(ValueId value, unsigned n) {
     return l.zext(l.b.slice(value, n, l.width(value) - n), l.width(value));
   }
+  ValueId physical_limit(const Key &at, ValueId size, ValueId origin, ValueId outside) {
+    const auto limited = [](const Axi4PacketWindow &w) { return w.physical_words; };
+    if (!std::ranges::any_of(p.windows, limited) && !(p.fallback && limited(*p.fallback)))
+      return outside;
+    return per_window(
+        at, outside,
+        [&](const Axi4PacketWindow &w) {
+          if (!w.physical_words)
+            return outside;
+          const auto end =
+              l.plus(origin, l.shl(l.num(13, w.physical_words), l.lesser(size, l.num(3, 2)), 2));
+          // Packed words must not straddle a replay boundary.
+          return l.both(end, l.num(13, 8191 & ~(w.pack_bytes - 1)));
+        },
+        limited);
+  }
   // End (exclusive) of the packet starting at `start` and its source beats,
   // min(remaining, beats from floor(start, size) to the end); a split WRAP runs
   // as INCR and its first run stops at the container top. A burst never crosses its 4 KiB page,
@@ -285,6 +301,9 @@ struct PacketizerLowering {
                           from(w.boundary_bytes, w.boundary_bytes));
         },
         limit_key);
+    const auto physical_end = physical_limit(at, size, floor_offset, end);
+    if (physical_end.index != end.index)
+      end = l.lesser(end, physical_end);
     // The first beat (ending at next_floor) ends the packet when it reaches the window end, the
     // top or (split one per packet) always; each window class compares its limits beside the
     // decode.
@@ -297,6 +316,8 @@ struct PacketizerLowering {
                                             reaches(from(w.boundary_bytes, w.boundary_bytes)));
                           },
                           limit_key));
+    if (physical_end.index != end.index)
+      first_last = l.either(first_last, reaches(end));
     if (read && granule_any) {
       // A read starting inside a granule block stops at its top: the target counts from the head.
       const auto block_top = per_window(
@@ -325,12 +346,17 @@ struct PacketizerLowering {
       auto left = l.minus(burst_stop, o);
       for (const unsigned n : {1U, 2U, 4U, 8U})
         left = l.either(left, shift_down(left, n));
-      const auto cap = per_window(
+      auto cap = per_window(
           at, l.num(pw, 4095),
           [&](const Axi4PacketWindow &w) {
             return l.num(pw, std::min({w.max_bytes, w.boundary_bytes, std::uint64_t{4096}}) - 1);
           },
           [](const Axi4PacketWindow &w) { return std::min(w.max_bytes, w.boundary_bytes); });
+      if (std::ranges::any_of(p.windows, [](const auto &w) { return w.physical_words; }) ||
+          (p.fallback && p.fallback->physical_words)) {
+        const auto physical_cap = physical_limit(at, size, l.num(pw, 0), l.inc(cap));
+        cap = l.lesser(cap, l.dec(physical_cap));
+      }
       block =
           l.both(l.both(l.both(l.dec(o), l.b.unary(Op::BitNot, o, pw)), shift_down(left, 1)), cap);
       const auto block_end = l.inc(l.either(o, block));
@@ -423,7 +449,14 @@ struct PacketizerLowering {
         at, l.num(wide, std::uint64_t{1} << ab),
         [&](const Axi4PacketWindow &w) { return l.num(wide, w.wrap_container_limit); },
         [](const Axi4PacketWindow &w) { return w.wrap_container_limit; });
-    const auto aligned = l.eq(l.both(s, mask), 0);
+    auto aligned = l.eq(l.both(s, mask), 0);
+    if (std::ranges::any_of(p.windows, [](const auto &w) { return w.physical_words; }) ||
+        (p.fallback && p.fallback->physical_words)) {
+      const auto preserve = per_window(
+          at, zero, [&](const Axi4PacketWindow &w) { return w.physical_words ? one : zero; },
+          [](const Axi4PacketWindow &w) { return w.physical_words; });
+      aligned = l.both(aligned, l.inv(preserve));
+    }
     // limit < span is limit <= span - 1.
     const auto keeps_whole = granule_any ? l.either(aligned, inside_block) : aligned;
     auto cut =
@@ -1481,8 +1514,9 @@ void PacketizerLowering::read_packet() {
 // Whether a window's limits break the profile contract (Axi4PacketWindow), for `bytes` source
 // bytes.
 static bool bad_limits(const Axi4PacketWindow &w, unsigned bytes) {
-  return !std::has_single_bit(w.max_bytes) || !std::has_single_bit(w.align_bytes) ||
-         w.align_bytes < bytes || w.max_bytes < w.align_bytes || w.boundary_bytes < w.align_bytes ||
+  return (w.physical_words != 0 && w.physical_words != 32) || !std::has_single_bit(w.max_bytes) ||
+         !std::has_single_bit(w.align_bytes) || w.align_bytes < bytes ||
+         w.max_bytes < w.align_bytes || w.boundary_bytes < w.align_bytes ||
          !std::has_single_bit(w.wrap_container_limit) || w.wrap_container_limit > 2048 ||
          !std::has_single_bit(w.pack_bytes) || w.pack_bytes > bytes || w.pack_bytes < 4 ||
          (w.read_pack_bytes &&

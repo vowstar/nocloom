@@ -1062,6 +1062,8 @@ void check_wishbone(Checks &c, const Endpoint &e, const std::string &field, bool
       (!wb || (*e.cycles != WishboneCycles::Classic && *e.cycles != WishboneCycles::Pipelined)))
     c("NCL_WISHBONE_CYCLES", field + ".cycles",
       "cycles requires wishbone and must be classic or pipelined");
+  if (e.burst_tags && (!wb || (*e.burst_tags && e.cycles == WishboneCycles::Pipelined)))
+    c("NCL_WISHBONE_OPTION", field + ".burst_tags", "burst_tags requires classic Wishbone cycles");
   if (e.address_unit && !wb)
     c("NCL_WISHBONE_OPTION", field + ".address_unit", "address_unit requires wishbone");
   if (e.retry && (!wb || source || *e.retry != WishboneRetry::Error))
@@ -1442,6 +1444,9 @@ void check_target_attributes(Checks &c, const Target &t, const std::string &fiel
 // outlet: other targets have no HBURST, so even an explicit default is rejected there.
 void check_target_options(Checks &c, const Target &t, const std::string &field) {
   check_wishbone(c, t, field, false);
+  if (t.burst_tags.value_or(false) && t.timeout)
+    c("NCL_WISHBONE_OPTION", field + ".timeout",
+      "Wishbone burst tags require a target without timeout");
   if (t.protocol == Protocol::Wishbone && t.flows != 1)
     c("NCL_WISHBONE_OPTION", field + ".flows", "Wishbone targets require one flow");
   check_ahb5(c, t.protocol, t.ahb5, field);

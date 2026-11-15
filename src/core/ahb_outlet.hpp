@@ -107,6 +107,7 @@ struct BurstOutletProfile {
   // a direction change still waits until every earlier packet is answered.
   unsigned max_outstanding = 1;
 };
+std::optional<Diagnostic> burst_outlet_error(const BurstOutletProfile &profile);
 using AhbOutletProfile = BurstOutletProfile;
 using ApbBurstOutletProfile = BurstOutletProfile;
 // What an APB outlet stores, by its form. A serial outlet without a timer keeps one response per

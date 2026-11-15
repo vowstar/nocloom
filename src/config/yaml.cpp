@@ -35,6 +35,9 @@ void wishbone_fields(Reader &r, const YAML::Node &node, const std::string &path,
     else
       r.fail("NCL_WISHBONE_CYCLES", at, "Expected classic or pipelined", value.Mark());
   }
+  if (node["burst_tags"])
+    out.burst_tags =
+        r.boolean(r.field(node, "burst_tags", path + ".burst_tags"), path + ".burst_tags");
   if (node["retry"]) {
     const auto at = path + ".retry";
     const auto value = r.field(node, "retry", at);

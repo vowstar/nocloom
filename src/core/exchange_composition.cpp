@@ -2504,7 +2504,8 @@ private:
     const auto profile = initiator_profile(plan, si);
     const auto initiator =
         admitted(sp.external_protocol == Protocol::Wishbone
-                     ? lower_wishbone_initiator(profile, sp.wishbone_word, sp.wishbone_pipelined)
+                     ? lower_wishbone_initiator(profile, sp.wishbone_word, sp.wishbone_pipelined,
+                                                sp.wishbone_burst_tags)
                      : lower_axi4_initiator(profile));
     // Narrower ID/length ports and one-direction sources change only the
     // external face; the endpoint keeps the network-wide widths.
@@ -4293,6 +4294,10 @@ private:
     if (auto *zone = c.region("target/" + target + "/protocol")) {
       zone->claim(b, first, ep.states, outlet_free);
       zone->idle.push_back(at_rest(b, ep.states, outlet_rest));
+      if (plan.targets[o].wishbone_burst_tags)
+        zone->idle.push_back(at_rest(b, ep.states,
+                                     "bus.busy w.filling w.bank0.used w.bank1.used r.pending "
+                                     "r.response.t0.count w.response.t0.count"));
       if (plan.targets[o].external_protocol == Protocol::TlUl)
         zone->idle.push_back(at_rest(b, ep.states, "tl.phase"));
       c.hold_open(zone, stores);
@@ -5068,7 +5073,7 @@ private:
     auto lowered =
         tp.external_protocol == Protocol::Wishbone
             ? lower_wishbone_target(profile, tp.wishbone_word, tp.wishbone_retry,
-                                    tp.wishbone_pipelined)
+                                    tp.wishbone_pipelined, tp.wishbone_burst_tags)
         : tp.external_protocol == Protocol::TlUl
             ? lower_tilelink_outlet(profile, tp.tl_source_bits, tp.tl_size_bits, tp.tl_sink_bits)
         : apb  ? lower_apb_burst_outlet(profile)
@@ -5350,12 +5355,41 @@ private:
     return bus;
   }
 
+  void register_wishbone_burst_storage(TargetSide &t, const Imported &ep) {
+    for (bool read : {false, true}) {
+      const std::string prefix = read ? "r." : "w.";
+      std::vector<ValueId> payload;
+      for (const auto &[name, value] : ep.states)
+        if (name.starts_with(prefix))
+          payload.push_back(value);
+      const auto &face = read ? t.rrsp : t.wrsp;
+      auto release = c.transfer(face);
+      if (read)
+        release = c.and_(release, face.data[c.endpoint_field_index(true, "last")]);
+      record(t, read, ep.bound.at(read ? "r.accept" : "w.head"), release, payload, {});
+    }
+    std::vector<ValueId> payload, control{t.count, t.turn};
+    for (const auto &[name, value] : ep.states)
+      if (!name.starts_with("w.") && !name.starts_with("r."))
+        payload.push_back(value);
+    if (t.miss_seen)
+      control.insert(control.end(), {*t.miss_seen, *t.miss_answer, *t.miss_replied});
+    c.bind(t.key + "/bus.acquire", ep.bound.at("bus.issue"));
+    c.bind(t.key + "/bus.release", ep.bound.at("bus.complete"));
+    c.out.storage.push_back({t.key + "/bus", c.clock, payload, control, ep.bound.at("bus.issue"),
+                             ep.bound.at("bus.complete")});
+  }
+
   // The shared-bus engine's packet records per direction and its bus record.
   void register_bus_storage(unsigned o, TargetSide &t, const BurstOutletProfile &profile,
                             const Imported &ep) {
     const auto &target = plan.targets[o].name;
     const bool apb = apb_target(plan, target), lite = lite_target(plan, target);
     const bool ahb = ahb_target(plan, target);
+    if (plan.targets[o].wishbone_burst_tags) {
+      register_wishbone_burst_storage(t, ep);
+      return;
+    }
     std::set<std::string> assigned;
     for (bool read : {false, true}) {
       const std::string dir = read ? "r" : "w";

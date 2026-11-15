@@ -527,6 +527,8 @@ struct Initiator {
   std::optional<AddressUnit> address_unit = std::nullopt;
   std::optional<WishboneRetry> retry = std::nullopt;
   std::optional<WishboneCycles> cycles = std::nullopt;
+  // Optional CTI/BTE on classic Wishbone. Omission and false omit the ports.
+  std::optional<bool> burst_tags = std::nullopt;
   bool operator==(const Initiator &) const = default;
   // TileLink source defaults to 4 bits on an initiator and 0 on a TL-UL target.
   // A zero width omits the port. Size defaults to 2 bits for TL-UL and 3 for TL-UH.
@@ -671,6 +673,8 @@ struct Target {
   std::optional<AddressUnit> address_unit = std::nullopt;
   std::optional<WishboneRetry> retry = std::nullopt;
   std::optional<WishboneCycles> cycles = std::nullopt;
+  // Optional CTI/BTE on classic Wishbone. Omission and false omit the ports.
+  std::optional<bool> burst_tags = std::nullopt;
   bool operator==(const Target &) const = default;
   // TL-UL only. Source defaults to 4 bits on an initiator and 0 on a target.
   // A zero width omits the port. Size defaults to 2 bits and sink to 0 bits.
