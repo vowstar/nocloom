@@ -445,7 +445,7 @@ private:
                   {"transport",
                    {{"data_width", p.burst_data_bits},
                     {"id_bits", h.plan.burst_id_bits},
-                    {"len_bits", h.plan.burst_len_bits},
+                    {"len_bits", h.plan.packet_len_bits},
                     {"max_outstanding", p.max_outstanding},
                     {"transport_word_bytes", p.transport_word_bytes}}}};
     contract() = {
@@ -527,7 +527,7 @@ private:
     for (const auto &s : p.sources) {
       Json entry = Json::object();
       if (s.id_bits && s.external_protocol != Protocol::TlUl)
-        entry = {{"id_width", *s.id_bits}, {"len_width", *s.len_bits}};
+        entry = {{"id_width", *s.id_bits}, {"len_width", *s.axi_len_bits}};
       if (s.read_only || s.write_only)
         entry["access"] = s.read_only ? "read_only" : "write_only";
       if (!s.flows.empty()) {
@@ -543,7 +543,7 @@ private:
     }
     for (const auto &t : p.targets) {
       if (t.id_bits)
-        targets[t.name] = {{"id_width", *t.id_bits}, {"len_width", *t.len_bits}};
+        targets[t.name] = {{"id_width", *t.id_bits}, {"len_width", *t.axi_len_bits}};
       if (t.flows > 1)
         targets[t.name]["flows"] = t.flows;
     }

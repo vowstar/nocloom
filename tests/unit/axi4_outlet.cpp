@@ -183,9 +183,9 @@ TEST_CASE("Burst outlet rejects unsupported geometry", "[axi4-outlet]") {
   p.id_bits = 17;
   REQUIRE_FALSE(lower_axi4_outlet(p));
   p.id_bits = 0;
-  p.len_bits = 3;
+  p.packet_len_bits = 3;
   REQUIRE_FALSE(lower_axi4_outlet(p));
-  p.len_bits = 8;
+  p.packet_len_bits = 8;
   p.source_bits = 9;
   REQUIRE(lower_axi4_outlet(p));
   p.source_bits = 10;

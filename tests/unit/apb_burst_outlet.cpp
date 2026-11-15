@@ -36,7 +36,7 @@ TEST_CASE("Burst APB4 outlet validates identity and window geometry", "[apb-burs
     }
   for (auto p :
        {ApbBurstOutletProfile{"bad-name"}, ApbBurstOutletProfile{"probe", 17},
-        ApbBurstOutletProfile{"probe", 0, 9}, ApbBurstOutletProfile{"probe", 0, 8, 10},
+        ApbBurstOutletProfile{"probe", 0, 11}, ApbBurstOutletProfile{"probe", 0, 8, 10},
         ApbBurstOutletProfile{"probe", 0, 8, 0, std::vector<nocloom::AddressMapping>{{1, 4096}}},
         ApbBurstOutletProfile{"probe", 0, 8, 0,
                               std::vector<nocloom::AddressMapping>{{0xfffff000, 8192}}}})

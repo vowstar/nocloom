@@ -48,12 +48,12 @@ bool reject_by_width(const Axi4WidthCutProfile &p) {
 struct WidthCutLowering {
   WidthCutLowering(Logic &logic, const Axi4WidthCutProfile &profile)
       : l(logic), p(profile), bytes(p.data_bits / 8), lw(std::bit_width(bytes) - 1),
-        ab(p.address_bits), lb(p.len_bits), wide(ab + 1), narrow_face(p.down_bits != p.data_bits),
-        multi(p.max_outstanding > 1), contexts(p.max_outstanding * p.packet_depth),
-        zero(l.bind("c.zero", l.bit(0))), one(l.bind("c.one", l.bit(1))),
-        burst{p.id_bits, lb, true, ab}, count_bits(burst_count_bits(p.data_bits)),
-        down_count_bits(burst_count_bits(p.down_bits)), io{l, burst, p.source_bits},
-        by_width(reject_by_width(p)) {
+        ab(p.address_bits), lb(p.packet_len_bits), wide(ab + 1),
+        narrow_face(p.down_bits != p.data_bits), multi(p.max_outstanding > 1),
+        contexts(p.max_outstanding * p.packet_depth), zero(l.bind("c.zero", l.bit(0))),
+        one(l.bind("c.one", l.bit(1))), burst{p.id_bits, lb, true, ab},
+        count_bits(burst_count_bits(p.data_bits)), down_count_bits(burst_count_bits(p.down_bits)),
+        io{l, burst, p.source_bits}, by_width(reject_by_width(p)) {
     burst.exclusive = p.exclusive;
     burst.tag_bits = p.tag_bits;
     burst.user_bits = p.user_bits;
@@ -246,8 +246,8 @@ struct WidthCutLowering {
     return r;
   }
   // The piece that starts at `at`: a whole kept WRAP, else the target words up to the run end (the
-  // start word for a piece below it, else `end`), at most 2^len_bits, in page offsets one bit
-  // wider. The offsets added to `from` are known before the run end, so each answer is one
+  // start word for a piece below it, else `end`), at most 2^packet_len_bits, in page offsets one
+  // bit wider. The offsets added to `from` are known before the run end, so each answer is one
   // difference or compare after it. length: AxLEN; to == from_next: one word (never for a kept
   // WRAP); fits: the run ends with this piece; next: the page offset past it (low 12 bits).
   struct Piece {
@@ -1451,10 +1451,10 @@ void WidthCutLowering::read_reassembly() {
 Result<NodeHardware> lower_axi4_width_cut(const Axi4WidthCutProfile &p) {
   const unsigned bytes = p.data_bits / 8;
   const unsigned lw = std::bit_width(bytes) - 1;
-  const unsigned ab = p.address_bits, lb = p.len_bits;
+  const unsigned ab = p.address_bits, lb = p.packet_len_bits;
   const bool narrow_face = p.down_bits != p.data_bits;
   const bool multi = p.max_outstanding > 1;
-  if (!valid_name(p.name) || p.id_bits > 16 || (lb < 4 || lb > 8) ||
+  if (!valid_name(p.name) || p.id_bits > 16 || (lb < 4 || lb > 10) ||
       p.source_bits > max_source_bits || ab < 32 || ab > 48 || !source_width(p.data_bits) ||
       (p.down_bits != p.data_bits && p.down_bits != 32) || p.tag_bits > 8 ||
       (p.reassembly && !multi) || p.max_outstanding < 1 || p.max_outstanding > 64 ||
@@ -1462,6 +1462,8 @@ Result<NodeHardware> lower_axi4_width_cut(const Axi4WidthCutProfile &p) {
       ((p.write_hints || p.read_hints) && p.packet_depth == 1) ||
       (multi && p.tag_bits < unsigned(std::bit_width(p.max_outstanding - 1))) ||
       (p.fixed_width && (*p.fixed_width < 2 || *p.fixed_width > lw)) ||
+      std::ranges::any_of(p.piece_len_bits,
+                          [](const auto &w) { return w.second < 4 || w.second > 8; }) ||
       std::ranges::any_of(p.windows,
                           [&](const auto &w) {
                             return w.second < 2 || w.second > lw || !w.first.size ||
@@ -1471,12 +1473,12 @@ Result<NodeHardware> lower_axi4_width_cut(const Axi4WidthCutProfile &p) {
           p.fixed_reject,
           [&](const auto &w) { return !w.size || w.base + w.size > (std::uint64_t{1} << ab); }) ||
       (narrow_face && (!p.fixed_width || *p.fixed_width != 2)))
-    return Result<NodeHardware>::failure(
-        error("NCL_AXI4_WIDTH_CUT_PROFILE", "axi4_width_cut",
-              "Expected 32..48 address bits, 0..16 ID bits, 4..8 length bits, 0..9 source bits, "
-              "64/128/256/512/1024 data bits, target widths between 32 bits and the source "
-              "width (a 32-bit down face takes every burst at 32 bits), and packet hints only "
-              "behind the packet splitter"));
+    return Result<NodeHardware>::failure(error(
+        "NCL_AXI4_WIDTH_CUT_PROFILE", "axi4_width_cut",
+        "Expected 32..48 address bits, 0..16 ID bits, 4..10 packet length bits, 0..9 source bits, "
+        "64/128/256/512/1024 data bits, target widths between 32 bits and the source "
+        "width (a 32-bit down face takes every burst at 32 bits), and packet hints only "
+        "behind the packet splitter"));
   Logic l;
   WidthCutLowering engine(l, p);
   engine.write_request();
@@ -1491,21 +1493,21 @@ Result<NodeHardware> lower_axi4_width_cut(const Axi4WidthCutProfile &p) {
 
 Result<NodeHardware> lower_axi4_width_clamp(const Axi4WidthClampProfile &p) {
   const unsigned lw = std::bit_width(p.data_bits / 8) - 1;
-  if (!valid_name(p.name) || p.id_bits > 16 || (p.len_bits < 4 || p.len_bits > 8) ||
+  if (!valid_name(p.name) || p.id_bits > 16 || (p.packet_len_bits < 4 || p.packet_len_bits > 10) ||
       p.source_bits > max_source_bits || p.address_bits < 32 || p.address_bits > 48 ||
       !source_width(p.data_bits) || std::ranges::any_of(p.windows, [&](const auto &w) {
         return w.second < 2 || w.second > lw || !w.first.size ||
                w.first.base + w.first.size > (std::uint64_t{1} << p.address_bits);
       }))
-    return Result<NodeHardware>::failure(
-        error("NCL_AXI4_WIDTH_CLAMP_PROFILE", "axi4_width_clamp",
-              "Expected 32..48 address bits, 0..16 ID bits, 4..8 length bits, 0..9 source bits, "
-              "64/128/256/512/1024 data "
-              "bits and windows whose target width lies between 32 bits and the source width"));
+    return Result<NodeHardware>::failure(error(
+        "NCL_AXI4_WIDTH_CLAMP_PROFILE", "axi4_width_clamp",
+        "Expected 32..48 address bits, 0..16 ID bits, 4..10 packet length bits, 0..9 source bits, "
+        "64/128/256/512/1024 data "
+        "bits and windows whose target width lies between 32 bits and the source width"));
   Axi4WidthCutProfile cut;
   cut.name = p.name;
   cut.id_bits = p.id_bits;
-  cut.len_bits = p.len_bits;
+  cut.packet_len_bits = p.packet_len_bits;
   cut.address_bits = p.address_bits;
   cut.source_bits = p.source_bits;
   cut.data_bits = p.data_bits;

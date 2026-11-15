@@ -395,7 +395,7 @@ Zone lower_zone(const NetworkPlan &plan, const std::string &name) {
       cut.name = "s" + std::to_string(si);
       cut.module_prefix = "nocloom_axi4_width_cut_";
       cut.id_bits = plan.burst_id_bits;
-      cut.len_bits = plan.burst_len_bits;
+      cut.packet_len_bits = plan.packet_len_bits;
       cut.address_bits = plan.burst_address_bits;
       cut.source_bits = plan.source_bits;
       cut.data_bits = sp.engine_bits;

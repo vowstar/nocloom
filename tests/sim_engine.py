@@ -24,6 +24,7 @@ def add_arguments(parser):
 # own subsets: a marker missing here turns a passing case into a failure.
 # All emitted completion markers must be registered here.
 PASS_MARKERS = (
+    "PACKET_LENGTHS_PASS",
     "ADDRESS_PASS", "ARBITER_PASS", "AXI4_INITIATOR_PASS", "AXI4_LOOPBACK_PASS", "AXI4_TARGET_PASS",
     "AXI_NETWORK_PASS", "BASELINE_PASS",
     "CAPACITY_PASS", "CHECK_PASS", "CROSS_APB_MATRIX_PASS", "CROSS_APB_PASS",

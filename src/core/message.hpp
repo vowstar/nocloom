@@ -245,11 +245,11 @@ Result<MessageLayout> describe_messages(MessageParameters parameters);
 //    In decode_flag profiles native failures use result alone, with error=0.
 //
 // Burst capability of one endpoint. id_bits is the AxID field width (0..16;
-// zero omits the id field and the ID ports entirely). len_bits is the AxLEN
-// field width: 4..8, where 8 encodes packets of 1..256 beats.
+// zero omits the id field and the ID ports entirely). packet_len_bits counts
+// packet beats minus one: 4..10, where 10 encodes packets of 1..1024 beats.
 struct BurstProfile {
   unsigned id_bits = 0;
-  unsigned len_bits = 8;
+  unsigned packet_len_bits = 8;
   // Separate raw AxADDR from aligned packet occupancy; only true master outlets use it.
   bool start_address = false;
   unsigned address_bits = 32; // endpoint layout: the global width, 32..48

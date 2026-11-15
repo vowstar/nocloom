@@ -58,7 +58,7 @@ std::vector<std::pair<std::string, unsigned>> control_fields(bool response, unsi
   }
   if (burst) {
     if (!response) {
-      fields.emplace_back("length", burst->len_bits);
+      fields.emplace_back("length", burst->packet_len_bits);
       fields.emplace_back("size", 3);
       fields.emplace_back("burst", 2);
       fields.emplace_back("cache", 4);
@@ -263,6 +263,10 @@ std::string module_name(const WidthAdapterPlan &plan, bool serializer) {
 
 Result<WidthAdapterPlan> plan_width_adapter(const WidthAdapterParameters &parameters) {
   std::vector<Diagnostic> errors;
+  if (parameters.burst &&
+      (parameters.burst->packet_len_bits < 4 || parameters.burst->packet_len_bits > 10))
+    errors.push_back(adapter_error("NCL_WIDTH_ADAPTER_WORD", "width_adapter.burst.packet_len_bits",
+                                   "Packet length requires 4..10 bits"));
   if (parameters.burst &&
       (parameters.burst->address_bits < 12 || parameters.burst->address_bits > 48))
     errors.push_back(adapter_error("NCL_WIDTH_ADAPTER_ADDRESS", "width_adapter",

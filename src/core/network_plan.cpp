@@ -345,14 +345,14 @@ void tilelink_source(SourcePlan &s, const Initiator &initiator) {
   s.tl_sink_bits = initiator.sink_width.value_or(0);
   s.protocol = Protocol::Axi4;
   s.id_bits = s.tl_source_bits;
-  s.len_bits = 4;
+  s.axi_len_bits = 4;
 }
 // The endpoint settings of the definition, in name order.
 static void wishbone_engine(SourcePlan &s) {
   if (s.external_protocol == Protocol::Wishbone) {
     s.protocol = Protocol::Axi4;
     s.id_bits = 0;
-    s.len_bits = 4;
+    s.axi_len_bits = 4;
   }
 }
 static Protocol target_engine_protocol(Protocol protocol) {
@@ -377,7 +377,7 @@ void source_engine(SourcePlan &s, const Initiator &initiator) {
   s.hnonsec = initiator.ahb5.value_or(Ahb5Properties{}).hnonsec;
   if (s.ahb) {
     s.protocol = Protocol::Axi4;
-    s.len_bits = 4;
+    s.axi_len_bits = 4;
   }
   s.axi3 = initiator.protocol == Protocol::Axi3;
   if (s.axi3)
@@ -431,7 +431,7 @@ void plan_source(NetworkPlan &plan, const Definition &d, const TransportOptions 
   tilelink_source(s, initiator);
   if (full_axi(initiator.protocol)) {
     s.id_bits = initiator.id_width.value_or(4);
-    s.len_bits = initiator.len_width.value_or(4);
+    s.axi_len_bits = initiator.len_width.value_or(4);
   }
   if (!initiator.route_classes.empty()) {
     s.flows = initiator.route_classes;
@@ -473,7 +473,7 @@ void target_engine(TargetPlan &x, const Target &t) {
   if (x.protocol == Protocol::Axi4) {
     if (t.id_width || (t.max_outstanding.value_or(1) < 2 && t.exclusive != ExclusiveAccess::Target))
       x.id_bits = t.id_width.value_or(4);
-    x.len_bits = t.len_width.value_or(4);
+    x.axi_len_bits = t.len_width.value_or(4);
   }
 }
 void target_exclusive(TargetPlan &x, const Definition &d, const Target &t,

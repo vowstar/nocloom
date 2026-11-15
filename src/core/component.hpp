@@ -25,7 +25,7 @@ struct AddressBlock {
 struct ComponentProfileBase {
   std::string name;
   unsigned id_bits = 0;
-  unsigned len_bits = 8; // transport AxLEN width: 4..8
+  unsigned packet_len_bits = 8; // packet beats minus one: 4..10
   unsigned address_bits = 32;
   unsigned source_bits = 0;
 };

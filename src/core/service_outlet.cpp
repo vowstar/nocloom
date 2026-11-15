@@ -22,6 +22,9 @@ constexpr unsigned window_offset_bits = 20;
 } // namespace
 
 Result<NodeHardware> lower_service_outlet(const ServiceOutletProfile &p, bool shared_read) {
+  if (p.packet_len_bits < 4 || p.packet_len_bits > 10)
+    return Result<NodeHardware>::failure(
+        error("NCL_INTERNAL_PLAN", "service.packet_len_bits", "Packet length requires 4..10 bits"));
   if (p.window_bits > window_offset_bits || p.bank_bits > p.window_bits || p.bank_bits < 2 ||
       p.bank_bits > index_bits + 2 || p.key >> key_bits != 0)
     return Result<NodeHardware>::failure(
@@ -30,7 +33,7 @@ Result<NodeHardware> lower_service_outlet(const ServiceOutletProfile &p, bool sh
   auto &b = l.b;
   l.block = p.arrival;
   l.block_bits = p.transport_address_bits;
-  BurstProfile layout{p.id_bits, p.len_bits, true, p.transport_address_bits};
+  BurstProfile layout{p.id_bits, p.packet_len_bits, true, p.transport_address_bits};
   layout.exclusive = p.exclusive;
   layout.tag_bits = p.tag_bits;
   layout.user_bits = p.user_bits;

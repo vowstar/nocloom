@@ -48,7 +48,7 @@ namespace nocloom::detail {
 // - INCR span crossing a 4 KiB boundary,
 // - WRAP with length not in {2, 4, 8, 16} or a start address not aligned to
 //   the beat size,
-// - FIXED with length above 16 beats (only expressible with len_bits == 8;
+// - FIXED with length above 16 beats (only expressible with axi_len_bits > 4;
 //   AXI4 extends the burst length beyond 16 for INCR only).
 // WLAST must mark exactly beat N-1; a mismatch still emits a contract-exact packet (boundaries are
 // descriptor-driven) and completes B with SLVERR.
@@ -84,7 +84,7 @@ struct Axi4InitiatorProfile {
   unsigned data_bits = 32;             // 32, 64, 128, 256, 512 or 1024 (Lite: 32 or 64)
   unsigned address_bits = 32;          // APB 1..32, Lite 2..48; full AXI explicit transport 12..48
   unsigned id_bits = 0;                // 0..16; zero omits the ID ports and the id field
-  unsigned len_bits = 8;               // 4..8 (AxLEN field width)
+  unsigned axi_len_bits = 8;           // 4..8 (AxLEN field width)
   bool read = true;                    // AR/R face and read packetization
   bool write = true;                   // AW/W/B face and write packetization
   unsigned source_bits = 0;            // 0 standalone; >0 reserves a source field
@@ -218,6 +218,9 @@ struct Axi4InitiatorProfile {
   // fragment, or its first beat taken locally); a write then holds it until it leaves.
   unsigned address_selector_bits = 0, plane_shift = 0, plane_bits = 0;
   std::vector<ModeWindow> mode_windows{};
+  // Packet descriptors may be wider than the physical AxLEN field.
+  std::optional<unsigned> packet_len_bits = std::nullopt;
+  unsigned packet_bits() const { return packet_len_bits.value_or(axi_len_bits); }
   bool operator==(const Axi4InitiatorProfile &) const = default;
 };
 

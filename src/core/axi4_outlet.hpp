@@ -54,7 +54,7 @@ struct Axi4OutletProfile {
   std::string name;
   unsigned data_bits = 32;
   unsigned id_bits = 0;
-  unsigned len_bits = 8;
+  unsigned packet_len_bits = 8;
   unsigned source_bits = 0;
   bool start_address = false;
   // Global input, the burst at the local address of the mapping holding its start (whole 4 KiB
@@ -133,7 +133,7 @@ struct Axi4OutletProfile {
   ExclusiveTarget exclusive_target{};
   // Target AxID and AxLEN port widths (absent: internal). AxLEN is truncated or zero-extended; the
   // ID port takes the target ID of that width.
-  std::optional<unsigned> port_id_bits = std::nullopt, port_len_bits = std::nullopt;
+  std::optional<unsigned> port_id_bits = std::nullopt, axi_len_bits = std::nullopt;
   // A target merge (axi4_upsize.hpp) takes the R beats: without interleave each waits in one entry,
   // registered as in the two-entry stage, and RREADY is that entry's room: empty, or leaving to the
   // merge in this cycle (the merge takes a word while its word register is empty; a beat it passes

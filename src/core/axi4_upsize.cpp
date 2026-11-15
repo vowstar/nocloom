@@ -21,8 +21,8 @@ struct UpsizeLowering {
   UpsizeLowering(logic::Logic &logic, const Axi4UpsizeProfile &profile)
       : l(logic), p(profile), bytes(p.data_bits / 8), t(std::bit_width(bytes) - 1),
         ab(p.address_bits), zero(l.bind("c.zero", l.bit(0))), one(l.bind("c.one", l.bit(1))),
-        lb(p.len_bits), count_bits(burst_count_bits(p.data_bits)), burst{p.id_bits, lb, true, ab},
-        io{l, burst, p.source_bits}, word(l.num(ab, bytes)),
+        lb(p.packet_len_bits), count_bits(burst_count_bits(p.data_bits)),
+        burst{p.id_bits, lb, true, ab}, io{l, burst, p.source_bits}, word(l.num(ab, bytes)),
         slot_bits(std::max(1U, static_cast<unsigned>(std::bit_width(p.max_outstanding - 1)))),
         occupancy_bits(std::bit_width(p.max_outstanding)) {
     burst.exclusive = p.exclusive;
@@ -966,18 +966,18 @@ Fields UpsizeLowering::replay_bank(ValueId capture, ValueId release, ValueId all
 
 Result<NodeHardware> lower_axi4_upsize(const Axi4UpsizeProfile &p) {
   const unsigned ab = p.address_bits;
-  if (!valid_name(p.name) || p.id_bits > 16 || (p.len_bits < 4 || p.len_bits > 8) ||
+  if (!valid_name(p.name) || p.id_bits > 16 || (p.packet_len_bits < 4 || p.packet_len_bits > 10) ||
       p.source_bits > max_source_bits || p.tag_bits > 6 || !p.max_outstanding ||
       p.max_outstanding > 16 || ab < 32 || ab > 48 ||
       (p.arrival.keep && (p.arrival.keep < 12 || p.arrival.keep >= ab ||
                           p.arrival.base % (std::uint64_t{1} << p.arrival.keep))) ||
       (p.data_bits != 32 && p.data_bits != 64 && p.data_bits != 128 && p.data_bits != 256 &&
        p.data_bits != 512 && p.data_bits != 1024))
-    return Result<NodeHardware>::failure(
-        error("NCL_AXI4_UPSIZE_PROFILE", "axi4_upsize",
-              "Expected 32..48 address bits, 0..16 ID bits, 4..8 length bits, 0..9 source bits, "
-              "0..6 tag bits, a 32-, 64-, 128-, 256-, 512- or 1024-bit target, and 1..16 "
-              "outstanding packets per direction"));
+    return Result<NodeHardware>::failure(error(
+        "NCL_AXI4_UPSIZE_PROFILE", "axi4_upsize",
+        "Expected 32..48 address bits, 0..16 ID bits, 4..10 packet length bits, 0..9 source bits, "
+        "0..6 tag bits, a 32-, 64-, 128-, 256-, 512- or 1024-bit target, and 1..16 "
+        "outstanding packets per direction"));
   Logic l;
   UpsizeLowering engine(l, p);
   engine.write_words();

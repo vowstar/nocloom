@@ -23,10 +23,10 @@ inline ValueId word_data(logic::Logic &l, ValueId length, unsigned data_bits) {
   return data;
 }
 // The length a word's data says; the groups other than those on the word's lanes are zero.
-inline ValueId length_of(logic::Logic &l, ValueId data, unsigned len_bits) {
-  auto length = l.b.slice(data, 0, len_bits);
+inline ValueId length_of(logic::Logic &l, ValueId data, unsigned packet_len_bits) {
+  auto length = l.b.slice(data, 0, packet_len_bits);
   for (unsigned g = 32; g < l.width(data); g += 32)
-    length = l.either(length, l.b.slice(data, g, len_bits));
+    length = l.either(length, l.b.slice(data, g, packet_len_bits));
   return length;
 }
 } // namespace nocloom::detail::decode_packet

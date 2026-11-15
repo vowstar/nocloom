@@ -97,12 +97,13 @@ std::optional<Diagnostic> profile_bounds_error(const BurstOutletProfile &p, Prot
   const bool lite = kind == Protocol::Axi4Lite;
   const unsigned bits = p.transport_address_bits ? p.transport_address_bits : 32;
   if (!valid_name(p.name) || p.id_bits > 16 || p.source_bits > max_source_bits ||
-      (p.len_bits < 4 || p.len_bits > 8) || bits < 32 || bits > 48 || p.address_bits < 2 ||
-      p.address_bits > 32 || (!apb && !lite && kind != Protocol::AhbLite))
-    return error(outlet_profile_code(kind),
-                 pick_kind(kind, "apb_burst_outlet", "axi_lite_outlet", "ahb_outlet"),
-                 "Expected a valid name, 0..16 ID bits, 4..8 length bits, 0..9 source bits, "
-                 "32..48 transport and 2..32 local address bits");
+      (p.packet_len_bits < 4 || p.packet_len_bits > 10) || bits < 32 || bits > 48 ||
+      p.address_bits < 2 || p.address_bits > 32 || (!apb && !lite && kind != Protocol::AhbLite))
+    return error(
+        outlet_profile_code(kind),
+        pick_kind(kind, "apb_burst_outlet", "axi_lite_outlet", "ahb_outlet"),
+        "Expected a valid name, 0..16 ID bits, 4..10 packet length bits, 0..9 source bits, "
+        "32..48 transport and 2..32 local address bits");
   return std::nullopt;
 }
 std::optional<Diagnostic> profile_timeout_error(const BurstOutletProfile &p, Protocol kind) {
@@ -329,7 +330,7 @@ struct OutletBase {
                       l.b.constant(p.response_user_bits, 0));
   }
   Fields request(const std::string &face) {
-    BurstProfile profile{p.id_bits, p.len_bits, true, bits};
+    BurstProfile profile{p.id_bits, p.packet_len_bits, true, bits};
     profile.exclusive = p.exclusive;
     profile.tag_bits = p.tag_bits;
     profile.user_bits = p.user_bits;
@@ -637,7 +638,7 @@ Fields ApbOutlet::response_state(const char *stem) {
   if (p.tag_bits)
     s["tag"] = l.state(std::string(stem) + ".tag", p.tag_bits);
   if (monitored) {
-    s["length"] = l.state(std::string(stem) + ".length", p.len_bits);
+    s["length"] = l.state(std::string(stem) + ".length", p.packet_len_bits);
     s["burst"] = l.state(std::string(stem) + ".burst", 2);
     s["fail"] = l.state(std::string(stem) + ".fail", 1);
     s["exclusive_okay"] = l.state(std::string(stem) + ".exclusive_okay", 1);
@@ -789,7 +790,7 @@ void ApbOutlet::read_accept() {
   if (!packet_coded)
     rc = l.state("r.result", 2);
   ra = l.address_state("r.address", bits);
-  rn = l.state("r.remaining", p.len_bits);
+  rn = l.state("r.remaining", p.packet_len_bits);
   rfirst = l.state("r.first", 1);
   rdata = l.state("r.data", o.word_bits);
   gathered = narrow_apb ? l.state("r.gather", 32) : zero;
@@ -945,7 +946,8 @@ void ApbOutlet::bus_issue() {
     auto kept = o.captured();
     if (!p.user.empty() && p.user_bits)
       kept.push_back("user");
-    orphan = o.orphan({{"address", bits}, {"left", p.len_bits}, {"mask", lanes}}, rd_now, kept);
+    orphan =
+        o.orphan({{"address", bits}, {"left", p.packet_len_bits}, {"mask", lanes}}, rd_now, kept);
     if (!p.user.empty() && p.user_bits)
       read_user = l.b.select(failed, orphan.packet.at("user"), read_user);
     read_address = l.b.select(failed, orphan.word.at("address"), read_address);
@@ -1210,7 +1212,7 @@ void ApbOutlet::bus_drive() {
     if (subpage)
       lanes_next = l.b.select(o.mapped(following), lanes_next, l.b.constant(lanes, 0));
     o.move(orphan, "address", ra_now, step, following);
-    o.move(orphan, "left", l.b.select(owing, rn_now, l.b.constant(p.len_bits, 0)), step,
+    o.move(orphan, "left", l.b.select(owing, rn_now, l.b.constant(p.packet_len_bits, 0)), step,
            l.dec(left));
     o.move(orphan, "mask", l.b.select(owing, rest, l.b.constant(lanes, 0)), step, lanes_next,
            l.b.select(l.both(complete, l.inv(owner)), spare(lanes_owed), lanes_owed));
@@ -1510,7 +1512,7 @@ struct LiteOutlet {
         codes(p.failure_classes), report_only(o.report_only), monitored(o.monitored),
         cap(std::max(1U, p.max_outstanding)),
         pw(std::max(1U, static_cast<unsigned>(std::bit_width(cap - 1)))),
-        cw(std::max(1U, static_cast<unsigned>(std::bit_width(cap)))), kw(p.len_bits + 1),
+        cw(std::max(1U, static_cast<unsigned>(std::bit_width(cap)))), kw(p.packet_len_bits + 1),
         failed(o.failed) {}
   OutletBase o;
   const BurstOutletProfile &p;
@@ -1518,7 +1520,7 @@ struct LiteOutlet {
   const ValueId zero, one, ok, target_error, net_miss;
   const unsigned timeout;
   const bool codes, report_only, monitored;
-  // kw counts the words of one packet (at most 2^len_bits).
+  // kw counts the words of one packet (at most 2^packet_len_bits).
   const unsigned cap, pw, cw, kw;
   const ValueId failed;
   Fields w, r;
@@ -1809,7 +1811,7 @@ void LiteOutlet::write_responses() {
                  codes ? l.b.select(l.eq(bresp, 3), net_miss, target_error) : target_error);
   // A B is taken only against a bus completion credit (its word's AW and W both done): a target
   // that offers B early violates the protocol and must not move the response side.
-  w_bus_done = l.state("w.bus_done", cw + p.len_bits);
+  w_bus_done = l.state("w.bus_done", cw + p.packet_len_bits);
   const auto w_credited = l.inv(l.eq(w_bus_done, 0));
   // After expiry a report-only target drops the answer.
   const auto drop = report_only ? failed : zero;
@@ -1885,9 +1887,9 @@ void LiteOutlet::write_responses() {
   packet_context::step_exact(l, wpkt, wpkt_push, wentry, frame);
   // A B is taken for the head packet, and discarded after expiry.
   out("axil", "bready", active(l.either(failed, b_open)));
-  l.b.update(w_bus_done,
-             l.plus(l.minus(w_bus_done, l.fit(bt, cw + p.len_bits)),
-                    l.fit(timeout ? l.both(bus_done, l.inv(failed)) : bus_done, cw + p.len_bits)));
+  l.b.update(w_bus_done, l.plus(l.minus(w_bus_done, l.fit(bt, cw + p.packet_len_bits)),
+                                l.fit(timeout ? l.both(bus_done, l.inv(failed)) : bus_done,
+                                      cw + p.packet_len_bits)));
   o.response("wrsp", wface, wrsp_valid, wface.at("address"), wface.at("result"), one, one,
              l.b.constant(o.word_bits, 0), monitored ? wface.at("exclusive_okay") : zero);
   // A write is in flight from its head word until its B leaves: the packet
@@ -1924,13 +1926,14 @@ void LiteOutlet::read_issue() {
   r_unissued = l.state("r.packet.unissued", cw);
   r_issuing = l.state("r.issuing", 1);
   r_issue_addr = l.address_state("r.issue_address", o.bits);
-  r_issue_left = l.state("r.issue_left", p.len_bits + 1);
+  r_issue_left = l.state("r.issue_left", p.packet_len_bits + 1);
   const auto issue_entry = packet_context::read_at(l, rpkt, zero, r_issue);
   const auto issue_valid = l.inv(l.eq(r_unissued, 0));
   const auto cur_issue_addr = l.b.select(r_issuing, r_issue_addr, issue_entry.at("address"));
-  const auto cur_issue_left = l.b.select(
-      r_issuing, r_issue_left,
-      l.plus(l.fit(issue_entry.at("length"), p.len_bits + 1), l.b.constant(p.len_bits + 1, 1)));
+  const auto cur_issue_left =
+      l.b.select(r_issuing, r_issue_left,
+                 l.plus(l.fit(issue_entry.at("length"), p.packet_len_bits + 1),
+                        l.b.constant(p.packet_len_bits + 1, 1)));
   const auto issue_code =
       isolate(o.local_result(cur_issue_addr, issue_entry.at("error"), issue_entry.at("burst"),
                              issue_entry.at("size"), p.write_only));
@@ -1952,7 +1955,7 @@ void LiteOutlet::read_issue() {
                                    "cache",   "protection", "error"};
     if (ar_user)
       kept.emplace_back("user");
-    const auto c = o.orphan({{"address", o.bits}, {"left", p.len_bits + 1}},
+    const auto c = o.orphan({{"address", o.bits}, {"left", p.packet_len_bits + 1}},
                             cap > 1 ? issue_entry : packet_context::front(l, rpkt, zero), kept);
     const auto capture = c.capture, orphan_address = c.word.at("address"),
                orphan_left = c.word.at("left");
@@ -1978,7 +1981,7 @@ void LiteOutlet::read_issue() {
            orphan_go, next_address(l, orphan_address, orphan_pkt, o.bits, o.max_size));
     o.move(c, "left",
            l.b.select(held, l.b.select(live_hs, l.dec(cur_issue_left), cur_issue_left),
-                      l.b.constant(p.len_bits + 1, 0)),
+                      l.b.constant(p.packet_len_bits + 1, 0)),
            orphan_go, l.dec(orphan_left));
     // During the capture cycle itself the live cursor still drives the bus,
     // so a pending AR keeps its payload; the copy drives from the next cycle.
@@ -2043,16 +2046,16 @@ void LiteOutlet::read_responses() {
   const auto rrsp_room = l.inv(rrsp.full);
   r_on = l.state("r.on", 1);
   r_addr = l.address_state("r.address", o.bits);
-  r_left = l.state("r.left", p.len_bits + 1);
+  r_left = l.state("r.left", p.packet_len_bits + 1);
   r_first = l.state("r.first", 1);
   if (p.response_run_bits)
     r_run_end = l.state("r.run_end", 1);
   const auto rsp_entry = packet_context::front(l, rpkt, zero);
   const auto rsp_valid = l.inv(l.eq(rpkt.count[0], 0));
   const auto cur_addr = l.b.select(r_on, r_addr, rsp_entry.at("address"));
-  const auto cur_left = l.b.select(
-      r_on, r_left,
-      l.plus(l.fit(rsp_entry.at("length"), p.len_bits + 1), l.b.constant(p.len_bits + 1, 1)));
+  const auto cur_left = l.b.select(r_on, r_left,
+                                   l.plus(l.fit(rsp_entry.at("length"), p.packet_len_bits + 1),
+                                          l.b.constant(p.packet_len_bits + 1, 1)));
   const auto cur_first = l.b.select(r_on, r_first, one);
   const auto local = isolate(o.local_result(cur_addr, rsp_entry.at("error"), rsp_entry.at("burst"),
                                             rsp_entry.at("size"), p.write_only));
@@ -2068,7 +2071,7 @@ void LiteOutlet::read_responses() {
   const auto dropping = report_only ? failed : zero;
   // Accessed beats answered before expiry against the AR credit: an R is
   // taken only for a beat whose AR handshake already happened.
-  r_ar_done = l.state("r.ar_done", cw + p.len_bits + 1);
+  r_ar_done = l.state("r.ar_done", cw + p.packet_len_bits + 1);
   const auto r_credited = l.inv(l.eq(r_ar_done, 0));
   const auto beat_ready = l.b.select(beat_void, one, l.both(rvalid, r_credited));
   const auto advance = l.both(rsp_valid, l.both(beat_ready, l.either(rrsp_room, dropping)));
@@ -2121,8 +2124,8 @@ void LiteOutlet::read_responses() {
       active(l.either(failed,
                       l.both(rsp_valid, l.both(l.inv(beat_void), l.both(rrsp_room, r_credited))))));
   const auto r_credit_take = l.both(advance, l.inv(beat_void));
-  l.b.update(r_ar_done, l.plus(l.minus(r_ar_done, l.fit(r_credit_take, cw + p.len_bits + 1)),
-                               l.fit(r_ar_hs, cw + p.len_bits + 1)));
+  l.b.update(r_ar_done, l.plus(l.minus(r_ar_done, l.fit(r_credit_take, cw + p.packet_len_bits + 1)),
+                               l.fit(r_ar_hs, cw + p.packet_len_bits + 1)));
   o.response("rrsp", rface, rrsp_valid, rface.at("address"), rface.at("result"), rface.at("first"),
              rface.at("last"), rface.at("data"), monitored ? rface.at("exclusive_okay") : zero);
   auto rentry = r;
@@ -2317,7 +2320,8 @@ AhbOutlet::AhbOutlet(const BurstOutletProfile &profile, bool tilelink)
     : o(profile), p(profile), tilelink(tilelink), l(o.l), zero(o.zero), one(o.one), ok(o.ok),
       target_error(o.target_error), bits(o.bits), word_bits(o.word_bits), lanes(o.lanes),
       max_size(o.max_size), wide_bus(o.wide_bus), space(o.space), timeout(o.timeout),
-      monitored(o.monitored), report_only(o.report_only), failed(o.failed), cb(p.len_bits + 1) {}
+      monitored(o.monitored), report_only(o.report_only), failed(o.failed),
+      cb(p.packet_len_bits + 1) {}
 
 // The faces, the three write packet contexts, the read descriptor and response
 // state, and the target inputs in the order of the outlet's ports.
@@ -2365,7 +2369,7 @@ void AhbOutlet::state() {
   // transfer, its result before the bus), the response beat and the response buffer.
   rd = o.hold("r.descriptor", r);
   ia = l.address_state("r.issue_address", bits);
-  ileft = l.state("r.issue_left", p.len_bits);
+  ileft = l.state("r.issue_left", p.packet_len_bits);
   issuing = l.state("r.issuing", 1);
   im = l.state("r.transfer", 1);
   icode = l.state("r.result", 2);
@@ -2652,8 +2656,9 @@ void AhbOutlet::write_accept() {
   bus_im = im_now;
   live_rt = rt;
   if (timeout) {
-    orphan = o.orphan({{"issuing", 1U}, {"address", bits}, {"left", p.len_bits}, {"transfer", 1U}},
-                      rd_now, o.captured());
+    orphan = o.orphan(
+        {{"issuing", 1U}, {"address", bits}, {"left", p.packet_len_bits}, {"transfer", 1U}}, rd_now,
+        o.captured());
     for (const auto *name : o.captured())
       bus_rd[name] = l.b.select(failed, orphan.packet.at(name), rd_now.at(name));
     orphan.packet["result"] = l.latch("timeout.orphan.result", initial_now, orphan.capture);

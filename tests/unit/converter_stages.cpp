@@ -219,7 +219,7 @@ TEST_CASE("Read prefixes survive staging and local errors retain every beat",
     p.name = "prefix";
     p.data_bits = 32;
     p.id_bits = 0;
-    p.len_bits = 4;
+    p.axi_len_bits = 4;
     p.write = false;
     p.port_pipes = held;
     p.admitted_windows = std::vector<AddressWindow>{{0, 0x1000}};

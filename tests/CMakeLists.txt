@@ -21,6 +21,24 @@ add_test(NAME command_agreement
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/command_agreement)
 set_tests_properties(command_agreement PROPERTIES TIMEOUT 30 LABELS "config;quick;ci")
 add_executable(nocloom_unit unit/core.cpp unit/message.cpp unit/wishbone.cpp)
+target_sources(nocloom_unit PRIVATE unit/packet_lengths.cpp)
+add_test(NAME packet_lengths_structure COMMAND nocloom_unit "[packet-lengths]")
+set_tests_properties(packet_lengths_structure PROPERTIES
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit TIMEOUT 120
+  LABELS "unit;quick;ci" PROCESSORS 1)
+add_executable(nocloom_packet_lengths_fixture packet_lengths_fixture.cpp)
+target_link_libraries(nocloom_packet_lengths_fixture PRIVATE nocloom_core)
+target_include_directories(nocloom_packet_lengths_fixture PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_compile_options(nocloom_packet_lengths_fixture PRIVATE
+  $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>)
+add_test(NAME packet_lengths_transactions
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/packet_lengths.py
+    --fixture $<TARGET_FILE:nocloom_packet_lengths_fixture>
+    --work ${CMAKE_CURRENT_BINARY_DIR}/packet_lengths_transactions)
+set_tests_properties(packet_lengths_transactions PROPERTIES
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 600
+  LABELS "rtl;focused;ci" PROCESSORS 1 RESOURCE_LOCK packet_lengths_sim
+  ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
 target_sources(nocloom_unit PRIVATE unit/switch_graph.cpp)
 target_sources(nocloom_unit PRIVATE unit/connectivity.cpp)
 target_sources(nocloom_unit PRIVATE unit/canonical.cpp unit/tilelink.cpp)

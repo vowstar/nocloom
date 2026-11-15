@@ -65,7 +65,7 @@ burst_request_fields(unsigned data_bits, BurstProfile profile, unsigned source_b
   fields.emplace_back("address", profile.address_bits);
   fields.emplace_back("write", 1);
   fields.emplace_back("protection", 3);
-  fields.emplace_back("length", profile.len_bits);
+  fields.emplace_back("length", profile.packet_len_bits);
   fields.emplace_back("size", 3);
   fields.emplace_back("burst", 2);
   fields.emplace_back("cache", 4);

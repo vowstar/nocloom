@@ -82,7 +82,7 @@ struct SourcePlan {
   bool hnonsec = false;
   unsigned apb_bits = 32, address_bits = 32, engine_bits = 32;
   // AxID and AxLEN port widths of a full AXI4 source.
-  std::optional<unsigned> id_bits, len_bits;
+  std::optional<unsigned> id_bits, axi_len_bits;
   // pooled: reads and writes share one pool of `outstanding` transactions in flight (every
   // source, read-only ones too, except APB ones, which hold one transfer); each burst holds one
   // entry from its first packet to its final packet's last answer, narrow-split pieces one each.
@@ -157,7 +157,7 @@ struct TargetPlan {
   // Target::flows: APB slave interfaces, or the flow numbers in an AXI4 target's AxID.
   unsigned flows = 1;
   // AxID and AxLEN port widths of an AXI4 target; planning sets the default ID width when absent.
-  std::optional<unsigned> id_bits, len_bits;
+  std::optional<unsigned> id_bits, axi_len_bits;
   // The explicit read block size in bytes. Zero disables interleaving.
   std::optional<unsigned> read_interleave_size;
   bool read_only = false, write_only = false, back_to_back = false, fixed_single = false,
@@ -525,7 +525,7 @@ struct NetworkPlan {
   // True when any switch node carries a transport word wider than the endpoint word; the flat
   // profile then switches channels to fragment layouts.
   bool laddered = false;
-  unsigned burst_data_bits = 32, burst_id_bits = 0, burst_len_bits = 8; // ID, length: derived
+  unsigned burst_data_bits = 32, burst_id_bits = 0, packet_len_bits = 8; // ID, length: derived
   unsigned burst_source_data_bits = 32;
   // Some source or target data width differs from burst_data_bits: every endpoint attaches at its
   // own width.

@@ -22,7 +22,7 @@ TEST_CASE("Dedicated AHB outlet validates identity and window geometry", "[ahb-o
     }
   for (auto p :
        {AhbOutletProfile{"bad-name"}, AhbOutletProfile{"probe", 17},
-        AhbOutletProfile{"probe", 0, 9}, AhbOutletProfile{"probe", 0, 8, 10},
+        AhbOutletProfile{"probe", 0, 11}, AhbOutletProfile{"probe", 0, 8, 10},
         AhbOutletProfile{"probe", 0, 8, 0, std::vector<nocloom::AddressMapping>{{1, 4096}}},
         AhbOutletProfile{"probe", 0, 8, 0,
                          std::vector<nocloom::AddressMapping>{{0xfffff000, 8192}}}})

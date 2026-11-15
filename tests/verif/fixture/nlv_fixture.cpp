@@ -281,7 +281,7 @@ std::vector<Component> axi4_outlet(const Params &p) {
   Axi4OutletProfile op;
   op.name = "probe";
   op.data_bits = data;
-  op.len_bits = len;
+  op.packet_len_bits = len;
   op.id_bits = ids;
   op.source_bits = sources;
   op.start_address = true;
@@ -334,7 +334,7 @@ std::vector<Component> axi4_upsize(const Params &p) {
   Axi4OutletProfile op;
   op.name = "probe";
   op.data_bits = data;
-  op.len_bits = 8;
+  op.packet_len_bits = 8;
   op.id_bits = 3;
   op.source_bits = 2;
   op.start_address = true;
@@ -1479,7 +1479,7 @@ std::vector<Component> replay_safety(const Params &p) {
       q.id_bits = 2;
       q.source_bits = 1;
       q.id_sources = {0};
-      q.len_bits = 4;
+      q.packet_len_bits = 4;
       q.max_outstanding = capacity;
       q.start_address = q.interleave = q.align_wrap = true;
       return take(lower_axi4_outlet(q), "outlet");
@@ -1488,7 +1488,7 @@ std::vector<Component> replay_safety(const Params &p) {
     q.name = "safety";
     q.data_bits = 32;
     q.id_bits = 2;
-    q.len_bits = 4;
+    q.packet_len_bits = 4;
     q.max_outstanding = capacity;
     q.joined = true;
     return take(lower_axi4_upsize(q), "merge");

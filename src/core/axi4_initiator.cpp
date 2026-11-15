@@ -110,14 +110,14 @@ Admission check_admission(logic::Logic &l, const Axi4InitiatorProfile &p, const 
     a.exclusive_ok = l.bind(prefix + ".exclusive_ok", l.bit(1));
   } else {
     // A power-of-two beat count has len & (len + 1) == 0 (len is all ones below log2(beats)).
-    const auto len_wide = l.b.unary(Op::ZeroExtend, d.len, p.len_bits + 1);
+    const auto len_wide = l.b.unary(Op::ZeroExtend, d.len, p.axi_len_bits + 1);
     const auto beats_ok = l.both(
-        p.len_bits < 4 ? l.bit(1)
-                       : l.b.binary(Op::UnsignedLess, len_wide, l.num(p.len_bits + 1, 16)),
-        l.eq(l.b.binary(Op::BitAnd, len_wide, l.plus(len_wide, l.num(p.len_bits + 1, 1))), 0));
+        p.axi_len_bits < 4 ? l.bit(1)
+                           : l.b.binary(Op::UnsignedLess, len_wide, l.num(p.axi_len_bits + 1, 16)),
+        l.eq(l.b.binary(Op::BitAnd, len_wide, l.plus(len_wide, l.num(p.axi_len_bits + 1, 1))), 0));
     // log2 of the beat count, defined on the power-of-two counts beats_ok admits.
     auto log_beats = l.b.constant(4, 0);
-    for (unsigned k = 1; k <= p.len_bits; ++k)
+    for (unsigned k = 1; k <= p.axi_len_bits; ++k)
       log_beats = l.b.select(l.eq(d.len, (1U << k) - 1), l.b.constant(4, k), log_beats);
     // log2 of the total bytes: up to 8 + 7.
     const auto log_total = l.bind(prefix + ".exclusive_log_bytes",
@@ -165,10 +165,10 @@ Admission check_admission(logic::Logic &l, const Axi4InitiatorProfile &p, const 
   // FIXED stays within 16 beats: AXI4 extends the burst length for INCR only.
   a.fixed_ok =
       l.bind(prefix + ".fixed_ok",
-             p.len_bits <= 4
+             p.axi_len_bits <= 4
                  ? l.bit(1)
                  : l.either(l.inv(l.eq(d.burst, 0)),
-                            l.b.binary(Op::UnsignedLess, d.len, l.b.constant(p.len_bits, 16))));
+                            l.b.binary(Op::UnsignedLess, d.len, l.b.constant(p.axi_len_bits, 16))));
   // INCR span must not cross a 4 KiB boundary. With the aligned offset a = addr & mask and mask =
   // 4096 - 2^size, the burst crosses exactly when (len * 2^size) > mask - a; both sides fit the
   // transport address width. len * 2^size is len shifted left by size, modulo the transport
@@ -550,7 +550,7 @@ CapturedDescriptor capture_descriptor(logic::Logic &l, const Axi4InitiatorProfil
     return pass ? l.b.select(*pass, value, reg) : value;
   };
   cap.d.addr = capture("addr", transport_address_bits, cap.addr32);
-  cap.d.len = capture("len", p.len_bits, face.len);
+  cap.d.len = capture("len", p.axi_len_bits, face.len);
   cap.d.size = capture("size", 3, face.size);
   cap.d.burst = capture("burst", 2, face.burst);
   cap.d.lock = capture("lock", 1, face.lock);
@@ -615,7 +615,7 @@ void request_descriptor_fields(logic::Logic &l, const Axi4InitiatorProfile &p,
                                std::optional<ValueId> tag_slot) {
   rq["write"] = write;
   rq["protection"] = d.prot;
-  rq["length"] = length;
+  rq["length"] = l.fit(length, p.packet_bits());
   rq["size"] = d.size;
   rq["burst"] = d.burst;
   rq["cache"] = d.cache;
@@ -674,9 +674,12 @@ void initiator_width_errors(const Axi4InitiatorProfile &profile, std::vector<Dia
   if (profile.id_bits > 16)
     errors.push_back(initiator_error("NCL_AXI4_INITIATOR_ID_WIDTH", "id_bits",
                                      "The full AXI4 ingress profile supports 0..16 ID bits"));
-  if (profile.len_bits < 4 || profile.len_bits > 8)
-    errors.push_back(initiator_error("NCL_AXI4_INITIATOR_LEN_WIDTH", "len_bits",
+  if (profile.axi_len_bits < 4 || profile.axi_len_bits > 8)
+    errors.push_back(initiator_error("NCL_AXI4_INITIATOR_LEN_WIDTH", "axi_len_bits",
                                      "The AxLEN field width must be 4 to 8"));
+  if (profile.packet_bits() < profile.axi_len_bits || profile.packet_bits() > 10)
+    errors.push_back(initiator_error("NCL_AXI4_INITIATOR_LEN_WIDTH", "packet_len_bits",
+                                     "Packet length requires AxLEN width through 10 bits"));
 }
 
 void initiator_ahb5_errors(const Axi4InitiatorProfile &profile, std::vector<Diagnostic> &errors) {
@@ -770,7 +773,7 @@ struct InitiatorLowering {
         be_bits(p.data_bits / 8), face_bytes(p.apb ? p.apb_data_bits / 8 : be_bits),
         lite_size(p.apb ? std::countr_zero(face_bytes) : (p.data_bits == 64 ? 3U : 2U)),
         one(l.bit(1)), zero(l.bit(0)),
-        burst{p.id_bits, p.len_bits, p.start_address, transport_address_bits},
+        burst{p.id_bits, p.packet_bits(), p.start_address, transport_address_bits},
         multi(p.max_outstanding > 1), held(!p.lite && !p.apb && !p.ahb && p.port_pipes),
         dest_bits(std::max(1U, static_cast<unsigned>(std::bit_width(p.destinations.size())))),
         // An AXI4-Lite face carries no AXI ID: all its transactions share one ordering key per
@@ -859,7 +862,8 @@ struct InitiatorLowering {
   std::pair<ValueId, ValueId> r_dest{};
   ValueId r_issuing{};
   bool reuse_read_count() const {
-    return !multi && !p.lite && !p.apb && !p.ahb && std::countr_zero(be_bits) <= int(p.len_bits);
+    return !multi && !p.lite && !p.apb && !p.ahb &&
+           std::countr_zero(be_bits) <= int(p.axi_len_bits);
   }
   ValueId initial_read_count() {
     if (!reuse_read_count())
@@ -868,13 +872,13 @@ struct InitiatorLowering {
     const auto prefix =
         l.pick(l.eq(r_ar.burst, 1), l.b.slice(r_ar.addr, 0, std::countr_zero(be_bits)),
                l.num(std::countr_zero(be_bits), 0));
-    return l.pick(r_sent, l.fit(prefix, p.len_bits), r_ar.len);
+    return l.pick(r_sent, l.fit(prefix, p.axi_len_bits), r_ar.len);
   }
   void update_read_count(ValueId step) {
     if (!p.apb)
       l.b.update(r_remaining,
                  l.pick(r_start, initial_read_count(),
-                        l.pick(step, l.minus(r_remaining, l.num(p.len_bits, 1)), r_remaining)));
+                        l.pick(step, l.minus(r_remaining, l.num(p.axi_len_bits, 1)), r_remaining)));
   }
 
   // ~(2^size - 1) over the transport address: aligns down, and as a subtrahend adds 2^size.
@@ -936,7 +940,7 @@ struct InitiatorLowering {
     f.id =
         p.id_bits ? (p.lite ? l.b.constant(p.id_bits, 0) : axi_input(ch + "id", p.id_bits)) : one;
     f.addr = axi_input(ch + "addr", p.address_bits);
-    f.len = p.lite ? l.b.constant(p.len_bits, 0) : axi_input(ch + "len", p.len_bits);
+    f.len = p.lite ? l.b.constant(p.axi_len_bits, 0) : axi_input(ch + "len", p.axi_len_bits);
     f.size = p.lite ? l.b.constant(3, lite_size) : axi_input(ch + "size", 3);
     f.burst = p.lite ? l.b.constant(2, 1) : axi_input(ch + "burst", 2);
     // AXI3 AxLOCK: 0b01 exclusive; a locked (0b10) or reserved (0b11) burst takes the reserved
@@ -1237,7 +1241,7 @@ void InitiatorLowering::ahb_face() {
     if (p.id_bits)
       face_in[c + "id"] = l.num(p.id_bits, 0);
     face_in[c + "addr"] = addr;
-    face_in[c + "len"] = l.fit(a.len, p.len_bits);
+    face_in[c + "len"] = l.fit(a.len, p.axi_len_bits);
     face_in[c + "size"] = size;
     face_in[c + "burst"] = l.b.select(wrap, l.num(2, 2), l.num(2, 1));
     face_in[c + "lock"] = zero;
@@ -1305,9 +1309,9 @@ void InitiatorLowering::write_issue() {
   w_wr_state = l.state("wr.state", 2);
   // A Lite (or APB) burst has one beat: its count left is 0 or, past that beat, all ones.
   // An APB burst counts nothing: it leaves whole, its beat stays on the face and carries no WLAST.
-  w_remaining = p.apb    ? l.b.constant(p.len_bits, 0)
-                : p.lite ? l.b.replicated(l.state("wr.remaining", 1), p.len_bits)
-                         : l.state("wr.remaining", p.len_bits);
+  w_remaining = p.apb    ? l.b.constant(p.axi_len_bits, 0)
+                : p.lite ? l.b.replicated(l.state("wr.remaining", 1), p.axi_len_bits)
+                         : l.state("wr.remaining", p.axi_len_bits);
   // Beat containers are aligned to the size: a Lite (or APB) face of one size keeps the bits below
   // it zero, so they are not stored (plan_obligations.cpp counts the same).
   if (!p.apb)
@@ -1463,7 +1467,7 @@ void InitiatorLowering::write_issue() {
   if (p.address_hints) {
     l.b.output("nl_hint_write_start", d.addr, "hint", "write_start");
     l.b.output("nl_hint_write_address", planed(w_plane, w_beat_address), "hint", "write_address");
-    l.b.output("nl_hint_write_length", d.len, "hint", "write_length");
+    l.b.output("nl_hint_write_length", l.fit(d.len, p.packet_bits()), "hint", "write_length");
   }
   // A write commits its plane when the network takes its first fragment or, completing locally,
   // its first beat is taken (a Lite beat may wait in its buffer before its AW).
@@ -1544,7 +1548,7 @@ void InitiatorLowering::write_complete() {
                                          l.b.select(wrsp_fire, l.b.constant(2, 3),
                                                     l.b.select(l.both(w_respond, w_bready),
                                                                l.b.constant(2, 0), w_wr_state))))));
-  auto beat_step = l.bind("wr.beat_step", l.b.constant(p.len_bits, 1));
+  auto beat_step = l.bind("wr.beat_step", l.b.constant(p.axi_len_bits, 1));
   auto decrement = l.b.select(w_carry, w_transfer, w_absorbed);
   // A burst passing straight through counts its first beat from the AW face.
   const auto fresh_load = l.both(load, l.inv(w_straight));
@@ -1625,7 +1629,7 @@ void InitiatorLowering::write_complete() {
   request_descriptor_fields(
       l, p, wrq, d, w_admission, one,
       p.address_hints ? d.len
-                      : l.b.select(w_admission.unmapped, l.b.constant(p.len_bits, 0), d.len),
+                      : l.b.select(w_admission.unmapped, l.b.constant(p.axi_len_bits, 0), d.len),
       multi ? std::optional{w_issue_tag} : std::nullopt);
   wrq["wrap_end"] = wrap_end_of(l, wrq.at("write"), wrq.at("burst"), wrq.at("length"),
                                 wrq.at("size"), wrq.at("address"));
@@ -1677,7 +1681,7 @@ void InitiatorLowering::read_issue() {
   if (held)
     r_taken = l.b.input("nl_hint_read_taken", 1, "hint", "read_taken");
   // The tracked engine counts the face burst's delivered beats instead.
-  r_remaining = multi || p.apb ? ValueId{} : l.state("rr.remaining", p.len_bits);
+  r_remaining = multi || p.apb ? ValueId{} : l.state("rr.remaining", p.axi_len_bits);
   r_rsp_full = l.state("rr.rsp_full", 1);
   r_rsp_data = l.state("rr.rsp_data", p.data_bits);
   if (p.data_user_port_bits)
@@ -1823,7 +1827,7 @@ void InitiatorLowering::read_response() {
     // and takes the face when no beat is staged (nothing else issues meanwhile). An offered beat
     // stays until accepted (AXI A3.2.1); the staging refills when it is empty or drains.
     const auto rsp_id = p.id_bits ? l.state("rr.rsp_id", p.id_bits) : ValueId{};
-    const auto beat = l.state("rr.beat", p.len_bits);
+    const auto beat = l.state("rr.beat", p.axi_len_bits);
     const auto local_burst = l.state("rr.local_burst", 1);
     const auto offered = l.state("rr.offered", 1);
     const auto face_local = l.bind(
@@ -1855,7 +1859,7 @@ void InitiatorLowering::read_response() {
                                                                                r_taken)
                                                                       : zero),
                                                         l.b.constant(2, 0), r_rr_state))))));
-    l.b.update(beat, l.b.select(l.both(pop, face_local), l.b.constant(p.len_bits, 0),
+    l.b.update(beat, l.b.select(l.both(pop, face_local), l.b.constant(p.axi_len_bits, 0),
                                 l.b.select(l.both(raccept, face_local), l.inc(beat), beat)));
     l.b.update(local_burst, l.b.select(rvalid, face_local, local_burst));
     l.b.update(offered, l.both(rvalid, l.inv(r_rready)));

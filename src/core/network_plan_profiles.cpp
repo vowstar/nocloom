@@ -430,8 +430,8 @@ static std::vector<AddressWindow> reached_windows_of(const NetworkPlan &plan, un
 unsigned record_last_offset_bits(const NetworkPlan &plan) {
   unsigned bits = 2;
   for (const auto &source : plan.sources)
-    if (source.len_bits)
-      bits = std::max(bits, source.len_bits.value_or(0) +
+    if (source.axi_len_bits)
+      bits = std::max(bits, source.axi_len_bits.value_or(0) +
                                 static_cast<unsigned>(std::countr_zero(source.engine_bits / 8)));
   return bits;
 }
@@ -650,7 +650,7 @@ std::vector<ExclusiveWindow> exclusive_windows(const NetworkPlan &plan, const st
                                   t.protocol != Protocol::Axi4Lite
                               ? 4U
                               : endpoint_word(plan, t.name);
-    unsigned limit = std::min(128U, (1U << t.len_bits.value_or(plan.burst_len_bits)) * word);
+    unsigned limit = std::min(128U, (1U << t.axi_len_bits.value_or(plan.packet_len_bits)) * word);
     if (t.protocol == Protocol::AhbLite || t.exclusive.mode == ExclusiveAccess::Target)
       limit = std::min(limit, 16 * word);
     const bool strobeless = t.protocol == Protocol::Apb3 || t.protocol == Protocol::Apb2;
@@ -680,7 +680,7 @@ static Profile burst_fields(const NetworkPlan &plan, const std::string &name) {
   Profile profile;
   profile.name = name;
   profile.id_bits = plan.burst_id_bits;
-  profile.len_bits = plan.burst_len_bits;
+  profile.packet_len_bits = plan.packet_len_bits;
   profile.address_bits = plan.burst_address_bits;
   profile.source_bits = plan.source_bits;
   profile.user_bits = plan.burst_user_bits;
@@ -739,9 +739,9 @@ Axi4WidthClampProfile clamp_profile(const NetworkPlan &plan, unsigned index, boo
         source_log, static_cast<unsigned>(std::bit_width(endpoint_word(plan, t.name)) - 1));
     for (const auto &route : t.routes())
       profile.windows.emplace_back(route, width);
-    if (t.len_bits && *t.len_bits < profile.len_bits)
+    if (t.axi_len_bits && *t.axi_len_bits < profile.packet_len_bits)
       for (const auto &route : t.routes())
-        profile.piece_len_bits.emplace_back(route, *t.len_bits);
+        profile.piece_len_bits.emplace_back(route, *t.axi_len_bits);
     if (fixed_reject && width < source_log)
       std::ranges::copy(t.routes(), std::back_inserter(profile.fixed_reject));
   }
@@ -783,7 +783,7 @@ static PacketLimits target_packet_defaults(const NetworkPlan &plan, std::size_t 
   PacketLimits out;
   out.bytes = axi || ahb || t.protocol == Protocol::Axi4Lite ? endpoint_word(plan, t.name) : 4;
   out.boundary_bytes = std::min(protocol_boundary(t), std::uint64_t{1} << std::countr_zero(bounds));
-  out.max_bytes = axi   ? std::min<std::uint64_t>(out.bytes << t.len_bits.value(), 4096)
+  out.max_bytes = axi   ? std::min<std::uint64_t>(out.bytes << t.axi_len_bits.value(), 4096)
                   : ahb ? std::min<std::uint64_t>(16 * out.bytes, 1024)
                         : 128;
   return out;
@@ -792,7 +792,7 @@ static PacketLimits target_packet_defaults(const NetworkPlan &plan, std::size_t 
 // it issues by default, max(min(64 B, that), 2 beats); zero for a source without WRAP (AXI4-Lite,
 // APB, a zero-bit AxLEN).
 static std::uint64_t wrap_container(const SourcePlan &source) {
-  const unsigned len = source.len_bits.value_or(0);
+  const unsigned len = source.axi_len_bits.value_or(0);
   return len ? (source.engine_bits / 8) << std::min(len, 4U) : 0;
 }
 static std::uint64_t source_wrap_limit(const SourcePlan &s) {
@@ -823,21 +823,22 @@ PacketLimits pair_limits(const NetworkPlan &plan, const PairPlan &pair,
 // in its beats (an exclusive burst is never cut); zero when an AXI4 target's AxLEN cannot carry one
 // beat of a wider source.
 unsigned network_len_bits(const NetworkPlan &plan) {
-  auto beats = std::accumulate(plan.sources.begin(), plan.sources.end(), std::uint64_t{16},
-                               [](std::uint64_t most, const SourcePlan &s) {
-                                 return std::max(most, std::uint64_t{1} << s.len_bits.value_or(0));
-                               });
+  auto beats =
+      std::accumulate(plan.sources.begin(), plan.sources.end(), std::uint64_t{16},
+                      [](std::uint64_t most, const SourcePlan &s) {
+                        return std::max(most, std::uint64_t{1} << s.axi_len_bits.value_or(0));
+                      });
   for (const auto &pair : plan.pairs) {
     const auto &source = plan.sources[pair.source];
     const auto &target = plan.targets[pair.target];
-    const unsigned slen = source.len_bits.value_or(0);
+    const unsigned slen = source.axi_len_bits.value_or(0);
     const std::uint64_t bytes = source.engine_bits / 8;
     const auto word = target_packet_defaults(plan, pair.target).bytes;
-    if (target.len_bits && bytes > word << *target.len_bits)
+    if (target.axi_len_bits && bytes > word << *target.axi_len_bits)
       return 0;
     auto packet =
-        !source.len_bits ? bytes : std::min(bytes << slen, pair_limits(plan, pair).max_bytes);
-    if (source.len_bits && target.exclusive.mode != ExclusiveAccess::None)
+        !source.axi_len_bits ? bytes : std::min(bytes << slen, pair_limits(plan, pair).max_bytes);
+    if (source.axi_len_bits && target.exclusive.mode != ExclusiveAccess::None)
       packet = std::max(packet, std::min<std::uint64_t>(128, bytes << std::min(slen, 4U)));
     beats = std::max(beats, packet / std::min(bytes, word));
   }
@@ -867,9 +868,10 @@ static std::pair<std::uint64_t, std::uint64_t> named_miss_limits(const NetworkPl
   const std::uint64_t word = target_packet_defaults(plan, target).bytes,
                       bytes = source.engine_bits / 8;
   const auto burst =
-      std::min<std::uint64_t>(bytes << source.len_bits.value_or(0), source.ahb ? 1024 : 4096);
+      std::min<std::uint64_t>(bytes << source.axi_len_bits.value_or(0), source.ahb ? 1024 : 4096);
   const auto align = std::max(bytes, word);
-  const auto most = std::min({256 * word, boundary, std::max(burst, word)});
+  const auto words = std::uint64_t{1} << std::max(8U, plan.packet_len_bits);
+  const auto most = std::min({words * word, boundary, std::max(burst, word)});
   return {std::max(most, align), std::max(std::min<std::uint64_t>(boundary, 4096), align)};
 }
 
@@ -968,8 +970,8 @@ Axi4PacketizerProfile packet_profile(const NetworkPlan &plan, unsigned index) {
     const auto limits = pair_limits(plan, pair),
                defaults = target_packet_defaults(plan, pair.target);
     const auto sources = wraps[pair.target];
-    const auto upper =
-        std::min({defaults.max_bytes, sources, target.len_bits ? 16 * defaults.bytes : sources});
+    const auto upper = std::min(
+        {defaults.max_bytes, sources, target.axi_len_bits ? 16 * defaults.bytes : sources});
     auto path = std::min(std::bit_floor(upper), limits.max_bytes);
     path = path > defaults.bytes ? path : 0;
     profile.decompose_wrap_bursts = profile.decompose_wrap_bursts || !path || source_wrap > path;
@@ -1163,8 +1165,9 @@ Axi4InitiatorProfile initiator_profile(const NetworkPlan &plan, unsigned index) 
   const auto &sp = plan.sources[index];
   const auto &source = sp.name;
   Axi4InitiatorProfile profile{
-      "s" + std::to_string(index), sp.engine_bits, 32,   plan.burst_id_bits,
-      plan.burst_len_bits,         true,           true, plan.source_bits};
+      "s" + std::to_string(index),        sp.engine_bits, 32,   plan.burst_id_bits,
+      std::min(8U, plan.packet_len_bits), true,           true, plan.source_bits};
+  profile.packet_len_bits = plan.packet_len_bits;
   profile.address_bits = sp.address_bits;
   profile.transport_address_bits = plan.burst_address_bits;
   profile.start_address = true;
@@ -1318,7 +1321,7 @@ AddressBlock transport_span(const NetworkPlan &plan, const TargetPlan &tp) {
   return page_block(plan, tp, tp.fallback);
 }
 BurstProfile endpoint_burst(const NetworkPlan &plan) {
-  BurstProfile burst{plan.burst_id_bits,      plan.burst_len_bits,  true,
+  BurstProfile burst{plan.burst_id_bits,      plan.packet_len_bits, true,
                      plan.burst_address_bits, plan.occupancy_bits,  plan.exclusive,
                      plan.burst_tag_bits,     plan.burst_user_bits, plan.burst_response_user_bits};
   burst.data_user_bits_per_byte = plan.data_user_bits_per_byte;
@@ -1331,7 +1334,7 @@ bool interleaved_target(const NetworkPlan &, const TargetPlan &target) {
   if (target.read_interleave_size)
     return *target.read_interleave_size != 0;
   const auto bytes = target.data_bits / 8;
-  const bool multi_beat = (std::uint64_t{1} << target.len_bits.value_or(0)) * bytes != bytes;
+  const bool multi_beat = (std::uint64_t{1} << target.axi_len_bits.value_or(0)) * bytes != bytes;
   const bool contexts = target.flows > 1 || target.id_bits.value_or(0) != 0 || !target.read_only;
   return target.protocol == Protocol::Axi4 && multi_beat && !target.write_only && contexts;
 }
@@ -1351,7 +1354,7 @@ bool joins_directly(const TargetPlan &target) {
     return *target.read_interleave_size == 0U && !target.write_only;
   // A read-only target with no ID has nothing to interleave: it answers as with a size of 0.
   const auto bytes = target.data_bits / 8;
-  const bool multi_beat = (std::uint64_t{1} << target.len_bits.value_or(0)) * bytes != bytes;
+  const bool multi_beat = (std::uint64_t{1} << target.axi_len_bits.value_or(0)) * bytes != bytes;
   return target.protocol == Protocol::Axi4 && multi_beat && target.read_only && target.flows == 1 &&
          target.id_bits.value_or(0) == 0;
 }
@@ -1402,7 +1405,7 @@ BurstOutletProfile outlet_profile(const NetworkPlan &plan, unsigned index) {
   const auto &tp = plan.targets[index];
   auto profile =
       target_fields(BurstOutletProfile{"t" + std::to_string(index), plan.burst_id_bits,
-                                       plan.burst_len_bits, plan.source_bits, outlet_mappings(tp),
+                                       plan.packet_len_bits, plan.source_bits, outlet_mappings(tp),
                                        tp.local_bits, plan.burst_address_bits},
                     plan, tp);
   profile.wishbone = tp.external_protocol == Protocol::Wishbone;
@@ -1431,7 +1434,7 @@ ServiceOutletProfile service_outlet_profile(const NetworkPlan &plan, unsigned in
   const auto &tp = plan.targets[index];
   ServiceOutletProfile profile{"t" + std::to_string(index)};
   profile.id_bits = plan.burst_id_bits;
-  profile.len_bits = plan.burst_len_bits;
+  profile.packet_len_bits = plan.packet_len_bits;
   profile.source_bits = plan.source_bits;
   profile.tag_bits = plan.burst_tag_bits;
   profile.user_bits = plan.burst_user_bits;
@@ -1457,14 +1460,14 @@ Axi4OutletProfile axi4_outlet_profile(const NetworkPlan &plan, unsigned index) {
   const auto &tp = plan.targets[index];
   auto profile =
       target_fields(Axi4OutletProfile{"t" + std::to_string(index), endpoint_word(plan, tp.name) * 8,
-                                      plan.burst_id_bits, plan.burst_len_bits, plan.source_bits,
+                                      plan.burst_id_bits, plan.packet_len_bits, plan.source_bits,
                                       true, outlet_mappings(tp)},
                     plan, tp);
   profile.decode_flag = decode_flag(plan);
   profile.address_bits = tp.local_bits;
   profile.transport_address_bits = plan.burst_address_bits;
   profile.port_id_bits = tp.id_bits.value();
-  profile.port_len_bits = tp.len_bits.value();
+  profile.axi_len_bits = tp.axi_len_bits.value();
   profile.max_outstanding = tp.outstanding;
   profile.merged = upsize_targets(plan).contains(tp.name);
   profile.admitted = !profile.merged && std::ranges::any_of(tp.pipes, [](const EndpointPipe &e) {

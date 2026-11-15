@@ -49,14 +49,15 @@ struct Axi4BurstStateBits {
   unsigned source_engine[2];
   unsigned source_return[2];
 };
-Axi4BurstStateBits axi4_burst_state_bits(unsigned id_bits, unsigned len_bits, unsigned address_bits,
-                                         unsigned source_data_bits, unsigned outstanding = 1,
-                                         bool exclusive = false, bool lite = false,
-                                         unsigned user_bits = 0, unsigned response_user_bits = 0,
-                                         unsigned level_bits = 0, unsigned beat_size = 0) {
+Axi4BurstStateBits axi4_burst_state_bits(unsigned id_bits, unsigned axi_len_bits,
+                                         unsigned address_bits, unsigned source_data_bits,
+                                         unsigned outstanding = 1, bool exclusive = false,
+                                         bool lite = false, unsigned user_bits = 0,
+                                         unsigned response_user_bits = 0, unsigned level_bits = 0,
+                                         unsigned beat_size = 0) {
   const unsigned source_be = source_data_bits / 8;
   // Captured descriptor: addr, len, size, burst, lock, cache, prot[, id][, user][, level].
-  const unsigned descriptor = address_bits + 13 + len_bits + id_bits + user_bits + level_bits;
+  const unsigned descriptor = address_bits + 13 + axi_len_bits + id_bits + user_bits + level_bits;
   Axi4BurstStateBits bits{};
   // + beat address (without the bits below a Lite engine's one beat size); a Lite engine also
   // buffers the beat (data and strobes).
@@ -84,7 +85,8 @@ unsigned outlet_engine_bits(const NetworkPlan &plan, const std::string &target,
   Axi4OutletProfile outlet;
   outlet.data_bits = endpoint_word(plan, target) * 8;
   outlet.id_bits = plan.burst_id_bits;
-  outlet.len_bits = plan.burst_len_bits;
+  outlet.packet_len_bits = plan.packet_len_bits;
+  outlet.axi_len_bits = plan.target(target).axi_len_bits;
   outlet.source_bits = plan.source_bits;
   outlet.start_address = true;
   outlet.transport_address_bits = plan.burst_address_bits;
@@ -134,7 +136,7 @@ unsigned dedicated_engine_bits(const NetworkPlan &plan, const std::string &targe
   if (t.protocol == Protocol::Axi4Lite) {
     const unsigned capacity = t.outstanding;
     const unsigned word = endpoint_word(plan, target);
-    const unsigned bits = arrival_bits(plan, t), len = plan.burst_len_bits;
+    const unsigned bits = arrival_bits(plan, t), len = plan.packet_len_bits;
     const unsigned ids = plan.burst_id_bits, srcs = plan.source_bits;
     // The response user field of a target with BUSER and RUSER: in the response stage, and the
     // first B of the head write packet or the head of a read packet.
@@ -153,11 +155,11 @@ unsigned dedicated_engine_bits(const NetworkPlan &plan, const std::string &targe
   // target counts with its engine. Flags and start offsets (r.transfer, r.start_offset, w.peeled,
   // *.start) are control state, not payload.
   if (direction == 1 && t.protocol == Protocol::AhbLite)
-    return 28U + 4 * arrival_bits(plan, t) + plan.burst_len_bits + 3 * plan.burst_id_bits +
+    return 28U + 4 * arrival_bits(plan, t) + plan.packet_len_bits + 3 * plan.burst_id_bits +
            3 * plan.source_bits + 24 * endpoint_word(plan, target) + half(t.upsize, direction) +
            (t.ahb5 ? plan.burst_user_bits : 0);
   if (t.protocol == Protocol::AhbLite)
-    return 49U + 5 * arrival_bits(plan, t) + 4 * plan.burst_len_bits + 4 * plan.burst_id_bits +
+    return 49U + 5 * arrival_bits(plan, t) + 4 * plan.packet_len_bits + 4 * plan.burst_id_bits +
            4 * plan.source_bits + 9 * endpoint_word(plan, target) + half(t.upsize, direction) +
            (t.ahb5 ? 3 * plan.burst_user_bits : 0);
   // APB: the write side stages each completed packet's B snapshot in two
@@ -169,7 +171,7 @@ unsigned dedicated_engine_bits(const NetworkPlan &plan, const std::string &targe
   if (t.service)
     return direction == 1 ? 24U : 0U;
   if (apb_target(plan, target)) {
-    const unsigned bits = arrival_bits(plan, t), len = plan.burst_len_bits;
+    const unsigned bits = arrival_bits(plan, t), len = plan.packet_len_bits;
     const unsigned ids = plan.burst_id_bits, srcs = plan.source_bits;
     const auto form =
         apb_outlet_form(outlet_profile(plan, static_cast<unsigned>(&t - plan.targets.data())));
@@ -246,8 +248,8 @@ struct Obligations {
                  "single-beat request and response", "D channel consumption");
       }
       auto source_state = axi4_burst_state_bits(
-          plan.burst_id_bits, plan.burst_len_bits, plan.burst_address_bits, sp.engine_bits,
-          sp.engine_slots, plan.exclusive, sp.protocol == Protocol::Axi4Lite,
+          plan.burst_id_bits, std::min(8U, plan.packet_len_bits), plan.burst_address_bits,
+          sp.engine_bits, sp.engine_slots, plan.exclusive, sp.protocol == Protocol::Axi4Lite,
           plan.burst_user_bits + plan.burst_audit_bits, plan.burst_response_user_bits,
           sp.qos.axqos_map.empty() ? 0U : plan.burst_level_bits, lite_beat_size(sp));
       if (sp.engine_slots > 1 && sp.protocol != Protocol::Axi4Lite && !sp.apb && !sp.ahb)

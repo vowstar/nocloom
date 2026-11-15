@@ -24,7 +24,7 @@ using logic::Logic;
 struct PacketizerLowering {
   PacketizerLowering(logic::Logic &logic, const Axi4PacketizerProfile &profile)
       : l(logic), p(profile), bytes(p.data_bits / 8), lw(std::bit_width(bytes) - 1),
-        ab(p.address_bits), lb(p.len_bits), wide(ab + 1), zero(l.bind("c.zero", l.bit(0))),
+        ab(p.address_bits), lb(p.packet_len_bits), wide(ab + 1), zero(l.bind("c.zero", l.bit(0))),
         one(l.bind("c.one", l.bit(1))), burst{p.id_bits, lb, true, ab},
         multi(p.max_outstanding > 1), io{l, burst, p.source_bits}, word_size(l.num(3, lw)),
         count_bits(burst_count_bits(p.data_bits)),
@@ -1493,7 +1493,7 @@ Result<NodeHardware> lower_axi4_packetizer(const Axi4PacketizerProfile &p) {
   const unsigned bytes = p.data_bits / 8;
   const unsigned ab = p.address_bits;
   const unsigned tag_need = std::bit_width(p.max_outstanding - 1);
-  if (!valid_name(p.name) || p.id_bits > 16 || (p.len_bits < 4 || p.len_bits > 8) ||
+  if (!valid_name(p.name) || p.id_bits > 16 || (p.packet_len_bits < 4 || p.packet_len_bits > 10) ||
       p.source_bits > max_source_bits || p.tag_bits > 6 || p.max_outstanding < 1 ||
       p.max_outstanding > 64 || (p.max_outstanding > 1 && p.tag_bits < tag_need) || ab < 32 ||
       ab > 48 || !std::has_single_bit(p.data_bits) || p.data_bits < 32 || p.data_bits > 1024 ||
@@ -1508,13 +1508,13 @@ Result<NodeHardware> lower_axi4_packetizer(const Axi4PacketizerProfile &p) {
       (p.fallback &&
        (!p.source_miss || !p.fallback->miss || p.fallback->exact ||
         !std::has_single_bit(p.fallback->boundary_bytes) || bad_limits(*p.fallback, bytes))))
-    return Result<NodeHardware>::failure(
-        error("NCL_AXI4_PACKETIZER_PROFILE", "axi4_packetizer",
-              "Expected 32..48 address bits, 0..16 ID bits, 4..8 length bits, 0..9 source bits, "
-              "32..1024 data bits, and windows made of whole boundary units whose packet limit "
-              "and boundary are at least the alignment word, whose WRAP limit is a power of "
-              "two up to 2048 bytes and whose packing word is 4 bytes to the source word; a "
-              "fallback is a miss window of such limits beside a source miss window"));
+    return Result<NodeHardware>::failure(error(
+        "NCL_AXI4_PACKETIZER_PROFILE", "axi4_packetizer",
+        "Expected 32..48 address bits, 0..16 ID bits, 4..10 packet length bits, 0..9 source bits, "
+        "32..1024 data bits, and windows made of whole boundary units whose packet limit "
+        "and boundary are at least the alignment word, whose WRAP limit is a power of "
+        "two up to 2048 bytes and whose packing word is 4 bytes to the source word; a "
+        "fallback is a miss window of such limits beside a source miss window"));
   Logic l;
   PacketizerLowering engine(l, p);
   if (p.write) {

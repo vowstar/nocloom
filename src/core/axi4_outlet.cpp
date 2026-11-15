@@ -396,7 +396,7 @@ struct EngineLowering {
       if (held)
         value = frozen("timeout." + prefix + signal, value);
       if (field == "length")
-        value = l.fit(value, p.port_len_bits.value_or(p.len_bits));
+        value = l.fit(value, p.axi_len_bits.value_or(p.packet_len_bits));
       out("axi", prefix + signal, value);
     }
     const auto lock = passthrough ? d.at("lock") : zero;
@@ -657,7 +657,7 @@ EngineLowering::EngineLowering(const Axi4OutletProfile &p, unsigned address_bits
       failed(timeout ? l.state("timeout.failed", 1) : zero),
       report_only(timeout && !p.timeout_completion), write_timer(timeout && !p.read_only),
       silent(report_only ? failed : zero), windowed(!p.mappings.empty()),
-      profile{p.id_bits, p.len_bits, p.start_address, address_bits}, pool_bits(count_bits),
+      profile{p.id_bits, p.packet_len_bits, p.start_address, address_bits}, pool_bits(count_bits),
       ahead_bits(std::max(1U, index_bits)), pool(l.state("pool.count", pool_bits)),
       cap(l.b.constant(pool_bits, depth)), pool_free(l.below(pool, cap)),
       read_first(p.merged ? l.state("pool.read_first", 1) : zero),
@@ -688,7 +688,7 @@ void EngineLowering::write_accept() {
   wp = l.state("w.aw_pending", 1);
   reject = l.state("w.reject", 1);
   bad = l.state("w.bad", 1);
-  remaining = l.state("w.remaining", p.len_bits);
+  remaining = l.state("w.remaining", p.packet_len_bits);
   // Interleave mode with several bursts: the B pipe is w.response_spare.
   bf = ilv && several ? zero : l.state("w.response_full", 1);
   ws.resize(several ? depth : 0);
@@ -711,7 +711,7 @@ void EngineLowering::write_accept() {
       ws[k].tag = l.state(at + "tag", p.tag_bits);
     if (network) {
       ws[k].excluded = l.state(at + "exclusive_fail", 1);
-      ws[k].length = l.state(at + "length", p.len_bits);
+      ws[k].length = l.state(at + "length", p.packet_len_bits);
       ws[k].burst = l.state(at + "burst", 2);
     }
   }
@@ -1312,7 +1312,7 @@ void EngineLowering::read_accept() {
   // its own beats.
   rf = ilv ? jfull : l.state("r.full", 1);
   if (!(ilv && several)) {
-    rk = l.state("r.beat", p.len_bits);
+    rk = l.state("r.beat", p.packet_len_bits);
     ra = l.address_state("r.address", address_bits);
   }
   rspare = single_entry ? zero : l.state("r.spare", 1);
@@ -1742,7 +1742,8 @@ void EngineLowering::read_update() {
     l.b.update(qrecv, l.b.select(complete, advance_pointer(qrecv), qrecv));
     bump(received, complete, pop);
   }
-  l.b.update(rk, l.b.select(rpush, l.b.select(rlast, l.b.constant(p.len_bits, 0), l.inc(rk)), rk));
+  l.b.update(
+      rk, l.b.select(rpush, l.b.select(rlast, l.b.constant(p.packet_len_bits, 0), l.inc(rk)), rk));
   l.b.update(ra, l.b.select(rpush, advance(l, current, recv, sizes), ra));
   auto coded = stored_result, coded_data = stored_data;
   auto face_first = stored_first, face_address = stored_addr;
@@ -1835,7 +1836,7 @@ void EngineLowering::read_receive_joined() {
           target_id_bits
               ? l.both(from_target.back(), l.b.binary(Op::Equal, descriptor_id(rs[k], 1), rid))
               : from_target.back());
-      rbeat.push_back(l.state("r.slot" + std::to_string(k) + ".beat", p.len_bits));
+      rbeat.push_back(l.state("r.slot" + std::to_string(k) + ".beat", p.packet_len_bits));
     }
     const auto oldest = oldest_of(waiting);
     // A local stream in progress keeps the entry it started.
@@ -2183,19 +2184,21 @@ void EngineLowering::read_update_joined() {
           l.b.select(write, zero, l.b.select(l.both(issued, l.eq(qissue, k)), one, rissued[k])));
       l.b.update(rdone[k],
                  l.b.select(write, zero, l.b.select(l.both(complete, here), one, rdone[k])));
-      l.b.update(rbeat[k], l.b.select(write, l.b.constant(p.len_bits, 0),
-                                      l.b.select(l.both(rpush, here),
-                                                 l.b.select(rlast, l.b.constant(p.len_bits, 0),
-                                                            l.inc(rbeat[k])),
-                                                 rbeat[k])));
+      l.b.update(rbeat[k],
+                 l.b.select(write, l.b.constant(p.packet_len_bits, 0),
+                            l.b.select(l.both(rpush, here),
+                                       l.b.select(rlast, l.b.constant(p.packet_len_bits, 0),
+                                                  l.inc(rbeat[k])),
+                                       rbeat[k])));
     }
     l.b.update(rcur, l.b.select(rpush, rsel, rcur));
   } else {
     l.b.update(qhead, l.b.select(pop, advance_pointer(qhead), qhead));
     l.b.update(qrecv, l.b.select(complete, advance_pointer(qrecv), qrecv));
     bump(received, complete, pop);
-    l.b.update(rk,
-               l.b.select(rpush, l.b.select(rlast, l.b.constant(p.len_bits, 0), l.inc(rk)), rk));
+    l.b.update(
+        rk,
+        l.b.select(rpush, l.b.select(rlast, l.b.constant(p.packet_len_bits, 0), l.inc(rk)), rk));
     l.b.update(ra, l.b.select(rpush, advance(l, current, recv, sizes), ra));
   }
 }
@@ -2267,7 +2270,9 @@ Result<NodeHardware> lower_axi4_outlet(const Axi4OutletProfile &p) {
   if (!valid_name(p.name) ||
       (p.data_bits != 32 && p.data_bits != 64 && p.data_bits != 128 && p.data_bits != 256 &&
        p.data_bits != 512 && p.data_bits != 1024) ||
-      p.id_bits > 16 || p.len_bits < 4 || p.len_bits > 8 || p.source_bits > max_source_bits ||
+      p.id_bits > 16 || p.packet_len_bits < 4 || p.packet_len_bits > 10 ||
+      p.axi_len_bits.value_or(p.packet_len_bits) < 4 ||
+      p.axi_len_bits.value_or(p.packet_len_bits) > 8 || p.source_bits > max_source_bits ||
       p.address_bits < 2 || p.address_bits > 48 ||
       (p.transport_address_bits &&
        (p.transport_address_bits < std::max(32U, p.address_bits) || p.transport_address_bits > 48)))
@@ -2275,7 +2280,7 @@ Result<NodeHardware> lower_axi4_outlet(const Axi4OutletProfile &p) {
         {{"NCL_AXI4_OUTLET_PROFILE",
           "axi4_outlet",
           "Expected a valid name, 32/64/128/256/512/1024 data bits, 0..16 ID bits, "
-          "4..8 length bits and 0..9 source bits",
+          "4..10 packet length bits, 4..8 AxLEN bits and 0..9 source bits",
           {},
           {}}});
   if (!valid_flows(p))
@@ -2345,13 +2350,13 @@ std::pair<unsigned, unsigned> axi4_outlet_outstanding_bits(const Axi4OutletProfi
   // result, several the two staged responses (code, size, source[, id], address) and per slot the
   // source, [id,] address, size and local code.
   const unsigned descriptor =
-      address * (p.start_address ? 2 : 1) + p.len_bits + 12 + p.id_bits + p.source_bits +
+      address * (p.start_address ? 2 : 1) + p.packet_len_bits + 12 + p.id_bits + p.source_bits +
       (p.user.empty() && !(owned && p.max_outstanding > 1) ? 0 : p.user_bits) +
       (p.max_outstanding > 1 ? 0 : axi4_outlet_id_bits(p));
   const unsigned staging = 2 + 3 + p.source_bits + p.id_bits + address;
   const unsigned write_slot =
       p.source_bits + p.id_bits + address + 3 + 2 +
-      (p.exclusive_target.mode == ExclusiveAccess::Network ? p.len_bits + 2 : 0U) +
+      (p.exclusive_target.mode == ExclusiveAccess::Network ? p.packet_len_bits + 2 : 0U) +
       (owned ? p.user_bits : 0U);
   // The response user field of a target with BUSER and RUSER: staged with B and each R beat,
   // and the head of a read packet.

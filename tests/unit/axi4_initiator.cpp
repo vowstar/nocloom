@@ -13,7 +13,7 @@ Axi4InitiatorProfile profile(unsigned data_bits = 32, unsigned len_bits = 8, uns
   Axi4InitiatorProfile p;
   p.name = "probe";
   p.data_bits = data_bits;
-  p.len_bits = len_bits;
+  p.axi_len_bits = len_bits;
   p.id_bits = id_bits;
   p.read = read;
   p.write = write;

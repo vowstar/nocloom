@@ -143,7 +143,7 @@ constexpr CapabilityRule rules[] = {
            return true;
          const auto profile = packet_profile(p, static_cast<unsigned>(&s - p.sources.data()));
          const std::uint64_t largest = std::min<std::uint64_t>(
-             4096, (std::uint64_t{1} << s.len_bits.value_or(8)) * (s.engine_bits / 8));
+             4096, (std::uint64_t{1} << s.axi_len_bits.value_or(8)) * (s.engine_bits / 8));
          return profile.decompose_wrap_bursts ||
                 std::ranges::any_of(profile.windows, [&](const auto &w) {
                   return w.max_bytes < largest || w.boundary_bytes < 4096 || w.exact;
@@ -251,7 +251,7 @@ constexpr CapabilityRule rules[] = {
      [](const RuleView &v) {
        const auto &p = v.plan;
        const auto &t = p.targets[v.at];
-       const auto least = t.len_bits ? least_target_id_bits(t) : 0U;
+       const auto least = t.axi_len_bits ? least_target_id_bits(t) : 0U;
        return when(least && t.id_bits.value() < least, target_field(v.def, t.name, "id_width"),
                    "Target " + t.name + " needs " + std::to_string(least) +
                        " ID bits: the flow and the owner flags of its exclusive accesses");

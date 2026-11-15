@@ -135,7 +135,7 @@ int main(int argc, char **argv) {
   nocloom::detail::Axi4InitiatorProfile profile;
   profile.name = argv[2];
   profile.data_bits = std::stoul(argv[3]);
-  profile.len_bits = std::stoul(argv[4]);
+  profile.axi_len_bits = std::stoul(argv[4]);
   profile.id_bits = std::stoul(argv[5]);
   auto lowered = nocloom::detail::lower_axi4_initiator(profile);
   if (!lowered) {

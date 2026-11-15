@@ -104,7 +104,7 @@ void TileLinkIngress::request() {
   for (const auto &ch : {std::string("aw"), std::string("ar")}) {
     inputs[ch + "addr"] = address;
     inputs[ch + "id"] = l.fit(held.at("source"), std::max(1U, p.id_bits));
-    inputs[ch + "len"] = l.num(p.len_bits, 0);
+    inputs[ch + "len"] = l.num(p.axi_len_bits, 0);
     inputs[ch + "size"] = l.fit(size_held, 3);
     inputs[ch + "burst"] = l.num(2, 1);
     inputs[ch + "cache"] = l.num(4, 0);

@@ -17,7 +17,7 @@ namespace nocloom::detail {
 struct BurstOutletProfile {
   std::string name;
   unsigned id_bits = 0;
-  unsigned len_bits = 8;
+  unsigned packet_len_bits = 8;
   unsigned source_bits = 0;
   std::vector<AddressMapping> mappings;
   unsigned address_bits = 32;

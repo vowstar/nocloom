@@ -86,7 +86,7 @@ TEST_CASE("Width clamp cutter has bounded geometry and deterministic structure",
   bad.fixed_reject = {{0, 0}};
   REQUIRE_FALSE(lower_axi4_width_clamp(bad));
   bad = p;
-  bad.len_bits = 9;
+  bad.packet_len_bits = 11;
   REQUIRE_FALSE(lower_axi4_width_clamp(bad));
   cut = narrow_cut();
   cut.fixed_width.reset();

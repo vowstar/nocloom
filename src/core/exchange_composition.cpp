@@ -169,7 +169,7 @@ void plan_endpoint_pipes(NetworkPlan &plan) {
     if (axi_charge(source))
       for (auto &pipe : source.pipes)
         if (pipe_place(pipe).starts_with("packets"))
-          pipe.bits += plan.burst_len_bits + std::countr_zero(source.engine_bits / 8);
+          pipe.bits += plan.packet_len_bits + std::countr_zero(source.engine_bits / 8);
   }
   for (unsigned i = 0; i < plan.targets.size(); ++i)
     plan_pipes(plan.targets[i].pipes, plan.targets[i].name,
@@ -2041,13 +2041,13 @@ Status plan_composition(NetworkPlan &plan) {
       plan.occupancy_bits = std::max(plan.occupancy_bits, burst_count_bits(target.data_bits));
     plan.laddered = true;
   }
-  plan.burst_len_bits = network_len_bits(plan);
-  require(plan.burst_len_bits, "A target AxLEN carries one beat of every source it serves");
+  plan.packet_len_bits = network_len_bits(plan);
+  require(plan.packet_len_bits, "A target AxLEN carries one beat of every source it serves");
   // The default width of a target ID at a target with several bursts in flight or its own exclusive
   // monitor: the widest source ID, the bits to count the sources, at least the flow and owner bits.
   // Ahead of what reads interleaved_target: a target may interleave through the ID given here.
   for (auto &target : plan.targets)
-    if (target.len_bits && !target.id_bits)
+    if (target.axi_len_bits && !target.id_bits)
       target.id_bits = std::max(whole_target_id_bits(plan, target), least_target_id_bits(target));
   // Targets wider than a source they serve merge its narrow beats.
   for (const auto &target : upsize_targets(plan)) {
@@ -2508,9 +2508,9 @@ private:
         source_ports[signal] = *sp.id_bits;
     if (sp.id_bits && sp.axi3)
       source_ports["wid"] = *sp.id_bits;
-    if (sp.len_bits)
+    if (sp.axi_len_bits)
       for (const auto *signal : {"awlen", "arlen"})
-        source_ports[signal] = *sp.len_bits;
+        source_ports[signal] = *sp.axi_len_bits;
     remove_one_way_ports(initiator, source_ports, sp.read_only, sp.write_only);
     auto first = b.ir.states.size();
     const auto stores = c.out.storage.size();
@@ -2665,7 +2665,7 @@ private:
     const auto at = [&](const char *name) { return c.endpoint_field_index(true, name); };
     const auto field = [&](const char *name) { return down.data[at(name)]; };
     const auto data = field("data");
-    const auto data_bits = b.ir.values.at(data.index).width, bits = plan.burst_len_bits;
+    const auto data_bits = b.ir.values.at(data.index).width, bits = plan.packet_len_bits;
     auto length = b.slice(data, 0, bits);
     for (unsigned g = 32; g < data_bits; g += 32)
       length = c.or_(length, b.slice(data, g, bits));

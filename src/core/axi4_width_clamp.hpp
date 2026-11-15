@@ -19,7 +19,7 @@ namespace nocloom::detail {
 // - a longer WRAP is cut into INCR pieces, from the start to the container
 //   top and then from the container base back to the start (wrap order);
 // - an INCR covers the target words from the start word to the burst end;
-// - every INCR piece holds at most 2^len_bits target words. Sources never
+// - every INCR piece holds at most 2^packet_len_bits target words. Sources never
 //   send an INCR that crosses 4 KiB, so no piece crosses it either.
 // Pieces follow each other without waiting for responses: the next write piece's first word follows
 // the previous piece's last word, and the next read piece's request follows the previous one's
@@ -58,8 +58,8 @@ struct Axi4WidthCutProfile : ComponentProfileBase {
   std::vector<std::pair<AddressWindow, unsigned>> windows;
   // Every burst at this log2 byte width instead of the window table.
   std::optional<unsigned> fixed_width;
-  // Windows of targets whose AxLEN is shorter than len_bits, with its width: a piece stays within
-  // it.
+  // Windows of targets whose AxLEN is shorter than packet_len_bits, with its width: a piece stays
+  // within it.
   std::vector<std::pair<AddressWindow, unsigned>> piece_len_bits;
   // Own windows of the targets: a FIXED burst wider than its target that starts in one completes
   // locally with SLVERR. The window decode comes first, so a start outside them (a sub-page
