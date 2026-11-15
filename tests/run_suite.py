@@ -216,7 +216,21 @@ def budget(host, engines, max_processors, args):
     }
 
 
-def read_results(path, selected):
+def ctest_timeouts(output_log):
+    """Names marked as timed out by CTest's result lines for one wave."""
+    record = Path(output_log)
+    if not record.exists():
+        return set()
+    return set(
+        re.findall(
+            r"^\s*\d+/\d+\s+Test\s+#\d+:\s+(.+?)\s+\.{2,}\*\*\*Timeout(?:\s|$)",
+            record.read_text(errors="replace"),
+            re.MULTILINE,
+        )
+    )
+
+
+def read_results(path, selected, timeouts=frozenset()):
     rows = {
         t["name"]: {"name": t["name"], "status": "NOT_RUN", "seconds": 0}
         for t in selected
@@ -249,14 +263,13 @@ def read_results(path, selected):
                         failure.get(k) for k in ("message", "type") if failure.get(k)
                     ]
                     failure_types.extend(declared or [failure.text or ""])
-            verdict = (
-                "TIMEOUT"
-                if any(
-                    re.fullmatch(r"timeout|timed out", value.strip(), re.IGNORECASE)
-                    for value in failure_types
-                )
-                else "FAIL"
+            stated = any(
+                re.fullmatch(r"timeout|timed out", value.strip(), re.IGNORECASE)
+                for value in failure_types
             )
+            # Without a stated reason, use CTest's result line from this wave.
+            unstated = not any(value.strip() for value in failure_types)
+            verdict = "TIMEOUT" if stated or (unstated and name in timeouts) else "FAIL"
         else:
             verdict = "PASS"
         rows[name] = {
@@ -522,6 +535,8 @@ def start_wave(job, ctest, slots, plan):
         "-j",
         str(slots),
         "--output-on-failure",
+        "--output-log",
+        str(wave_dir / "ctest.log"),
         "--output-junit",
         str(wave_dir / "results.xml"),
         "-R",
@@ -565,6 +580,8 @@ def finish_wave(job):
         # A wave may not silently pull in a test assigned to a later invocation.
         read_results(result, [{"name": n} for n in job["waves"][-1]["names"]])
         job["wave_results"].append(result)
+        # Keep timeout results from this wave before collecting the next one.
+        job["timeouts"] |= ctest_timeouts(job["wave_dir"] / "ctest.log")
     elif rc == 0:
         raise ValueError("Successful CTest wave has no JUnit result")
     suite_adaptive.merge_junit(
@@ -780,6 +797,7 @@ def run(args):
                     else [selected],
                     "waves": [],
                     "wave_results": [],
+                    "timeouts": set(),
                     "exit_codes": [],
                     "collected": True,
                 }
@@ -941,7 +959,9 @@ def run(args):
     results = []
     for job in jobs:
         try:
-            rows = read_results(job["engine_dir"] / "results.xml", job["selected"])
+            rows = read_results(
+                job["engine_dir"] / "results.xml", job["selected"], job["timeouts"]
+            )
             error = None
         except (ValueError, ET.ParseError) as exc:
             rows = [

@@ -10,7 +10,15 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from run_suite import GIB, budget, cmake_quote, instrument, read_results, select
+from run_suite import (
+    GIB,
+    budget,
+    cmake_quote,
+    ctest_timeouts,
+    instrument,
+    read_results,
+    select,
+)
 
 HERE = Path(__file__).resolve().parent
 
@@ -240,6 +248,8 @@ class SuiteContract(unittest.TestCase):
                 "ctest",
                 "--test-dir",
                 str(build),
+                "--output-log",
+                str(self.root / "ctest.log"),
                 "--output-junit",
                 str(self.root / "results.xml"),
             ],
@@ -250,8 +260,40 @@ class SuiteContract(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(
-            read_results(self.root / "results.xml", [t])[0]["status"], "TIMEOUT"
+            read_results(self.root / "results.xml", [t], ctest_timeouts(self.root / "ctest.log"))[0][
+                "status"
+            ],
+            "TIMEOUT",
         )
+
+    def test_ctest_result_lines_classify_unstated_failures(self):
+        output = self.root / "ctest.log"
+        output.write_text(
+            "1/4 Test #1: exit7 ........***Failed 0.01 sec\n"
+            "2/4 Test #2: space name ...***Timeout 0.30 sec\n"
+            "3/4 Test #3: stated .......***Timeout 0.30 sec\n"
+            "4/4 Test #4: ordinary .....***Failed 0.01 sec\n"
+            "Output mentions ***Timeout and timeout=120\n"
+        )
+        timeouts = ctest_timeouts(output)
+        self.assertEqual(timeouts, {"space name", "stated"})
+        path = self.root / "results.xml"
+        path.write_text(
+            '<testsuite><testcase name="exit7" status="fail"><failure message=""/></testcase>'
+            '<testcase name="space name" status="fail"><failure message=""/></testcase>'
+            '<testcase name="stated" status="fail"><failure message="Failed"/></testcase>'
+            "</testsuite>"
+        )
+        names = ["exit7", "space name", "stated"]
+        self.assertEqual(
+            [r["status"] for r in read_results(path, [test(n) for n in names], timeouts)],
+            ["FAIL", "TIMEOUT", "FAIL"],
+        )
+        self.assertEqual(
+            [r["status"] for r in read_results(path, [test(n) for n in names])],
+            ["FAIL", "FAIL", "FAIL"],
+        )
+        self.assertEqual(ctest_timeouts(self.root / "absent"), set())
 
     def test_cmake_bracket_escape(self):
         self.assertEqual(cmake_quote("a]=]b"), "[==[a]=]b]==]")
@@ -362,8 +404,8 @@ class SuiteContract(unittest.TestCase):
                     + repr(str(HERE))
                     + ")\nimport run_suite\n"
                     "original=run_suite.read_results\nseen=set()\n"
-                    "def injected(path, selected):\n"
-                    " rows=original(path,selected)\n"
+                    "def injected(path, selected, *rest):\n"
+                    " rows=original(path,selected,*rest)\n"
                     " engine=Path(path).parent\n"
                     " if not (engine/'resource-map.json').exists() or str(engine) in seen:return rows\n"
                     " seen.add(str(engine))\n"
