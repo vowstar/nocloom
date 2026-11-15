@@ -55,6 +55,7 @@ struct Axi4PacketWindow {
   std::optional<AddressWindow> miss;
   // The target has read side effects: an INCR with AxCACHE[1] and AxLOCK clear whose start this
   // window holds goes out as naturally aligned power-of-two blocks (exact packets).
+  // Ordered WRAP runs use the same exact-block rule.
   bool exact = false;
   // Only some flows of the source reach the window (connectivity by flow pair): a request the
   // source moved (error flag set) whose own address it holds is a decode miss as beyond every
@@ -80,6 +81,8 @@ struct Axi4PacketWindow {
   bool read_pack_aligned = false;
   // Maximum physical replay items, zero means no additional bound.
   unsigned physical_words = 0;
+  // Preserve WRAP byte order by sending its tail and head as separate runs.
+  bool ordered_wrap = false;
 };
 struct Axi4PacketizerProfile : ComponentProfileBase {
   unsigned data_bits = 32; // source width: 32..1024

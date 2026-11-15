@@ -786,6 +786,8 @@ static PacketLimits target_packet_defaults(const NetworkPlan &plan, std::size_t 
   out.max_bytes = axi   ? std::min<std::uint64_t>(out.bytes << t.axi_len_bits.value(), 4096)
                   : ahb ? std::min<std::uint64_t>(16 * out.bytes, 1024)
                         : 128;
+  if (t.external_protocol == Protocol::TlUh)
+    out.max_bytes = t.tl_max_transfer_bytes;
   return out;
 }
 // The largest WRAP container an AXI4 source sends, min(16, 2^AxLEN width) beats, and the largest
@@ -947,6 +949,21 @@ static void wishbone_packet_limits(const NetworkPlan &plan, Axi4PacketizerProfil
       }
 }
 
+static Axi4PacketWindow packet_window_policy(Axi4PacketizerProfile &profile, Axi4PacketWindow w,
+                                             const TargetPlan &target, bool partial, bool aligned,
+                                             std::uint64_t pack) {
+  w.exact = target.read_side_effects;
+  w.partial = partial;
+  w.refused = target.read_only;
+  w.align_wrap = aligned;
+  w.read_granule = interleave_words(target) > 1 ? *target.read_interleave_size : 0U;
+  w.read_pack_bytes = read_packing_bytes(target, pack);
+  w.read_pack_aligned = target.protocol == Protocol::AhbLite;
+  w.ordered_wrap = target.external_protocol == Protocol::TlUh;
+  profile.decompose_wrap_bursts =
+      profile.decompose_wrap_bursts || interleave_words(target) > 1 || w.ordered_wrap;
+  return w;
+}
 static void packet_windows(const NetworkPlan &plan, unsigned index,
                            Axi4PacketizerProfile &profile) {
   const auto &source = plan.sources[index];
@@ -1001,13 +1018,11 @@ static void packet_windows(const NetworkPlan &plan, unsigned index,
             profile.decompose_wrap_bursts || (cut && (sub ? largest : source_wrap) > wrap);
         across = across || (edge && largest > wrap);
         (holds ? outer : profile.windows)
-            .push_back({window, own.max_bytes, own.boundary_bytes, own.bytes, wrap, pack,
-                        plan.flow_group(pair.target, x.flow), std::nullopt,
-                        target.read_side_effects, reaching != all_flows(source), target.read_only,
-                        aligned, interleave_words(target) > 1 ? *target.read_interleave_size : 0U,
-                        read_packing_bytes(target, pack), target.protocol == Protocol::AhbLite});
-        profile.decompose_wrap_bursts =
-            profile.decompose_wrap_bursts || interleave_words(target) > 1;
+            .push_back(
+                packet_window_policy(profile,
+                                     {window, own.max_bytes, own.boundary_bytes, own.bytes, wrap,
+                                      pack, plan.flow_group(pair.target, x.flow), std::nullopt},
+                                     target, reaching != all_flows(source), aligned, pack));
       };
       std::uint64_t held = 0;
       for (const auto &[block, boundary] : x.boundaries) {
@@ -1038,6 +1053,7 @@ static void packet_windows(const NetworkPlan &plan, unsigned index,
   miss.exact = false;
   miss.refused = false;
   miss.align_wrap = false;
+  miss.ordered_wrap = false;
   miss.read_granule = 0;
   if (source.default_target)
     std::tie(miss.max_bytes, miss.boundary_bytes) = named_miss_limits(plan, index, fallback);

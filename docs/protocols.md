@@ -3,7 +3,7 @@
 Byte lanes use little-endian ordering. The manuals use full AXI for AXI4 and
 AXI3, and Lite for AXI4-Lite.
 
-Related manuals: [Wishbone](wishbone.md), [TileLink TL-UL](tilelink.md),
+Related manuals: [Wishbone](wishbone.md), [TileLink](tilelink.md),
 [AHB-Lite and AHB5](ahb.md),
 [APB and AXI4-Lite targets](dedicated-targets.md),
 [Widths and AXI target interfaces](width-conversion.md),
@@ -14,7 +14,7 @@ Related manuals: [Wishbone](wishbone.md), [TileLink TL-UL](tilelink.md),
 | YAML value | Role | Data width in bits |
 | --- | --- | --- |
 | `tl_ul` | Initiator or target | 32 |
-| `tl_uh` | Initiator only | 32 |
+| `tl_uh` | Initiator or target | 32 |
 | `axi4` | Initiator or target | 32, 64, 128, 256, 512, 1024 |
 | `axi3` | Initiator or target | 32, 64, 128, 256, 512, 1024 |
 | `axi4_lite` | Initiator or target | 32, 64 |
@@ -26,13 +26,13 @@ Related manuals: [Wishbone](wishbone.md), [TileLink TL-UL](tilelink.md),
 | `ahb_lite` | AHB-Lite initiator or target | 32, 64, 128, 256, 512, 1024 |
 | `ahb5` | AHB5 initiator or target with basic properties | 32, 64, 128, 256, 512, 1024 |
 
-APB, Wishbone and TL-UL endpoints require a 32-bit network.
+APB, Wishbone and TileLink endpoints require a 32-bit network.
 Wishbone requires an explicit `address_unit: byte` or `word`. Optional
 `burst_tags: true` adds CTI and BTE to classic endpoints. See
 [Wishbone cycles](wishbone.md) for fields, signals, rejected combinations and
 reset integration.
 
-AHB targets require a 32-bit network. APB, AHB, Wishbone, TL-UL and AXI4-Lite
+AHB targets require a 32-bit network. APB, AHB, Wishbone, TileLink and AXI4-Lite
 targets support at most 32 local address bits. When the global address width
 exceeds 32, set each such target's `address_width` to 32 or less.
 
@@ -178,4 +178,15 @@ TL-UH initiators accept multibeat Get and Put and complete Intent locally.
 `max_transfer_bytes` is a power of two from 4 to 4096, with default 64.
 `size_width` is 2 to 4, with default 3, and must encode the largest message.
 Atomic operations return denied AccessAckData without network access.
-TL-UH targets are rejected. See [TileLink](tilelink.md#tl-uh-initiators).
+See [TileLink](tilelink.md#tl-uh-initiators).
+
+## TL-UH targets
+
+Targets accept `protocol: tl_uh` with 32-bit data and one packet context.
+`max_transfer_bytes` accepts powers of two from 4 to 1024, default 64.
+`size_width` is 2 to 4 bits, default 3, and must encode the largest size.
+
+`source_width` is 0 to 16, default 0. `sink_width` is 0 to 16, default 0.
+Target mappings align to the maximum message size. Targets reject exclusive
+monitors and timeout completion. See [TL-UH
+targets](tilelink.md#tl-uh-targets).

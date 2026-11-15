@@ -22,6 +22,7 @@ if(NOCLOOM_BUILD_CLI AND NOT NOCLOOM_BUILD_CONFIG)
 endif()
 find_package(nlohmann_json 3.11.3 CONFIG REQUIRED)
 add_library(nocloom_core STATIC src/core/validation.cpp src/core/hardware.cpp src/core/message.cpp
+  src/core/tilelink_uh_outlet.cpp
   src/backends/output_license.cpp
   src/backends/generation.cpp src/backends/verilog/emitter.cpp src/backends/ipxact/component.cpp
   src/backends/address_table.cpp src/backends/c_header.cpp src/backends/constraints/cdc_sdc.cpp)

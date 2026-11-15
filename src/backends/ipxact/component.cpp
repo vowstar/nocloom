@@ -382,7 +382,8 @@ private:
         w_.empty("memoryMapRef", " spirit:memoryMapRef=\"" + e.name + "_map\"");
       for (const auto &target : connected(e))
         if (std::ranges::none_of(endpoints_, [&](const Endpoint &t) {
-              return t.name == target && t.protocol == Protocol::TlUl;
+              return t.name == target &&
+                     (t.protocol == Protocol::TlUl || t.protocol == Protocol::TlUh);
             }))
           w_.empty("bridge", " spirit:masterRef=\"" + target + "\" spirit:opaque=\"true\"");
       w_.close("slave");

@@ -513,8 +513,15 @@ private:
                   {"max_outstanding", endpoint.outstanding}};
     };
     auto sources = by_name(p.sources, record);
-    const auto targets = by_name(p.targets, record);
+    auto targets = by_name(p.targets, record);
     const bool has_ul = !sources.empty() || !targets.empty();
+    for (const auto &t : p.targets)
+      if (t.external_protocol == Protocol::TlUh)
+        targets[t.name] = {{"source_width", t.tl_source_bits},
+                           {"size_width", t.tl_size_bits},
+                           {"sink_width", t.tl_sink_bits},
+                           {"max_transfer_bytes", t.tl_max_transfer_bytes},
+                           {"max_outstanding", t.outstanding}};
     for (const auto &s : p.sources)
       if (s.external_protocol == Protocol::TlUh)
         sources[s.name] = {{"source_width", s.tl_source_bits},
@@ -1062,7 +1069,8 @@ private:
     const bool has_dialects =
         uses(Protocol::Apb3) || uses(Protocol::Apb2) || uses(Protocol::Axi4Lite) || has_axi3;
     if (!has_ahb && !has_apb && !has_dialects && !any(p.targets, [](const auto &t) {
-          return t.external_protocol == Protocol::Wishbone || t.external_protocol == Protocol::TlUl;
+          return t.external_protocol == Protocol::Wishbone ||
+                 (t.external_protocol == Protocol::TlUl || t.external_protocol == Protocol::TlUh);
         }))
       return;
     if (!definition.contains("endpoint_protocols"))
@@ -1075,6 +1083,7 @@ private:
                            : t.axi3                                    ? "axi3"
                            : t.external_protocol == Protocol::Wishbone ? "wishbone"
                            : t.external_protocol == Protocol::TlUl     ? "tl_ul"
+                           : t.external_protocol == Protocol::TlUh     ? "tl_uh"
                            : t.ahb5 ? "ahb5"
                                     : protocols[static_cast<int>(t.protocol)]};
     });

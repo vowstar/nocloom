@@ -79,28 +79,40 @@ std::vector<Diagnostic> check_tilelink(const Definition &d) {
   for (unsigned k = 0; k < d.targets.size(); ++k) {
     const auto &t = d.targets[k];
     const auto path = "targets[" + std::to_string(k) + "]";
-    if (t.protocol == Protocol::TlUh) {
-      out.push_back(error("NCL_UNSUPPORTED_PROTOCOL", path + ".protocol",
-                          "TileLink TL-UH targets are not supported"));
-      continue;
-    }
     fields(t, path, out);
-    if (t.protocol != Protocol::TlUl)
+    if (t.protocol != Protocol::TlUl && t.protocol != Protocol::TlUh)
       continue;
+    const bool uh = t.protocol == Protocol::TlUh;
+    if (uh) {
+      reject(t.max_transfer_bytes.value_or(64) > 1024, path + ".max_transfer_bytes",
+             "A TL-UH target maximum is at most 1024 bytes");
+      reject(t.exclusive.value_or(ExclusiveAccess::None) != ExclusiveAccess::None,
+             path + ".exclusive", "A TL-UH target supports no exclusive monitor");
+      const auto maximum = t.max_transfer_bytes.value_or(64);
+      if (maximum >= 4 && std::has_single_bit(maximum))
+        for (const auto &mapping : t.mappings)
+          reject((mapping.base | mapping.size | mapping.local_address) % maximum != 0,
+                 path + ".mappings", "A TL-UH target mapping must align to max_transfer_bytes");
+    }
     reject(d.transport && d.transport->data_width == 64, "transport.data_width",
            "TileLink endpoints require a 32-bit network");
     for (const auto &mapping : t.mappings)
       reject(mapping.size < 4, path + ".mappings",
              "A TileLink target mapping must hold one data word");
     reject(t.max_outstanding.value_or(1) != 1, path + ".max_outstanding",
-           "A TL-UL target supports only one transaction in flight");
-    reject(t.flows != 1, path + ".flows", "A TL-UL target supports only one flow");
+           uh ? "A TL-UH target supports one packet context"
+              : "A TL-UL target supports only one transaction in flight");
+    reject(t.flows != 1, path + ".flows",
+           uh ? "A TL-UH target supports one flow" : "A TL-UL target supports only one flow");
     reject(t.timeout && t.timeout->completion, path + ".timeout.completion",
            "A TileLink target cannot replace a response on timeout");
-    reject(t.attributes.has_value(), path + ".attributes", "TL-UL targets have no attribute ports");
-    reject(!t.user.empty(), path + ".user", "TL-UL targets have no user ports");
+    reject(t.attributes.has_value(), path + ".attributes",
+           uh ? "TL-UH targets have no attribute ports" : "TL-UL targets have no attribute ports");
+    reject(!t.user.empty(), path + ".user",
+           uh ? "TL-UH targets have no user ports" : "TL-UL targets have no user ports");
     reject(t.address_width.value_or(d.address_width) > 32, path + ".address_width",
-           "A TL-UL target supports at most 32 local address bits");
+           uh ? "A TL-UH target supports at most 32 local address bits"
+              : "A TL-UL target supports at most 32 local address bits");
   }
   return out;
 }

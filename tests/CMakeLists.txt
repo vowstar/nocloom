@@ -4,6 +4,20 @@ endif()
 find_package(Catch2 3.4.0...<4 CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
+add_executable(nocloom_tilelink_uh_target_fixture tilelink_uh_target_fixture.cpp)
+target_link_libraries(nocloom_tilelink_uh_target_fixture PRIVATE nocloom_core)
+target_include_directories(nocloom_tilelink_uh_target_fixture PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_compile_options(nocloom_tilelink_uh_target_fixture PRIVATE
+  $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>)
+foreach(kind IN ITEMS selector endpoint footprint write errors)
+  add_test(NAME tilelink_uh_target_${kind}_formal
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_target_formal.py
+      --fixture $<TARGET_FILE:nocloom_tilelink_uh_target_fixture>
+      --work ${CMAKE_CURRENT_BINARY_DIR}/tilelink_uh_target_${kind}_formal --kind ${kind} --all-maxima)
+  set_tests_properties(tilelink_uh_target_${kind}_formal PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 6000 PROCESSORS 1
+    LABELS "formal;focused" RESOURCE_LOCK tilelink_formal)
+endforeach()
 if(UNIX)
   add_test(NAME large_address_map_small_stack
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/large_address_maps.py

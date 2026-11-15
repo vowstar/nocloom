@@ -475,6 +475,10 @@ void target_engine(TargetPlan &x, const Target &t) {
   x.tl_source_bits = t.source_width.value_or(0);
   x.tl_size_bits = t.size_width.value_or(2);
   x.tl_sink_bits = t.sink_width.value_or(0);
+  if (t.protocol == Protocol::TlUh) {
+    x.tl_size_bits = t.size_width.value_or(3);
+    x.tl_max_transfer_bytes = t.max_transfer_bytes.value_or(64);
+  }
   x.axi3 = t.protocol == Protocol::Axi3;
   x.protocol = x.axi3 ? Protocol::Axi4 : t.protocol.value_or(Protocol::Axi4);
   x.protocol = target_engine_protocol(x.protocol);

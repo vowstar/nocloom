@@ -341,4 +341,13 @@ module nlv_rule_stub (
     .d_source(mode==50 && tl_cycle==5), .d_data(32'd0),
     .d_denied(mode==48), .d_corrupt(1'b0)
   );
+  nlv_tl_checker #(.NAME("tl_range"), .SOURCE_W(1), .SOURCE_LIMIT(1)) tl_range (
+    .clk(clk), .rst_n(rst_n), .allow_reject(1'b0),
+    .a_valid(mode>=54 && mode<=56 && tl_cycle==2), .a_ready(1'b1),
+    .a_opcode(3'd4), .a_param(3'd0), .a_size(2'd2), .a_source(mode==54),
+    .a_address(32'd0), .a_mask(4'd15), .a_data(32'd0), .a_corrupt(1'b0),
+    .d_valid((mode==55 || mode==56) && tl_cycle==4), .d_ready(1'b1),
+    .d_opcode(3'd1), .d_param(2'd0), .d_size(2'd2), .d_source(mode==55),
+    .d_data(32'd0), .d_denied(1'b0), .d_corrupt(1'b0)
+  );
 endmodule

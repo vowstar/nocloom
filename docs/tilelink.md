@@ -5,7 +5,16 @@ and D with 32-bit data. It supports single-beat Get, PutFullData and
 PutPartialData, with AccessAck and AccessAckData responses. The rules use
 [TileLink 1.8.1][spec], sections 3, 4, 6 and 7.
 
-For TL-UH initiators, see [TL-UH initiators](#tl-uh-initiators).
+| Protocol value | Roles | Operations |
+| --- | --- | --- |
+| `tl_ul` | Initiator or target | Single-beat Get, PutFullData and PutPartialData of up to 4 bytes, with AccessAck and AccessAckData |
+| `tl_uh` | Initiator or target | Get, PutFullData and PutPartialData of up to `max_transfer_bytes`. Initiators also complete Intent locally and deny atomic operations |
+
+The field table and the Initiators, Targets and Mapping to other endpoints
+sections describe TL-UL. The clock, reset and port rules apply to both
+protocols. The option table covers both. See
+[TL-UH initiators](#tl-uh-initiators) and [TL-UH targets](#tl-uh-targets)
+for their fields and behavior.
 
 ## Endpoint fields
 
@@ -119,7 +128,7 @@ Packet formation can merge narrow AXI reads into a larger interval. To retain
 the original byte range of non-modifiable reads, set `read_side_effects: true`.
 See [read side effects](packets.md#read-side-effects).
 
-A param and corrupt are zero. Get data is zero. Unselected write data bytes
+`a_param` and `a_corrupt` are zero. Get data is zero. Unselected write data bytes
 are zero. Protection, cache, QoS and user information have no TileLink ports.
 The port accepts a response in the same cycle as its A handshake. D ready
 depends on local response storage, with no combinational dependency on A ready.
@@ -187,10 +196,8 @@ Supported means implemented within the limits above. Rejected means that the
 definition has a diagnostic. Not applicable describes a constant or runtime
 response for behavior that has no matching network operation.
 
-`tl_uh` targets are
-rejected with `NCL_UNSUPPORTED_PROTOCOL`.
-
 TL-UH initiators deny atomic operations and do not conform to TL-UH.
+TL-UH targets send only Get, PutFullData and PutPartialData messages.
 
 | Level | Option | Class | Reason or behavior | Sections |
 | --- | --- | --- | --- | --- |
@@ -210,17 +217,18 @@ TL-UH initiators deny atomic operations and do not conform to TL-UH.
 | TL-UL | Multiple beats | Not applicable | Larger runtime requests are denied without access | 7.2 |
 | TL-UL | ArithmeticData, LogicalData | Not applicable | Runtime requests are denied without access | 8.2.1, 8.2.2 |
 | TL-UL | Intent, HintAck | Not applicable | Runtime Intent with any param is denied with HintAck without access | 8.2.3, 8.2.4 |
-| TL-UH | Get | Supported on initiators | One A beat and size-dependent D beats | 7.2.1, 8.3 |
-| TL-UH | PutFullData | Supported on initiators | Size-dependent A beats and one AccessAck | 7.2.2, 8.3 |
-| TL-UH | PutPartialData | Supported on initiators | Per-beat masks and one AccessAck | 7.2.3, 8.3 |
+| TL-UH | Get | Supported | One A beat and size-dependent D beats | 7.2.1, 8.3 |
+| TL-UH | PutFullData | Supported | Size-dependent A beats and one AccessAck | 7.2.2, 8.3 |
+| TL-UH | PutPartialData | Supported | Per-beat masks and one AccessAck | 7.2.3, 8.3 |
 | TL-UH | ArithmeticData | Not applicable | Local denied AccessAckData after all A beats | 8.2.1 |
 | TL-UH | LogicalData | Not applicable | Local denied AccessAckData after all A beats | 8.2.2 |
 | TL-UH | Intent | Supported on initiators | Local HintAck, param 0 or 1 succeeds | 8.2.3 |
-| TL-UH | AccessAck, AccessAckData, HintAck | Supported on initiators | One message owns D until its last handshake | 7.2.4, 7.2.5, 8.2.4 |
-| TL-UH | Source and size | Supported on initiators | Source is retained through the last D handshake | 6.4, 8.3 |
-| TL-UH | Mask | Supported on initiators | Per-beat byte mask, including zero on PutPartialData | 4.5, 8.3 |
-| TL-UH | Corrupt and denied | Supported on initiators | Network read errors use corrupt without denied | 4.4 |
-| TL-UH | Bursts | Supported on initiators | Naturally aligned power-of-two messages | 8.3 |
+| TL-UH | AccessAck, AccessAckData | Supported | One message owns D until its last handshake | 7.2.4, 7.2.5 |
+| TL-UH | HintAck | Supported on initiators | One response to a local Intent | 8.2.4 |
+| TL-UH | Source and size | Supported | Initiators retain source through the last D handshake. Targets retain source through packet retirement | 6.4, 8.3 |
+| TL-UH | Mask | Supported | Per-beat byte mask, including zero on PutPartialData | 4.5, 8.3 |
+| TL-UH | Corrupt and denied | Supported | Initiators map network read errors to corrupt without denied. Targets receive denied and corrupt as target errors | 4.4 |
+| TL-UH | Bursts | Supported | Naturally aligned power-of-two messages | 8.3 |
 | TL-C | B, C and E channels and coherent operations | Rejected | No protocol value or ports. Unknown fields are rejected | 9 |
 
 ## Mapping to other endpoints
@@ -259,8 +267,9 @@ The external device must permit that read granularity. See
 
 ## TL-UH initiators
 
-Set `protocol: tl_uh` on an initiator. The network and the port use 32-bit
-data. TL-UH targets are rejected with `NCL_UNSUPPORTED_PROTOCOL`.
+Set `protocol: tl_uh` on an initiator. The port and the network use 32-bit
+data. Use the shared [clock, reset and port rules](#clock-reset-and-ports).
+For target fields, see [TL-UH targets](#tl-uh-targets).
 
 | Field | Values | Default |
 | --- | --- | --- |
@@ -352,3 +361,71 @@ A 4096-byte message to one destination can issue four transactions without
 waiting for write responses. The transactions of one message complete in
 order. A change of destination can wait for earlier transactions to drain.
 A Get D message ends only after all its read beats have handshaken.
+
+## TL-UH targets
+
+Set `protocol: tl_uh` on a target. The port and the network use 32-bit data.
+The target sends Get, PutFullData and PutPartialData. It sends no Intent or
+atomic operations. Use the shared
+[clock, reset and port rules](#clock-reset-and-ports).
+
+| Field | Values | Default |
+| --- | --- | --- |
+| `data_width` | 32 bits | Required |
+| `max_transfer_bytes` | Powers of two from 4 to 1024 bytes | 64 |
+| `max_outstanding` | One packet in flight, reads and writes combined | 1 |
+| `source_width` | 0 to 16 bits | 0 |
+| `size_width` | 2 to 4 bits, sufficient to encode the maximum size | 3 |
+| `sink_width` | 0 to 16 bits | 0 |
+| `flows` | 1 | 1 |
+| `fixed_bursts` | `reject` or `single` | `reject` |
+| `read_side_effects` | Boolean | `false` |
+
+Larger maxima and capacities produce `NCL_TILELINK_PROFILE`. Mappings must
+align their base, size and local address to `max_transfer_bytes`.
+Targets reject `id_width`, `len_width`, exclusive monitors, attribute ports,
+user ports and nonzero scheduling levels. Error logs cannot observe TL-UH
+targets. Invalid TileLink fields, unaligned mappings and exclusive monitors
+produce `NCL_TILELINK_PROFILE`. Other limits produce the applicable generic
+diagnostic.
+
+Each packet owns the context until its last network response leaves. Each
+packet has at most one TileLink message in flight. Source is zero, including
+when the source port is wider. It stays reserved until the packet's last
+network response is accepted.
+
+The target covers each received byte interval with aligned power-of-two
+messages. Each block fits the remaining interval, mapping and maximum size.
+Reads access no bytes outside that interval.
+
+Set `read_side_effects: true` to preserve non-modifiable AXI read byte ranges
+during packet formation. An unaligned INCR interval ends at the beat-aligned
+start plus the original beat count times the beat size.
+
+Packet formation and target messages keep the WRAP tail before the head. With
+`fixed_bursts: single`, every repeated beat still causes its own access. With
+read side effects enabled, non-modifiable WRAP runs use exact blocks.
+
+A single complete active write range can use PutFullData. Other writes use
+PutPartialData. An independent zero-mask word causes no target access. Writes
+with packet transfers smaller than 4 bytes keep each word in separate
+messages.
+
+Writes with 4-byte network beats can use multibeat messages. Zero-mask beats
+inside a multibeat Put are sent. `a_param` and `a_corrupt` are zero.
+Unselected data bytes are zero.
+
+The target accepts AccessAck before the last A beat, including the first A
+handshake cycle. It stores the Ack independently of read data. The target sends
+the remaining A beats after an early denied Ack. D ready does not depend on A
+ready. The next message starts after both A and D complete.
+
+A denied read receives all expected D beats and returns zero data and a
+target error. Corrupt without denied fails only that beat. Write denied
+merges into the packet's write response. Response length follows the saved
+request, independent of the received D size or opcode. Interface checkers
+report invalid external responses.
+
+`timeout.completion: true` is rejected. With `completion: false`, expiry
+sets `timed_out` and retains all pending work until normal completion or
+common reset. It inserts no replacement response.

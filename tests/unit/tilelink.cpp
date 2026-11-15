@@ -1,6 +1,7 @@
 #include "core/cone_walk.hpp"
 #include "core/exchange_composition.hpp"
 #include "core/network_plan.hpp"
+#include "core/tilelink_uh_outlet.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <nocloom/generation.hpp>
 
@@ -103,7 +104,7 @@ TEST_CASE("TileLink diagnostics identify each unsupported user field", "[tilelin
   }
 }
 
-TEST_CASE("TileLink UH validates message size and keeps the target unsupported", "[tilelink]") {
+TEST_CASE("TileLink UH validates message size and target packet capacity", "[tilelink]") {
   auto d = tilelink_definition();
   d.initiators[0].protocol = Protocol::TlUh;
   SECTION("default profile") {
@@ -123,8 +124,25 @@ TEST_CASE("TileLink UH validates message size and keeps the target unsupported",
   SECTION("target protocol") {
     d.targets[0].protocol = Protocol::TlUh;
     const auto r = generate(d);
+    REQUIRE(r);
+  }
+  SECTION("target capacity") {
+    d.targets[0].protocol = Protocol::TlUh;
+    d.targets[0].max_outstanding = 2;
+    const auto r = generate(d);
     REQUIRE_FALSE(r);
-    CHECK(r.diagnostics().front().code == "NCL_UNSUPPORTED_PROTOCOL");
-    CHECK(r.diagnostics().front().field == "targets[0].protocol");
+    CHECK(r.diagnostics().front().code == "NCL_TILELINK_PROFILE");
+    CHECK(r.diagnostics().front().field == "targets[0].max_outstanding");
+  }
+}
+
+TEST_CASE("TL-UH outlet watchdog rejects an out-of-range count", "[tilelink]") {
+  TileLinkUhOutletProfile profile;
+  for (unsigned cycles : {15U, 1048577U}) {
+    profile.packet.timeout_cycles = cycles;
+    const auto rejected = lower_tilelink_uh_outlet(profile);
+    REQUIRE_FALSE(rejected);
+    CHECK(rejected.diagnostics().front().code == "NCL_TILELINK_PROFILE");
+    CHECK(rejected.diagnostics().front().field == "timeout_cycles");
   }
 }

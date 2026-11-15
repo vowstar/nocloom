@@ -777,6 +777,22 @@ foreach(scenario IN ITEMS single flood)
 endforeach()
 
 # TileLink peers use the shared tape, memory model and transaction scoreboard.
+nocloom_verif_case(NAME verif_tilelink_uh_target LAYER rtl TIER release TIMEOUT 600
+  FEATURES tilelink MEMORY_MB 2048
+  CONTRACTS TL.ACCESS
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_target.py
+    --case ${NLV_CASES}/tilelink_uh_target.py
+    --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_target_tb.svh
+    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/uh_target --all-maxima)
+set_tests_properties(verif_tilelink_uh_target PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_verif_case(NAME verif_tilelink_uh_target_high_address LAYER rtl TIER focused TIMEOUT 600
+  FEATURES tilelink MEMORY_MB 2048
+  CONTRACTS TL.ACCESS
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_target.py
+    --case ${NLV_CASES}/tilelink_uh_target.py
+    --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_target_tb.svh
+    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/uh_target_high --high-address)
+set_tests_properties(verif_tilelink_uh_target_high_address PROPERTIES RESOURCE_LOCK tilelink)
 foreach(pair IN ITEMS tl_ul:tl_ul tl_ul:axi4 axi4:tl_ul tl_ul:apb4 apb4:tl_ul tl_ul:ahb_lite ahb_lite:tl_ul)
   string(REPLACE ":" ";" ends "${pair}")
   list(GET ends 0 source)

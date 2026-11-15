@@ -44,6 +44,11 @@ integer from 16 to 1048576. The maximum uses the full range of a 20-bit
 counter that starts at zero. `completion` defaults to `false`. APB2 targets
 reject timeouts.
 
+TL-UH targets use one watchdog for their packet context and continue work after
+expiry. See [TL-UH targets](tilelink.md#tl-uh-targets) for those rules. The
+rest of this section describes other target protocols. All TileLink targets
+reject `completion: true`.
+
 One watchdog covers both directions and all target packets in flight. It counts
 target clock cycles while work is waiting and no response is offered to the
 network. Every offered B or R beat restarts the count, even when the initiator

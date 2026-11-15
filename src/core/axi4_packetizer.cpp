@@ -35,6 +35,8 @@ struct PacketizerLowering {
         refusals(p.write &&
                  std::ranges::any_of(p.windows, [](const auto &w) { return w.refused; })),
         exact_any(std::ranges::any_of(p.windows, [](const auto &w) { return w.exact; })),
+        ordered_wrap_any(
+            std::ranges::any_of(p.windows, [](const auto &w) { return w.ordered_wrap; })),
         granule_any(std::ranges::any_of(p.windows, [](const auto &w) { return w.read_granule; })),
         align_any(std::ranges::any_of(p.windows, [](const auto &w) { return w.align_wrap; }) ||
                   (p.fallback && p.fallback->align_wrap)),
@@ -85,8 +87,9 @@ struct PacketizerLowering {
   // context's piece counter may have to hold that many.
   const unsigned piece_bits;
   const bool misses;
-  const bool refusals;    // a window of a target that refuses writes (Axi4PacketWindow::refused)
-  const bool exact_any;   // a window with exact packets
+  const bool refusals;  // a window of a target that refuses writes (Axi4PacketWindow::refused)
+  const bool exact_any; // a window with exact packets
+  const bool ordered_wrap_any;
   const bool granule_any; // a window with a read granule (Axi4PacketWindow::read_granule)
   const bool align_any;   // a window whose target aligns WRAP reads (Axi4PacketWindow::align_wrap)
   const unsigned groups, gb;
@@ -228,13 +231,20 @@ struct PacketizerLowering {
     return l.both(l.both(l.eq(kind, 1), l.below(size, word_size)),
                   l.both(l.inv(l.b.slice(cache, 1, 1)), l.inv(hint)));
   }
-  // Exact packets: an admitted INCR with AxCACHE[1] and AxLOCK clear whose start lies in a window
-  // of a target with read side effects.
+  // Exact packets preserve non-modifiable INCR and ordered WRAP byte ranges at targets with read
+  // side effects. AxLOCK remains clear.
   ValueId exact_of(const Fields &f, const Key &at, std::optional<ValueId> hint) {
     if (!exact_any)
       return zero;
-    auto e = l.both(l.both(l.eq(f.at("burst"), 1), l.inv(l.b.slice(f.at("cache"), 1, 1))),
-                    l.inv(f.at("error")));
+    ValueId e;
+    if (ordered_wrap_any) {
+      const auto kind =
+          l.either(l.eq(f.at("burst"), 1), l.both(l.eq(f.at("burst"), 2), ordered_wrap(at)));
+      e = l.both(l.both(kind, l.inv(l.b.slice(f.at("cache"), 1, 1))), l.inv(f.at("error")));
+    } else {
+      e = l.both(l.both(l.eq(f.at("burst"), 1), l.inv(l.b.slice(f.at("cache"), 1, 1))),
+                 l.inv(f.at("error")));
+    }
     if (hint)
       e = l.both(e, l.inv(*hint));
     if (p.exclusive)
@@ -404,6 +414,11 @@ struct PacketizerLowering {
   static std::uint64_t read_pack(const Axi4PacketWindow &w) {
     return w.read_pack_bytes ? w.read_pack_bytes : w.pack_bytes;
   }
+  ValueId ordered_wrap(const Key &at) {
+    return per_window(
+        at, zero, [&](const Axi4PacketWindow &w) { return w.ordered_wrap ? one : zero; },
+        [](const Axi4PacketWindow &w) { return w.ordered_wrap; });
+  }
   ValueId folds(const Fields &f, const Key &at, bool read) {
     const auto len = l.zext(f.at("length"), 16);
     ValueId fits = zero;
@@ -422,6 +437,8 @@ struct PacketizerLowering {
           [](const Axi4PacketWindow &w) { return read_pack(w); });
       fits = l.both(fits, one_target_word);
     }
+    if (ordered_wrap_any)
+      fits = l.both(fits, l.inv(ordered_wrap(at)));
     return l.both(l.both(l.eq(f.at("burst"), 2), l.inv(l.eq(f.at("length"), 0))), fits);
   }
   // WRAP cutting: a WRAP that is not folded runs as INCR when it starts at
@@ -458,7 +475,9 @@ struct PacketizerLowering {
       aligned = l.both(aligned, l.inv(preserve));
     }
     // limit < span is limit <= span - 1.
-    const auto keeps_whole = granule_any ? l.either(aligned, inside_block) : aligned;
+    auto keeps_whole = granule_any ? l.either(aligned, inside_block) : aligned;
+    if (ordered_wrap_any)
+      keeps_whole = l.either(keeps_whole, ordered_wrap(at));
     auto cut =
         l.both(l.both(l.eq(f.at("burst"), 2), l.either(keeps_whole, l.inv(l.below(mask, limit)))),
                l.inv(folds(f, at, read)));

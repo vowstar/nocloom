@@ -266,7 +266,8 @@ SCENARIOS.append(("tl_rule_8", "TL_8", _run(), "TL.7.2.RESPONSE"))
 MODES["TL_9"] = 48
 SCENARIOS.append(("tl_rule_9", "TL_9", _run(), "TL.4.4.CORRUPT"))
 for number, rule in ((49, "TL.4.1.A_OWNER"), (50, "TL.4.2.D_OWNER"),
-                     (51, None), (52, None), (53, "TL.4.5.MASK")):
+                     (51, None), (52, None), (53, "TL.4.5.MASK"),
+                     (54, "TL.6.4.RANGE"), (55, "TL.6.4.RANGE"), (56, None)):
     MODES[f"TL_{number}"] = number
     SCENARIOS.append((f"tl_owner_{number}", f"TL_{number}", _run(), rule))
 PROVEN = sorted({rule for _, _, _, rule in SCENARIOS if rule})

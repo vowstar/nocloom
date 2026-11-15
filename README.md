@@ -139,7 +139,7 @@ traffic crosses its boundary.
 | Area | Supported |
 | --- | --- |
 | Initiator protocols | `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `apb3`, `ahb_lite` (AHB-Lite), `ahb5`, `wishbone`, `tl_ul` and `tl_uh` |
-| Target protocols | `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `apb3`, `apb2`, `ahb_lite` (AHB-Lite), `ahb5`, `wishbone` and `tl_ul` |
+| Target protocols | `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `apb3`, `apb2`, `ahb_lite` (AHB-Lite), `ahb5`, `wishbone`, `tl_ul` and `tl_uh` |
 | [Wishbone cycles](docs/wishbone.md) | 32-bit classic and pipelined reads and writes, byte SEL, ERR, optional target RTY as error, explicit byte or word addresses. Classic targets can send registered feedback bursts with CTI and BTE. Classic initiators accept these ports and ignore their values |
 | TileLink TL-UL | 32-bit single-beat Get, PutFullData and PutPartialData, with AccessAck and AccessAckData. Initiators can keep multiple sources in flight |
 | AHB5 properties | HPROT is 4 bits by default or 7 bits. HNONSEC is optional and defaults to absent. HMASTER is 0 to 32 bits |
@@ -147,12 +147,12 @@ traffic crosses its boundary.
 | Topology | One generated request switch and one generated response switch, or declared request and response graphs of 1 to 128 switches each |
 | Endpoint data width | AXI4, AXI3, AHB-Lite and AHB5: 32, 64, 128, 256, 512 or 1024 bits. AXI4-Lite: 32 or 64 bits. APB: 8, 16 or 32 bits. Wishbone and TileLink: 32 bits |
 | Network data width | 32 or 64 bits (`transport.data_width`). The default is the narrowest endpoint data width, where APB counts as 32 bits and the maximum is 64 bits. A 64-bit network accepts only 64-bit initiators, and no APB, Wishbone or TileLink endpoint or AHB target. Other definitions need a 32-bit network. Therefore, an initiator wider than 64 bits needs `transport.data_width: 32`, unless a 32-bit or APB endpoint already makes 32 bits the default |
-| Address width | 2 to 48 bits. AXI4, AXI3, AHB and Wishbone initiators need at least 12 bits. APB initiators use at most 32 bits. APB, AHB, Wishbone, TL-UL and AXI4-Lite targets use at most 32 bits |
+| Address width | 2 to 48 bits. AXI4, AXI3, AHB and Wishbone initiators need at least 12 bits. APB initiators use at most 32 bits. APB, AHB, Wishbone, TileLink and AXI4-Lite targets use at most 32 bits |
 | Clock domains | 1 to 64. More than one domain needs a `topology` whose switches name their clock domains. Clock domain crossings connect asynchronous clocks, or related clocks divided from one root |
 | Endpoint clock gating | Separate protocol and transport gates, one shared gate, or a transport gate with the protocol side on the domain clock |
 | Transactions | Several AXI transactions in flight, exclusive access, target timeouts and an error response on a decode miss |
 | Scheduling | Fixed levels from 0 to 7 on AXI4, AXI3, AHB-Lite and AHB5 sources to full AXI4 or AXI3 targets, or on 32-bit APB networks. AXI4 and AXI3 sources also support AxQOS maps. AXI4, AXI3 and 32-bit APB sources support bandwidth limits |
-| TL-UH initiators | Multibeat Get and Put, local Intent responses, and denied atomic operations. The configured TL-UH maximum message size is a power of two from 4 to 4096 bytes. |
+| TL-UH | 32-bit multibeat Get and Put. Initiators return local Intent responses and deny atomic operations. Targets serve one packet at a time. Message maxima: powers of two from 4 to 4096 bytes for initiators and 4 to 1024 bytes for targets, default 64. |
 | Routing | NocLoom fixes each route at generation |
 | Output files | Always: Verilog-2001 RTL and three JSON files, which are the map, the bundle and the dependency graph. Optional: IP-XACT (`--ipxact`), address table (`--address-table`), CDC constraints (`--cdc-constraints`) and C headers (`--c-header`) |
 | C++ library | In-memory generation, tree and mesh topology helpers, and a CMake package. The core library does no file I/O and prints nothing |
@@ -165,7 +165,7 @@ See [Documentation](#documentation) for field definitions and limits.
 | --- | --- |
 | Wishbone options | No LOCK or user tags. Burst tags require classic cycles. A tagged target cannot use timeout. Pipelined targets accept one request at a time. See [Wishbone](docs/wishbone.md) |
 | Other protocols | For example AXI5, ACE and APB2 initiators |
-| TileLink | TL-UL targets support one message in flight and one flow. TL-UH targets and coherent channels are unsupported. TL-UH initiators deny atomic operations, so they do not conform to TL-UH. See [TileLink](docs/tilelink.md) for error and progress rules |
+| TileLink | TL-UL targets support one message in flight and one flow. TL-UH targets support one packet context and one flow. Coherent channels are unsupported. TL-UH initiators deny atomic operations, so they do not conform to TL-UH. See [TileLink](docs/tilelink.md) for error and progress rules |
 | AHB5 optional signals | HEXCL, HEXOKAY and HAUSER, HWUSER, HRUSER and HBUSER are unsupported. See [AHB5 properties](docs/ahb.md#ahb5-basic-properties) |
 | AHB arbitration and responses | No multi-manager arbitration or HSPLIT. RETRY and SPLIT on two-bit `ahb_lite` targets fail the packet |
 | Other RTL languages | The output is Verilog-2001 only |
@@ -189,7 +189,7 @@ known. [Diagnostics](docs/diagnostics.md) lists the codes.
 | [Network](docs/network.md) | Connectivity, graphs, routes, flows, arbitration and pipes |
 | [Address map](docs/address-map.md) | Mappings, address inputs, decode misses and error responses |
 | [Protocols](docs/protocols.md) | Initiator and target protocols, width conversion and packets |
-| [TileLink](docs/tilelink.md) | TL-UL and TL-UH initiator fields, error and progress rules, option table and protocol mappings |
+| [TileLink](docs/tilelink.md) | TL-UL and TL-UH endpoint fields, error and progress rules, option table and protocol mappings |
 | [Transactions](docs/transactions.md) | Bursts in flight, target IDs, read interleaving, exclusive access and timeouts |
 | [Scheduling](docs/scheduling.md) | Levels, AxQOS maps, bandwidth shapers and bandwidth schedulers |
 | [Output files](docs/outputs.md) | Map, bundle, dependency graph, IP-XACT, address table, CDC constraints and C headers |

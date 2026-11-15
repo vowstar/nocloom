@@ -32,12 +32,12 @@ enum class Protocol {
   TlUh
 };
 namespace detail {
-// Internal. Protocol names and supported endpoint roles in the order of the manual.
+// Internal. The name of each protocol in a definition file, in the order of the manual. Every
+// protocol serves a target; initiator is false for a protocol that does not serve an initiator.
 struct ProtocolName {
   Protocol protocol;
   const char *name;
   bool initiator;
-  bool target = true;
 };
 inline constexpr ProtocolName protocol_names[] = {
     {Protocol::Axi4, "axi4", true},          {Protocol::Axi3, "axi3", true},
@@ -45,12 +45,12 @@ inline constexpr ProtocolName protocol_names[] = {
     {Protocol::Apb4, "apb4", true},          {Protocol::Apb3, "apb3", true},
     {Protocol::Apb2, "apb2", false},         {Protocol::AhbLite, "ahb_lite", true},
     {Protocol::Ahb5, "ahb5", true},          {Protocol::Wishbone, "wishbone", true},
-    {Protocol::TlUl, "tl_ul", true},         {Protocol::TlUh, "tl_uh", true, false}};
+    {Protocol::TlUl, "tl_ul", true},         {Protocol::TlUh, "tl_uh", true}};
 // The protocol names that an initiator, or a target, accepts, as in "axi4, axi3 or apb4".
 inline std::string supported_protocols(bool initiator) {
   std::string list;
   for (const auto &p : protocol_names)
-    if (initiator ? p.initiator : p.target)
+    if (p.initiator || !initiator)
       list += (list.empty() ? "" : ", ") + std::string(p.name);
   return list.replace(list.rfind(','), 1, " or");
 }
@@ -546,6 +546,7 @@ struct Initiator {
 // waiting for `cycles` consecutive target clock cycles. Without completion
 // the failure is only reported: the bursts in flight and every later burst
 // to the target never receive a response. With completion they answer SLVERR.
+// TL-UH targets only latch expiry and keep accepting normal completions.
 struct TargetTimeout {
   unsigned cycles = 0; // Target clock cycles, 16..1048576.
   bool completion = false;
@@ -560,7 +561,7 @@ struct Target {
   // Local address port; every mapping's local interval must fit.
   std::optional<unsigned> address_width = std::nullopt;
   // Required: axi4, axi3 (an AXI4 target with len_width 4, WID and a two-bit AxLOCK), or a
-  // dedicated ahb_lite, ahb5, apb5, apb4, apb3, apb2, axi4_lite, wishbone or tl_ul port.
+  // dedicated ahb_lite, ahb5, apb5, apb4, apb3, apb2, axi4_lite, wishbone, tl_ul or tl_uh port.
   std::optional<Protocol> protocol = std::nullopt;
   // A read-only target never sees a write: the outlet absorbs it and
   // answers one SLVERR after W. A read-only AXI4 target has no AW/W/B ports.
@@ -590,7 +591,7 @@ struct Target {
   // AXI4 targets only. Target words kept together at an ID change, 1, 2, 4 or 8, up to 32 bytes.
   // An explicit block size enables interleaving unless read_interleaving_disabled is true.
   std::optional<unsigned> read_block_words = std::nullopt;
-  // Dedicated APB4, APB3, APB2, AXI4-Lite and AHB targets; absent
+  // Dedicated APB, AXI4-Lite, AHB, Wishbone and TileLink targets; absent
   // means Reject. AXI4 targets receive FIXED bursts unchanged and reject this
   // field.
   std::optional<FixedBursts> fixed_bursts = std::nullopt;
@@ -608,7 +609,8 @@ struct Target {
   std::optional<unsigned> hresp_width = std::nullopt;
   // AXI4, AXI4-Lite, APB4, APB3 and AHB targets. After expiry the target
   // is failed until the common reset: no further access, and its bursts get
-  // no response, or SLVERR with completion.
+  // no response, or SLVERR with completion. TL-UH targets keep pending work
+  // after report-only expiry and reject completion.
   std::optional<TargetTimeout> timeout = std::nullopt;
   // Bursts an AXI4 target keeps in flight, reads and writes combined in one
   // pool, 1..16; for a dedicated AXI4-Lite target, packets of one direction
@@ -643,6 +645,7 @@ struct Target {
   // an AXI4 or AHB source sends an INCR burst with AxCACHE[1] and AxLOCK clear whose start lies
   // in this target as naturally aligned power-of-two blocks, one target access each, and
   // gathers the read responses back into its own beats.
+  // TL-UH targets also use exact blocks for the WRAP tail and head runs.
   std::optional<bool> read_side_effects = std::nullopt;
   // AXI4, AXI3 and AXI4-Lite targets: the AWUSER and ARUSER port, bit i from user[i] (1..256
   // bits). APB5 uses PAUSER with 0..128 bits. Empty has no port. Every packet of a burst carries
@@ -676,12 +679,12 @@ struct Target {
   // Optional CTI/BTE on classic Wishbone. Omission and false omit the ports.
   std::optional<bool> burst_tags = std::nullopt;
   bool operator==(const Target &) const = default;
-  // TL-UL only. Source defaults to 4 bits on an initiator and 0 on a target.
-  // A zero width omits the port. Size defaults to 2 bits and sink to 0 bits.
+  // TileLink targets use source width 0 and sink width 0 by default.
+  // A zero width omits the port. Size defaults to 2 bits for TL-UL and 3 for TL-UH.
   std::optional<unsigned> source_width = std::nullopt;
   std::optional<unsigned> size_width = std::nullopt;
   std::optional<unsigned> sink_width = std::nullopt;
-  // TL-UL messages fit one 32-bit word.
+  // TL-UL accepts 4 bytes. TL-UH accepts powers of two from 4 to 1024, default 64.
   std::optional<unsigned> max_transfer_bytes = std::nullopt;
 };
 struct TreeNode {

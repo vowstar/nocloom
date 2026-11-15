@@ -17,6 +17,7 @@
 #include "qos_pipeline.hpp"
 #include "related_clock.hpp"
 #include "tilelink.hpp"
+#include "tilelink_uh_outlet.hpp"
 #include "treadle.hpp"
 #include "width_adapter.hpp"
 #include "wishbone.hpp"
@@ -4062,8 +4063,8 @@ private:
     t.upsize = tp.upsize.has_value();
     // A shared-bus target serves in arrival order: a packet waits while packets of the other
     // direction (turn) are between acquisition and release (count, at most four).
-    t.shared_bus =
-        ahb_target(plan, target) || apb_target(plan, target) || lite_target(plan, target);
+    t.shared_bus = ahb_target(plan, target) || apb_target(plan, target) ||
+                   lite_target(plan, target) || tp.external_protocol == Protocol::TlUh;
     // The arrival count holds the packets of one direction between
     // acquisition and release: a pipelined AXI4-Lite outlet holds up to its
     // packet capacity.
@@ -4131,7 +4132,7 @@ private:
     // one transfer sequence at a time).
     // A register window relies on the same: its outlet keeps the source, the kind and the result
     // of one word only (service_outlet.cpp, at the answer register).
-    if (ahb_target(plan, target) || tp.service) {
+    if (ahb_target(plan, target) || tp.service || tp.external_protocol == Protocol::TlUh) {
       const auto one =
           c.or_(c.not_(taken.data[c.burst_field_index(false, t.word, "first")]), c.eq(t.count, 0));
       open = {c.and_(open[0], one), c.and_(open[1], one)};
@@ -4249,6 +4250,8 @@ private:
     }
     if (plan.targets[o].service)
       attach_target_service(o, t);
+    else if (plan.targets[o].external_protocol == Protocol::TlUh)
+      attach_target_tilelink_uh(o, t);
     else if (t.shared_bus)
       attach_target_bus(o, t);
     else
@@ -4300,6 +4303,8 @@ private:
                                      "r.response.t0.count w.response.t0.count"));
       if (plan.targets[o].external_protocol == Protocol::TlUl)
         zone->idle.push_back(at_rest(b, ep.states, "tl.phase"));
+      if (plan.targets[o].external_protocol == Protocol::TlUh)
+        zone->idle.push_back(at_rest(b, ep.states, "tl.busy tl.wfull tl.rfull tl.dfull"));
       c.hold_open(zone, stores);
       for (const auto *signal : {"bvalid", "rvalid", "d_valid"})
         if (ep.axi.contains(signal))
@@ -5064,6 +5069,37 @@ private:
                          {error_record_word_bits(observer.logger), 1}, word, {});
   }
 
+  void attach_target_tilelink_uh(unsigned o, TargetSide &t) {
+    const auto &tp = plan.targets[o];
+    const auto profile =
+        TileLinkUhOutletProfile{outlet_profile(plan, o), tp.tl_source_bits, tp.tl_size_bits,
+                                tp.tl_sink_bits, tp.tl_max_transfer_bytes};
+    const auto ep = import_outlet(o, t, admitted(lower_tilelink_uh_outlet(profile)), {});
+    std::vector<ValueId> payload, control;
+    static const std::set<std::string> payload_names{
+        "tl.cursor",        "tl.base",           "tl.size",      "tl.ddata",
+        "tl.dmask",         "tl.assembly",       "tl.assembled", "tl.response.address",
+        "tl.response.data", "tl.response_cursor"};
+    for (const auto &[name, value] : ep.states)
+      (name.starts_with("tl.packet.") || name.starts_with("tl.word.") ||
+               payload_names.contains(name)
+           ? payload
+           : control)
+          .push_back(value);
+    control.insert(control.end(), {t.count, t.turn});
+    if (t.miss_seen)
+      control.insert(control.end(), {*t.miss_seen, *t.miss_answer, *t.miss_replied});
+    for (bool read : {false, true}) {
+      const auto acquire = c.and_(ep.bound.at("tl.accept"), read ? c.not_(ep.bound.at("tl.w_take"))
+                                                                 : ep.bound.at("tl.w_take"));
+      const auto &response = read ? t.rrsp : t.wrsp;
+      const auto release =
+          c.and_(c.transfer(response), response.data[c.endpoint_field_index(true, "last")]);
+      record(t, read, acquire, release, {}, {});
+    }
+    c.out.storage.push_back({t.key + "/tilelink", c.clock, payload, control,
+                             ep.bound.at("tl.accept"), ep.bound.at("tl.release")});
+  }
   // A shared-bus target: the APB, AXI4-Lite or AHB outlet engine.
   void attach_target_bus(unsigned o, TargetSide &t) {
     const auto &target = plan.targets[o].name;

@@ -46,8 +46,8 @@ for kind in ("initiators", "targets"):
             ("atomics", True, "NCL_SCHEMA_UNKNOWN_FIELD")):
         cfg = deepcopy(BASE)
         cfg[kind][0][field] = value
-        if kind == "initiators" and field == "protocol":
-            CASES.append(dict(name="uh_initiator", config=cfg, expect="accept"))
+        if field == "protocol":
+            CASES.append(dict(name=f"uh_{kind}", config=cfg, expect="accept"))
             continue
         CASES.append(dict(name=f"{kind}_{field}_{value}", config=cfg, expect="reject", code=code))
 for field, value in (("max_outstanding", 2), ("flows", 2),
@@ -211,6 +211,21 @@ for capacity in (1, 3, 64):
                                      size_width=4)
         CASES.append(dict(name=f"uh_capacity_{capacity}_source_{source_width}",
                           config=cfg, expect="accept"))
+for maximum in (4, 8, 16, 32, 64, 128, 256, 512, 1024):
+    cfg = deepcopy(BASE)
+    cfg["targets"][0].update(protocol="tl_uh", max_transfer_bytes=maximum,
+                              size_width=2 if maximum<=8 else 3 if maximum<=128 else 4)
+    CASES.append(dict(name=f"uh_target_maximum_{maximum}", config=cfg, expect="accept"))
+for field, value in (("max_transfer_bytes", 0), ("max_transfer_bytes", 3),
+                     ("max_transfer_bytes", 6), ("max_transfer_bytes", 2048),
+                     ("max_transfer_bytes", 4096), ("source_width", 17),
+                     ("sink_width", 17), ("max_outstanding", 2),
+                     ("max_outstanding", 16), ("flows", 2),
+                     ("timeout", dict(cycles=16, completion=True))):
+    cfg = deepcopy(BASE)
+    cfg["targets"][0].update(protocol="tl_uh", **{field:value})
+    CASES.append(dict(name=f"uh_target_reject_{field}_{value}", config=cfg,
+                      expect="reject", code="NCL_TILELINK_PROFILE"))
 for target in ("axi4", "apb4", "tl_ul"):
     CASES.append(dict(name=f"uh_logging_{target}", config=logging_config("tl_uh", target),
                       expect="reject", code="NCL_UNSUPPORTED_TOPOLOGY"))

@@ -30,9 +30,11 @@ beat.
 WRAP packets follow the initiator and target wrap limits. A WRAP that needs
 decomposition becomes INCR runs in wrap address order. A narrow WRAP read folds
 only when its container fits one physical target word and one initiator word. A
-narrow WRAP write folds when its container fits one initiator word. An exclusive
-or locked burst is not cut into packets. If its required shape exceeds the
-supported packet or window boundary, it returns an error without target access.
+narrow WRAP write folds when its container fits one initiator word. Paths to
+[TL-UH targets](tilelink.md#tl-uh-targets) keep separate tail and head runs.
+
+An exclusive or locked burst stays in one packet. A shape beyond its packet
+or window boundary returns an error without target access.
 
 Narrow INCR transfers normally pack into the narrower endpoint word.
 `narrow_bursts: merge_modifiable` sends each narrow non-modifiable INCR beat
@@ -47,8 +49,8 @@ A packet ends at its alignment-word start plus the byte limit, or at the next
 target-window boundary, whichever comes first. The boundary cannot exceed the
 largest power of two dividing both window base and size. Packet overrides
 require a connected full AXI initiator, valid values and at least one specified
-limit. Each limit can equal or be less than the pair's default. No option disables
-packet splitting.
+limit. Each limit can equal or be less than the pair's default. No option
+disables packet splitting.
 
 An initiator WRAP limit is the larger of two beats and the smaller of 64 bytes
 and `min(16, 2^len_width)` beats. A zero length width permits no WRAP. The
@@ -100,7 +102,9 @@ decomposes the request into naturally aligned power-of-two blocks. This rule
 applies when AxCACHE's modifiable bit and AxLOCK are clear. The first address
 selects the rule for the whole burst.
 
-WRAP, FIXED, modifiable and exclusive bursts keep their other packet rules. APB
-and AXI4-Lite initiators remain single aligned transfers. A physical target that
-only supports whole-word reads still reads that whole word. This option cannot
-combine with `merge_modifiable` on a reaching initiator.
+For TL-UH targets, eligible WRAP tail and head runs also use exact blocks.
+FIXED, modifiable and exclusive bursts keep their packet rules. WRAP uses
+the selected target's packet policy. APB and AXI4-Lite initiators remain
+single aligned transfers. A physical target that only supports whole-word
+reads still reads that whole word. This option cannot combine with
+`merge_modifiable` on a reaching initiator.

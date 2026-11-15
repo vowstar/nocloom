@@ -2,7 +2,7 @@
 // TileLink 1.8.1 checks at accepted A and D beats. Section 4.1 permits
 // retraction before acceptance, so a stalled sender need not hold valid.
 module nlv_tl_checker #(
-    parameter NAME="tl", ADDR_W=32, SOURCE_W=4, SIZE_W=2, UH=0
+    parameter NAME="tl", ADDR_W=32, SOURCE_W=4, SIZE_W=2, UH=0, SOURCE_LIMIT=0
 )(
     input wire clk, rst_n,
     input wire allow_reject,
@@ -43,6 +43,10 @@ module nlv_tl_checker #(
       if (a_valid || d_valid) tb.nlv_fail_report("TL.3.2.2.RESET", NAME, 0);
     end else begin
       reset_seen=0;
+      if(SOURCE_LIMIT!=0 && a_valid && a_source>=SOURCE_LIMIT)
+        tb.nlv_fail_report("TL.6.4.RANGE", NAME, a_source);
+      if(SOURCE_LIMIT!=0 && d_valid && d_source>=SOURCE_LIMIT)
+        tb.nlv_fail_report("TL.6.4.RANGE", NAME, d_source);
       if (a_valid && a_left!=0) begin
         if (a_opcode!=a_owner_opcode || a_param!=a_owner_param || a_size!=a_owner_size ||
             a_source!=a_owner_source || a_address!=a_owner_address)

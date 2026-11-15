@@ -203,7 +203,7 @@ template <class Owner> void endpoint_resource_domains(NetworkPlan &p, const Owne
         p.resource_domains.emplace("source/" + s.name + unit, owner("source/" + s.name));
   for (const auto &target : names(p.targets)) {
     const auto id = "burst_service/" + target;
-    if (p.target(target).external_protocol == Protocol::TlUl)
+    if (tilelink_protocol(p.target(target).external_protocol))
       p.resource_domains.emplace(id + "/tilelink", owner("target/" + target));
     for (const auto *suffix : {"/write", "/read", "/target"})
       p.resource_domains.emplace(id + suffix, owner("target/" + target));

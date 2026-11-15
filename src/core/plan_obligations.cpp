@@ -364,9 +364,16 @@ struct Obligations {
       const auto service = "burst_service/" + target;
       const auto target_env = service + "/target";
       const auto &tp = plan.target(target);
+      const bool tilelink_uh = tp.external_protocol == Protocol::TlUh;
       if (tp.external_protocol == Protocol::TlUl)
         resource(service + "/tilelink", "protocol_adapter", 69 + tp.local_bits + tp.tl_size_bits,
                  "single-beat request and response", "D channel consumption");
+      if (tp.external_protocol == Protocol::TlUh)
+        resource(service + "/tilelink", "protocol_adapter",
+                 5 * arrival_bits(plan, tp) + tp.local_bits + tp.tl_size_bits +
+                     plan.packet_len_bits + 147 + plan.burst_id_bits + plan.source_bits +
+                     plan.burst_tag_bits,
+                 "packet context and independent A and D progress", "packet response consumption");
       const bool ahb = ahb_target(plan, target);
       const bool apb = apb_target(plan, target);
       const bool lite = lite_target(plan, target);
@@ -377,12 +384,14 @@ struct Obligations {
         const auto engine = service + "/" + operation;
         resource(engine,
                  tp.wishbone_burst_tags ? "burst_wishbone_outlet"
+                 : tilelink_uh          ? "burst_tilelink_outlet"
                  : apb                  ? "burst_apb_outlet"
                  : lite                 ? "burst_axi_lite_outlet"
                  : ahb                  ? "burst_ahb_outlet"
                                         : "burst_axi_outlet",
-                 shared_bus ? dedicated_engine_bits(plan, target, direction)
-                            : outlet_engine_bits(plan, target, direction),
+                 tp.external_protocol == Protocol::TlUh ? 0
+                 : shared_bus ? dedicated_engine_bits(plan, target, direction)
+                              : outlet_engine_bits(plan, target, direction),
                  "admitted burst", "the response stream is accepted by the response switches");
         if (shared_bus)
           wait(engine, service + "/bus", CrossWaitKind::Capacity,
@@ -393,8 +402,9 @@ struct Obligations {
                       : "the beat waits for its shared AHB address/data transfer grant");
         else
           wait(engine, target_env, CrossWaitKind::Environment,
-               "the AXI burst waits for its target response on this direction, or the target "
-               "timeout");
+               tilelink_uh ? "the packet waits for its TileLink message completions"
+                           : "the AXI burst waits for its target response on this direction, or "
+                             "the target timeout");
         wait(engine, init, CrossWaitKind::Startup, "local initialization before business capture");
         for (const auto &source : names(plan.sources))
           if (reaches(plan, source, target))
@@ -433,6 +443,7 @@ struct Obligations {
       }
       resource(target_env, "environment", 0, "target",
                tp.wishbone_burst_tags ? "ACK, ERR or enabled RTY while STB is high"
+               : tilelink_uh          ? "TileLink A and D message completion"
                : apb2                 ? "PSEL && PENABLE"
                : apb                  ? "PSEL && PENABLE && PREADY"
                : lite                 ? "the AXI4-Lite B or R handshake"
