@@ -2441,6 +2441,9 @@ private:
       zone.idle.push_back(c.not_(ep.bound.at("tl.busy")));
     if (sp.wishbone_pipelined)
       zone.idle.push_back(c.eq(ep.states.at("wb.count"), 0));
+    if (sp.external_protocol == Protocol::Wishbone)
+      zone.idle.push_back(
+          at_rest(b, ep.states, sp.wishbone_pipelined ? "wb.ack wb.err" : "wb.busy wb.ack wb.err"));
   }
   void wake_source_face(const SourcePlan &sp, const Imported &ep, GateRegion &zone) {
     for (const auto *signal : {"awvalid", "wvalid", "arvalid", "psel", "a_valid"})

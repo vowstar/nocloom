@@ -1503,6 +1503,36 @@ std::vector<Component> replay_safety(const Params &p) {
   return {{"dut", std::move(h.ir), std::move(h.bindings)}};
 }
 
+std::vector<Component> wishbone_idle(const Params &params) {
+  std::ifstream file(param(params, "config", ""));
+  std::stringstream text;
+  text << file.rdbuf();
+  const auto d = take(config::parse(text.str()), "definition").definition;
+  auto h = compose(d, "wishbone idle");
+  const auto gate = "gate/source/s0" +
+                    std::string(param(params, "gate", "independent") == "combined" ? "" : "/protocol");
+  for (const auto &[port, binding] : std::vector<std::pair<std::string, std::string>>{
+           {"probe_idle", gate + ".idle"},
+           {"probe_enable", gate + ".enable"},
+           {"probe_remaining", gate + ".remaining"},
+           {"probe_busy", "source/s0/wb.busy"},
+           {"probe_ack", "source/s0/wb.ack"},
+           {"probe_err", "source/s0/wb.err"},
+           {"probe_aw", "source/s0/wb.aw"},
+           {"probe_w", "source/s0/wb.w"},
+           {"probe_ar", "source/s0/wb.ar"},
+           {"probe_abandoned", "source/s0/wb.abandoned"}}) {
+    const auto value = h.bindings.at(binding);
+    h.ir.ports.push_back({port, false, h.ir.values.at(value.index).width, "probe", binding});
+    h.ir.drivers.push_back({PortId{h.ir.ports.size() - 1}, value});
+  }
+  if (const auto it = h.bindings.find("source/s0/wb.count"); it != h.bindings.end()) {
+    h.ir.ports.push_back({"probe_count", false, 7, "probe", "count"});
+    h.ir.drivers.push_back({PortId{h.ir.ports.size() - 1}, it->second});
+  }
+  return {{"dut", std::move(h.ir), std::move(h.bindings)}};
+}
+
 std::vector<Component> build(const std::string &recipe, const Params &p) {
   static const std::map<std::string, std::function<std::vector<Component>(const Params &)>> recipes{
       {"lite_target", lite_target},
@@ -1519,6 +1549,7 @@ std::vector<Component> build(const std::string &recipe, const Params &p) {
       {"replay_safety", replay_safety},
       {"target_bounded", target_bounded},
       {"apb_outlet", apb_outlet},
+      {"wishbone_idle", wishbone_idle},
       {"ahb_outlet", ahb_outlet},
       {"explicit_routes", explicit_routes},
       {"flow_remap", flow_remap},

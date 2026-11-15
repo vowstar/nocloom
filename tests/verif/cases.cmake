@@ -715,6 +715,11 @@ nocloom_verif_case(NAME verif_wishbone_classic LAYER rtl TIER focused TIMEOUT 60
   CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.ERR.READ_ZERO AXI.W.UNSTROBED_ZERO AXI.TIMEOUT.EXACT
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/wishbone.py --cli $<TARGET_FILE:nocloom_cli>)
 set_tests_properties(verif_wishbone_classic PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_verif_case(NAME verif_wishbone_idle LAYER rtl TIER focused TIMEOUT 180
+  FEATURES wishbone clock_gating ci MEMORY_MB 1024
+  CONTRACTS AXI.ROUTE.LOCAL_OFFSET
+  COMMAND ${Python3_EXECUTABLE} ${NLV_CASES}/wishbone_idle.py ${NLV_FIXTURE})
+set_tests_properties(verif_wishbone_idle PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
 nocloom_verif_case(NAME verif_wishbone_classic_negative LAYER negative TIER focused TIMEOUT 600
   FEATURES wishbone MEMORY_MB 2048
   CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.W.UNSTROBED_ZERO AXI.TIMEOUT.EXACT
