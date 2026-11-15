@@ -1,11 +1,12 @@
 #include "core/tilelink_uh_outlet.hpp"
 #include <algorithm>
+#include <bit>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 
 int main(int argc, char **argv) {
-  if (argc != 4)
+  if (argc < 4 || argc > 6)
     return 2;
   using namespace nocloom::detail;
   const unsigned maximum = std::stoul(argv[3]);
@@ -20,6 +21,11 @@ int main(int argc, char **argv) {
     TileLinkUhOutletProfile p;
     p.packet.name = "probe";
     p.packet.packet_len_bits = 8;
+    if (std::string(argv[2]) == "contexts") {
+      p.packet.max_outstanding = argc > 4 ? std::stoul(argv[4]) : 3;
+      p.source_bits = argc > 5 ? std::stoul(argv[5]) : std::bit_width(p.packet.max_outstanding - 1);
+      p.packet.id_bits = p.packet.source_bits = p.packet.tag_bits = 4;
+    }
     p.packet.fixed_single = true;
     p.packet.timeout_cycles = 16;
     if (std::string(argv[2]) == "footprint" || std::string(argv[2]) == "write" ||

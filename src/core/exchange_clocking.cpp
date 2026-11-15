@@ -207,7 +207,8 @@ template <class Owner> void endpoint_resource_domains(NetworkPlan &p, const Owne
       p.resource_domains.emplace(id + "/tilelink", owner("target/" + target));
     for (const auto *suffix : {"/write", "/read", "/target"})
       p.resource_domains.emplace(id + suffix, owner("target/" + target));
-    if (dedicated_protocol(p.target(target).protocol))
+    if (dedicated_protocol(p.target(target).protocol) &&
+        p.target(target).external_protocol != Protocol::TlUh)
       p.resource_domains.emplace(id + "/bus", owner("target/" + target));
   }
 }

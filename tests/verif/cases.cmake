@@ -785,6 +785,14 @@ nocloom_verif_case(NAME verif_tilelink_uh_target LAYER rtl TIER release TIMEOUT 
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_target_tb.svh
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/uh_target --all-maxima)
 set_tests_properties(verif_tilelink_uh_target PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_verif_case(NAME verif_tilelink_uh_target_contexts LAYER rtl TIER focused TIMEOUT 600
+  FEATURES tilelink MEMORY_MB 2048 CONTRACTS TL.ACCESS
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_target.py
+    --case ${NLV_CASES}/tilelink_uh_target.py
+    --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_target_tb.svh
+    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/uh_target_contexts
+    --maximum 64 --capacity 3)
+set_tests_properties(verif_tilelink_uh_target_contexts PROPERTIES RESOURCE_LOCK tilelink)
 nocloom_verif_case(NAME verif_tilelink_uh_target_high_address LAYER rtl TIER focused TIMEOUT 600
   FEATURES tilelink MEMORY_MB 2048
   CONTRACTS TL.ACCESS

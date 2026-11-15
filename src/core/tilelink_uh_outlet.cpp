@@ -177,9 +177,13 @@ void TileLinkUhOutlet::select_block() {
   const auto prepared = l.both(busy, l.both(l.inv(message), l.inv(l.eq(left, 0))));
   const auto writable = l.either(l.inv(write), wfull);
   const auto skip = l.both(l.eq(selection_code, 0), l.both(write, l.eq(word.at("be"), 0)));
-  message_start = l.bind(
-      "tl.message_start",
-      l.both(prepared, l.both(writable, l.both(l.inv(skip), l.both(l.inv(dfull), l.inv(rfull))))));
+  message_start =
+      l.both(prepared, l.both(writable, l.both(l.inv(skip), l.both(l.inv(dfull), l.inv(rfull)))));
+  if (p.scheduled) {
+    l.bind("tl.candidate", message_start);
+    message_start = l.both(message_start, l.in("hint", "start", 1));
+  }
+  l.bind("tl.message_start", message_start);
   l.b.update(local_code, l.pick(message_start, selection_code, local_code));
   l.b.update(size, l.pick(message_start, chosen_size, size));
   auto address = cursor;
@@ -287,7 +291,14 @@ void TileLinkUhOutlet::packet_response() {
   l.out("rrsp", "valid", l.active(rfull));
   l.bind("wrap_end", burst_run_end(l, packet, response_address, 32,
                                    b.response_run_bits ? b.response_run_bits : 2));
-  l.bind("cut", l.bit(0));
+  auto cut = l.bit(0);
+  if (p.segmented) {
+    cut = l.state("tl.response.cut", 1);
+    l.b.update(
+        cut,
+        l.pick(push, l.both(l.both(d_done, l.same(consumed, dmask)), l.inv(l.eq(left, 1))), cut));
+  }
+  l.bind("cut", p.segmented ? l.both(cut, l.bit(1)) : cut);
   if (b.response_run_bits)
     l.out("hint", "wrap_end", l.bindings.at("wrap_end"));
   const auto write_ready = l.both(busy, l.both(write, l.both(l.eq(left, 0), l.inv(message))));
@@ -376,14 +387,19 @@ Result<NodeHardware> lower_tilelink_uh_outlet(const TileLinkUhOutletProfile &p) 
   if (const auto cycles = p.packet.timeout_cycles; cycles && !valid_timeout_cycles(cycles))
     return Result<NodeHardware>::failure(
         error("NCL_TILELINK_PROFILE", "timeout_cycles", "Timeout cycles must be 16 to 1048576"));
-  if (p.packet.max_outstanding != 1 || p.source_bits > 16 || p.size_bits < 2 || p.size_bits > 4 ||
-      p.sink_bits > 16 || p.max_transfer_bytes < 4 || p.max_transfer_bytes > 1024 ||
-      !std::has_single_bit(p.max_transfer_bytes) || p.packet.timeout_completion ||
-      p.packet.exclusive_target.mode != ExclusiveAccess::None)
+  const auto capacity = p.packet.max_outstanding;
+  if (capacity < 1 || capacity > 16 || p.source_bits > 16 ||
+      p.source_bits < static_cast<unsigned>(std::bit_width(capacity - 1)) || p.size_bits < 2 ||
+      p.size_bits > 4 || p.sink_bits > 16 || p.max_transfer_bytes < 4 ||
+      p.max_transfer_bytes > 1024 || !std::has_single_bit(p.max_transfer_bytes) ||
+      p.packet.timeout_completion || p.packet.exclusive_target.mode != ExclusiveAccess::None)
     return Result<NodeHardware>::failure(
         {error("NCL_TILELINK_PROFILE", "tilelink_target",
-               "Expected one packet context, a 4 to 1024 byte maximum and no exclusive monitor or "
+               "Expected 1 to 16 packet contexts, sufficient source bits, a 4 to 1024 byte maximum "
+               "and no exclusive monitor or "
                "timeout completion")});
+  if (capacity > 1)
+    return lower_tilelink_uh_contexts(p);
   TileLinkUhOutlet outlet(p);
   return outlet.l.finish("nocloom_tl_uh_outlet_" + p.packet.name);
 }

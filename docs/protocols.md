@@ -182,11 +182,7 @@ See [TileLink](tilelink.md#tl-uh-initiators).
 
 ## TL-UH targets
 
-Targets accept `protocol: tl_uh` with 32-bit data and one packet context.
-`max_transfer_bytes` accepts powers of two from 4 to 1024, default 64.
-`size_width` is 2 to 4 bits, default 3, and must encode the largest size.
-
-`source_width` is 0 to 16, default 0. `sink_width` is 0 to 16, default 0.
-Target mappings align to the maximum message size. Targets reject exclusive
-monitors and timeout completion. See [TL-UH
-targets](tilelink.md#tl-uh-targets).
+TL-UH targets use 32-bit data and 1 to 16 packet contexts shared between
+reads and writes. `max_outstanding` defaults to 1. Message limits, size and
+source widths, mapping alignment and rejected fields are in
+[TL-UH targets](tilelink.md#tl-uh-targets).

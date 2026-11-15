@@ -44,7 +44,7 @@ integer from 16 to 1048576. The maximum uses the full range of a 20-bit
 counter that starts at zero. `completion` defaults to `false`. APB2 targets
 reject timeouts.
 
-TL-UH targets use one watchdog for their packet context and continue work after
+TL-UH targets use a watchdog for each packet context and continue work after
 expiry. See [TL-UH targets](tilelink.md#tl-uh-targets) for those rules. The
 rest of this section describes other target protocols. All TileLink targets
 reject `completion: true`.

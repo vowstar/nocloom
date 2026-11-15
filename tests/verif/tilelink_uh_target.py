@@ -23,7 +23,7 @@ def bench(mapping, body, address_base):
                             + ("=0;" if variable else ";"))
         if held != alias:
             direct = {"t_d_valid": "1'b1", "t_d_opcode": "3'd0",
-                      "t_d_size": "t_a_size", "t_d_denied": "denied"}.get(alias, "0")
+                      "t_d_size": "t_a_size", "t_d_denied": "denied", "t_d_source": "t_a_source"}.get(alias, "0")
             declarations.append(f"wire [{width-1}:0] {alias};")
             assignments.append(f"assign {alias}=same_ack ? {direct} : {held};")
             body = body.replace(alias + "=", held + "=")
@@ -32,11 +32,12 @@ def bench(mapping, body, address_base):
     maximum = mapping["definition"]["tilelink"]["targets"]["t"]["max_transfer_bytes"]
     source_width = mapping["definition"]["tilelink"]["targets"]["t"]["source_width"]
     size_width = mapping["definition"]["tilelink"]["targets"]["t"]["size_width"]
+    capacity = mapping["definition"]["tilelink"]["targets"]["t"]["max_outstanding"]
     if source_width == 0:
-        declarations.extend(["wire t_a_source=0;", "wire t_d_source=0;"])
+        declarations.extend(["wire t_a_source=0;", "reg t_d_source=0;"])
     return ("`timescale 1ns/1ps\nmodule tb;\n" + "\n".join(declarations)
             + "\nnocloom_uh_target dut(" + ",".join(connections) + ");\n"
-            + f"localparam MAX_BYTES={maximum}, SOURCE_WIDTH={max(1, source_width)}, SIZE_WIDTH={size_width}, ADDRESS_BASE=32'h{address_base:x};\n" + body + "\n"
+            + f"localparam MAX_BYTES={maximum}, CAPACITY={capacity}, SOURCE_WIDTH={max(1, source_width)}, SIZE_WIDTH={size_width}, ADDRESS_BASE=32'h{address_base:x};\n" + body + "\n"
             + "\n".join(assignments) + "\nendmodule\n")
 
 
@@ -44,6 +45,7 @@ def run(args):
     args.work.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="run-", dir=args.work)).resolve()
     cfg = runpy.run_path(str(args.case))["configuration"](args.maximum)
+    cfg["targets"][0]["max_outstanding"] = args.capacity
     if args.source_width is not None:
         cfg["targets"][0]["source_width"] = args.source_width
     if args.size_width is not None:
@@ -83,6 +85,7 @@ def main():
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--maximum", type=int, default=1024)
     parser.add_argument("--source-width", type=int)
+    parser.add_argument("--capacity", type=int, default=1)
     parser.add_argument("--size-width", type=int)
     parser.add_argument("--high-address", action="store_true")
     sim_engine.add_arguments(parser)

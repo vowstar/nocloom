@@ -3,6 +3,7 @@
   integer puts=0, gets=0, a_beat=0, d_beat=0, total=0, bytes=0;
   integer msg_addr=0, read_addr=0, read_size=0, read_beats=0;
   integer read_pending=0, put_active=0, ack_pending=0;
+  reg [SOURCE_WIDTH-1:0] read_source=0, ack_source=0;
   integer early=0, denied=0, corrupt_at=-1, hold_a=0, hold_d=0;
   integer error_lo=-1, error_hi=-1;
   reg d_fired=0;
@@ -75,7 +76,7 @@
       check(other_reads==1 && messages==prior,"OTHER_ISOLATION");
     end
   endtask
-  nlv_tl_checker #(.NAME("target"),.SOURCE_W(SOURCE_WIDTH),.SIZE_W(SIZE_WIDTH),.UH(1),.SOURCE_LIMIT(1)) checker_t (
+  nlv_tl_checker #(.NAME("target"),.SOURCE_W(SOURCE_WIDTH),.SIZE_W(SIZE_WIDTH),.UH(1),.SOURCE_LIMIT(CAPACITY)) checker_t (
     .clk(clk),.rst_n(reset_n),.allow_reject(1'b0),
     .a_opcode(t_a_opcode),.a_param(t_a_param),.a_size(t_a_size),.a_source(t_a_source),
     .a_address(t_a_address),.a_mask(t_a_mask),.a_data(t_a_data),.a_corrupt(t_a_corrupt),
@@ -108,10 +109,10 @@
     if(!t_d_valid || d_fired) begin
       t_d_valid=0;
       if(ack_pending) begin
-        t_d_valid=1; t_d_opcode=0; t_d_size=read_size;
+        t_d_valid=1; t_d_opcode=0; t_d_size=read_size; t_d_source=ack_source;
         t_d_data=0; t_d_denied=denied; t_d_corrupt=0;
       end else if(read_pending && !hold_d && cycle%7!=2) begin
-        t_d_valid=1; t_d_opcode=1; t_d_size=read_size;
+        t_d_valid=1; t_d_opcode=1; t_d_size=read_size; t_d_source=read_source;
         t_d_data=0; t_d_denied=denied; t_d_corrupt=denied || d_beat==corrupt_at;
         for(integer b=0;b<4;b=b+1) t_d_data[b*8+:8]=memory[(read_addr & ~3)+b];
       end
@@ -143,6 +144,7 @@
         read_size=t_a_size;
         if(t_a_opcode==4) begin
           check(!read_pending,"ONE_GET");
+          read_source=t_a_source;
           gets=gets+1; read_addr=t_a_address; read_beats=total;
           read_pending=1; d_beat=0;
           for(integer b=0;b<bytes;b=b+1) begin
@@ -150,6 +152,7 @@
             read_order[read_events]=t_a_address+b; read_events=read_events+1;
           end
         end else begin
+          ack_source=t_a_source;
           puts=puts+1; put_active=1;
           if(early==1) ack_pending=1;
         end

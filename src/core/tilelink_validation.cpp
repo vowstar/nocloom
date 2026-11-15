@@ -99,9 +99,14 @@ std::vector<Diagnostic> check_tilelink(const Definition &d) {
     for (const auto &mapping : t.mappings)
       reject(mapping.size < 4, path + ".mappings",
              "A TileLink target mapping must hold one data word");
-    reject(t.max_outstanding.value_or(1) != 1, path + ".max_outstanding",
-           uh ? "A TL-UH target supports one packet context"
+    const auto capacity = t.max_outstanding.value_or(1);
+    reject(uh ? capacity < 1 || capacity > 16 : capacity != 1, path + ".max_outstanding",
+           uh ? "A TL-UH target supports 1 to 16 packet contexts"
               : "A TL-UL target supports only one transaction in flight");
+    if (uh && capacity >= 1 && capacity <= 16)
+      reject(t.source_width.value_or(static_cast<unsigned>(std::bit_width(capacity - 1))) <
+                 static_cast<unsigned>(std::bit_width(capacity - 1)),
+             path + ".source_width", "TileLink source_width cannot encode the packet capacity");
     reject(t.flows != 1, path + ".flows",
            uh ? "A TL-UH target supports one flow" : "A TL-UL target supports only one flow");
     reject(t.timeout && t.timeout->completion, path + ".timeout.completion",

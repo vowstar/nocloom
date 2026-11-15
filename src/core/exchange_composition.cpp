@@ -2072,9 +2072,13 @@ Status plan_composition(NetworkPlan &plan) {
   // A run ends at a segment's end, so an interleaving target needs the marker on them too.
   plan.response_segments =
       std::ranges::any_of(plan.targets,
-                          [&](const TargetPlan &t) { return interleaved_target(plan, t); }) &&
-      (plan.response_runs ||
-       std::ranges::any_of(plan.arbiters, [](const auto &a) { return a.second.response; }));
+                          [](const TargetPlan &t) {
+                            return t.external_protocol == Protocol::TlUh && t.outstanding > 1;
+                          }) ||
+      (std::ranges::any_of(plan.targets,
+                           [&](const TargetPlan &t) { return interleaved_target(plan, t); }) &&
+       (plan.response_runs ||
+        std::ranges::any_of(plan.arbiters, [](const auto &a) { return a.second.response; })));
   for (unsigned si = 0; si < plan.sources.size(); ++si) {
     // AXI4-Lite sources issue single beats: nothing to cut. A packet table below its alignment
     // word is a capability violation and has no splitter.
@@ -4068,7 +4072,7 @@ private:
     // The arrival count holds the packets of one direction between
     // acquisition and release: a pipelined AXI4-Lite outlet holds up to its
     // packet capacity.
-    if (lite_target(plan, target))
+    if (lite_target(plan, target) || tp.external_protocol == Protocol::TlUh)
       t.count_bits = std::max(3U, static_cast<unsigned>(std::bit_width(tp.outstanding)));
     t.count = t.shared_bus ? b.state(t.count_bits, c.clock, c.reset) : c.bit(0);
     t.turn = t.shared_bus ? b.state(1, c.clock, c.reset) : c.bit(0);
@@ -4107,6 +4111,13 @@ private:
     const auto taken = discard_raises(endpoint_pipe(tp.pipes, "dispatch", object, arrived), t.word);
     std::array<ValueId, 2> open{c.or_(c.eq(t.count, 0), c.not_(t.turn)),
                                 c.or_(c.eq(t.count, 0), t.turn)};
+    if (tp.external_protocol == Protocol::TlUh && tp.outstanding > 1) {
+      const auto room =
+          b.binary(Op::UnsignedLess, t.count, b.constant(t.count_bits, tp.outstanding));
+      const auto pass =
+          c.or_(c.not_(taken.data[c.burst_field_index(false, t.word, "first")]), room);
+      open = {pass, pass};
+    }
     // An AXI4-Lite target of several flows lets a packet of another flow in only when none is in
     // flight: the packets in flight share one flow, that of the last packet let in.
     if (lite_target(plan, target) && tp.flows > 1) {
@@ -4132,7 +4143,8 @@ private:
     // one transfer sequence at a time).
     // A register window relies on the same: its outlet keeps the source, the kind and the result
     // of one word only (service_outlet.cpp, at the answer register).
-    if (ahb_target(plan, target) || tp.service || tp.external_protocol == Protocol::TlUh) {
+    if (ahb_target(plan, target) || tp.service ||
+        (tp.external_protocol == Protocol::TlUh && tp.outstanding == 1)) {
       const auto one =
           c.or_(c.not_(taken.data[c.burst_field_index(false, t.word, "first")]), c.eq(t.count, 0));
       open = {c.and_(open[0], one), c.and_(open[1], one)};
@@ -4177,7 +4189,8 @@ private:
     const auto span = transport_span(plan, tp).base;
     c.deframe_burst_into(false, faces[0], t.wreq, t.word, span);
     c.deframe_burst_into(false, faces[1], t.rreq, t.word, span);
-    const bool joined = !t.shared_bus && joined_target(plan, tp);
+    const bool joined = (tp.external_protocol == Protocol::TlUh && tp.outstanding > 1) ||
+                        (!t.shared_bus && joined_target(plan, tp));
     if (!t.shared_bus && tp.protocol == Protocol::Axi4 && tp.outstanding > 1 && !tp.write_only &&
         !joined)
       t.picked.emplace();
@@ -4304,7 +4317,11 @@ private:
       if (plan.targets[o].external_protocol == Protocol::TlUl)
         zone->idle.push_back(at_rest(b, ep.states, "tl.phase"));
       if (plan.targets[o].external_protocol == Protocol::TlUh)
-        zone->idle.push_back(at_rest(b, ep.states, "tl.busy tl.wfull tl.rfull tl.dfull"));
+        zone->idle.push_back(at_rest(
+            b, ep.states,
+            "tl.busy tl.wfull tl.rfull tl.dfull "
+            "tl.context#.tl.busy tl.context#.tl.wfull tl.context#.tl.rfull tl.context#.tl.dfull "
+            "tl.dbuffer#.valid"));
       c.hold_open(zone, stores);
       for (const auto *signal : {"bvalid", "rvalid", "d_valid"})
         if (ep.axi.contains(signal))
@@ -5076,16 +5093,8 @@ private:
                                 tp.tl_sink_bits, tp.tl_max_transfer_bytes};
     const auto ep = import_outlet(o, t, admitted(lower_tilelink_uh_outlet(profile)), {});
     std::vector<ValueId> payload, control;
-    static const std::set<std::string> payload_names{
-        "tl.cursor",        "tl.base",           "tl.size",      "tl.ddata",
-        "tl.dmask",         "tl.assembly",       "tl.assembled", "tl.response.address",
-        "tl.response.data", "tl.response_cursor"};
     for (const auto &[name, value] : ep.states)
-      (name.starts_with("tl.packet.") || name.starts_with("tl.word.") ||
-               payload_names.contains(name)
-           ? payload
-           : control)
-          .push_back(value);
+      (tilelink_uh_payload(name) ? payload : control).push_back(value);
     control.insert(control.end(), {t.count, t.turn});
     if (t.miss_seen)
       control.insert(control.end(), {*t.miss_seen, *t.miss_answer, *t.miss_replied});

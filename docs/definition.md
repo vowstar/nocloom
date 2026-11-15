@@ -126,18 +126,21 @@ roles. Both use `source_width`, `size_width`, `sink_width` and
 Other protocols reject these fields. C++ uses `Protocol::TlUl` and
 `Protocol::TlUh`.
 
-Initiator `max_outstanding` is 1 to 64, with the transport default. Target
-`max_outstanding` and `flows` must be 1. TL-UH `max_transfer_bytes` is a power
-of two, default 64. Initiators accept 4 to 4096 bytes. Targets accept 4 to
-1024 bytes.
+Initiator `max_outstanding` is 1 to 64, with the transport default. TL-UL
+target `max_outstanding` is 1. TL-UH target `max_outstanding` is 1 to 16,
+default 1, shared between reads and writes. TileLink target `flows` is 1.
 
-TL-UH `size_width` is 2 to 4, default 3, and must encode the maximum size.
-TL-UH source and sink widths use the TL-UL ranges and defaults.
+TL-UH `max_transfer_bytes` is a power of two, default 64. Initiators accept 4
+to 4096 bytes. Targets accept 4 to 1024 bytes. TL-UH `size_width` is 2 to 4,
+default 3, and must encode the maximum size.
 
-TL-UH targets accept `source_width` from 0 to 16, default 0. The source is
-zero for every message. Target mappings align to `max_transfer_bytes`.
-Exclusive monitors and `timeout.completion: true` are rejected with
-`NCL_TILELINK_PROFILE`.
+TL-UH initiator source and sink widths use the TL-UL ranges and defaults.
+
+TL-UH target `source_width` defaults to ceil(log2(max_outstanding)), zero
+for one context. It can be widened to 16 and cannot be smaller than that
+default. The context number is the source until the packet retires. Target
+mappings align to `max_transfer_bytes`. Exclusive monitors and
+`timeout.completion: true` produce `NCL_TILELINK_PROFILE`.
 
 ## AHB5 endpoint fields
 

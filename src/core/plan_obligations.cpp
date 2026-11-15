@@ -1,6 +1,8 @@
 #include "axi4_outlet.hpp"
+#include "capability.hpp"
 #include "diagnostic.hpp"
 #include "network_plan_profiles.hpp"
+#include "tilelink_uh_outlet.hpp"
 #include "width_adapter.hpp"
 #include "wishbone.hpp"
 #include <algorithm>
@@ -11,6 +13,19 @@
 namespace nocloom::detail {
 namespace {
 constexpr unsigned endpoint_word_bytes = 4;
+unsigned tilelink_context_bits(const NetworkPlan &plan, const TargetPlan &target) {
+  const auto index = static_cast<unsigned>(&target - plan.targets.data());
+  const auto model = lower_tilelink_uh_outlet({outlet_profile(plan, index), target.tl_source_bits,
+                                               target.tl_size_bits, target.tl_sink_bits,
+                                               target.tl_max_transfer_bytes});
+  require(static_cast<bool>(model), "A TileLink context pool has a valid profile");
+  unsigned total = 0;
+  for (const auto &[name, value] : model.value().bindings)
+    if (tilelink_uh_payload(name) && model.value().ir.values.at(value.index).op == Op::State)
+      total += model.value().ir.values.at(value.index).width;
+  return total;
+}
+
 // Payload register bits of one derived adapter instance: the deserializer stores one narrow
 // fragment (control bundle, occupancy and lanes; a request run's end is the completing run's, not
 // stored); the serializer keeps only its occupation bit and stores no payload. The burst control
@@ -370,9 +385,10 @@ struct Obligations {
                  "single-beat request and response", "D channel consumption");
       if (tp.external_protocol == Protocol::TlUh)
         resource(service + "/tilelink", "protocol_adapter",
-                 5 * arrival_bits(plan, tp) + tp.local_bits + tp.tl_size_bits +
-                     plan.packet_len_bits + 147 + plan.burst_id_bits + plan.source_bits +
-                     plan.burst_tag_bits,
+                 tp.outstanding > 1 ? tilelink_context_bits(plan, tp)
+                                    : 5 * arrival_bits(plan, tp) + tp.local_bits + tp.tl_size_bits +
+                                          plan.packet_len_bits + 147 + plan.burst_id_bits +
+                                          plan.source_bits + plan.burst_tag_bits,
                  "packet context and independent A and D progress", "packet response consumption");
       const bool ahb = ahb_target(plan, target);
       const bool apb = apb_target(plan, target);

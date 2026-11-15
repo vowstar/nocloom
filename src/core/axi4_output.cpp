@@ -533,6 +533,13 @@ private:
     if (sources.empty() && targets.empty())
       return;
     definition["tilelink"] = {{"initiators", sources}, {"targets", targets}};
+    if (any(p.targets, [](const auto &t) { return t.external_protocol == Protocol::TlUh; }))
+      contract()["tilelink_uh_target"] = {
+          {"source", "packet_context_reserved_until_last_network_response"},
+          {"messages", "one_per_packet_multiple_Get_one_Put"},
+          {"ordering", "same_read_key_serial_write_packet_tickets"},
+          {"segments", "multiple_contexts_read_message_end_cut_except_packet_last"}};
+
     if (has_ul)
       contract()["tilelink"] = {
           {"operations", "single_beat_Get_PutFullData_PutPartialData"},
@@ -1550,7 +1557,8 @@ private:
   void target_outstanding() {
     bool widened = false;
     for (const auto &t : p.targets)
-      if (t.outstanding > 1 && t.protocol != Protocol::Axi4Lite) {
+      if (t.outstanding > 1 && t.protocol != Protocol::Axi4Lite &&
+          t.external_protocol != Protocol::TlUh) {
         definition["target_id_bits"][t.name] = t.id_bits.value();
         widened = true;
       }

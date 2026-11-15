@@ -219,8 +219,8 @@ for maximum in (4, 8, 16, 32, 64, 128, 256, 512, 1024):
 for field, value in (("max_transfer_bytes", 0), ("max_transfer_bytes", 3),
                      ("max_transfer_bytes", 6), ("max_transfer_bytes", 2048),
                      ("max_transfer_bytes", 4096), ("source_width", 17),
-                     ("sink_width", 17), ("max_outstanding", 2),
-                     ("max_outstanding", 16), ("flows", 2),
+                     ("sink_width", 17), ("max_outstanding", 0),
+                     ("max_outstanding", 17), ("flows", 2),
                      ("timeout", dict(cycles=16, completion=True))):
     cfg = deepcopy(BASE)
     cfg["targets"][0].update(protocol="tl_uh", **{field:value})
@@ -229,3 +229,39 @@ for field, value in (("max_transfer_bytes", 0), ("max_transfer_bytes", 3),
 for target in ("axi4", "apb4", "tl_ul"):
     CASES.append(dict(name=f"uh_logging_{target}", config=logging_config("tl_uh", target),
                       expect="reject", code="NCL_UNSUPPORTED_TOPOLOGY"))
+
+for capacity in range(1, 17):
+    for source_width in (None, (capacity-1).bit_length(), 16):
+        cfg = deepcopy(BASE)
+        cfg["targets"][0].update(protocol="tl_uh", max_outstanding=capacity)
+        if source_width is not None:
+            cfg["targets"][0]["source_width"] = source_width
+        CASES.append(dict(name=f"uh_target_capacity_{capacity}_source_{source_width}",
+                          config=cfg, expect="accept"))
+    if capacity > 1:
+        cfg = deepcopy(BASE)
+        cfg["targets"][0].update(protocol="tl_uh", max_outstanding=capacity,
+                                  source_width=(capacity-1).bit_length()-1)
+        CASES.append(dict(name=f"uh_target_source_short_{capacity}", config=cfg,
+                          expect="reject", code="NCL_TILELINK_PROFILE",
+                          field="targets[0].source_width"))
+
+for capacity in (1, 3):
+    for width in (32, 128):
+        for gating in (False, True):
+            cfg = deepcopy(BASE)
+            cfg["clock_gating"] = gating
+            cfg["clock_domains"][0]["period_ps"] = 10000
+            cfg["clock_domains"].append(dict(name="far", clock_port="clk_far",
+                reset_port="reset_n", test_port="test", period_ps=17000))
+            cfg["initiators"][0].update(protocol="axi4", data_width=width,
+                id_width=4, len_width=8, max_outstanding=4)
+            cfg["targets"][0].update(protocol="tl_uh", clock_domain="far",
+                max_outstanding=capacity, max_transfer_bytes=1024, size_width=4)
+            cfg["topology"] = dict(
+                request=dict(nodes=[dict(name="q", clock_domain="main")], links=[],
+                    entries=[dict(endpoint="s", node="q")], exits=[dict(endpoint="t", node="q")]),
+                response=dict(nodes=[dict(name="r", clock_domain="far")], links=[],
+                    entries=[dict(endpoint="t", node="r")], exits=[dict(endpoint="s", node="r")]))
+            CASES.append(dict(name=f"uh_target_clocked_{capacity}_{width}_{gating}",
+                              config=cfg, expect="accept"))

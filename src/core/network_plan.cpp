@@ -476,6 +476,7 @@ void target_engine(TargetPlan &x, const Target &t) {
   x.tl_size_bits = t.size_width.value_or(2);
   x.tl_sink_bits = t.sink_width.value_or(0);
   if (t.protocol == Protocol::TlUh) {
+    x.tl_source_bits = t.source_width.value_or(std::bit_width(t.max_outstanding.value_or(1) - 1));
     x.tl_size_bits = t.size_width.value_or(3);
     x.tl_max_transfer_bytes = t.max_transfer_bytes.value_or(64);
   }

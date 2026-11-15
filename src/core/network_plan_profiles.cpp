@@ -1375,6 +1375,8 @@ BurstProfile endpoint_burst(const NetworkPlan &plan) {
   return burst;
 }
 bool interleaved_target(const NetworkPlan &, const TargetPlan &target) {
+  if (target.external_protocol == Protocol::TlUh)
+    return target.outstanding > 1;
   if (target.read_interleave_size)
     return *target.read_interleave_size != 0;
   const auto bytes = target.data_bits / 8;
@@ -1469,7 +1471,8 @@ BurstOutletProfile outlet_profile(const NetworkPlan &plan, unsigned index) {
   profile.hprot_bits = tp.hprot_bits;
   profile.hnonsec = tp.hnonsec;
   profile.ahb5_metadata_bits = plan.ahb5 ? 8 + plan.hmaster_bits : 0;
-  if (tp.protocol == Protocol::Axi4Lite && tp.outstanding > 1)
+  if ((tp.protocol == Protocol::Axi4Lite || tp.external_protocol == Protocol::TlUh) &&
+      tp.outstanding > 1)
     profile.max_outstanding = tp.outstanding;
   profile.flows = tp.flows;
   return profile;

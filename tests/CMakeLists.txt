@@ -18,6 +18,28 @@ foreach(kind IN ITEMS selector endpoint footprint write errors)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 6000 PROCESSORS 1
     LABELS "formal;focused" RESOURCE_LOCK tilelink_formal)
 endforeach()
+add_test(NAME tilelink_uh_target_contexts_formal
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_contexts_formal.py
+    --fixture $<TARGET_FILE:nocloom_tilelink_uh_target_fixture>
+    --work ${CMAKE_CURRENT_BINARY_DIR}/tilelink_uh_target_contexts_formal)
+set_tests_properties(tilelink_uh_target_contexts_formal PROPERTIES
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 1800 PROCESSORS 1
+  LABELS "formal;focused" RESOURCE_LOCK tilelink_formal)
+add_test(NAME tilelink_uh_target_ranges_formal
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_contexts_formal.py
+    --fixture $<TARGET_FILE:nocloom_tilelink_uh_target_fixture>
+    --work ${CMAKE_CURRENT_BINARY_DIR}/tilelink_uh_target_ranges_formal --capacity 16)
+set_tests_properties(tilelink_uh_target_ranges_formal PROPERTIES
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 1200 PROCESSORS 1
+  LABELS "formal;focused" RESOURCE_LOCK tilelink_formal)
+add_test(NAME tilelink_uh_target_contexts
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_contexts.py
+    --fixture $<TARGET_FILE:nocloom_tilelink_uh_target_fixture>
+    --work ${CMAKE_CURRENT_BINARY_DIR}/tilelink_uh_target_contexts)
+set_tests_properties(tilelink_uh_target_contexts PROPERTIES
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 600 PROCESSORS 1
+  LABELS "rtl;focused;ci" RESOURCE_LOCK tilelink
+  ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
 if(UNIX)
   add_test(NAME large_address_map_small_stack
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/large_address_maps.py

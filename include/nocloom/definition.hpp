@@ -679,7 +679,8 @@ struct Target {
   // Optional CTI/BTE on classic Wishbone. Omission and false omit the ports.
   std::optional<bool> burst_tags = std::nullopt;
   bool operator==(const Target &) const = default;
-  // TileLink targets use source width 0 and sink width 0 by default.
+  // TL-UL targets default source to zero. TL-UH derives it from 1..16 packet contexts.
+  // Explicit source width can widen that encoding to 16 bits. Sink defaults to zero.
   // A zero width omits the port. Size defaults to 2 bits for TL-UL and 3 for TL-UH.
   std::optional<unsigned> source_width = std::nullopt;
   std::optional<unsigned> size_width = std::nullopt;

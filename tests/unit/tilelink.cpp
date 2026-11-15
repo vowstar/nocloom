@@ -1,6 +1,7 @@
 #include "core/cone_walk.hpp"
 #include "core/exchange_composition.hpp"
 #include "core/network_plan.hpp"
+#include <bit>
 #include "core/tilelink_uh_outlet.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <nocloom/generation.hpp>
@@ -126,13 +127,33 @@ TEST_CASE("TileLink UH validates message size and target packet capacity", "[til
     const auto r = generate(d);
     REQUIRE(r);
   }
-  SECTION("target capacity") {
+  SECTION("target capacity limit") {
     d.targets[0].protocol = Protocol::TlUh;
-    d.targets[0].max_outstanding = 2;
+    d.targets[0].max_outstanding = 17;
     const auto r = generate(d);
     REQUIRE_FALSE(r);
     CHECK(r.diagnostics().front().code == "NCL_TILELINK_PROFILE");
     CHECK(r.diagnostics().front().field == "targets[0].max_outstanding");
+  }
+}
+
+TEST_CASE("TL-UH target sources encode the shared packet capacity", "[tilelink]") {
+  for (unsigned capacity = 1; capacity <= 16; ++capacity) {
+    auto d = tilelink_definition();
+    d.targets[0].protocol = Protocol::TlUh;
+    d.targets[0].max_outstanding = capacity;
+    const auto bits = static_cast<unsigned>(std::bit_width(capacity - 1));
+    const auto plan = build_network_plan(d);
+    REQUIRE(plan);
+    CHECK(plan.value().targets[0].tl_source_bits == bits);
+    CHECK(plan.value().targets[0].outstanding == capacity);
+    if (bits) {
+      d.targets[0].source_width = bits - 1;
+      const auto invalid = generate(d);
+      REQUIRE_FALSE(invalid);
+      CHECK(invalid.diagnostics().front().code == "NCL_TILELINK_PROFILE");
+      CHECK(invalid.diagnostics().front().field == "targets[0].source_width");
+    }
   }
 }
 

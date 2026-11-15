@@ -128,8 +128,9 @@ Packet formation can merge narrow AXI reads into a larger interval. To retain
 the original byte range of non-modifiable reads, set `read_side_effects: true`.
 See [read side effects](packets.md#read-side-effects).
 
-`a_param` and `a_corrupt` are zero. Get data is zero. Unselected write data bytes
-are zero. Protection, cache, QoS and user information have no TileLink ports.
+`a_param` and `a_corrupt` are zero. Get data is zero. Unselected write data
+bytes are zero. Protection, cache, QoS and user information have no TileLink
+ports.
 The port accepts a response in the same cycle as its A handshake. D ready
 depends on local response storage, with no combinational dependency on A ready.
 
@@ -373,15 +374,15 @@ atomic operations. Use the shared
 | --- | --- | --- |
 | `data_width` | 32 bits | Required |
 | `max_transfer_bytes` | Powers of two from 4 to 1024 bytes | 64 |
-| `max_outstanding` | One packet in flight, reads and writes combined | 1 |
-| `source_width` | 0 to 16 bits | 0 |
+| `max_outstanding` | 1 to 16 packets in flight, reads and writes combined | 1 |
+| `source_width` | At least ceil(log2(max_outstanding)), at most 16 bits | ceil(log2(max_outstanding)), zero for one context |
 | `size_width` | 2 to 4 bits, sufficient to encode the maximum size | 3 |
 | `sink_width` | 0 to 16 bits | 0 |
 | `flows` | 1 | 1 |
 | `fixed_bursts` | `reject` or `single` | `reject` |
 | `read_side_effects` | Boolean | `false` |
 
-Larger maxima and capacities produce `NCL_TILELINK_PROFILE`. Mappings must
+Addresses are byte addresses of 2 to 32 local address bits. Mappings must
 align their base, size and local address to `max_transfer_bytes`.
 Targets reject `id_width`, `len_width`, exclusive monitors, attribute ports,
 user ports and nonzero scheduling levels. Error logs cannot observe TL-UH
@@ -389,10 +390,21 @@ targets. Invalid TileLink fields, unaligned mappings and exclusive monitors
 produce `NCL_TILELINK_PROFILE`. Other limits produce the applicable generic
 diagnostic.
 
-Each packet owns the context until its last network response leaves. Each
-packet has at most one TileLink message in flight. Source is zero, including
-when the source port is wider. It stays reserved until the packet's last
-network response is accepted.
+Each packet owns one context until its last network response is accepted.
+The context number is its TileLink source, with zeroes in any extra high bits.
+Each packet has at most one TileLink message in flight. The source remains
+reserved between that packet's messages and through network backpressure.
+
+Independent read keys can issue Get messages concurrently. Reads with the same
+network entry, flow and AXI ID wait for the preceding packet to retire. Writes
+keep their acceptance order across all messages of each packet. Only the
+earliest unfinished write packet can send Put messages. A Put owns A through its
+final beat. While a write waits for Ack, independent Gets can use A.
+
+The first accepted D beat selects its owner through the final D beat.
+
+With more than one context, read responses from independent packets can
+alternate at TileLink message boundaries.
 
 The target covers each received byte interval with aligned power-of-two
 messages. Each block fits the remaining interval, mapping and maximum size.
@@ -407,13 +419,13 @@ Packet formation and target messages keep the WRAP tail before the head. With
 read side effects enabled, non-modifiable WRAP runs use exact blocks.
 
 A single complete active write range can use PutFullData. Other writes use
-PutPartialData. An independent zero-mask word causes no target access. Writes
-with packet transfers smaller than 4 bytes keep each word in separate
-messages.
+PutPartialData. Writes with packet transfers smaller than 4 bytes keep each
+word in separate messages. Writes with 4-byte packet transfers can use
+multibeat messages.
 
-Writes with 4-byte network beats can use multibeat messages. Zero-mask beats
-inside a multibeat Put are sent. `a_param` and `a_corrupt` are zero.
-Unselected data bytes are zero.
+An independent zero-mask word causes no target access. Zero-mask beats inside
+a multibeat Put are sent. `a_param` and `a_corrupt` are zero. Unselected data
+bytes are zero.
 
 The target accepts AccessAck before the last A beat, including the first A
 handshake cycle. It stores the Ack independently of read data. The target sends
