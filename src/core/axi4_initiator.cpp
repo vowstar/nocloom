@@ -821,6 +821,16 @@ struct InitiatorLowering {
     ValueId arvalid{}, wvalid{}, rready{};
   } ahb{};
 
+  // Network return storage can wait until the cycle after a pop before accepting a response.
+  bool refill_return_on_pop = true;
+  ValueId w_b_full{}, w_b_id{}, w_bvalid{};
+  ValueId r_rsp_id{}, r_beat{}, r_local_burst{}, r_offered{}, r_face_local{}, r_rvalid{};
+  ValueId return_room(ValueId full, ValueId pop) {
+    return refill_return_on_pop ? l.either(l.inv(full), pop) : l.inv(full);
+  }
+  void write_response_valid();
+  void read_response_valid();
+
   // Write-side handles handed from write_issue to write_complete.
   AddressFace w_aw{};
   ValueId w_wdata{}, w_wstrb{}, w_wlast{}, w_wid{}, w_bready{}, w_wrsp_valid{};
@@ -1301,7 +1311,8 @@ void InitiatorLowering::write_issue() {
   if (p.axi3 && p.id_bits)
     w_wid = axi_input("wid", p.id_bits);
   auto wvalid = axi_input("wvalid", 1);
-  w_bready = axi_input("bready", 1);
+  if (!p.tilelink || p.tilelink_uh)
+    w_bready = axi_input("bready", 1);
   auto wrq_ready = l.b.input("nl_wreq_ready", 1, "wreq", "ready");
   w_wrsp_valid = l.b.input("nl_wrsp_valid", 1, "wrsp", "valid");
   for (const auto &[field, width] : burst_response_fields(p.data_bits, burst, p.source_bits))
@@ -1490,18 +1501,13 @@ void InitiatorLowering::write_complete() {
   // A held engine with one burst has its own B staging too: the burst is done once its answer is
   // staged, and the next burst issues while that B waits for BREADY.
   const bool staged = multi || held;
-  ValueId b_full{}, b_id{};
-  if (staged) {
-    b_full = l.state("wr.b_full", 1);
-    if (p.id_bits)
-      b_id = l.state("wr.rsp_id", p.id_bits);
-  }
-  // The B register takes the next B while it is empty or its B leaves in this cycle (a forward
-  // register: the network's B ready follows BREADY).
-  const auto b_room = staged ? l.either(l.inv(b_full), w_bready) : ValueId{};
+  // Local completions can replace a departing B. Network refill is configured separately
+  // to keep readiness within this direction's lifecycle when the face shares its response bus.
+  const auto b_room = staged ? l.either(l.inv(w_b_full), w_bready) : ValueId{};
+  const auto wrsp_room = refill_return_on_pop ? b_room : (staged ? l.inv(w_b_full) : ValueId{});
   // A response of no burst in flight (an idle engine; a free slot) is taken and dropped.
-  auto wrsp_ready = multi  ? l.both(l.reset, b_room)
-                    : held ? l.both(l.reset, l.either(w_idle, l.both(w_waiting, b_room)))
+  auto wrsp_ready = multi  ? l.both(l.reset, wrsp_room)
+                    : held ? l.both(l.reset, l.either(w_idle, l.both(w_waiting, wrsp_room)))
                            : l.both(l.reset, l.either(w_waiting, w_idle));
   auto wrsp_fire = l.bind("wr.wrsp_fire", l.both(l.both(w_wrsp_valid, wrsp_ready),
                                                  multi ? owns(w_wrsp_in, w_track) : w_waiting));
@@ -1586,7 +1592,7 @@ void InitiatorLowering::write_complete() {
   // A response packet takes the B staging with its mapped result and its burst's ID; the local
   // completion with its own code and ID. Either releases its slot and its ID count.
   const auto b_pop =
-      staged ? l.bind("wr.pop", l.both(l.both(l.reset, b_full), w_bready)) : ValueId{};
+      staged ? l.bind("wr.pop", l.both(l.both(l.reset, w_b_full), w_bready)) : ValueId{};
   if (staged) {
     l.b.update(w_bresp_reg, l.b.select(wrsp_fire, wrsp_mapped,
                                        l.b.select(local_fill, l.b.constant(2, 2), w_bresp_reg)));
@@ -1596,10 +1602,10 @@ void InitiatorLowering::write_complete() {
           l.b.select(wrsp_fire, w_wrsp_in.at("user"),
                      l.b.select(local_fill, l.b.constant(p.response_user_bits, 0), *w_buser_reg)));
     if (p.id_bits)
-      l.b.update(b_id, l.b.select(wrsp_fire, multi ? response_id(w_wrsp_in) : w_cap.id_reg,
-                                  l.b.select(local_fill, w_cap.id_reg, b_id)));
-    l.b.update(b_full,
-               l.b.select(l.either(wrsp_fire, local_fill), one, l.b.select(b_pop, zero, b_full)));
+      l.b.update(w_b_id, l.b.select(wrsp_fire, multi ? response_id(w_wrsp_in) : w_cap.id_reg,
+                                    l.b.select(local_fill, w_cap.id_reg, w_b_id)));
+    l.b.update(w_b_full,
+               l.b.select(l.either(wrsp_fire, local_fill), one, l.b.select(b_pop, zero, w_b_full)));
   } else {
     l.b.update(w_bresp_reg, l.b.select(wrsp_fire, wrsp_mapped,
                                        l.b.select(w_last_absorb, l.b.constant(2, 2), w_bresp_reg)));
@@ -1655,13 +1661,13 @@ void InitiatorLowering::write_complete() {
   axi_output("awready", w_awready);
   axi_output("wready", w_wready);
   if (staged) {
-    axi_output("bvalid", l.both(l.reset, b_full));
+    axi_output("bvalid", w_bvalid);
     axi_output("bresp", w_bresp_reg);
     if (p.id_bits && !p.lite)
-      axi_output("bid", b_id);
+      axi_output("bid", w_b_id);
     user_output("buser", w_buser_reg, zero);
   } else {
-    axi_output("bvalid", l.both(l.reset, w_respond));
+    axi_output("bvalid", w_bvalid);
     axi_output("bresp", l.b.select(w_poisoned, l.b.constant(2, 2), w_bresp_reg));
     if (p.id_bits && !p.lite)
       axi_output("bid", d.id);
@@ -1670,7 +1676,8 @@ void InitiatorLowering::write_complete() {
 }
 void InitiatorLowering::read_issue() {
   r_ar = address_face("ar");
-  r_rready = axi_input("rready", 1);
+  if (!p.tilelink || p.tilelink_uh)
+    r_rready = axi_input("rready", 1);
   auto rrq_ready = l.b.input("nl_rreq_ready", 1, "rreq", "ready");
   r_rrsp_valid = l.b.input("nl_rrsp_valid", 1, "rrsp", "valid");
   for (const auto &[field, width] : burst_response_fields(p.data_bits, burst, p.source_bits))
@@ -1819,26 +1826,46 @@ void InitiatorLowering::stage_beat(ValueId load) {
   }
 }
 
+// Build state-only valid cones before the shared face chooses either ready.
+void InitiatorLowering::write_response_valid() {
+  if (multi || held) {
+    w_b_full = l.state("wr.b_full", 1);
+    if (p.id_bits)
+      w_b_id = l.state("wr.rsp_id", p.id_bits);
+  }
+  w_bvalid = l.both(l.reset, multi || held ? w_b_full : w_respond);
+}
+void InitiatorLowering::read_response_valid() {
+  if (multi) {
+    r_rsp_id = p.id_bits ? l.state("rr.rsp_id", p.id_bits) : ValueId{};
+    r_beat = l.state("rr.beat", p.axi_len_bits);
+    r_local_burst = l.state("rr.local_burst", 1);
+    r_offered = l.state("rr.offered", 1);
+    r_face_local = l.bind("rr.face_local", l.b.select(r_offered, r_local_burst,
+                                                      l.both(l.inv(r_rsp_full), r_errstream)));
+    r_rvalid = l.both(l.reset, l.b.select(r_face_local, r_errstream, r_rsp_full));
+  } else if (held) {
+    r_rsp_id = p.id_bits ? l.state("rr.rsp_id", p.id_bits) : ValueId{};
+    r_face_local = l.both(r_errstream, l.inv(r_rsp_full));
+    r_rvalid = l.both(l.reset, l.either(r_rsp_full, r_errstream));
+  } else {
+    r_rvalid = l.both(l.reset, l.either(l.both(r_stream, r_rsp_full), r_errstream));
+  }
+}
+
 void InitiatorLowering::read_response() {
   const auto &d = r_cap.d;
   if (multi) {
     // The R face passes response beats in arrival order (bursts of different IDs interleave as
     // the network delivers them); a beat's tag names its burst's slot, its last marker is RLAST.
     // The local completion in the issue stage (state 3) counts its beats against its descriptor
-    // and takes the face when no beat is staged (nothing else issues meanwhile). An offered beat
-    // stays until accepted (AXI A3.2.1); the staging refills when it is empty or drains.
-    const auto rsp_id = p.id_bits ? l.state("rr.rsp_id", p.id_bits) : ValueId{};
-    const auto beat = l.state("rr.beat", p.axi_len_bits);
-    const auto local_burst = l.state("rr.local_burst", 1);
-    const auto offered = l.state("rr.offered", 1);
-    const auto face_local = l.bind(
-        "rr.face_local", l.b.select(offered, local_burst, l.both(l.inv(r_rsp_full), r_errstream)));
+    // and takes the face when no beat is staged (nothing else issues meanwhile). An offered
+    // beat stays until accepted (AXI A3.2.1); return_room controls refill on a pop.
     const auto last_beat = l.bind(
-        "rr.last_beat", l.b.select(face_local, l.b.binary(Op::Equal, beat, d.len), r_rsp_last));
-    auto rvalid = l.both(l.reset, l.b.select(face_local, r_errstream, r_rsp_full));
-    auto raccept = l.bind("rr.accept", l.both(rvalid, r_rready));
+        "rr.last_beat", l.b.select(r_face_local, l.b.binary(Op::Equal, r_beat, d.len), r_rsp_last));
+    auto raccept = l.bind("rr.accept", l.both(r_rvalid, r_rready));
     auto rrsp_ready =
-        l.both(l.reset, l.either(l.inv(r_rsp_full), l.both(raccept, l.inv(face_local))));
+        l.both(l.reset, return_room(r_rsp_full, l.both(raccept, l.inv(r_face_local))));
     auto rrsp_load =
         l.bind("rr.rsp_load", l.both(l.both(r_rrsp_valid, rrsp_ready), owns(r_rrsp_in, r_track)));
     const auto pop = l.bind("rr.pop", l.both(raccept, last_beat));
@@ -1855,20 +1882,21 @@ void InitiatorLowering::read_response() {
             l.b.select(enter, l.b.constant(2, 1),
                        l.b.select(r_emit_fire, sent,
                                   l.b.select(local_issue, l.b.constant(2, 3),
-                                             l.b.select(l.either(l.both(pop, face_local),
+                                             l.b.select(l.either(l.both(pop, r_face_local),
                                                                  held ? l.both(l.eq(r_rr_state, 2),
                                                                                r_taken)
                                                                       : zero),
                                                         l.b.constant(2, 0), r_rr_state))))));
-    l.b.update(beat, l.b.select(l.both(pop, face_local), l.b.constant(p.axi_len_bits, 0),
-                                l.b.select(l.both(raccept, face_local), l.inc(beat), beat)));
-    l.b.update(local_burst, l.b.select(rvalid, face_local, local_burst));
-    l.b.update(offered, l.both(rvalid, l.inv(r_rready)));
+    l.b.update(r_beat,
+               l.b.select(l.both(pop, r_face_local), l.b.constant(p.axi_len_bits, 0),
+                          l.b.select(l.both(raccept, r_face_local), l.inc(r_beat), r_beat)));
+    l.b.update(r_local_burst, l.b.select(r_rvalid, r_face_local, r_local_burst));
+    l.b.update(r_offered, l.both(r_rvalid, l.inv(r_rready)));
     l.b.update(r_rsp_full,
                l.b.select(rrsp_load, one,
-                          l.b.select(l.both(raccept, l.inv(face_local)), zero, r_rsp_full)));
+                          l.b.select(l.both(raccept, l.inv(r_face_local)), zero, r_rsp_full)));
     if (p.id_bits)
-      l.b.update(rsp_id, l.b.select(rrsp_load, response_id(r_rrsp_in), rsp_id));
+      l.b.update(r_rsp_id, l.b.select(rrsp_load, response_id(r_rrsp_in), r_rsp_id));
     stage_beat(rrsp_load);
     std::map<std::string, ValueId> captured;
     if (!p.lite && !p.apb && !p.ahb)
@@ -1879,7 +1907,7 @@ void InitiatorLowering::read_response() {
                   p.crossing,
                   {{l.both(rrsp_load, r_rrsp_in.at("last")), slot_of(r_rrsp_in, r_track),
                     p.id_bits ? response_id(r_rrsp_in) : ValueId{}},
-                   {l.both(pop, face_local), r_cap.tag, r_cap.id_reg}});
+                   {l.both(pop, r_face_local), r_cap.tag, r_cap.id_reg}});
     l.b.output("nl_rrsp_ready", rrsp_ready, "rrsp", "ready");
     if (held) {
       // The AR leaves the port pipe as the network takes its request, or on a local answer.
@@ -1887,9 +1915,9 @@ void InitiatorLowering::read_response() {
       r_ar_fire = l.bind("rr.ar_fire", l.both(r_ar.valid, r_arready));
     }
     axi_output("arready", r_arready);
-    axi_output("rvalid", rvalid);
-    axi_output("rdata", l.b.select(face_local, l.b.constant(p.data_bits, 0), r_rsp_data));
-    axi_output("rresp", l.b.select(face_local, l.b.constant(2, 2),
+    axi_output("rvalid", r_rvalid);
+    axi_output("rdata", l.b.select(r_face_local, l.b.constant(p.data_bits, 0), r_rsp_data));
+    axi_output("rresp", l.b.select(r_face_local, l.b.constant(2, 2),
                                    map_result(l, r_rsp_result, r_rsp_error, p.slverr_only,
                                               r_rsp_exclusive)));
     // An AXI4-Lite face has neither RLAST nor RID.
@@ -1897,65 +1925,61 @@ void InitiatorLowering::read_response() {
     if (!p.lite)
       axi_output("rlast", rlast);
     if (p.id_bits && !p.lite)
-      axi_output("rid", l.bind("rr.face_id", l.b.select(face_local, r_cap.id_reg, rsp_id)));
-    user_output("ruser", r_rsp_user, face_local);
+      axi_output("rid", l.bind("rr.face_id", l.b.select(r_face_local, r_cap.id_reg, r_rsp_id)));
+    user_output("ruser", r_rsp_user, r_face_local);
     // A tracked engine never reaches the APB tail (an APB face holds at most one
     // burst), so this return is the final finish of lower_axi4_initiator.
     return;
   }
   if (held) {
     // The R face passes staged beats and owns its ID: the burst's end at the staging lets the next
-    // burst issue while its last beat waits for RREADY. A local answer takes the face once no beat
-    // is staged.
-    const auto rsp_id = p.id_bits ? l.state("rr.rsp_id", p.id_bits) : ValueId{};
-    const auto face_local = l.both(r_errstream, l.inv(r_rsp_full));
-    const auto rvalid = l.both(l.reset, l.either(r_rsp_full, r_errstream));
-    const auto raccept = l.bind("rr.accept", l.both(rvalid, r_rready));
+    // burst issue while its last beat waits for RREADY. A local answer takes the face once no
+    // beat is staged.
+    const auto raccept = l.bind("rr.accept", l.both(r_rvalid, r_rready));
     const auto rrsp_ready =
-        l.both(l.reset, l.either(r_idle, l.both(r_stream, l.either(l.inv(r_rsp_full), raccept))));
+        l.both(l.reset, l.either(r_idle, l.both(r_stream, return_room(r_rsp_full, raccept))));
     const auto rrsp_load =
         l.bind("rr.rsp_load", l.both(l.both(r_rrsp_valid, rrsp_ready), r_stream));
     const auto last_beat = l.eq(r_remaining, 0);
     const auto network_last = reuse_read_count() ? r_rrsp_in.at("last") : last_beat;
     const auto done =
-        l.either(l.both(rrsp_load, network_last), l.both(l.both(raccept, face_local), last_beat));
+        l.either(l.both(rrsp_load, network_last), l.both(l.both(raccept, r_face_local), last_beat));
     l.b.update(
         r_rr_state,
         l.b.select(r_start, l.b.select(r_emit_fire, l.b.constant(2, 2), l.b.constant(2, 1)),
                    l.b.select(l.both(r_emitting, l.inv(r_sent)), l.b.constant(2, 3),
                               l.b.select(r_emit_fire, l.b.constant(2, 2),
                                          l.b.select(done, l.b.constant(2, 0), r_rr_state)))));
-    const auto count_step = reuse_read_count() ? l.both(raccept, face_local)
-                                               : l.either(rrsp_load, l.both(raccept, face_local));
+    const auto count_step = reuse_read_count() ? l.both(raccept, r_face_local)
+                                               : l.either(rrsp_load, l.both(raccept, r_face_local));
     update_read_count(count_step);
     l.b.update(r_rsp_full,
                l.b.select(rrsp_load, one,
-                          l.b.select(l.both(raccept, l.inv(face_local)), zero, r_rsp_full)));
+                          l.b.select(l.both(raccept, l.inv(r_face_local)), zero, r_rsp_full)));
     stage_beat(rrsp_load);
     if (p.id_bits)
-      l.b.update(rsp_id, l.b.select(rrsp_load, r_cap.id_reg, rsp_id));
+      l.b.update(r_rsp_id, l.b.select(rrsp_load, r_cap.id_reg, r_rsp_id));
     l.b.output("nl_rrsp_ready", rrsp_ready, "rrsp", "ready");
     r_arready = l.both(l.reset, l.either(r_taken, l.both(r_emitting, l.inv(r_sent))));
     r_ar_fire = l.bind("rr.ar_fire", l.both(r_ar.valid, r_arready));
     axi_output("arready", r_arready);
-    axi_output("rvalid", rvalid);
-    axi_output("rdata", l.b.select(face_local, l.b.constant(p.data_bits, 0), r_rsp_data));
-    axi_output("rresp", l.b.select(face_local, l.b.constant(2, 2),
+    axi_output("rvalid", r_rvalid);
+    axi_output("rdata", l.b.select(r_face_local, l.b.constant(p.data_bits, 0), r_rsp_data));
+    axi_output("rresp", l.b.select(r_face_local, l.b.constant(2, 2),
                                    map_result(l, r_rsp_result, r_rsp_error, p.slverr_only,
                                               r_rsp_exclusive)));
-    axi_output("rlast", l.bind("rr.rlast", l.b.select(face_local, last_beat, r_rsp_last)));
+    axi_output("rlast", l.bind("rr.rlast", l.b.select(r_face_local, last_beat, r_rsp_last)));
     if (p.id_bits)
-      axi_output("rid", l.b.select(face_local, r_cap.id_reg, rsp_id));
-    user_output("ruser", r_rsp_user, face_local);
+      axi_output("rid", l.b.select(r_face_local, r_cap.id_reg, r_rsp_id));
+    user_output("ruser", r_rsp_user, r_face_local);
     return;
   }
   // Response beat skid buffer with flow-through; RLAST is forwarded from the fragment's last
   // marker. The local error stream counts rejected burst beats on the same valid/accept cone.
-  auto rvalid = l.both(l.reset, l.either(l.both(r_stream, r_rsp_full), r_errstream));
-  auto raccept = l.bind("rr.accept", l.both(rvalid, r_rready));
+  auto raccept = l.bind("rr.accept", l.both(r_rvalid, r_rready));
   // An idle engine takes and drops a beat (see wr.wrsp_fire).
   auto rrsp_ready =
-      l.both(l.reset, l.either(r_idle, l.both(r_stream, l.either(l.inv(r_rsp_full), raccept))));
+      l.both(l.reset, l.either(r_idle, l.both(r_stream, return_room(r_rsp_full, raccept))));
   auto rrsp_load = l.bind("rr.rsp_load", l.both(l.both(r_rrsp_valid, rrsp_ready), r_stream));
   // An APB burst has one beat.
   auto last_beat = p.apb ? one : l.eq(r_remaining, 0);
@@ -1976,7 +2000,7 @@ void InitiatorLowering::read_response() {
   l.b.output("nl_rrsp_ready", rrsp_ready, "rrsp", "ready");
 
   axi_output("arready", r_arready);
-  axi_output("rvalid", rvalid);
+  axi_output("rvalid", r_rvalid);
   axi_output("rdata", l.b.select(r_errstream, l.b.constant(p.data_bits, 0), r_rsp_data));
   axi_output("rresp", l.b.select(r_errstream, l.b.constant(2, 2),
                                  map_result(l, r_rsp_result, r_rsp_error, p.slverr_only,
@@ -2101,17 +2125,26 @@ Result<NodeHardware> lower_axi4_initiator(const Axi4InitiatorProfile &profile) {
     engine.face_in = tilelink->inputs;
   }
 
-  // ---------------- write direction ----------------
   if (p.write) {
     engine.write_issue();
-    engine.write_complete();
+    engine.write_response_valid();
+    if (!tilelink)
+      engine.write_complete();
   }
-
-  // ---------------- read direction ----------------
   if (p.read) {
     engine.read_issue();
-    engine.read_response();
+    engine.read_response_valid();
   }
+  if (tilelink) {
+    // Shared D arbitration must not couple the two network return lifecycles.
+    engine.refill_return_on_pop = false;
+    tilelink->response_ready({{"bvalid", engine.w_bvalid}, {"rvalid", engine.r_rvalid}});
+    engine.w_bready = tilelink->inputs.at("bready");
+    engine.r_rready = tilelink->inputs.at("rready");
+    engine.write_complete();
+  }
+  if (p.read)
+    engine.read_response();
 
   engine.apb_tail();
   engine.ahb_tail();

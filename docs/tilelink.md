@@ -68,6 +68,11 @@ source only once until its D response is accepted, including that clock edge.
 Requests with different sources can remain in flight together. These rules
 follow sections 6.4 and 6.5.
 
+Network read and write responses share D. Each accepted response gives
+priority to the other direction. A waiting write response can be preceded by
+at most one read response. A lone response uses the next free D slot.
+D backpressure can extend the wait.
+
 | Request field | Behavior |
 | --- | --- |
 | Get size and address | Select the read bytes. Get ignores its mask |

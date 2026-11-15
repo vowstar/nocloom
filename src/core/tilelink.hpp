@@ -9,6 +9,7 @@ class TileLinkIngress {
 public:
   TileLinkIngress(logic::Logic &logic, const Axi4InitiatorProfile &profile);
   logic::Fields inputs;
+  void response_ready(const logic::Fields &outputs);
   void finish(const logic::Fields &outputs);
 
 private:
