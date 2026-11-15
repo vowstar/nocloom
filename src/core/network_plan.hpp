@@ -67,6 +67,7 @@ struct EndpointPipe {
 };
 struct SourcePlan {
   unsigned tl_source_bits = 0, tl_size_bits = 2, tl_sink_bits = 0;
+  unsigned tl_max_transfer_bytes = 4, tl_message_slots = 1;
   std::string name;
   // The network carries an APB initiator as an AXI4-Lite source; apb names its face. An AHB
   // initiator is an AXI4 source behind an AHB-Lite face (ahb), with no ID or length ports, and an

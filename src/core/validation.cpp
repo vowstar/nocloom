@@ -1134,9 +1134,11 @@ void check_initiator_face(Checks &c, const Initiator &initiator, const std::stri
         "Source width must match its target or use the admitted wide-to32 profile");
   }
   const unsigned source_address_min =
-      apb_initiator(initiator)                                                             ? 1U
-      : (initiator.protocol == Protocol::Axi4Lite || initiator.protocol == Protocol::TlUl) ? 2U
-                                                                                           : 12U;
+      apb_initiator(initiator) ? 1U
+      : (initiator.protocol == Protocol::Axi4Lite || initiator.protocol == Protocol::TlUl ||
+         initiator.protocol == Protocol::TlUh)
+          ? 2U
+          : 12U;
   if (!initiator.address_width && d.address_width < source_address_min)
     c("NCL_ENDPOINT_ADDRESS_WIDTH", field + ".address_width",
       "The source address width is below its protocol minimum; widen the global address or "

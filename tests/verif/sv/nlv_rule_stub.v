@@ -322,18 +322,23 @@ module nlv_rule_stub (
     if (!rst_n) tl_cycle<=0;
     else tl_cycle<=tl_cycle+1;
   end
-  wire tl_selected = mode>=39 && mode<=48;
-  wire tl_av = tl_selected && (tl_cycle==2 || (mode==40 && tl_cycle==3));
-  wire tl_dv = tl_selected && ((mode==46 && tl_cycle==1) || tl_cycle==4);
+  wire tl_selected = mode>=39 && mode<=52;
+  wire tl_av = tl_selected && (tl_cycle==2 || (mode==40 && tl_cycle==3) ||
+      ((mode==49 || mode==51) && tl_cycle==3) || ((mode==51 || mode==52) && tl_cycle==5));
+  wire tl_dv = tl_selected && ((mode==46 && tl_cycle==1) ||
+      (mode!=51 && tl_cycle==4) || (mode==50 && tl_cycle==5) ||
+      ((mode==51 || mode==52) && tl_cycle==7) || (mode==52 && tl_cycle==9));
   nlv_tl_checker #(.NAME("tl_rules"), .SOURCE_W(1)) tl_rules (
-    .clk(clk), .rst_n(rst_n), .allow_reject(1'b0),
-    .a_valid((mode==39 && !rst_n) || tl_av), .a_ready(1'b1),
-    .a_opcode(mode==41 ? 3'd2 : 3'd4), .a_param(mode==45 ? 3'd1 : 3'd0),
-    .a_size(mode==42 ? 2'd3 : 2'd2), .a_source(1'b0),
+    .clk(clk), .rst_n(rst_n), .allow_reject(mode>=49),
+    .a_valid((mode==39 && !rst_n) || tl_av), .a_ready(!(mode==51 && tl_cycle==3)),
+    .a_opcode(mode==41 ? 3'd2 : (mode==49 || mode==51) ? 3'd1 : 3'd4), .a_param(mode==45 ? 3'd1 : 3'd0),
+    .a_size((mode==42 || (mode>=49 && !(mode==52 && tl_cycle==5))) ? 2'd3 : 2'd2),
+    .a_source(mode==49 && tl_cycle==3),
     .a_address(mode==43 ? 32'd1 : 32'd0), .a_mask(mode==44 ? 4'd7 : 4'd15),
     .a_data(32'd0), .a_corrupt(1'b0),
-    .d_valid(tl_dv), .d_ready(1'b1), .d_opcode(mode==47 ? 3'd0 : 3'd1),
-    .d_param(2'd0), .d_size(2'd2), .d_source(1'b0), .d_data(32'd0),
+    .d_valid(tl_dv), .d_ready(1'b1), .d_opcode((mode==47 || mode==51) ? 3'd0 : 3'd1),
+    .d_param(2'd0), .d_size((mode>=49 && !(mode==52 && tl_cycle==9)) ? 2'd3 : 2'd2),
+    .d_source(mode==50 && tl_cycle==5), .d_data(32'd0),
     .d_denied(mode==48), .d_corrupt(1'b0)
   );
 endmodule

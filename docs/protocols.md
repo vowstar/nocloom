@@ -14,6 +14,7 @@ Related manuals: [Wishbone](wishbone.md), [TileLink TL-UL](tilelink.md),
 | YAML value | Role | Data width in bits |
 | --- | --- | --- |
 | `tl_ul` | Initiator or target | 32 |
+| `tl_uh` | Initiator only | 32 |
 | `axi4` | Initiator or target | 32, 64, 128, 256, 512, 1024 |
 | `axi3` | Initiator or target | 32, 64, 128, 256, 512, 1024 |
 | `axi4_lite` | Initiator or target | 32, 64 |
@@ -168,3 +169,11 @@ TL-UL supports single-beat Get and Put on A, with AccessAck and
 AccessAckData on D. Initiators support multiple sources in flight. Targets
 support one message in flight. See [TileLink](tilelink.md) for fields, error
 semantics, progress requirements and the TL-UL and TL-UH option table.
+
+## TileLink TL-UH initiators
+
+TL-UH initiators accept multibeat Get and Put and complete Intent locally.
+`max_transfer_bytes` is a power of two from 4 to 1024, with default 64.
+`size_width` is 2 to 4, with default 3, and must encode the largest message.
+Atomic operations return denied AccessAckData without network access.
+TL-UH targets are rejected. See [TileLink](tilelink.md#tl-uh-initiators).

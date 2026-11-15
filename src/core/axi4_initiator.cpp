@@ -7,6 +7,7 @@
 #include "network_plan.hpp"
 #include "strobe_lanes.hpp"
 #include "tilelink.hpp"
+#include "tilelink_uh.hpp"
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -2091,7 +2092,11 @@ Result<NodeHardware> lower_axi4_initiator(const Axi4InitiatorProfile &profile) {
   engine.apb_face();
   engine.ahb_face();
   std::optional<TileLinkIngress> tilelink;
-  if (p.tilelink) {
+  std::optional<TileLinkUhIngress> tilelink_uh;
+  if (p.tilelink_uh) {
+    tilelink_uh.emplace(l, p);
+    engine.face_in = tilelink_uh->inputs;
+  } else if (p.tilelink) {
     tilelink.emplace(l, p);
     engine.face_in = tilelink->inputs;
   }
@@ -2112,6 +2117,8 @@ Result<NodeHardware> lower_axi4_initiator(const Axi4InitiatorProfile &profile) {
   engine.ahb_tail();
   if (tilelink)
     tilelink->finish(engine.face_out);
+  if (tilelink_uh)
+    tilelink_uh->finish(engine.face_out);
   return l.finish("nocloom_axi4_initiator_" + p.name);
 }
 

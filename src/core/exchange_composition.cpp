@@ -2211,7 +2211,8 @@ bool axi4_outlet_control(const std::string &name) {
 // A full AXI4 or AXI3 source with one burst in flight and no width conversion holds a request at
 // its engine while the request merger cannot take it.
 bool adapted_source(const SourcePlan &sp) {
-  return sp.apb.has_value() || sp.ahb || sp.external_protocol == Protocol::TlUl;
+  return sp.apb.has_value() || sp.ahb || sp.external_protocol == Protocol::TlUl ||
+         sp.external_protocol == Protocol::TlUh;
 }
 bool holds_requests(const SourcePlan &sp, bool convert) {
   return sp.outstanding == 1 && !sp.ahb && !convert &&
@@ -2436,6 +2437,8 @@ private:
                             : at_rest(b, ep.states, initiator_rest));
     if (sp.external_protocol == Protocol::TlUl)
       zone.idle.push_back(at_rest(b, ep.states, "tl.pending tl.full tl.local tl.drain"));
+    if (sp.external_protocol == Protocol::TlUh)
+      zone.idle.push_back(c.not_(ep.bound.at("tl.busy")));
     if (sp.wishbone_pipelined)
       zone.idle.push_back(c.eq(ep.states.at("wb.count"), 0));
   }

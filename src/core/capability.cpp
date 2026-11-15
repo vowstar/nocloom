@@ -15,6 +15,7 @@ constexpr std::uint32_t narrow = 0xFF, wide = 0xFC; // 8 to 1024 bits, 32 to 102
 constexpr ProtocolCaps caps[] = {
     {P::Wishbone, true, true, 4, 4, true, false, true, false, false, false, 1},
     {P::TlUl, true, true, 4, 4, true, false, true, false, false, false, 1},
+    {P::TlUh, true, false, 4, 4, false, false, false, false, false, false, 1},
     {P::Apb5, true, true, narrow, narrow, true, true, true, true, false, false, 1},
     {P::Apb4, true, true, narrow, narrow, true, true, true, true, false, false, 1},
     {P::Axi4Lite, true, true, wide, wide, true, true, true, false, false, false, 256},

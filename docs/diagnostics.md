@@ -184,6 +184,6 @@ See the [mesh topology helper](library.md#mesh-topology-helper).
 | --- | --- |
 | `NCL_TILELINK_PROFILE` | Invalid TileLink field, width, port option, target capacity or flow count. TileLink target timeout completion is rejected. TileLink fields on other protocols are rejected |
 
-`tl_uh` produces `NCL_UNSUPPORTED_PROTOCOL`, with a message that this protocol
+A `tl_uh` target produces `NCL_UNSUPPORTED_PROTOCOL`, with a message that this protocol
 value is unsupported. Unknown protocol options produce
 `NCL_SCHEMA_UNKNOWN_FIELD`.

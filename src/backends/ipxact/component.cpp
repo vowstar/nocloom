@@ -282,11 +282,12 @@ public:
     w_.leaf("library", o_.library);
     w_.leaf("name", map_.module);
     w_.leaf("version", o_.version.empty() ? std::string("1.0") : o_.version);
-    if (std::ranges::any_of(endpoints_,
-                            [](const Endpoint &e) { return e.protocol != Protocol::TlUl; })) {
+    if (std::ranges::any_of(endpoints_, [](const Endpoint &e) {
+          return e.protocol != Protocol::TlUl && e.protocol != Protocol::TlUh;
+        })) {
       w_.open("busInterfaces");
       for (const auto &e : endpoints_)
-        if (e.protocol != Protocol::TlUl)
+        if (e.protocol != Protocol::TlUl && e.protocol != Protocol::TlUh)
           bus_interface(e);
       w_.close("busInterfaces");
     }

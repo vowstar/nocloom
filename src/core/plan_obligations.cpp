@@ -247,6 +247,16 @@ struct Obligations {
         resource("source/" + source + "/tilelink", "protocol_adapter", bits,
                  "single-beat request and response", "D channel consumption");
       }
+      if (sp.external_protocol == Protocol::TlUh) {
+        const auto profile =
+            initiator_profile(plan, static_cast<unsigned>(&sp - plan.sources.data()));
+        const unsigned source_bits = std::max(1U, profile.tl_source_bits);
+        const unsigned bits = 57 + 2 * (9 + profile.address_bits + profile.axi_len_bits) + 72 + 37 +
+                              source_bits + profile.tl_size_bits +
+                              profile.tl_message_slots * (29 + source_bits + profile.tl_size_bits);
+        resource("source/" + source + "/tilelink", "protocol_adapter", bits,
+                 "TileLink message and completion storage", "last D channel consumption");
+      }
       auto source_state = axi4_burst_state_bits(
           plan.burst_id_bits, std::min(8U, plan.packet_len_bits), plan.burst_address_bits,
           sp.engine_bits, sp.engine_slots, plan.exclusive, sp.protocol == Protocol::Axi4Lite,

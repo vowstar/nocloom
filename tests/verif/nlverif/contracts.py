@@ -17,7 +17,7 @@ CONTRACTS = {
              "zero read data, and makes no target access. AXI returns DECERR by default and "
              "SLVERR with slverr_only. APB, AHB, Wishbone and TileLink report their protocol errors",
         source="docs/address-map.md#decode-misses"),
-    "TL.ACCESS": dict(text="Single-beat Get and Put preserve source, size, mask and errors",
+    "TL.ACCESS": dict(text="TileLink messages preserve source, size, masks, errors and channel ownership",
                       source="docs/tilelink.md; TileLink 1.8.1 sections 4.4, 4.5, 6.4 and 7.2"),
     "AXI.ROUTE.LOCAL_OFFSET": dict(
         text="A target receives the source address minus its window base, once",
@@ -172,7 +172,7 @@ CONTRACTS = {
 # tape wait times out (stall_report of the AXI BFMs).
 RULES = (
     "WB.RULE_3_20", "WB.RULE_3_25", "WB.RULE_3_30", "WB.RULE_3_35", "WB.RULE_3_45", "WB.RULE_3_50", "WB.RULE_3_59", "WB.RULE_3_60",
-    "TL.3.2.2.RESET", "TL.6.4.SOURCE", "TL.7.2.OPCODE", "TL.7.2.SIZE", "TL.4.5.ALIGN", "TL.4.5.MASK", "TL.7.2.PARAM", "TL.4.2.RESPONSE", "TL.7.2.RESPONSE", "TL.4.4.CORRUPT",
+    "TL.4.1.A_OWNER", "TL.4.2.D_OWNER", "TL.3.2.2.RESET", "TL.6.4.SOURCE", "TL.7.2.OPCODE", "TL.7.2.SIZE", "TL.4.5.ALIGN", "TL.4.5.MASK", "TL.7.2.PARAM", "TL.4.2.RESPONSE", "TL.7.2.RESPONSE", "TL.4.4.CORRUPT",
     "AXI.AW.HOLD", "AXI.W.HOLD", "AXI.AR.HOLD", "AXI.B.HOLD", "AXI.R.HOLD",
     "AXI.RESET.QUIET", "AXI.X.AWVALID", "AXI.X.WVALID", "AXI.X.ARVALID", "AXI.X.BVALID",
     "AXI.X.RVALID", "AXI.W.LAST", "AXI.R.LAST", "AXI.B.UNEXPECTED", "AXI.R.UNEXPECTED",

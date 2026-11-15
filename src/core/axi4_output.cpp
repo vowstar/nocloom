@@ -357,6 +357,7 @@ private:
                                                             : "apb4"
                          : s.external_protocol == Protocol::Wishbone ? "wishbone"
                          : s.external_protocol == Protocol::TlUl     ? "tl_ul"
+                         : s.external_protocol == Protocol::TlUh     ? "tl_uh"
                          : s.ahb5                                    ? "ahb5"
                          : s.ahb                                     ? "ahb_lite"
                          : s.axi3                                    ? "axi3"
@@ -511,22 +512,39 @@ private:
                   {"max_transfer_bytes", 4},
                   {"max_outstanding", endpoint.outstanding}};
     };
-    const auto sources = by_name(p.sources, record), targets = by_name(p.targets, record);
+    auto sources = by_name(p.sources, record);
+    const auto targets = by_name(p.targets, record);
+    const bool has_ul = !sources.empty() || !targets.empty();
+    for (const auto &s : p.sources)
+      if (s.external_protocol == Protocol::TlUh)
+        sources[s.name] = {{"source_width", s.tl_source_bits},
+                           {"size_width", s.tl_size_bits},
+                           {"sink_width", s.tl_sink_bits},
+                           {"max_transfer_bytes", s.tl_max_transfer_bytes},
+                           {"max_outstanding", s.tl_message_slots}};
     if (sources.empty() && targets.empty())
       return;
     definition["tilelink"] = {{"initiators", sources}, {"targets", targets}};
-    contract()["tilelink"] = {
-        {"operations", "single_beat_Get_PutFullData_PutPartialData"},
-        {"source", "initiator_source_is_network_transaction_id_target_source_zero_one_in_flight"},
-        {"read_error", "local_rejection_denied_and_corrupt_network_error_corrupt_only_zero_data"},
-        {"write_error", "denied_no_rollback_of_completed_target_accesses"},
-        {"progress", "target_completes_and_master_accepts_D_in_finite_time"}};
+    if (has_ul)
+      contract()["tilelink"] = {
+          {"operations", "single_beat_Get_PutFullData_PutPartialData"},
+          {"source", "initiator_source_is_network_transaction_id_target_source_zero_one_in_flight"},
+          {"read_error", "local_rejection_denied_and_corrupt_network_error_corrupt_only_zero_data"},
+          {"write_error", "denied_no_rollback_of_completed_target_accesses"},
+          {"progress", "target_completes_and_master_accepts_D_in_finite_time"}};
+    if (any(p.sources, [](const auto &s) { return s.external_protocol == Protocol::TlUh; }))
+      contract()["tilelink_uh"] = {
+          {"operations", "multibeat_Get_PutFullData_PutPartialData_local_HintAck"},
+          {"atomics", "local_denied_AccessAckData"},
+          {"source", "message_slot_retired_on_last_D"},
+          {"responses", "message_owner_and_independent_B_completion"}};
   }
   void endpoint_transactions() {
     Json endpoints = Json::object(), targets = Json::object();
     for (const auto &s : p.sources) {
       Json entry = Json::object();
-      if (s.id_bits && s.external_protocol != Protocol::TlUl)
+      if (s.id_bits && s.external_protocol != Protocol::TlUl &&
+          s.external_protocol != Protocol::TlUh)
         entry = {{"id_width", *s.id_bits}, {"len_width", *s.axi_len_bits}};
       if (s.read_only || s.write_only)
         entry["access"] = s.read_only ? "read_only" : "write_only";
@@ -554,7 +572,8 @@ private:
       transactions["targets"] = targets;
     if (any(p.sources,
             [](const auto &s) {
-              return s.id_bits.has_value() && s.external_protocol != Protocol::TlUl;
+              return s.id_bits.has_value() && s.external_protocol != Protocol::TlUl &&
+                     s.external_protocol != Protocol::TlUh;
             }) ||
         !targets.empty()) {
       transactions["id"] = "source_port_zero_extended_into_the_network_id_target_port_carries_"
@@ -920,7 +939,8 @@ private:
     const auto lite_face = [](const auto &s) { return s.protocol == Protocol::Axi4Lite && !s.apb; };
     if (any(p.sources, [](const auto &s) {
           return s.protocol == Protocol::Axi4Lite || s.ahb || s.axi3 ||
-                 s.external_protocol == Protocol::Wishbone || s.external_protocol == Protocol::TlUl;
+                 s.external_protocol == Protocol::Wishbone ||
+                 s.external_protocol == Protocol::TlUl || s.external_protocol == Protocol::TlUh;
         }))
       definition["endpoint_protocols"] = {{"initiators", source_protocols}, {"targets", "axi4"}};
     if (any(p.sources, &SourcePlan::axi3))

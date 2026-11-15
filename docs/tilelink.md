@@ -1,11 +1,15 @@
-# TileLink TL-UL
+# TileLink
 
 Set `protocol: tl_ul` on an initiator or target. The interface has channels A
 and D with 32-bit data. It supports single-beat Get, PutFullData and
 PutPartialData, with AccessAck and AccessAckData responses. The rules use
 [TileLink 1.8.1][spec], sections 3, 4, 6 and 7.
 
+For TL-UH initiators, see [TL-UH initiators](#tl-uh-initiators).
+
 ## Endpoint fields
+
+This table describes TL-UL endpoints.
 
 | Field | Meaning | Values | Default |
 | --- | --- | --- | --- |
@@ -54,7 +58,7 @@ targets:
 
 ## Initiators
 
-The external master sends A requests and accepts D responses. The initiator
+A TL-UL external master sends A requests and accepts D responses. The initiator
 captures each request before it enters the network. A request that has not
 handshaken can be withdrawn or changed, as section 4.1 permits.
 
@@ -162,8 +166,9 @@ and reset rules. The domain clock can be gated through the endpoint's normal
 Ports use `nl_i_<name>_a_opcode` and `nl_t_<name>_a_opcode`. The same prefix
 applies to other A and D signals.
 
-All external outputs come from local state or constants. There is no
-combinational path between external handshake inputs and outputs.
+D outputs come from local state or constants. Handshake outputs have no
+combinational dependency on external handshake inputs. TL-UH A ready also
+uses the offered opcode, size and source to check admission.
 
 | Output | TileLink information |
 | --- | --- |
@@ -175,8 +180,12 @@ combinational path between external handshake inputs and outputs.
 
 Supported means implemented within the limits above. Rejected means that the
 definition has a diagnostic. Not applicable describes a constant or runtime
-response for behavior that has no matching network operation. `tl_uh` is
-rejected with `NCL_UNSUPPORTED_PROTOCOL` on both endpoint roles.
+response for behavior that has no matching network operation.
+
+`tl_uh` targets are
+rejected with `NCL_UNSUPPORTED_PROTOCOL`.
+
+TL-UH initiators deny atomic operations and do not conform to TL-UH.
 
 | Level | Option | Class | Reason or behavior | Sections |
 | --- | --- | --- | --- | --- |
@@ -196,17 +205,17 @@ rejected with `NCL_UNSUPPORTED_PROTOCOL` on both endpoint roles.
 | TL-UL | Multiple beats | Not applicable | Larger runtime requests are denied without access | 7.2 |
 | TL-UL | ArithmeticData, LogicalData | Not applicable | Runtime requests are denied without access | 8.2.1, 8.2.2 |
 | TL-UL | Intent, HintAck | Not applicable | Runtime Intent with any param is denied with HintAck without access | 8.2.3, 8.2.4 |
-| TL-UH | Get | Rejected | `tl_uh` is unsupported | 7.2.1, 8.3 |
-| TL-UH | PutFullData | Rejected | `tl_uh` is unsupported | 7.2.2, 8.3 |
-| TL-UH | PutPartialData | Rejected | `tl_uh` is unsupported | 7.2.3, 8.3 |
-| TL-UH | ArithmeticData | Rejected | Atomic operations have no network mapping | 8.2.1 |
-| TL-UH | LogicalData | Rejected | Atomic operations have no network mapping | 8.2.2 |
-| TL-UH | Intent | Rejected | `tl_uh` is unsupported | 8.2.3 |
-| TL-UH | AccessAck, AccessAckData, HintAck | Rejected | `tl_uh` is unsupported | 7.2.4, 7.2.5, 8.2.4 |
-| TL-UH | Source and size | Rejected | `tl_uh` is unsupported | 6.4, 8.3 |
-| TL-UH | Mask | Rejected | `tl_uh` is unsupported | 4.5, 8.3 |
-| TL-UH | Corrupt and denied | Rejected | `tl_uh` is unsupported | 4.4 |
-| TL-UH | Bursts | Rejected | `tl_uh` is unsupported | 8.3 |
+| TL-UH | Get | Supported on initiators | One A beat and size-dependent D beats | 7.2.1, 8.3 |
+| TL-UH | PutFullData | Supported on initiators | Size-dependent A beats and one AccessAck | 7.2.2, 8.3 |
+| TL-UH | PutPartialData | Supported on initiators | Per-beat masks and one AccessAck | 7.2.3, 8.3 |
+| TL-UH | ArithmeticData | Not applicable | Local denied AccessAckData after all A beats | 8.2.1 |
+| TL-UH | LogicalData | Not applicable | Local denied AccessAckData after all A beats | 8.2.2 |
+| TL-UH | Intent | Supported on initiators | Local HintAck, param 0 or 1 succeeds | 8.2.3 |
+| TL-UH | AccessAck, AccessAckData, HintAck | Supported on initiators | One message owns D until its last handshake | 7.2.4, 7.2.5, 8.2.4 |
+| TL-UH | Source and size | Supported on initiators | Source is retained through the last D handshake | 6.4, 8.3 |
+| TL-UH | Mask | Supported on initiators | Per-beat byte mask, including zero on PutPartialData | 4.5, 8.3 |
+| TL-UH | Corrupt and denied | Supported on initiators | Network read errors use corrupt without denied | 4.4 |
+| TL-UH | Bursts | Supported on initiators | Naturally aligned power-of-two messages | 8.3 |
 | TL-C | B, C and E channels and coherent operations | Rejected | No protocol value or ports. Unknown fields are rejected | 9 |
 
 ## Mapping to other endpoints
@@ -242,3 +251,71 @@ The external device must permit that read granularity. See
 [AHB transfers](ahb.md#ahb-target-transfers) for partial-write shaping.
 
 [spec]: https://sifive.cdn.prismic.io/sifive/7bef6f5c-ed3a-4712-866a-1a2e0c6b7b13_tilelink_spec_1.8.1.pdf
+
+## TL-UH initiators
+
+Set `protocol: tl_uh` on an initiator. The network and the port use 32-bit
+data. TL-UH targets are rejected with `NCL_UNSUPPORTED_PROTOCOL`.
+
+| Field | Values | Default |
+| --- | --- | --- |
+| `data_width` | 32 bits | Required |
+| `max_transfer_bytes` | Powers of two from 4 to 1024 bytes | 64 |
+| `size_width` | 2 to 4 bits. It must encode the size of `max_transfer_bytes` | 3 |
+| `source_width` | 0 to 16 bits | 4 |
+| `sink_width` | 0 to 16 bits | 0 |
+| `max_outstanding` | 1 to 64 messages | `transport.max_outstanding`, which defaults to 1 |
+
+The size value is the base-two logarithm of the message bytes. For example,
+a 64-byte message has size 6. A 3-bit size port encodes up to 128 bytes.
+A larger `max_transfer_bytes` needs `size_width: 4`. The default size width
+does not change with `max_transfer_bytes`. Every configuration accepts
+1-byte and 2-byte accesses.
+
+TL-UH initiators reject `id_width`, `len_width`, `access`, `narrow_bursts`,
+user ports, pipe changes, a 64-bit network, nonzero scheduling levels,
+shapers and error logs. Invalid TileLink fields produce
+`NCL_TILELINK_PROFILE`. Other limits produce the applicable generic diagnostic.
+
+```yaml
+initiators:
+  - {name: dma, clock_domain: main, protocol: tl_uh, data_width: 32,
+     max_transfer_bytes: 256, size_width: 4, max_outstanding: 4}
+```
+
+Get has one A beat and `max(1, bytes / 4)` D beats. Put has that many A
+beats and one AccessAck. All A control fields stay constant across a Put.
+Data, mask and corrupt are sampled only on each handshake. An unaccepted
+beat can be withdrawn or changed.
+
+Each corrupt Put beat sends zero write strobes and makes the final AccessAck
+denied. The port does not roll back the other writes.
+
+Messages of up to 4 bytes use one AXI INCR beat with size equal to A size.
+Messages of 8 to 1024 bytes use one full-word AXI INCR transaction. Reads
+retain their requested byte range through packet formation and width
+conversion, subject to the target's physical read granularity.
+
+| Local request | Response | Network access |
+| --- | --- | --- |
+| Intent param 0 or 1 with supported size | One successful HintAck | None |
+| Intent with another param or unsupported size | One denied HintAck | None |
+| ArithmeticData or LogicalData, all params | All size-dependent AccessAckData beats, denied and corrupt, with zero data | None |
+| Unsupported size | Consume the request and return its full response | None |
+
+Atomic responses start after all A data beats have arrived. AccessAck and
+HintAck always clear corrupt. Network read failures clear denied and set
+corrupt with zero data only on each failed beat.
+
+A D message owns the channel until its final handshake, including gaps in
+network data. Write responses enter independent completion storage even
+when D is stalled. A message slot and its saved source remain allocated
+until the final D handshake. Different sources can complete out of order.
+
+Several single-beat Gets can be in flight. A multibeat Get waits for all other
+Gets to retire, and blocks other Gets until it retires. A multibeat D message
+blocks new first A beats from its selection through its final handshake.
+
+A Put already in progress can continue. A master can present a source again
+after its first D handshake. The port holds that new first A until the
+original message retires.

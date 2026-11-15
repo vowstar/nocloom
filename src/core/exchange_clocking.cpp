@@ -185,6 +185,32 @@ void plan_serial_cuts(NetworkPlan &p, const std::map<std::string, DomainPlan> &d
 
 // The definition checks bound every crossing parameter and every domain a placement names; the
 // capability rules judge unused parameters and unowned domains.
+template <class Owner> void endpoint_resource_domains(NetworkPlan &p, const Owner &owner) {
+  for (const auto &source : names(p.sources))
+    for (const auto *operation : {"write", "read"}) {
+      const auto id = "source/" + source + "/" + operation;
+      for (const auto *suffix : {"", "/return", "/consumer"})
+        p.resource_domains.emplace(id + suffix, owner("source/" + source));
+    }
+  for (const auto &s : p.sources)
+    if (tilelink_protocol(s.external_protocol))
+      p.resource_domains.emplace("source/" + s.name + "/tilelink", owner("source/" + s.name));
+  // A source's shaper or scheduler, in its domain.
+  for (const auto &s : p.sources)
+    for (const auto &[on, unit] :
+         {std::pair{s.qos.holds(), "/shaper"}, std::pair{s.qos.picks(), "/scheduler"}})
+      if (on)
+        p.resource_domains.emplace("source/" + s.name + unit, owner("source/" + s.name));
+  for (const auto &target : names(p.targets)) {
+    const auto id = "burst_service/" + target;
+    if (p.target(target).external_protocol == Protocol::TlUl)
+      p.resource_domains.emplace(id + "/tilelink", owner("target/" + target));
+    for (const auto *suffix : {"/write", "/read", "/target"})
+      p.resource_domains.emplace(id + suffix, owner("target/" + target));
+    if (dedicated_protocol(p.target(target).protocol))
+      p.resource_domains.emplace(id + "/bus", owner("target/" + target));
+  }
+}
 void plan_clocking(NetworkPlan &p) {
   const auto &assignment = *p.placement;
   std::map<std::string, DomainPlan> domains;
@@ -299,30 +325,7 @@ void plan_clocking(NetworkPlan &p) {
         p.resource_domains.emplace(std::string(response ? "graph/rsp/" : "graph/req/") + o.node +
                                        ">" + (o.endpoint ? "endpoint/" : "node/") + o.output,
                                    owner((response ? "rsp/" : "req/") + o.node));
-  for (const auto &source : names(p.sources))
-    for (const auto *operation : {"write", "read"}) {
-      const auto id = "source/" + source + "/" + operation;
-      for (const auto *suffix : {"", "/return", "/consumer"})
-        p.resource_domains.emplace(id + suffix, owner("source/" + source));
-    }
-  for (const auto &s : p.sources)
-    if (s.external_protocol == Protocol::TlUl)
-      p.resource_domains.emplace("source/" + s.name + "/tilelink", owner("source/" + s.name));
-  // A source's shaper or scheduler, in its domain.
-  for (const auto &s : p.sources)
-    for (const auto &[on, unit] :
-         {std::pair{s.qos.holds(), "/shaper"}, std::pair{s.qos.picks(), "/scheduler"}})
-      if (on)
-        p.resource_domains.emplace("source/" + s.name + unit, owner("source/" + s.name));
-  for (const auto &target : names(p.targets)) {
-    const auto id = "burst_service/" + target;
-    if (p.target(target).external_protocol == Protocol::TlUl)
-      p.resource_domains.emplace(id + "/tilelink", owner("target/" + target));
-    for (const auto *suffix : {"/write", "/read", "/target"})
-      p.resource_domains.emplace(id + suffix, owner("target/" + target));
-    if (dedicated_protocol(p.target(target).protocol))
-      p.resource_domains.emplace(id + "/bus", owner("target/" + target));
-  }
+  endpoint_resource_domains(p, owner);
   // Each endpoint pipe (<endpoint>/pipe/<place>) in its endpoint's domain.
   auto pipes_in = [&](const std::vector<EndpointPipe> &pipes) {
     for (const auto &pipe : pipes)

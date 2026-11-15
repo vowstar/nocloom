@@ -7,9 +7,9 @@
 An open-source on-chip interconnect generator.
 
 NocLoom is a command-line tool (CLI) and a C++20 library. Define AXI4, AXI3,
-AXI4-Lite, APB, AHB-Lite, AHB5, Wishbone and TileLink TL-UL networks in YAML or
-C++. NocLoom generates synthesizable Verilog-2001 with switches, protocol
-adapters, width converters and clock domain crossings (CDC).
+AXI4-Lite, APB, AHB-Lite, AHB5, Wishbone and TileLink networks in YAML or C++.
+NocLoom generates synthesizable Verilog-2001 with switches, protocol adapters,
+width converters and clock domain crossings (CDC).
 
 NocLoom 0.3.0 is the latest release.
 
@@ -87,7 +87,7 @@ If the output directory exists, `generate` stops with `NCL_IO_EXISTS` and exit
 code 3. Remove that directory or use another one. See
 [CLI](docs/cli.md#validation-and-generation) for the output path rules.
 
-`nocloom_soc_fabric` is the top module in `build/generated/nocloom_soc_fabric.v`.
+Top module `nocloom_soc_fabric` is in `build/generated/nocloom_soc_fabric.v`.
 Simulation also needs `nocloom_clock_gate.v` and `nocloom_synchronizer.v` from
 that directory. Initiator ports have names such as `nl_i_cpu_awaddr`, and target
 ports have names such as `nl_t_mem_awaddr`.
@@ -108,9 +108,8 @@ the cells of your technology library as
 cells also needs the `library_cell_models` of the bundle or the models of your
 library.
 
-The top-level field `clock_gating: false` removes the clock gates. It does not
-remove the synchronizer. Set `clock_gating: false` for an FPGA, because the
-behavioral clock gate model contains a latch.
+Top-level `clock_gating: false` disables automatic gates and keeps synchronizers.
+For an FPGA, set it because the behavioral clock gate model contains a latch.
 
 The flat top module contains only clock gate and synchronizer instances. Its
 internal signals use `nl_internal_v<N>`. To find the signals of an endpoint or
@@ -138,20 +137,21 @@ traffic crosses its boundary.
 
 | Area | Supported |
 | --- | --- |
-| Initiator protocols | `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `apb3`, `ahb_lite` (AHB-Lite), `ahb5`, `wishbone` and `tl_ul` |
+| Initiator protocols | `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `apb3`, `ahb_lite` (AHB-Lite), `ahb5`, `wishbone`, `tl_ul` and `tl_uh` |
 | Target protocols | `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `apb3`, `apb2`, `ahb_lite` (AHB-Lite), `ahb5`, `wishbone` and `tl_ul` |
 | [Wishbone cycles](docs/wishbone.md) | 32-bit classic and pipelined reads and writes, byte SEL, ERR, optional target RTY as error, explicit byte or word addresses |
 | TileLink TL-UL | 32-bit single-beat Get, PutFullData and PutPartialData, with AccessAck and AccessAckData. Initiators can keep multiple sources in flight |
 | AHB5 properties | HPROT is 4 bits by default or 7 bits. HNONSEC is optional and defaults to absent. HMASTER is 0 to 32 bits |
 | Endpoint count | 1 to 256 initiators, 1 to 256 targets |
 | Topology | One generated request switch and one generated response switch, or declared request and response graphs of 1 to 128 switches each |
-| Endpoint data width | AXI4, AXI3, AHB-Lite and AHB5: 32, 64, 128, 256, 512 or 1024 bits. AXI4-Lite: 32 or 64 bits. APB: 8, 16 or 32 bits. Wishbone and TL-UL: 32 bits |
-| Network data width | 32 or 64 bits (`transport.data_width`). The default is the narrowest endpoint data width, where APB counts as 32 bits and the maximum is 64 bits. A 64-bit network accepts only 64-bit initiators, and no APB, Wishbone or TL-UL endpoint or AHB target. Other definitions need a 32-bit network. Therefore, an initiator wider than 64 bits needs `transport.data_width: 32`, unless a 32-bit or APB endpoint already makes 32 bits the default |
+| Endpoint data width | AXI4, AXI3, AHB-Lite and AHB5: 32, 64, 128, 256, 512 or 1024 bits. AXI4-Lite: 32 or 64 bits. APB: 8, 16 or 32 bits. Wishbone and TileLink: 32 bits |
+| Network data width | 32 or 64 bits (`transport.data_width`). The default is the narrowest endpoint data width, where APB counts as 32 bits and the maximum is 64 bits. A 64-bit network accepts only 64-bit initiators, and no APB, Wishbone or TileLink endpoint or AHB target. Other definitions need a 32-bit network. Therefore, an initiator wider than 64 bits needs `transport.data_width: 32`, unless a 32-bit or APB endpoint already makes 32 bits the default |
 | Address width | 2 to 48 bits. AXI4, AXI3, AHB and Wishbone initiators need at least 12 bits. APB initiators use at most 32 bits. APB, AHB, Wishbone, TL-UL and AXI4-Lite targets use at most 32 bits |
 | Clock domains | 1 to 64. More than one domain needs a `topology` whose switches name their clock domains. Clock domain crossings connect asynchronous clocks, or related clocks divided from one root |
 | Endpoint clock gating | Separate protocol and transport gates, one shared gate, or a transport gate with the protocol side on the domain clock |
 | Transactions | Several AXI transactions in flight, exclusive access, target timeouts and an error response on a decode miss |
 | Scheduling | Fixed levels from 0 to 7 on AXI4, AXI3, AHB-Lite and AHB5 sources to full AXI4 or AXI3 targets, or on 32-bit APB networks. AXI4 and AXI3 sources also support AxQOS maps. AXI4, AXI3 and 32-bit APB sources support bandwidth limits |
+| TL-UH initiators | Multibeat Get and Put, local Intent responses, and denied atomic operations. The configured TL-UH maximum message size is a power of two from 4 to 1024 bytes. |
 | Routing | NocLoom fixes each route at generation |
 | Output files | Always: Verilog-2001 RTL and three JSON files, which are the map, the bundle and the dependency graph. Optional: IP-XACT (`--ipxact`), address table (`--address-table`), CDC constraints (`--cdc-constraints`) and C headers (`--c-header`) |
 | C++ library | In-memory generation, tree and mesh topology helpers, and a CMake package. The core library does no file I/O and prints nothing |
@@ -164,7 +164,7 @@ See [Documentation](#documentation) for field definitions and limits.
 | --- | --- |
 | Wishbone options | No registered feedback bursts, LOCK or user tags. Pipelined targets accept one request at a time. See [Wishbone](docs/wishbone.md) |
 | Other protocols | For example AXI5, ACE and APB2 initiators |
-| TileLink | TL-UL targets support one message in flight and one flow. TL-UH, atomic operations and coherent channels are unsupported. See [TileLink](docs/tilelink.md) for error and progress rules |
+| TileLink | TL-UL targets support one message in flight and one flow. TL-UH targets and coherent channels are unsupported. TL-UH initiators deny atomic operations, so they do not conform to TL-UH. See [TileLink](docs/tilelink.md) for error and progress rules |
 | AHB5 optional signals | HEXCL, HEXOKAY and HAUSER, HWUSER, HRUSER and HBUSER are unsupported. See [AHB5 properties](docs/ahb.md#ahb5-basic-properties) |
 | AHB arbitration and responses | No multi-manager arbitration or HSPLIT. RETRY and SPLIT on two-bit `ahb_lite` targets fail the packet |
 | Other RTL languages | The output is Verilog-2001 only |
@@ -188,7 +188,7 @@ known. [Diagnostics](docs/diagnostics.md) lists the codes.
 | [Network](docs/network.md) | Connectivity, graphs, routes, flows, arbitration and pipes |
 | [Address map](docs/address-map.md) | Mappings, address inputs, decode misses and error responses |
 | [Protocols](docs/protocols.md) | Initiator and target protocols, width conversion and packets |
-| [TileLink](docs/tilelink.md) | TL-UL fields, error and progress rules, option table and protocol mappings |
+| [TileLink](docs/tilelink.md) | TL-UL and TL-UH initiator fields, error and progress rules, option table and protocol mappings |
 | [Transactions](docs/transactions.md) | Bursts in flight, target IDs, read interleaving, exclusive access and timeouts |
 | [Scheduling](docs/scheduling.md) | Levels, AxQOS maps, bandwidth shapers and bandwidth schedulers |
 | [Output files](docs/outputs.md) | Map, bundle, dependency graph, IP-XACT, address table, CDC constraints and C headers |
@@ -202,8 +202,8 @@ known. [Diagnostics](docs/diagnostics.md) lists the codes.
 
 Tests also need Catch2, Python 3, Make, Icarus Verilog, Yosys, Verilator,
 clang-format, cppcheck and a second C++20 compiler. A test builds the CLI with
-that compiler and compares outputs. Set
-`-DNOCLOOM_DETERMINISM_COMPILERS=OFF` to omit that test and compiler requirement.
+that compiler and compares outputs. Set `-DNOCLOOM_DETERMINISM_COMPILERS=OFF`
+to omit the test and its compiler requirement.
 
 ```sh
 cmake -S . -B build -G Ninja -DNOCLOOM_BUILD_TESTS=ON -DNOCLOOM_BUILD_EXAMPLES=ON

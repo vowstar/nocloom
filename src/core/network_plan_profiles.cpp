@@ -1178,7 +1178,10 @@ Axi4InitiatorProfile initiator_profile(const NetworkPlan &plan, unsigned index) 
   profile.data_user_port_bits = sp.data_user_bits;
   profile.ahb = sp.ahb;
   profile.axi3 = sp.axi3;
-  profile.tilelink = sp.external_protocol == Protocol::TlUl;
+  profile.tilelink_uh = sp.external_protocol == Protocol::TlUh;
+  profile.tilelink = sp.external_protocol == Protocol::TlUl || profile.tilelink_uh;
+  profile.tl_max_transfer_bytes = sp.tl_max_transfer_bytes;
+  profile.tl_message_slots = sp.tl_message_slots;
   profile.tl_source_bits = sp.tl_source_bits;
   profile.tl_size_bits = sp.tl_size_bits;
   profile.tl_sink_bits = sp.tl_sink_bits;

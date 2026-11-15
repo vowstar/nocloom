@@ -96,5 +96,35 @@ TEST_CASE("TileLink diagnostics identify each unsupported user field", "[tilelin
   for (unsigned k = 0; k < fields.size(); ++k) {
     CHECK(result.diagnostics()[k].code == "NCL_TILELINK_PROFILE");
     CHECK(result.diagnostics()[k].field == fields[k]);
+    if (fields[k] == "initiators[0].user_width")
+      CHECK(result.diagnostics()[k].message == "TL-UL has no user ports");
+    if (fields[k] == "initiators[0].response_user_width")
+      CHECK(result.diagnostics()[k].message == "TL-UL has no response user ports");
+  }
+}
+
+TEST_CASE("TileLink UH validates message size and keeps the target unsupported", "[tilelink]") {
+  auto d = tilelink_definition();
+  d.initiators[0].protocol = Protocol::TlUh;
+  SECTION("default profile") {
+    const auto p = build_network_plan(d);
+    REQUIRE(p);
+    CHECK(p.value().sources[0].tl_size_bits == 3);
+    CHECK(p.value().sources[0].tl_max_transfer_bytes == 64);
+  }
+  SECTION("explicit size encoding") {
+    d.initiators[0].max_transfer_bytes = 1024;
+    d.initiators[0].size_width = 3;
+    const auto r = generate(d);
+    REQUIRE_FALSE(r);
+    CHECK(r.diagnostics().front().code == "NCL_TILELINK_PROFILE");
+    CHECK(r.diagnostics().front().field == "initiators[0].size_width");
+  }
+  SECTION("target protocol") {
+    d.targets[0].protocol = Protocol::TlUh;
+    const auto r = generate(d);
+    REQUIRE_FALSE(r);
+    CHECK(r.diagnostics().front().code == "NCL_UNSUPPORTED_PROTOCOL");
+    CHECK(r.diagnostics().front().field == "targets[0].protocol");
   }
 }

@@ -17,27 +17,40 @@ namespace nocloom {
 // network); Apb2 is never a valid initiator protocol. Axi4 is the full AXI4 burst profile. AhbLite
 // is AMBA 3 AHB-Lite: a target outlet, or an initiator's subordinate port. Axi3 is an AMBA 3 AXI
 // port of an initiator or a target: AXI4 bursts of at most 16 beats with WID and a two-bit AxLOCK.
-enum class Protocol { Apb4, Axi4Lite, Apb3, Apb2, Axi4, AhbLite, Axi3, Ahb5, Apb5, Wishbone, TlUl };
+enum class Protocol {
+  Apb4,
+  Axi4Lite,
+  Apb3,
+  Apb2,
+  Axi4,
+  AhbLite,
+  Axi3,
+  Ahb5,
+  Apb5,
+  Wishbone,
+  TlUl,
+  TlUh
+};
 namespace detail {
-// Internal. The name of each protocol in a definition file, in the order of the manual. Every
-// protocol serves a target; initiator is false for a protocol that does not serve an initiator.
+// Internal. Protocol names and supported endpoint roles in the order of the manual.
 struct ProtocolName {
   Protocol protocol;
   const char *name;
   bool initiator;
+  bool target = true;
 };
 inline constexpr ProtocolName protocol_names[] = {
-    {Protocol::Axi4, "axi4", true}, {Protocol::Axi3, "axi3", true},
+    {Protocol::Axi4, "axi4", true},          {Protocol::Axi3, "axi3", true},
     {Protocol::Axi4Lite, "axi4_lite", true}, {Protocol::Apb5, "apb5", true},
-    {Protocol::Apb4, "apb4", true}, {Protocol::Apb3, "apb3", true},
-    {Protocol::Apb2, "apb2", false}, {Protocol::AhbLite, "ahb_lite", true},
-    {Protocol::Ahb5, "ahb5", true}, {Protocol::Wishbone, "wishbone", true},
-    {Protocol::TlUl, "tl_ul", true}};
+    {Protocol::Apb4, "apb4", true},          {Protocol::Apb3, "apb3", true},
+    {Protocol::Apb2, "apb2", false},         {Protocol::AhbLite, "ahb_lite", true},
+    {Protocol::Ahb5, "ahb5", true},          {Protocol::Wishbone, "wishbone", true},
+    {Protocol::TlUl, "tl_ul", true},         {Protocol::TlUh, "tl_uh", true, false}};
 // The protocol names that an initiator, or a target, accepts, as in "axi4, axi3 or apb4".
 inline std::string supported_protocols(bool initiator) {
   std::string list;
   for (const auto &p : protocol_names)
-    if (p.initiator || !initiator)
+    if (initiator ? p.initiator : p.target)
       list += (list.empty() ? "" : ", ") + std::string(p.name);
   return list.replace(list.rfind(','), 1, " or");
 }
@@ -427,7 +440,7 @@ struct Initiator {
   // Absent inherits the global address width.
   std::optional<unsigned> address_width = std::nullopt;
   // Required: axi4, axi3, a single-beat axi4_lite, apb5, apb4 or apb3 ingress, an ahb_lite
-  // (AHB-Lite) or ahb5 ingress, or a wishbone or tl_ul ingress. An axi3 initiator follows the axi4
+  // (AHB-Lite) or ahb5 ingress, or wishbone, tl_ul or tl_uh. An axi3 initiator follows the axi4
   // rules with len_width 0..4. An APB initiator is 8, 16 or 32 bits wide in a 32-bit network and
   // sets none of id_width, len_width, access, narrow_bursts or max_outstanding above one. An AHB
   // initiator is 32 to 1024 bits wide under the AXI4 width rules and sets none of them either.
@@ -515,12 +528,13 @@ struct Initiator {
   std::optional<WishboneRetry> retry = std::nullopt;
   std::optional<WishboneCycles> cycles = std::nullopt;
   bool operator==(const Initiator &) const = default;
-  // TL-UL only. Source defaults to 4 bits on an initiator and 0 on a target.
-  // A zero width omits the port. Size defaults to 2 bits and sink to 0 bits.
+  // TileLink source defaults to 4 bits on an initiator and 0 on a TL-UL target.
+  // A zero width omits the port. Size defaults to 2 bits for TL-UL and 3 for TL-UH.
+  // Sink defaults to 0 bits.
   std::optional<unsigned> source_width = std::nullopt;
   std::optional<unsigned> size_width = std::nullopt;
   std::optional<unsigned> sink_width = std::nullopt;
-  // TL-UL messages fit one 32-bit word.
+  // TL-UL permits 4 bytes. TL-UH initiators permit powers of two from 4 to 1024, default 64.
   std::optional<unsigned> max_transfer_bytes = std::nullopt;
   // AXI4, AXI3 and AXI4-Lite only. True returns SLVERR for every failure.
   // Omission and false preserve DECERR.

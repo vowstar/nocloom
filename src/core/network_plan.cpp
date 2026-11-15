@@ -338,14 +338,21 @@ void plan_ahb5_metadata(NetworkPlan &plan, const Definition &d) {
     plan.burst_user_bits += 8 + plan.hmaster_bits;
 }
 void tilelink_source(SourcePlan &s, const Initiator &initiator) {
-  if (initiator.protocol != Protocol::TlUl)
+  if (initiator.protocol != Protocol::TlUl && initiator.protocol != Protocol::TlUh)
     return;
   s.tl_source_bits = initiator.source_width.value_or(4);
-  s.tl_size_bits = initiator.size_width.value_or(2);
+  const bool uh = initiator.protocol == Protocol::TlUh;
+  s.tl_size_bits = initiator.size_width.value_or(uh ? 3 : 2);
+  s.tl_max_transfer_bytes = initiator.max_transfer_bytes.value_or(uh ? 64 : 4);
   s.tl_sink_bits = initiator.sink_width.value_or(0);
   s.protocol = Protocol::Axi4;
   s.id_bits = s.tl_source_bits;
-  s.axi_len_bits = 4;
+  s.axi_len_bits =
+      uh ? static_cast<unsigned>(std::max<int>(4, std::bit_width(s.tl_max_transfer_bytes / 4 - 1)))
+         : 4;
+  if (uh)
+    s.id_bits = static_cast<unsigned>(
+        std::max<int>(1, std::bit_width(initiator.max_outstanding.value_or(1) - 1)));
 }
 // The endpoint settings of the definition, in name order.
 static void wishbone_engine(SourcePlan &s) {
@@ -389,6 +396,10 @@ void source_outstanding(SourcePlan &s, const Initiator &initiator,
                         const TransportOptions &options) {
   s.outstanding = initiator.max_outstanding.value_or(options.max_outstanding);
   s.engine_slots = s.outstanding;
+  if (s.external_protocol == Protocol::TlUh) {
+    s.tl_message_slots = s.outstanding;
+    s.id_bits = static_cast<unsigned>(std::max<int>(1, std::bit_width(s.tl_message_slots - 1)));
+  }
   if (s.qos.picks() && s.pooled &&
       (initiator.pipes.packets.slice != PipeSlice::None || initiator.pipes.issue)) {
     const unsigned buffers = initiator.pipes.packets.slot_count();

@@ -21,6 +21,9 @@ struct ProtocolCaps {
   unsigned max_outstanding;
 };
 const ProtocolCaps &protocol_caps(Protocol protocol);
+inline bool tilelink_protocol(std::optional<Protocol> protocol) {
+  return protocol == Protocol::TlUl || protocol == Protocol::TlUh;
+}
 inline bool ahb_protocol(std::optional<Protocol> protocol) {
   return protocol == Protocol::AhbLite || protocol == Protocol::Ahb5;
 }

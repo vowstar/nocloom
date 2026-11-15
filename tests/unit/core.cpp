@@ -429,7 +429,7 @@ TEST_CASE("Protocol diagnostics name every protocol that the endpoint accepts", 
       const bool accepted =
           refusal(nocloom::generate(parsed.value().definition), initiator).empty();
       accepted_count += accepted;
-      CHECK(accepted == (p.initiator || !initiator));
+      CHECK(accepted == (initiator ? p.initiator : p.target));
       CHECK(std::count(names.begin(), names.end(), p.name) == (accepted ? 1 : 0));
     }
     CHECK(names.size() == accepted_count);
@@ -446,7 +446,7 @@ TEST_CASE("Protocol diagnostics name every protocol that the endpoint accepts", 
                                      [&](const auto &p) { return p.protocol == protocol; });
     const bool known = named != std::end(nocloom::detail::protocol_names);
     INFO(value);
-    CHECK(nocloom::detail::protocol_caps(protocol).egress == known);
+    CHECK(nocloom::detail::protocol_caps(protocol).egress == (known && named->target));
     CHECK(nocloom::detail::protocol_caps(protocol).ingress == (known && named->initiator));
   }
 }
