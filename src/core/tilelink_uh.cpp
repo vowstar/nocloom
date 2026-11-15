@@ -25,6 +25,7 @@ TileLinkUhIngress::TileLinkUhIngress(logic::Logic &logic, const Axi4InitiatorPro
   ar_pending = l.state("tl.ar_pending", 1);
   w_left = l.state("tl.w_left", 11);
   child_left = l.state("tl.child_left", 9);
+  read_left = l.state("tl.read_left", 11);
   q_count = l.state("tl.q_count", 2);
   q_head = l.state("tl.q_head", 1);
   q_tail = l.state("tl.q_tail", 1);
@@ -56,6 +57,7 @@ TileLinkUhIngress::TileLinkUhIngress(logic::Logic &logic, const Axi4InitiatorPro
                                                        {"w_done", 1},
                                                        {"issued", 3},
                                                        {"done", 3},
+                                                       {"total", 3},
                                                        {"d_left", 14}})
       slot[name] = l.state("tl.slot" + std::to_string(k) + "." + name, bits);
     slots.push_back(slot);
@@ -90,6 +92,12 @@ void TileLinkUhIngress::admission() {
   legal = l.both(l.either(write, get),
                  l.inv(l.below(l.num(p.tl_size_bits, std::bit_width(p.tl_max_transfer_bytes) - 1),
                                a.at("size"))));
+  const auto aligned = l.per_size(a.at("size"), (1U << p.tl_size_bits) - 1, [&](unsigned n) {
+    return n == 0               ? l.bit(1)
+           : n > p.address_bits ? l.bit(0)
+                                : l.eq(l.b.slice(a.at("address"), 0, n), 0);
+  });
+  legal = l.both(legal, aligned);
   std::vector<ValueId> available, duplicate, reads, long_reads;
   free_slot = l.num(6, 0);
   for (unsigned k = 0; k < slots.size(); ++k) {
@@ -141,16 +149,8 @@ void TileLinkUhIngress::request_fields() {
   const auto start_read = l.both(first, l.both(legal, l.inv(write)));
   l.bind("tl.start_write", start_write);
   l.bind("tl.start_read", start_read);
-  const auto size =
-      l.pick(l.below(a.at("size"), l.num(p.tl_size_bits, 3)), l.fit(a.at("size"), 3), l.num(3, 2));
-  const auto len = l.fit(l.dec(beats), p.axi_len_bits);
-  for (const auto &[channel, fields, start, valid] :
-       std::vector<std::tuple<std::string, Fields, ValueId, ValueId>>{
-           {"aw", wr, start_write, aw_pending}, {"ar", rd, start_read, ar_pending}}) {
-    const Fields next{
-        {"slot", free_slot}, {"address", a.at("address")}, {"size", size}, {"len", len}};
-    for (const auto &[name, value] : fields)
-      l.b.update(value, l.pick(start, next.at(name), value));
+  for (const auto &[channel, fields, valid] : std::vector<std::tuple<std::string, Fields, ValueId>>{
+           {"aw", wr, aw_pending}, {"ar", rd, ar_pending}}) {
     inputs[channel + "valid"] = valid;
     inputs[channel + "id"] = l.fit(fields.at("slot"), std::max(1U, p.id_bits));
     inputs[channel + "addr"] = fields.at("address");
@@ -170,6 +170,19 @@ void TileLinkUhIngress::request_fields() {
       l.every(std::vector<ValueId>{owner, l.inv(full), l.eq(select("opcode", owner_slot), 1),
                                    l.inv(select("local", owner_slot))}));
 }
+void TileLinkUhIngress::descriptor(const Fields &fields, ValueId start, ValueId advance) {
+  const auto size =
+      l.pick(l.below(a.at("size"), l.num(p.tl_size_bits, 3)), l.fit(a.at("size"), 3), l.num(3, 2));
+  const auto length = l.fit(l.dec(l.lesser(beats, l.num(14, 256))), p.axi_len_bits);
+  const Fields next{
+      {"slot", free_slot}, {"address", a.at("address")}, {"size", size}, {"len", length}};
+  for (const auto &[name, value] : fields) {
+    const auto stepped = name == "address"
+                             ? l.plus(value, l.num(p.address_bits, p.address_bits > 10 ? 1024 : 0))
+                             : value;
+    l.b.update(value, l.pick(start, next.at(name), l.pick(advance, stepped, value)));
+  }
+}
 void TileLinkUhIngress::child_issue(const Fields &outputs) {
   aw_fire = l.both(aw_pending, outputs.at("awready"));
   ar_fire = l.both(ar_pending, outputs.at("arready"));
@@ -177,12 +190,21 @@ void TileLinkUhIngress::child_issue(const Fields &outputs) {
   last_w = l.both(w_pop, l.eq(w_left, 1));
   const auto start_write = l.bindings.at("tl.start_write");
   const auto start_read = l.bindings.at("tl.start_read");
-  l.b.update(aw_pending, l.pick(start_write, l.bit(1), l.pick(aw_fire, l.bit(0), aw_pending)));
-  l.b.update(ar_pending, l.pick(start_read, l.bit(1), l.pick(ar_fire, l.bit(0), ar_pending)));
+  const auto next_write = l.both(w_pop, l.both(l.eq(child_left, 1), l.inv(last_w)));
+  const auto next_read = l.both(ar_fire, l.below(l.num(11, 256), read_left));
+  descriptor(wr, start_write, next_write);
+  descriptor(rd, start_read, next_read);
+  l.b.update(read_left, l.pick(start_read, l.fit(beats, 11),
+                               l.pick(ar_fire, l.minus(read_left, l.num(11, 256)), read_left)));
+  l.b.update(aw_pending, l.pick(l.either(start_write, next_write), l.bit(1),
+                                l.pick(aw_fire, l.bit(0), aw_pending)));
+  l.b.update(ar_pending, l.pick(l.either(start_read, next_read), l.bit(1),
+                                l.pick(ar_fire, l.bit(0), ar_pending)));
   l.b.update(writer, l.pick(start_write, l.bit(1), l.pick(last_w, l.bit(0), writer)));
   l.b.update(w_left, l.pick(start_write, l.fit(beats, 11), l.pick(w_pop, l.dec(w_left), w_left)));
-  l.b.update(child_left,
-             l.pick(start_write, l.fit(beats, 9), l.pick(w_pop, l.dec(child_left), child_left)));
+  l.b.update(child_left, l.pick(start_write, l.fit(l.lesser(beats, l.num(14, 256)), 9),
+                                l.pick(next_write, l.num(9, 256),
+                                       l.pick(w_pop, l.dec(child_left), child_left))));
   const auto push = l.bindings.at("tl.w_push");
   l.b.update(q_count, l.pick(push, l.pick(w_pop, q_count, l.inc(q_count)),
                              l.pick(w_pop, l.dec(q_count), q_count)));
@@ -200,8 +222,8 @@ void TileLinkUhIngress::d_select(const Fields &outputs) {
   for (unsigned k = 0; k < slots.size(); ++k) {
     const auto &s = slots[k];
     const auto read = l.both(l.eq(s.at("opcode"), 1), l.both(outputs.at("rvalid"), l.eq(rid, k)));
-    const auto written =
-        l.both(s.at("w_done"), l.both(l.eq(s.at("issued"), 1), l.eq(s.at("done"), 1)));
+    const auto written = l.both(s.at("w_done"), l.both(l.same(s.at("issued"), s.at("total")),
+                                                       l.same(s.at("done"), s.at("total"))));
     const auto ready =
         l.pick(s.at("local"), s.at("a_done"), l.pick(l.eq(s.at("opcode"), 1), read, written));
     eligible.push_back(l.both(s.at("busy"), ready));
@@ -258,8 +280,10 @@ void TileLinkUhIngress::slot_updates() {
     const auto written = l.both(last_w, l.eq(wr.at("slot"), k));
     const auto issued =
         l.either(l.both(aw_fire, l.eq(wr.at("slot"), k)), l.both(ar_fire, l.eq(rd.at("slot"), k)));
-    const auto done = l.both(b_fire, l.eq(bid, k));
-    const auto error = l.either(l.both(l.both(done, b_error), l.bit(1)),
+    const auto write_done = l.both(b_fire, l.eq(bid, k));
+    const auto read_done = l.both(r_fire, l.both(rlast, l.eq(owner_slot, k)));
+    const auto done = l.either(write_done, read_done);
+    const auto error = l.either(l.both(write_done, b_error),
                                 l.both(l.both(continued, l.inv(collect_local)), a.at("corrupt")));
     const Fields initial{
         {"busy", l.bit(1)},
@@ -273,6 +297,8 @@ void TileLinkUhIngress::slot_updates() {
         {"w_done", l.bit(0)},
         {"issued", l.num(3, 0)},
         {"done", l.num(3, 0)},
+        {"total", l.per_size(a.at("size"), 12,
+                             [&](unsigned n) { return l.num(3, n > 10 ? 1U << (n - 10) : 1); })},
         {"d_left", l.pick(data_response, beats, l.num(14, 1))}};
     const Fields next{{"busy", l.pick(retire, l.bit(0), s.at("busy"))},
                       {"a_done", l.either(s.at("a_done"), a_done)},
@@ -287,6 +313,7 @@ void TileLinkUhIngress::slot_updates() {
   }
 }
 void TileLinkUhIngress::finish(const Fields &outputs) {
+  rlast = outputs.at("rlast");
   child_issue(outputs);
   child_response(outputs);
   bid = p.id_bits ? outputs.at("bid") : l.bit(0);

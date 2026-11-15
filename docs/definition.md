@@ -127,7 +127,7 @@ protocols reject these fields.
 
 Initiator `max_outstanding` is 1 to 64, with the transport default. Target
 `max_outstanding` and `flows` must be 1. TL-UH targets are rejected.
-TL-UH `max_transfer_bytes` is a power of two from 4 to 1024, default 64.
+TL-UH `max_transfer_bytes` is a power of two from 4 to 4096, default 64.
 TL-UH `size_width` is 2 to 4, default 3, and must encode the maximum size.
 TL-UH source and sink widths use the TL-UL ranges and defaults.
 

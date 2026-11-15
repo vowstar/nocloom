@@ -251,9 +251,9 @@ struct Obligations {
         const auto profile =
             initiator_profile(plan, static_cast<unsigned>(&sp - plan.sources.data()));
         const unsigned source_bits = std::max(1U, profile.tl_source_bits);
-        const unsigned bits = 57 + 2 * (9 + profile.address_bits + profile.axi_len_bits) + 72 + 37 +
+        const unsigned bits = 68 + 2 * (9 + profile.address_bits + profile.axi_len_bits) + 72 + 37 +
                               source_bits + profile.tl_size_bits +
-                              profile.tl_message_slots * (29 + source_bits + profile.tl_size_bits);
+                              profile.tl_message_slots * (32 + source_bits + profile.tl_size_bits);
         resource("source/" + source + "/tilelink", "protocol_adapter", bits,
                  "TileLink message and completion storage", "last D channel consumption");
       }

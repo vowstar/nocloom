@@ -54,6 +54,10 @@ def main():
         print(result.stderr)
         return 1
     mapping = json.loads(next(generated.glob("*.map.json")).read_text())
+    profile = mapping["definition"]["tilelink"]["initiators"]["s"]
+    assert profile["max_outstanding"] == args.slots
+    assert profile["internal_transaction_capacity"] == min(64, max(4, args.slots))
+    assert mapping["definition"]["outstanding"]["initiators"]["s"] == args.slots
     (work / "tb.sv").write_text(bench(mapping, args.bench.read_text()))
     checker = Path(__file__).parent / "sv/nlv_tl_checker.sv"
     (work / "network.v").write_text(sim_engine.generated_rtl(generated / "nocloom_uh_ingress.v")

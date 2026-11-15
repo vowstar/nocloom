@@ -260,7 +260,7 @@ data. TL-UH targets are rejected with `NCL_UNSUPPORTED_PROTOCOL`.
 | Field | Values | Default |
 | --- | --- | --- |
 | `data_width` | 32 bits | Required |
-| `max_transfer_bytes` | Powers of two from 4 to 1024 bytes | 64 |
+| `max_transfer_bytes` | Powers of two from 4 to 4096 bytes | 64 |
 | `size_width` | 2 to 4 bits. It must encode the size of `max_transfer_bytes` | 3 |
 | `source_width` | 0 to 16 bits | 4 |
 | `sink_width` | 0 to 16 bits | 0 |
@@ -292,8 +292,17 @@ Each corrupt Put beat sends zero write strobes and makes the final AccessAck
 denied. The port does not roll back the other writes.
 
 Messages of up to 4 bytes use one AXI INCR beat with size equal to A size.
-Messages of 8 to 1024 bytes use one full-word AXI INCR transaction. Reads
-retain their requested byte range through packet formation and width
+Larger messages use full-word AXI INCR transactions.
+
+| Message bytes | Transactions | Beats per transaction |
+| --- | --- | --- |
+| 8 to 1024 | 1 | Message bytes divided by 4 |
+| 2048 | 2 | 256 |
+| 4096 | 4 | 256 |
+
+Each transaction starts 1024 bytes after the previous one. All write
+results merge into one AccessAck, with the original source and size.
+Reads retain their requested byte range through packet formation and width
 conversion, subject to the target's physical read granularity.
 
 | Local request | Response | Network access |
@@ -301,7 +310,8 @@ conversion, subject to the target's physical read granularity.
 | Intent param 0 or 1 with supported size | One successful HintAck | None |
 | Intent with another param or unsupported size | One denied HintAck | None |
 | ArithmeticData or LogicalData, all params | All size-dependent AccessAckData beats, denied and corrupt, with zero data | None |
-| Unsupported size | Consume the request and return its full response | None |
+| Get or Put larger than `max_transfer_bytes`, or not aligned to its size | Denied response after all A beats. Get returns all size-dependent beats with corrupt set and zero data | None |
+| Opcode 6 or 7 | One denied AccessAck | None |
 
 Atomic responses start after all A data beats have arrived. AccessAck and
 HintAck always clear corrupt. Network read failures clear denied and set
@@ -319,3 +329,14 @@ blocks new first A beats from its selection through its final handshake.
 A Put already in progress can continue. A master can present a source again
 after its first D handshake. The port holds that new first A until the
 original message retires.
+
+Reads and writes share an internal network transaction capacity of
+`min(64, max(4, max_outstanding))`, recorded as
+`definition.tilelink.initiators.<name>.internal_transaction_capacity` in the
+map. The internal AXI engine has that many request slots per direction.
+Requests in these slots can wait for shared network capacity.
+
+A 4096-byte message to one destination can issue four transactions without
+waiting for write responses. The transactions of one message complete in
+order. A change of destination can wait for earlier transactions to drain.
+A Get D message ends only after all its read beats have handshaken.

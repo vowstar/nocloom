@@ -347,9 +347,9 @@ void tilelink_source(SourcePlan &s, const Initiator &initiator) {
   s.tl_sink_bits = initiator.sink_width.value_or(0);
   s.protocol = Protocol::Axi4;
   s.id_bits = s.tl_source_bits;
-  s.axi_len_bits =
-      uh ? static_cast<unsigned>(std::max<int>(4, std::bit_width(s.tl_max_transfer_bytes / 4 - 1)))
-         : 4;
+  s.axi_len_bits = uh ? static_cast<unsigned>(
+                            std::clamp<int>(std::bit_width(s.tl_max_transfer_bytes / 4 - 1), 4, 8))
+                      : 4;
   if (uh)
     s.id_bits = static_cast<unsigned>(
         std::max<int>(1, std::bit_width(initiator.max_outstanding.value_or(1) - 1)));
@@ -398,6 +398,8 @@ void source_outstanding(SourcePlan &s, const Initiator &initiator,
   s.engine_slots = s.outstanding;
   if (s.external_protocol == Protocol::TlUh) {
     s.tl_message_slots = s.outstanding;
+    s.outstanding = std::min(64U, std::max(4U, s.outstanding));
+    s.engine_slots = s.outstanding;
     s.id_bits = static_cast<unsigned>(std::max<int>(1, std::bit_width(s.tl_message_slots - 1)));
   }
   if (s.qos.picks() && s.pooled &&

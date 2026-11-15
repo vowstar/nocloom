@@ -534,7 +534,7 @@ struct Initiator {
   std::optional<unsigned> source_width = std::nullopt;
   std::optional<unsigned> size_width = std::nullopt;
   std::optional<unsigned> sink_width = std::nullopt;
-  // TL-UL permits 4 bytes. TL-UH initiators permit powers of two from 4 to 1024, default 64.
+  // TL-UL permits 4 bytes. TL-UH initiators permit powers of two from 4 to 4096, default 64.
   std::optional<unsigned> max_transfer_bytes = std::nullopt;
   // AXI4, AXI3 and AXI4-Lite only. True returns SLVERR for every failure.
   // Omission and false preserve DECERR.

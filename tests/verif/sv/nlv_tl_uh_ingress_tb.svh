@@ -36,18 +36,18 @@
       if(t_awvalid && t_awready) begin
         if(writing || t_awburst!=1 || t_awsize>2 || t_awlen>255)
           $fatal(1,"ASSERT_FAIL:UH.AXI.AW");
-        writing=1; write_address=t_awaddr; write_len=t_awlen;
+        t_awready<=0; writing=1; write_address=t_awaddr; write_len=t_awlen;
         write_size=t_awsize; write_id=t_awid; write_beat=0; aw_count=aw_count+1;
         if(aw_count-b_count>max_issued) max_issued=aw_count-b_count;
       end
       if(t_wvalid && t_wready) begin
-        if(!writing || t_wlast!=(write_beat==write_len)) $fatal(1,"ASSERT_FAIL:UH.AXI.WLAST");
+        if(!writing || t_wlast!=(write_beat==write_len)) $fatal(1,"ASSERT_FAIL:UH.AXI.WLAST writing=%0d beat=%0d len=%0d last=%0d",writing,write_beat,write_len,t_wlast);
         beat_address=(write_address+(write_beat<<write_size)) & ~3;
         for(lane=0;lane<4;lane=lane+1)
           if(t_wstrb[lane]) memory[beat_address+lane]=t_wdata[lane*8+:8];
         w_count=w_count+1;
         if(write_beat==write_len) begin
-          writing=0; b_ids[b_write]=write_id; b_errors[b_write]=(aw_count-1==fail_b ? 2:0);
+          t_wready<=0; writing=0; b_ids[b_write]=write_id; b_errors[b_write]=(aw_count-1==fail_b ? 2:0);
           b_write=b_write+1;
         end
         write_beat=write_beat+1;
@@ -59,7 +59,7 @@
       if(t_arvalid && t_arready) begin
         if(reading || t_arburst!=1 || t_arsize>2 || t_arlen>255)
           $fatal(1,"ASSERT_FAIL:UH.AXI.AR");
-        reading=1; read_address=t_araddr; read_len=t_arlen;
+        t_arready<=0; reading=1; read_address=t_araddr; read_len=t_arlen;
         read_size=t_arsize; read_id=t_arid; read_beat=0; ar_count=ar_count+1;
       end
       if(t_rvalid && t_rready) begin
@@ -126,7 +126,7 @@
     reg [31:0] data;
     begin
       count=sz>2 ? 1<<(sz-2):1;
-      expect_message(0,sz,source,address,corrupt_at>=0);
+      expect_message(0,sz,source,address,corrupt_at>=0 || (fail_b>=aw_count && fail_b<aw_count+(count+255)/256));
       for(j=0;j<count;j=j+1) begin
         data=32'h9e370000 ^ (j*32'h10203) ^ sz;
         lanes=sz>=2 ? 15:((1<<(1<<sz))-1) << (address%4);
@@ -157,6 +157,23 @@
       put(0,size,1,4096,-1); get(size,2,4096);
       put(1,size,1,4096,-1); get(size,2,4096);
       put(1,size,1,4096,(size>2 ? 1<<(size-3):0)); get(size,2,4096);
+    end
+    if(MAX_SIZE==12) begin
+      before_aw=aw_count; before_ar=w_count;
+      hold_b=1; max_issued=0;
+      fork
+        begin put(0,12,1,4096,-1); end
+        begin
+          wait(w_count==before_ar+1024);
+          repeat(8) @(negedge clk);
+          if(aw_count!=before_aw+4 || max_issued!=4)
+            $fatal(1,"ASSERT_FAIL:UH.FOUR_CHILDREN");
+          hold_b=0;
+        end
+      join
+      fail_b=aw_count; put(0,12,1,4096,-1);
+      fail_b=aw_count+3; put(0,12,1,4096,-1);
+      fail_b=-1; get(12,2,4096);
     end
     before_aw=aw_count; before_ar=ar_count;
     for(param=0;param<8;param=param+1) begin

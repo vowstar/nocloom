@@ -183,16 +183,22 @@ CASES.append(dict(name="tl_source_route_class", config=cfg, expect="reject",
                   code="NCL_SOURCE_PATH"))
 
 # Each maximum is checked with its minimum size encoding and adjacent failures.
-for maximum in (4, 8, 16, 32, 64, 128, 256, 512, 1024):
+for maximum in (4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096):
     cfg = deepcopy(BASE)
     width = 2 if maximum <= 8 else 3 if maximum <= 128 else 4
     cfg["initiators"][0].update(protocol="tl_uh", max_transfer_bytes=maximum, size_width=width)
     CASES.append(dict(name=f"uh_maximum_{maximum}", config=cfg, expect="accept"))
 for field, value in (("max_transfer_bytes", 3), ("max_transfer_bytes", 6),
-                     ("max_transfer_bytes", 2048), ("size_width", 1), ("size_width", 5),
+                     ("max_transfer_bytes", 8192), ("size_width", 1), ("size_width", 5),
                      ("source_width", 17), ("sink_width", 17), ("len_width", 4),
                      ("id_width", 4), ("pipes", dict(packets=dict(slice="forward")))):
     cfg = deepcopy(BASE)
     cfg["initiators"][0].update(protocol="tl_uh", **{field: value})
     CASES.append(dict(name=f"uh_invalid_{field}_{value}", config=cfg,
                       expect="reject", code="NCL_TILELINK_PROFILE"))
+
+cfg = deepcopy(BASE)
+cfg["address_width"] = 2
+cfg["targets"][0]["mappings"][0]["size"] = "0x4"
+cfg["initiators"][0]["protocol"] = "tl_uh"
+CASES.append(dict(name="uh_address_two_bits", config=cfg, expect="accept"))

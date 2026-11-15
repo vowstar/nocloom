@@ -521,7 +521,8 @@ private:
                            {"size_width", s.tl_size_bits},
                            {"sink_width", s.tl_sink_bits},
                            {"max_transfer_bytes", s.tl_max_transfer_bytes},
-                           {"max_outstanding", s.tl_message_slots}};
+                           {"max_outstanding", s.tl_message_slots},
+                           {"internal_transaction_capacity", s.outstanding}};
     if (sources.empty() && targets.empty())
       return;
     definition["tilelink"] = {{"initiators", sources}, {"targets", targets}};
@@ -1477,6 +1478,9 @@ private:
       return;
     definition["outstanding"] = {{"initiators", field_by_name(p.sources, &SourcePlan::outstanding)},
                                  {"targets", field_by_name(p.targets, &TargetPlan::outstanding)}};
+    for (const auto &s : p.sources)
+      if (s.external_protocol == Protocol::TlUh)
+        definition["outstanding"]["initiators"][s.name] = s.tl_message_slots;
     contract()["capacity"] =
         "source_bursts_per_direction_as_many_transactions_shared_by_reads_and_writes_target_"
         "bursts_shared_by_reads_and_writes_see_outstanding";

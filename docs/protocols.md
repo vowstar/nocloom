@@ -173,7 +173,7 @@ semantics, progress requirements and the TL-UL and TL-UH option table.
 ## TileLink TL-UH initiators
 
 TL-UH initiators accept multibeat Get and Put and complete Intent locally.
-`max_transfer_bytes` is a power of two from 4 to 1024, with default 64.
+`max_transfer_bytes` is a power of two from 4 to 4096, with default 64.
 `size_width` is 2 to 4, with default 3, and must encode the largest message.
 Atomic operations return denied AccessAckData without network access.
 TL-UH targets are rejected. See [TileLink](tilelink.md#tl-uh-initiators).

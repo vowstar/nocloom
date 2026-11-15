@@ -151,7 +151,7 @@ traffic crosses its boundary.
 | Endpoint clock gating | Separate protocol and transport gates, one shared gate, or a transport gate with the protocol side on the domain clock |
 | Transactions | Several AXI transactions in flight, exclusive access, target timeouts and an error response on a decode miss |
 | Scheduling | Fixed levels from 0 to 7 on AXI4, AXI3, AHB-Lite and AHB5 sources to full AXI4 or AXI3 targets, or on 32-bit APB networks. AXI4 and AXI3 sources also support AxQOS maps. AXI4, AXI3 and 32-bit APB sources support bandwidth limits |
-| TL-UH initiators | Multibeat Get and Put, local Intent responses, and denied atomic operations. The configured TL-UH maximum message size is a power of two from 4 to 1024 bytes. |
+| TL-UH initiators | Multibeat Get and Put, local Intent responses, and denied atomic operations. The configured TL-UH maximum message size is a power of two from 4 to 4096 bytes. |
 | Routing | NocLoom fixes each route at generation |
 | Output files | Always: Verilog-2001 RTL and three JSON files, which are the map, the bundle and the dependency graph. Optional: IP-XACT (`--ipxact`), address table (`--address-table`), CDC constraints (`--cdc-constraints`) and C headers (`--c-header`) |
 | C++ library | In-memory generation, tree and mesh topology helpers, and a CMake package. The core library does no file I/O and prints nothing |
