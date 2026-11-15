@@ -355,8 +355,216 @@ static void wishbone_engine(SourcePlan &s) {
     s.len_bits = 4;
   }
 }
-static Protocol target_engine(Protocol protocol) {
+static Protocol target_engine_protocol(Protocol protocol) {
   return protocol == Protocol::Wishbone ? Protocol::Apb4 : protocol;
+}
+// The network engine behind an initiator's protocol face: APB as AXI4-Lite single beats, AHB,
+// AXI3 and Wishbone as AXI4.
+void source_engine(SourcePlan &s, const Initiator &initiator) {
+  // The network carries an APB initiator's transfers as AXI4-Lite single beats; only its port
+  // face differs.
+  const bool apb = apb_initiator(initiator);
+  s.protocol = apb ? Protocol::Axi4Lite : initiator.protocol.value_or(Protocol::Axi4);
+  if (apb) {
+    s.apb = *initiator.protocol;
+    s.apb_bits = initiator.data_width.value_or(32);
+  }
+  // An AHB burst holds at most 16 beats; the face drives AxID zero.
+  s.ahb = ahb_protocol(initiator.protocol);
+  s.ahb5 = initiator.protocol == Protocol::Ahb5;
+  s.hmaster_bits = initiator.ahb5.value_or(Ahb5Properties{}).hmaster_width;
+  s.hprot_bits = initiator.ahb5.value_or(Ahb5Properties{}).hprot_width;
+  s.hnonsec = initiator.ahb5.value_or(Ahb5Properties{}).hnonsec;
+  if (s.ahb) {
+    s.protocol = Protocol::Axi4;
+    s.len_bits = 4;
+  }
+  s.axi3 = initiator.protocol == Protocol::Axi3;
+  if (s.axi3)
+    s.protocol = Protocol::Axi4;
+  wishbone_engine(s);
+}
+// The bursts a source keeps in flight and the ID resources they need.
+void source_outstanding(SourcePlan &s, const Initiator &initiator,
+                        const TransportOptions &options) {
+  s.outstanding = initiator.max_outstanding.value_or(options.max_outstanding);
+  s.engine_slots = s.outstanding;
+  if (s.qos.picks() && s.pooled &&
+      (initiator.pipes.packets.slice != PipeSlice::None || initiator.pipes.issue)) {
+    const unsigned buffers = initiator.pipes.packets.slot_count();
+    const unsigned headroom = std::bit_ceil(s.outstanding + 1) - 1 - s.outstanding;
+    const unsigned extra = std::min(buffers, headroom);
+    if (buffers >= headroom)
+      s.request_limit = s.outstanding + headroom;
+    if (s.outstanding > 1)
+      s.engine_slots += extra;
+  }
+  if (s.outstanding > 1) {
+    const unsigned per_direction = 1U << std::min(s.id_bits.value_or(4), 6U);
+    s.outstanding_ids =
+        initiator.protocol == Protocol::Axi4Lite ? 1U : std::min(s.outstanding, per_direction);
+    const unsigned keys_per_direction =
+        initiator.protocol == Protocol::Axi4Lite ? 1U : per_direction;
+    s.id_keys =
+        std::min(s.outstanding, keys_per_direction * (s.read_only || s.write_only ? 1U : 2U));
+    s.id_table = initiator.id_table_entries.value_or(options.id_table_entries.value_or(s.id_keys));
+  }
+}
+void plan_source(NetworkPlan &plan, const Definition &d, const TransportOptions &options,
+                 const Initiator &initiator) {
+  auto &s = plan.sources.emplace_back();
+  s.name = initiator.name;
+  s.external_protocol = initiator.protocol.value_or(Protocol::Axi4);
+  s.slverr_only = initiator.slverr_only.value_or(false);
+  s.wishbone_pipelined = initiator.cycles == WishboneCycles::Pipelined;
+  s.wishbone_word = initiator.address_unit == AddressUnit::Word;
+  s.clock_gating = initiator.clock_gating;
+  s.qos = initiator.qos;
+  if (plan.placement)
+    plan.placement->objects["source/" + s.name] = initiator.clock_domain;
+  s.address_bits = initiator.address_width.value_or(d.address_width);
+  source_engine(s, initiator);
+  s.engine_bits = source_engine_width(initiator, plan.burst_source_data_bits);
+  // A source wider than the network word attaches at its own width: its packets carry whole
+  // source beats, and the transport adapters on its link step them down to the network word.
+  plan.per_endpoint = plan.per_endpoint || s.engine_bits != plan.burst_data_bits;
+  tilelink_source(s, initiator);
+  if (full_axi(initiator.protocol)) {
+    s.id_bits = initiator.id_width.value_or(4);
+    s.len_bits = initiator.len_width.value_or(4);
+  }
+  if (!initiator.route_classes.empty()) {
+    s.flows = initiator.route_classes;
+    s.default_class = *initiator.default_class;
+    s.id_ranges = class_partition(initiator);
+  }
+  s.read_only = initiator.access == Access::ReadOnly;
+  s.write_only = initiator.access == Access::WriteOnly;
+  s.default_target = initiator.default_target;
+  s.user_bits = initiator.user_width.value_or(0);
+  s.response_user_bits = initiator.response_user_width.value_or(0);
+  s.data_user_bits = initiator.data_user_width;
+  for (const auto &flag : options.user_flags)
+    s.user_flags.push_back(initiator.user_flags.at(flag));
+  s.split_narrow = initiator.narrow_bursts == NarrowBursts::MergeModifiable;
+  s.pooled = !apb_initiator(initiator);
+  plan_source_pipes(s, initiator);
+  source_outstanding(s, initiator, options);
+}
+// The outlet engine behind a target's protocol face.
+void target_engine(TargetPlan &x, const Target &t) {
+  x.external_protocol = t.protocol.value_or(Protocol::Axi4);
+  x.wishbone_pipelined = t.cycles == WishboneCycles::Pipelined;
+  x.wishbone_word = t.address_unit == AddressUnit::Word;
+  x.wishbone_retry = t.retry.has_value();
+  x.tl_source_bits = t.source_width.value_or(0);
+  x.tl_size_bits = t.size_width.value_or(2);
+  x.tl_sink_bits = t.sink_width.value_or(0);
+  x.axi3 = t.protocol == Protocol::Axi3;
+  x.protocol = x.axi3 ? Protocol::Axi4 : t.protocol.value_or(Protocol::Axi4);
+  x.protocol = target_engine_protocol(x.protocol);
+  x.ahb5 = t.protocol == Protocol::Ahb5;
+  x.hmaster_bits = t.ahb5.value_or(Ahb5Properties{}).hmaster_width;
+  x.hprot_bits = t.ahb5.value_or(Ahb5Properties{}).hprot_width;
+  x.hnonsec = t.ahb5.value_or(Ahb5Properties{}).hnonsec;
+  if (x.ahb5 || t.protocol == Protocol::TlUl)
+    x.protocol = Protocol::AhbLite;
+  // Absent id_width: the default ID width for several bursts or a target monitor.
+  if (x.protocol == Protocol::Axi4) {
+    if (t.id_width || (t.max_outstanding.value_or(1) < 2 && t.exclusive != ExclusiveAccess::Target))
+      x.id_bits = t.id_width.value_or(4);
+    x.len_bits = t.len_width.value_or(4);
+  }
+}
+void target_exclusive(TargetPlan &x, const Definition &d, const Target &t,
+                      const TransportOptions &options) {
+  if (const auto mode = t.exclusive.value_or(ExclusiveAccess::None);
+      mode != ExclusiveAccess::None) {
+    x.exclusive.mode = mode;
+    auto owners = t.exclusive_owner_flags;
+    std::ranges::sort(owners);
+    std::ranges::transform(
+        owners, std::back_inserter(x.exclusive.id_flags), [&](const std::string &flag) {
+          return static_cast<unsigned>(std::ranges::find(options.user_flags, flag) -
+                                       options.user_flags.begin());
+        });
+    if (mode == ExclusiveAccess::Network) {
+      const auto monitor = t.exclusive_monitor.value_or(ExclusiveMonitorOptions{});
+      x.exclusive.monitors = monitor.reservations.value_or(exclusive_reservation_limit(d, t));
+      x.exclusive.granule = monitor.granule_bytes;
+    }
+  }
+}
+void plan_target(NetworkPlan &plan, const Definition &d, const TransportOptions &options,
+                 const MappingLayout &layout, const Target &t) {
+  auto &x = plan.targets.emplace_back();
+  x.name = t.name;
+  x.clock_gating = t.clock_gating;
+  const auto index = static_cast<std::size_t>(&t - d.targets.data());
+  for (std::size_t m = 0; m < t.mappings.size(); ++m) {
+    const auto &y = t.mappings[m];
+    const auto plane = mapping_plane(d, y);
+    x.mappings.push_back({{y.base + (std::uint64_t{plane} << d.address_width), y.size},
+                          y.local_address,
+                          layout.mappings[index][m].first,
+                          layout.mappings[index][m].second,
+                          false,
+                          y.when,
+                          plane,
+                          y.flow});
+  }
+  x.flows = t.flows;
+  std::ranges::sort(x.mappings, {}, [](const MappingPlan &m) { return m.window.base; });
+  if (plan.placement)
+    plan.placement->objects["target/" + t.name] = t.clock_domain;
+  x.local_bits = t.address_width.value_or(d.address_width);
+  target_engine(x, t);
+  x.attributes = t.attributes;
+  x.response_user_bits = t.response_user_width.value_or(0);
+  x.data_user_bits = t.data_user_width;
+  for (const auto &bit : t.user)
+    x.user.push_back(
+        bit.flag.empty()
+            ? AttributeBit{bit.value ? AttributeSource::One : AttributeSource::Zero, bit.invert}
+            : AttributeBit{AttributeSource::User, bit.invert,
+                           static_cast<unsigned>(std::ranges::find(options.user_flags, bit.flag) -
+                                                 options.user_flags.begin())});
+  x.read_only = t.access == Access::ReadOnly;
+  x.write_only = t.access == Access::WriteOnly;
+  x.back_to_back = t.apb_back_to_back.value_or(false);
+  x.read_side_effects = t.read_side_effects.value_or(false);
+  const auto stem = "target/" + t.name + "/pipe/";
+  endpoint_pipe(x.pipes, stem + "arrival", t.pipes.arrival);
+  endpoint_pipe(x.pipes, stem + "dispatch",
+                {t.pipes.dispatch ? PipeSlice::Forward : PipeSlice::None});
+  // The forward stage of AW, W and AR is the outlet's own address and write register.
+  for (const auto *channel : {"aw", "w", "ar"})
+    if (one_way_keeps(x.read_only, x.write_only, channel))
+      endpoint_pipe(x.pipes, stem + channel,
+                    {t.pipes.request.backward_stage() ? PipeSlice::Backward : PipeSlice::None});
+  endpoint_pipe(x.pipes, stem + "response", t.pipes.response);
+  x.fixed_single = t.fixed_bursts == FixedBursts::Single;
+  x.timeout = t.timeout;
+  x.fixed_length = t.undefined_length_bursts == false;
+  x.hresp_bits = t.hresp_width == 2U ? 2 : 1;
+  // A narrow APB target keeps the network word as its engine width.
+  x.data_bits = plan.burst_data_bits;
+  if (protocol_caps(x.protocol).apb && t.data_width && *t.data_width < 32)
+    x.apb_bits = *t.data_width;
+  else
+    x.data_bits = t.data_width.value_or(plan.burst_data_bits);
+  if (t.read_interleaving_disabled.value_or(false))
+    x.read_interleave_size = 0U;
+  else if (t.read_interleaving_disabled || t.read_block_words)
+    x.read_interleave_size = t.read_block_words.value_or(1) * (x.data_bits / 8);
+  plan.per_target = plan.per_target || x.data_bits != plan.burst_data_bits;
+  plan.per_endpoint = plan.per_endpoint || plan.per_target;
+  x.outstanding = std::max(t.max_outstanding.value_or(1), 1U);
+  // With several bursts in flight a write-only outlet's BREADY looks for the slot of BID; a
+  // backward pipe keeps it registered (the others park a B instead, Axi4OutletProfile).
+  if (x.protocol == Protocol::Axi4 && x.outstanding > 1 && x.write_only)
+    endpoint_pipe(x.pipes, stem + "b", {PipeSlice::Backward});
+  target_exclusive(x, d, t, options);
 }
 void plan_endpoints(NetworkPlan &plan, const Definition &d) {
   const auto options = d.transport.value_or(TransportOptions{});
@@ -366,195 +574,11 @@ void plan_endpoints(NetworkPlan &plan, const Definition &d) {
   plan.burst_response_user_bits = options.response_user_bits;
   plan.data_user_bits_per_byte = options.data_user_bits_per_byte;
   plan_ahb5_metadata(plan, d);
-  for (const auto &initiator : d.initiators) {
-    auto &s = plan.sources.emplace_back();
-    s.name = initiator.name;
-    s.slverr_only = initiator.slverr_only.value_or(false);
-    s.external_protocol = initiator.protocol.value_or(Protocol::Axi4);
-    s.wishbone_pipelined = initiator.cycles == WishboneCycles::Pipelined;
-    s.wishbone_word = initiator.address_unit == AddressUnit::Word;
-    s.clock_gating = initiator.clock_gating;
-    s.qos = initiator.qos;
-    if (plan.placement)
-      plan.placement->objects["source/" + s.name] = initiator.clock_domain;
-    s.address_bits = initiator.address_width.value_or(d.address_width);
-    // The network carries an APB initiator's transfers as AXI4-Lite single beats; only its port
-    // face differs.
-    const bool apb = apb_initiator(initiator);
-    s.protocol = apb ? Protocol::Axi4Lite : initiator.protocol.value_or(Protocol::Axi4);
-    if (apb) {
-      s.apb = *initiator.protocol;
-      s.apb_bits = initiator.data_width.value_or(32);
-    }
-    // An AHB burst holds at most 16 beats; the face drives AxID zero.
-    s.ahb = ahb_protocol(initiator.protocol);
-    s.ahb5 = initiator.protocol == Protocol::Ahb5;
-    s.hmaster_bits = initiator.ahb5.value_or(Ahb5Properties{}).hmaster_width;
-    s.hprot_bits = initiator.ahb5.value_or(Ahb5Properties{}).hprot_width;
-    s.hnonsec = initiator.ahb5.value_or(Ahb5Properties{}).hnonsec;
-    if (s.ahb) {
-      s.protocol = Protocol::Axi4;
-      s.len_bits = 4;
-    }
-    s.axi3 = initiator.protocol == Protocol::Axi3;
-    if (s.axi3)
-      s.protocol = Protocol::Axi4;
-    wishbone_engine(s);
-    s.engine_bits = source_engine_width(initiator, plan.burst_source_data_bits);
-    // A source wider than the network word attaches at its own width: its packets carry whole
-    // source beats, and the transport adapters on its link step them down to the network word.
-    plan.per_endpoint = plan.per_endpoint || s.engine_bits != plan.burst_data_bits;
-    tilelink_source(s, initiator);
-    if (full_axi(initiator.protocol)) {
-      s.id_bits = initiator.id_width.value_or(4);
-      s.len_bits = initiator.len_width.value_or(4);
-    }
-    if (!initiator.route_classes.empty()) {
-      s.flows = initiator.route_classes;
-      s.default_class = *initiator.default_class;
-      s.id_ranges = class_partition(initiator);
-    }
-    s.read_only = initiator.access == Access::ReadOnly;
-    s.write_only = initiator.access == Access::WriteOnly;
-    s.default_target = initiator.default_target;
-    s.user_bits = initiator.user_width.value_or(0);
-    s.response_user_bits = initiator.response_user_width.value_or(0);
-    s.data_user_bits = initiator.data_user_width;
-    for (const auto &flag : options.user_flags)
-      s.user_flags.push_back(initiator.user_flags.at(flag));
-    s.split_narrow = initiator.narrow_bursts == NarrowBursts::MergeModifiable;
-    s.pooled = !apb;
-    plan_source_pipes(s, initiator);
-    s.outstanding = initiator.max_outstanding.value_or(options.max_outstanding);
-    s.engine_slots = s.outstanding;
-    if (s.qos.picks() && s.pooled &&
-        (initiator.pipes.packets.slice != PipeSlice::None || initiator.pipes.issue)) {
-      const unsigned buffers = initiator.pipes.packets.slot_count();
-      const unsigned headroom = std::bit_ceil(s.outstanding + 1) - 1 - s.outstanding;
-      const unsigned extra = std::min(buffers, headroom);
-      if (buffers >= headroom)
-        s.request_limit = s.outstanding + headroom;
-      if (s.outstanding > 1)
-        s.engine_slots += extra;
-    }
-    if (s.outstanding > 1) {
-      const unsigned per_direction = 1U << std::min(s.id_bits.value_or(4), 6U);
-      s.outstanding_ids =
-          initiator.protocol == Protocol::Axi4Lite ? 1U : std::min(s.outstanding, per_direction);
-      const unsigned keys_per_direction =
-          initiator.protocol == Protocol::Axi4Lite ? 1U : per_direction;
-      s.id_keys =
-          std::min(s.outstanding, keys_per_direction * (s.read_only || s.write_only ? 1U : 2U));
-      s.id_table =
-          initiator.id_table_entries.value_or(options.id_table_entries.value_or(s.id_keys));
-    }
-  }
+  for (const auto &initiator : d.initiators)
+    plan_source(plan, d, options, initiator);
   std::ranges::sort(plan.sources, {}, &SourcePlan::name);
-  for (const auto &t : d.targets) {
-    auto &x = plan.targets.emplace_back();
-    x.name = t.name;
-    x.clock_gating = t.clock_gating;
-    const auto index = static_cast<std::size_t>(&t - d.targets.data());
-    for (std::size_t m = 0; m < t.mappings.size(); ++m) {
-      const auto &y = t.mappings[m];
-      const auto plane = mapping_plane(d, y);
-      x.mappings.push_back({{y.base + (std::uint64_t{plane} << d.address_width), y.size},
-                            y.local_address,
-                            layout.mappings[index][m].first,
-                            layout.mappings[index][m].second,
-                            false,
-                            y.when,
-                            plane,
-                            y.flow});
-    }
-    x.flows = t.flows;
-    std::ranges::sort(x.mappings, {}, [](const MappingPlan &m) { return m.window.base; });
-    if (plan.placement)
-      plan.placement->objects["target/" + t.name] = t.clock_domain;
-    x.local_bits = t.address_width.value_or(d.address_width);
-    x.external_protocol = t.protocol.value_or(Protocol::Axi4);
-    x.wishbone_pipelined = t.cycles == WishboneCycles::Pipelined;
-    x.wishbone_word = t.address_unit == AddressUnit::Word;
-    x.wishbone_retry = t.retry.has_value();
-    x.tl_source_bits = t.source_width.value_or(0);
-    x.tl_size_bits = t.size_width.value_or(2);
-    x.tl_sink_bits = t.sink_width.value_or(0);
-    x.axi3 = t.protocol == Protocol::Axi3;
-    x.protocol = x.axi3 ? Protocol::Axi4 : t.protocol.value_or(Protocol::Axi4);
-    x.protocol = target_engine(x.protocol);
-    x.ahb5 = t.protocol == Protocol::Ahb5;
-    x.hmaster_bits = t.ahb5.value_or(Ahb5Properties{}).hmaster_width;
-    x.hprot_bits = t.ahb5.value_or(Ahb5Properties{}).hprot_width;
-    x.hnonsec = t.ahb5.value_or(Ahb5Properties{}).hnonsec;
-    if (x.ahb5 || t.protocol == Protocol::TlUl)
-      x.protocol = Protocol::AhbLite;
-    // Absent id_width: the default ID width for several bursts or a target monitor.
-    if (x.protocol == Protocol::Axi4) {
-      if (t.id_width ||
-          (t.max_outstanding.value_or(1) < 2 && t.exclusive != ExclusiveAccess::Target))
-        x.id_bits = t.id_width.value_or(4);
-      x.len_bits = t.len_width.value_or(4);
-    }
-    x.attributes = t.attributes;
-    x.response_user_bits = t.response_user_width.value_or(0);
-    x.data_user_bits = t.data_user_width;
-    for (const auto &bit : t.user)
-      x.user.push_back(
-          bit.flag.empty()
-              ? AttributeBit{bit.value ? AttributeSource::One : AttributeSource::Zero, bit.invert}
-              : AttributeBit{AttributeSource::User, bit.invert,
-                             static_cast<unsigned>(std::ranges::find(options.user_flags, bit.flag) -
-                                                   options.user_flags.begin())});
-    x.read_only = t.access == Access::ReadOnly;
-    x.write_only = t.access == Access::WriteOnly;
-    x.back_to_back = t.apb_back_to_back.value_or(false);
-    x.read_side_effects = t.read_side_effects.value_or(false);
-    const auto stem = "target/" + t.name + "/pipe/";
-    endpoint_pipe(x.pipes, stem + "arrival", t.pipes.arrival);
-    endpoint_pipe(x.pipes, stem + "dispatch", {t.pipes.dispatch ? PipeSlice::Forward : PipeSlice::None});
-    // The forward stage of AW, W and AR is the outlet's own address and write register.
-    for (const auto *channel : {"aw", "w", "ar"})
-      if (one_way_keeps(x.read_only, x.write_only, channel))
-        endpoint_pipe(x.pipes, stem + channel, {t.pipes.request.backward_stage() ? PipeSlice::Backward : PipeSlice::None});
-    endpoint_pipe(x.pipes, stem + "response", t.pipes.response);
-    x.fixed_single = t.fixed_bursts == FixedBursts::Single;
-    x.timeout = t.timeout;
-    x.fixed_length = t.undefined_length_bursts == false;
-    x.hresp_bits = t.hresp_width == 2U ? 2 : 1;
-    // A narrow APB target keeps the network word as its engine width.
-    x.data_bits = plan.burst_data_bits;
-    if (protocol_caps(x.protocol).apb && t.data_width && *t.data_width < 32)
-      x.apb_bits = *t.data_width;
-    else
-      x.data_bits = t.data_width.value_or(plan.burst_data_bits);
-    if (t.read_interleaving_disabled.value_or(false))
-      x.read_interleave_size = 0U;
-    else if (t.read_interleaving_disabled || t.read_block_words)
-      x.read_interleave_size = t.read_block_words.value_or(1) * (x.data_bits / 8);
-    plan.per_target = plan.per_target || x.data_bits != plan.burst_data_bits;
-    plan.per_endpoint = plan.per_endpoint || plan.per_target;
-    x.outstanding = std::max(t.max_outstanding.value_or(1), 1U);
-    // With several bursts in flight a write-only outlet's BREADY looks for the slot of BID; a
-    // backward pipe keeps it registered (the others park a B instead, Axi4OutletProfile).
-    if (x.protocol == Protocol::Axi4 && x.outstanding > 1 && x.write_only)
-      endpoint_pipe(x.pipes, stem + "b", {PipeSlice::Backward});
-    if (const auto mode = t.exclusive.value_or(ExclusiveAccess::None);
-        mode != ExclusiveAccess::None) {
-      x.exclusive.mode = mode;
-      auto owners = t.exclusive_owner_flags;
-      std::ranges::sort(owners);
-      std::ranges::transform(
-          owners, std::back_inserter(x.exclusive.id_flags), [&](const std::string &flag) {
-            return static_cast<unsigned>(std::ranges::find(options.user_flags, flag) -
-                                         options.user_flags.begin());
-          });
-      if (mode == ExclusiveAccess::Network) {
-        const auto monitor = t.exclusive_monitor.value_or(ExclusiveMonitorOptions{});
-        x.exclusive.monitors = monitor.reservations.value_or(exclusive_reservation_limit(d, t));
-        x.exclusive.granule = monitor.granule_bytes;
-      }
-    }
-  }
+  for (const auto &t : d.targets)
+    plan_target(plan, d, options, layout, t);
   std::ranges::sort(plan.targets, {}, &TargetPlan::name);
   plan_routes(plan);
 }
