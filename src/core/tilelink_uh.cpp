@@ -230,6 +230,11 @@ void TileLinkUhIngress::d_select(const Fields &outputs) {
   }
   for (unsigned k = static_cast<unsigned>(slots.size()); k-- > 0;)
     selected = l.pick(eligible[k], l.num(6, k), selected);
+  // Start after the previous owner, wrapping to the lowest eligible slot.
+  auto rotated = selected;
+  for (unsigned k = static_cast<unsigned>(slots.size()); k-- > 0;)
+    rotated = l.pick(l.both(eligible[k], l.below(owner_slot, l.num(6, k))), l.num(6, k), rotated);
+  selected = rotated;
   const auto acquire = l.both(l.inv(owner), l.any(eligible));
   const auto release = l.both(d_take, l.eq(select("d_left", owner_slot), 1));
   l.b.update(owner, l.pick(acquire, l.bit(1), l.pick(release, l.bit(0), owner)));

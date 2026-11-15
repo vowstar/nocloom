@@ -321,6 +321,9 @@ A D message owns the channel until its final handshake, including gaps in
 network data. Write responses enter independent completion storage even
 when D is stalled. A message slot and its saved source remain allocated
 until the final D handshake. Different sources can complete out of order.
+The next D owner is selected in round-robin slot order, starting after the
+previous owner. A network read can be selected when its next response beat
+is at the front of the internal read-response queue.
 
 Several single-beat Gets can be in flight. A multibeat Get waits for all other
 Gets to retire, and blocks other Gets until it retires. A multibeat D message
