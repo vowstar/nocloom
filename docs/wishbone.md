@@ -52,6 +52,8 @@ Both roles accept optional `burst_tags: true` in classic mode. Omission or
 reject this field, including explicit `false`. Tags with `cycles: pipelined`
 produce `NCL_WISHBONE_OPTION`.
 A tagged target also rejects its own `timeout` with this code.
+See [wishbone_registered_feedback.yaml][burst-example] for a complete
+definition.
 
 | Interface | Behavior with tags |
 | --- | --- |
@@ -84,6 +86,23 @@ merge the errors into one packet response and do not roll back completed writes.
 
 RTY does not retry. Without a response from the slave, the transfer can wait
 indefinitely.
+
+The following example shows a three-word read burst. Signals are the values
+before each rising edge. The network returns read response space at edge C.
+The slave keeps ACK high in the gap, as permitted by RULE 4.15.
+
+| Edge | CYC | STB | CTI | BTE | ACK | Result |
+| --- | --- | --- | --- | --- | --- | --- |
+| A | 1 | 1 | 010 | 00 | 1 | First word completes |
+| B | 1 | 1 | 010 | 00 | 1 | Second word completes, read response slots become full |
+| C | 1 | 0 | 010 | 00 | 1 | No bus transfer, a read response leaves |
+| D | 1 | 1 | 111 | 00 | 1 | Third word completes |
+| E | 0 | 0 | 111 | 00 | 1 | Boundary cycle, no bus transfer |
+
+A slow slave keeps the current word active until ACK, ERR or enabled RTY.
+When no read response slot is free, the target pauses between words.
+Write packet collection can overlap the preceding packet, but a write packet
+starts only after its last physical word has entered a bank.
 
 ## Initiators
 
@@ -301,3 +320,4 @@ synchronous network reset asserted for at least two rising edges. See
 | Exclusive or locked sequence | Only a network monitor can preserve AXI exclusive semantics | No atomic RMW | No atomic RMW |
 
 [wishbone-spec]: https://opencores.org/howto/wishbone
+[burst-example]: ../examples/wishbone_registered_feedback.yaml

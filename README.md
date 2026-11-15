@@ -94,6 +94,7 @@ ports have names such as `nl_t_mem_awaddr`.
 
 More definitions are in [examples](examples). Start with `apb_domains.yaml` for
 two clock domains and `axi4_graph.yaml` for a declared topology.
+`wishbone_registered_feedback.yaml` shows a Wishbone target with burst tags.
 
 ## Integration
 
