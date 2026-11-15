@@ -180,6 +180,9 @@ def check_rule_evidence(reg, src, C, errors, report):
                                                        c.get("params", [])).CASE)
                   for expect in fault.get("expect", [])}
     online = set(rulecheck.PROVEN)
+    if "wishbone_bursts_check.py" in registered:
+        bursts = load_module(src / "wishbone_bursts_check.py", "nlv_registry_wishbone_bursts")
+        online.update(rule.split(":")[-1] for rules in bursts.EXPECTED.values() for rule in rules)
     if "wishbone_check.py" in registered:
         wishbone = load_module(src / "wishbone_check.py", "nlv_registry_wishbone")
         online.update(rule.split(":")[-1] for rules in wishbone.EXPECTED.values() for rule in rules)

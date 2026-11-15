@@ -30,6 +30,7 @@
 #include "core/register_bank.hpp"
 #include "core/service_outlet.hpp"
 #include "core/treadle.hpp"
+#include "core/wishbone.hpp"
 #include "nocloom/config.hpp"
 #include <algorithm>
 #include <filesystem>
@@ -1503,6 +1504,53 @@ std::vector<Component> replay_safety(const Params &p) {
   return {{"dut", std::move(h.ir), std::move(h.bindings)}};
 }
 
+std::vector<Component> wishbone_unit(const Params &params) {
+  BurstOutletProfile profile;
+  profile.name = "unit";
+  profile.id_bits = 2;
+  profile.tag_bits = 2;
+  profile.source_bits = 1;
+  profile.packet_len_bits = 8;
+  profile.address_bits = 16;
+  profile.mappings = {{0, 65536}};
+  profile.arrival = {0, 16};
+  profile.wishbone = true;
+  profile.fixed_single = true;
+  auto target = take(lower_wishbone_target(profile, param(params, "word", "0") == "1", true, false,
+                                           param(params, "tags", "1") == "1"),
+                     "wishbone");
+  target.ir.name = "nocloom_wishbone_unit";
+  for (const auto &[name, value] : target.bindings) {
+    if (!name.starts_with("bus.") && !name.starts_with("r.") && !name.starts_with("w."))
+      continue;
+    auto port = "probe_" + name;
+    std::ranges::replace(port, '.', '_');
+    target.ir.ports.push_back({port, false, target.ir.values.at(value.index).width, "probe", name});
+    target.ir.drivers.push_back({PortId{target.ir.ports.size() - 1}, value});
+  }
+  return {{"dut", std::move(target.ir), std::move(target.bindings)}};
+}
+
+std::vector<Component> wishbone_source(const Params &params) {
+  Axi4InitiatorProfile profile;
+  profile.name = "source";
+  profile.address_bits = 16;
+  profile.port_pipes = false;
+  auto source =
+      take(lower_wishbone_initiator(profile, param(params, "word", "0") == "1", false, true),
+           "wishbone source");
+  source.ir.name = "nocloom_wishbone_source";
+  for (const auto &[name, value] : source.bindings) {
+    if (!name.starts_with("wb."))
+      continue;
+    auto port = "probe_" + name;
+    std::ranges::replace(port, '.', '_');
+    source.ir.ports.push_back({port, false, source.ir.values.at(value.index).width, "probe", name});
+    source.ir.drivers.push_back({PortId{source.ir.ports.size() - 1}, value});
+  }
+  return {{"dut", std::move(source.ir), std::move(source.bindings)}};
+}
+
 std::vector<Component> wishbone_idle(const Params &params) {
   std::ifstream file(param(params, "config", ""));
   std::stringstream text;
@@ -1549,6 +1597,8 @@ std::vector<Component> build(const std::string &recipe, const Params &p) {
       {"replay_safety", replay_safety},
       {"target_bounded", target_bounded},
       {"apb_outlet", apb_outlet},
+      {"wishbone_unit", wishbone_unit},
+      {"wishbone_source", wishbone_source},
       {"wishbone_idle", wishbone_idle},
       {"ahb_outlet", ahb_outlet},
       {"explicit_routes", explicit_routes},

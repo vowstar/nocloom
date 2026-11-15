@@ -36,7 +36,8 @@ AHB_MASTER = [(n, "o" if d == "i" else "i", w) for n, d, w in AHB_SLAVE
 APB_MASTER = [(n, "o" if d == "i" else "i", w) for n, d, w in APB_SLAVE]
 WB_MASTER = [("cyc", "o", 1), ("stb", "o", 1), ("we", "o", 1),
              ("adr", "o", "ADDR_W"), ("dat_w", "o", 32), ("sel", "o", 4),
-             ("dat_r", "i", 32), ("ack", "i", 1), ("err", "i", 1), ("stall", "i", 1)]
+             ("dat_r", "i", 32), ("ack", "i", 1), ("err", "i", 1), ("stall", "i", 1),
+             ("cti", "o", 3), ("bte", "o", 2)]
 WB_SLAVE = [(n, "i" if d == "o" else "o", w) for n, d, w in WB_MASTER] + [("rty", "o", 1)]
 TL_MASTER = [('a_opcode', 'o', 3), ('a_param', 'o', 3), ('a_size', 'o', 'SIZE_W'), ('a_source', 'o', 'ID_W'), ('a_address', 'o', 'ADDR_W'), ('a_mask', 'o', 4), ('a_data', 'o', 32), ('a_corrupt', 'o', 1), ('a_valid', 'o', 1), ('a_ready', 'i', 1), ('d_opcode', 'i', 3), ('d_param', 'i', 2), ('d_size', 'i', 'SIZE_W'), ('d_source', 'i', 'ID_W'), ('d_sink', 'i', 'SINK_W'), ('d_data', 'i', 32), ('d_corrupt', 'i', 1), ('d_denied', 'i', 1), ('d_valid', 'i', 1), ('d_ready', 'o', 1)]
 TL_SLAVE = [(n, "i" if d == "o" else "o", w) for n, d, w in TL_MASTER]
@@ -307,6 +308,7 @@ def generate(case, components, faulted=False, probes=None):
         if kind == "axi_master":
             overrides.append(f".QOS_W({params['QOS_W']})")
         if kind.startswith("wishbone_"):
+            overrides.append(f".REGISTERED_FEEDBACK({int('cti' in ports)})")
             overrides.append(f".WORD({int(spec.get('word', False))})")
             overrides.append(f".PIPELINED({int(spec.get('pipelined', False))})")
         if kind == "wishbone_slave":

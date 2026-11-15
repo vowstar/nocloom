@@ -1,13 +1,15 @@
 // The shared tape driver supplies classic and pipelined Wishbone requests.
 module nlv_wishbone_master #(
     parameter NAME = "m", parameter ADDR_W = 32, parameter DATA_W = 32,
-    parameter WORD = 0, parameter PIPELINED = 0
+    parameter WORD = 0, parameter PIPELINED = 0, parameter REGISTERED_FEEDBACK = 0
 ) (
     input wire clk, rst_n,
     output wire cyc, stb, we,
     output wire [ADDR_W-1:0] adr,
     output wire [31:0] dat_w,
     output wire [3:0] sel,
+    output wire [2:0] cti,
+    output wire [1:0] bte,
     input wire [31:0] dat_r,
     input wire ack, err, stall
 );
@@ -34,14 +36,22 @@ module nlv_wishbone_master #(
       .stall(stall), .prdata(dat_r), .pready(ack | err), .pslverr(err));
   assign adr = WORD ? address >> 2 : address;
   assign sel = we ? mask : read_sel;
-  nlv_wishbone_check #(.NAME(NAME), .ADDR_W(ADDR_W), .ALLOW_ABORT(1), .PIPELINED(PIPELINED)) wb_check (
-      .stall(stall), .clk(clk), .rst_n(rst_n), .cyc(cyc), .stb(stb), .we(we), .adr(adr),
+  reg [2:0] drive_cti = 0;
+  reg [1:0] drive_bte = 0;
+  assign cti = REGISTERED_FEEDBACK ? drive_cti : 0;
+  assign bte = REGISTERED_FEEDBACK ? drive_bte : 0;
+  nlv_wishbone_check #(.NAME(NAME), .ADDR_W(ADDR_W), .ALLOW_ABORT(1), .PIPELINED(PIPELINED),
+      .REGISTERED_FEEDBACK(REGISTERED_FEEDBACK), .WORD(WORD),
+      .MASTER(0)) wb_check (
+      .cti(cti), .bte(bte), .stall(stall), .clk(clk), .rst_n(rst_n), .cyc(cyc), .stb(stb), .we(we), .adr(adr),
       .dat_w(dat_w), .dat_r(dat_r), .sel(sel), .ack(ack), .err(err), .rty(1'b0), .constant_ack(1'b0));
   function [63:0] counter(input integer index);
     counter = index == 23 ? response_aborts : driver.counter(index);
   endfunction
   task set_ctl(input integer index, input [31:0] value);
-    if (index == 70) read_sel = value;
+    if (index == 74) drive_cti = value;
+    else if (index == 75) drive_bte = value;
+    else if (index == 70) read_sel = value;
     else if (index == 72) abort_hold = value != 0;
     // The tape and the response abort logic both run on the falling edge.
     else if (index == 73) abort_response <= value;

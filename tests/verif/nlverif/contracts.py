@@ -152,6 +152,12 @@ CONTRACTS = {
         text="An APB, AHB or AXI4-Lite target sees the beats of a burst as single transfers "
              "of its own word: strobes, lanes, attributes, errors as SLVERR",
         source="docs/dedicated-targets.md#dedicated-apb-and-axi4-lite-targets"),
+    "WB.BURST.SEQUENCE": dict(
+        text="Registered feedback tags preserve physical word order and terminate with a data word",
+        source="docs/wishbone.md#registered-feedback-bursts"),
+    "WB.BUFFER.CREDIT": dict(
+        text="Write banks retain packets until completion storage takes their identity and reads reserve response space",
+        source="docs/wishbone.md#registered-feedback-bursts"),
     "APB.SUBPAGE.DECODE": dict(
         text="A window below 4 KiB owns its page; beats in the rest of the page answer DECERR "
              "without access",
@@ -171,6 +177,7 @@ CONTRACTS = {
 # listed in that fault's expectation. LIVE.* rules are raised only when a
 # tape wait times out (stall_report of the AXI BFMs).
 RULES = (
+    "WB.RULE_4_00", "WB.RULE_4_20", "WB.RULE_4_30", "WB.RULE_4_35", "WB.RULE_4_40",
     "WB.RULE_3_20", "WB.RULE_3_25", "WB.RULE_3_30", "WB.RULE_3_35", "WB.RULE_3_45", "WB.RULE_3_50", "WB.RULE_3_59", "WB.RULE_3_60",
     "TL.4.1.A_OWNER", "TL.4.2.D_OWNER", "TL.3.2.2.RESET", "TL.6.4.SOURCE", "TL.7.2.OPCODE", "TL.7.2.SIZE", "TL.4.5.ALIGN", "TL.4.5.MASK", "TL.7.2.PARAM", "TL.4.2.RESPONSE", "TL.7.2.RESPONSE", "TL.4.4.CORRUPT",
     "AXI.AW.HOLD", "AXI.W.HOLD", "AXI.AR.HOLD", "AXI.B.HOLD", "AXI.R.HOLD",

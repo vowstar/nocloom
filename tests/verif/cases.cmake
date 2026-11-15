@@ -873,6 +873,59 @@ nocloom_verif_case(NAME verif_tilelink_uh_tl_ul LAYER rtl TIER focused TIMEOUT 3
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_ingress_tb.svh)
 set_tests_properties(verif_tilelink_uh_tl_ul PROPERTIES RESOURCE_LOCK tilelink)
 
+nocloom_verif_case(NAME verif_wishbone_bursts LAYER rtl TIER focused TIMEOUT 600
+  FEATURES wishbone ci MEMORY_MB 2048
+  CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.ERR.READ_ZERO WB.BURST.SEQUENCE
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/wishbone_bursts.py --cli $<TARGET_FILE:nocloom_cli>)
+set_tests_properties(verif_wishbone_bursts PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_verif_case(NAME verif_wishbone_bursts_checker LAYER unit TIER focused TIMEOUT 180
+  FEATURES wishbone ci MEMORY_MB 512
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/wishbone_bursts_check.py)
+set_tests_properties(verif_wishbone_bursts_checker PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+foreach(family IN ITEMS source width pressure banks)
+  nocloom_verif_case(NAME verif_wishbone_bursts_${family} LAYER rtl TIER focused TIMEOUT 600
+    FEATURES wishbone MEMORY_MB 2048
+    CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.ERR.READ_ZERO WB.BURST.SEQUENCE
+    COMMAND ${NLV_RUN} --case ${NLV_CASES}/wishbone_bursts.py --param family=${family}
+      --cli $<TARGET_FILE:nocloom_cli>)
+  set_tests_properties(verif_wishbone_bursts_${family} PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+endforeach()
+nocloom_verif_case(NAME verif_wishbone_bursts_configuration LAYER config TIER focused TIMEOUT 180
+  FEATURES wishbone ci MEMORY_MB 512
+  COMMAND ${NLV_CONFIG} --case ${NLV_CASES}/config_wishbone_bursts.py)
+foreach(family IN ITEMS throughput banks pressure)
+  nocloom_verif_case(NAME verif_wishbone_bursts_unit_${family} LAYER unit TIER focused TIMEOUT 300
+    FEATURES wishbone MEMORY_MB 2048
+    CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.ERR.READ_ZERO WB.BURST.SEQUENCE
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/wishbone_bursts_unit.py
+      ${NLV_FIXTURE} --family ${family})
+  set_tests_properties(verif_wishbone_bursts_unit_${family} PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+endforeach()
+nocloom_verif_case(NAME verif_wishbone_bursts_negative LAYER negative TIER focused TIMEOUT 600
+  FEATURES wishbone ci MEMORY_MB 2048
+  CONTRACTS WB.BURST.SEQUENCE AXI.ROUTE.LOCAL_OFFSET
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/wishbone_bursts.py --cli $<TARGET_FILE:nocloom_cli> --negative)
+set_tests_properties(verif_wishbone_bursts_negative PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_verif_case(NAME verif_wishbone_bursts_source_negative LAYER negative TIER focused TIMEOUT 600
+  FEATURES wishbone MEMORY_MB 2048
+  CONTRACTS WB.BURST.SEQUENCE
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/wishbone_bursts.py --param family=source
+    --cli $<TARGET_FILE:nocloom_cli> --negative)
+set_tests_properties(verif_wishbone_bursts_source_negative PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_verif_case(NAME verif_wishbone_bursts_formal LAYER formal TIER formal TIMEOUT 600
+  FEATURES wishbone MEMORY_MB 4096
+  CONTRACTS WB.BURST.SEQUENCE WB.BUFFER.CREDIT
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/wishbone_bursts_formal.py ${NLV_FIXTURE})
+set_tests_properties(verif_wishbone_bursts_formal PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_verif_case(NAME verif_wishbone_bursts_peer LAYER unit TIER focused TIMEOUT 180
+  FEATURES wishbone ci MEMORY_MB 512
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/wishbone_bursts_peer.py)
+set_tests_properties(verif_wishbone_bursts_peer PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_verif_case(NAME verif_wishbone_bursts_bytes LAYER structure TIER focused TIMEOUT 180
+  FEATURES wishbone ci MEMORY_MB 1024
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/wishbone_bursts_bytes.py
+    --cli $<TARGET_FILE:nocloom_cli>)
+
 foreach(protocol IN ITEMS axi4 axi3 axi4_lite apb4 logged axi4_folded axi4_compact)
   nocloom_verif_case(NAME verif_initiator_error_responses_${protocol} LAYER negative TIER focused
     TIMEOUT 60 FEATURES errors MEMORY_MB 1024

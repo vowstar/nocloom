@@ -329,6 +329,6 @@ class Tape:
 COUNTERS["wishbone_master"] = dict(MASTER_COUNTERS, pipe_peak=21, pipe_pending=22,
                                    response_aborts=23)
 COUNTERS["wishbone_slave"] = APB_COUNTERS
-CONTROLS["wishbone_master"] = dict(APB_MASTER_CTL, read_sel=70, continuous=71, abort=72,
+CONTROLS["wishbone_master"] = dict(APB_MASTER_CTL, read_sel=70, continuous=71, abort=72, cti=74, bte=75,
                                    abort_response=73)
 CONTROLS["wishbone_slave"] = dict(APB_CTL, ack_mode=62)

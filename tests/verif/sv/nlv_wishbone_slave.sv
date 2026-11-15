@@ -4,7 +4,7 @@ module nlv_wishbone_slave #(
     parameter ADDR_W = 32,
     parameter DATA_W = 32,
     parameter DIALECT = 4, parameter WORD = 0, parameter RETRY = 0,
-    parameter PIPELINED = 0,
+    parameter PIPELINED = 0, parameter REGISTERED_FEEDBACK = 0,
     parameter MEM_BYTES = 65536,
     parameter SALT = 0
 ) (
@@ -14,6 +14,8 @@ module nlv_wishbone_slave #(
     input wire [ADDR_W-1:0] adr,
     input wire [31:0] dat_w,
     input wire [3:0] sel,
+    input wire [2:0] cti,
+    input wire [1:0] bte,
     output wire [31:0] dat_r,
     output wire ack, err, rty, stall,
     input wire sideband
@@ -33,7 +35,36 @@ module nlv_wishbone_slave #(
   wire penable = PIPELINED && ctl[62] != 3 ? pending : stb;
   wire pwrite = PIPELINED && ctl[62] != 3 ? held_we : we;
   wire [ADDR_W-1:0] address = PIPELINED && ctl[62] != 3 ? held_adr : adr;
-  wire [31:0] paddr = WORD ? {address, 2'b00} : address;
+  wire [31:0] actual_address = WORD ? {address, 2'b00} : address;
+  reg predicted_valid = 0;
+  reg [31:0] predicted_address = 0;
+  reg [2:0] predicted_cti = 0;
+  reg predicted_we = 0;
+  reg [3:0] predicted_sel = 0;
+  wire predictive = REGISTERED_FEEDBACK && (ctl[62] == 4 || ctl[62] == 5);
+  wire [31:0] paddr = predictive && predicted_valid ? predicted_address : actual_address;
+  function [31:0] successor(input [31:0] a, input [2:0] c, input [1:0] b);
+    reg [31:0] mask, step;
+    begin
+      mask = b == 1 ? 15 : b == 2 ? 31 : b == 3 ? 63 : 32'hffffffff;
+      step = a + 4;
+      successor = c == 1 ? a : (a & ~mask) | (step & mask);
+    end
+  endfunction
+  always @(posedge clk) begin
+    if (!rst_n || !cyc) predicted_valid <= 0;
+    else if (stb && (ack || err || rty)) begin
+      if (predictive && predicted_valid &&
+          {actual_address, we, sel} !== {predicted_address, predicted_we, predicted_sel})
+        if (predicted_cti == 1) tb.nlv_fail_report("WB.RULE_4_35", NAME, 0);
+        else tb.nlv_fail_report("WB.RULE_4_40", NAME, 0);
+      predicted_valid <= cti == 1 || cti == 2;
+      predicted_address <= successor(paddr, cti, bte);
+      predicted_cti <= cti;
+      predicted_we <= we;
+      predicted_sel <= sel;
+    end
+  end
   wire [31:0] pwdata = PIPELINED && ctl[62] != 3 ? held_data : dat_w;
   wire [3:0] pstrb = PIPELINED && ctl[62] != 3 ? held_sel : sel;
   always @(posedge clk) begin
@@ -52,11 +83,14 @@ module nlv_wishbone_slave #(
   wire [2:0] pprot = 0;
   reg [31:0] prdata;
   assign dat_r = prdata;
-  assign ack = ctl[62] == 1 ? 1'b1 : psel && pready && !pslverr;
+  assign ack = ctl[62] == 1 ? 1'b1 :
+      predictive ? cyc && pready && !pslverr : psel && pready && !pslverr;
   assign err = psel && pslverr && !RETRY;
   assign rty = psel && pslverr && RETRY;
-  nlv_wishbone_check #(.NAME(NAME), .ADDR_W(ADDR_W), .PIPELINED(PIPELINED)) wb_check (
-      .stall(stall), .clk(clk), .rst_n(rst_n), .cyc(cyc), .stb(stb), .we(we), .adr(adr),
+  nlv_wishbone_check #(.NAME(NAME), .ADDR_W(ADDR_W), .PIPELINED(PIPELINED),
+      .REGISTERED_FEEDBACK(REGISTERED_FEEDBACK), .WORD(WORD),
+      .MASTER(1)) wb_check (
+      .cti(cti), .bte(bte), .stall(stall), .clk(clk), .rst_n(rst_n), .cyc(cyc), .stb(stb), .we(we), .adr(adr),
       .dat_w(dat_w), .dat_r(dat_r), .sel(sel), .ack(ack), .err(err), .rty(rty), .constant_ack(ctl[62] == 1));
   `include "nlv_common.svh"
   localparam NB = DATA_W / 8;
@@ -134,14 +168,22 @@ module nlv_wishbone_slave #(
   // PREADY and PSLVERR settle before the clock edge that samples them; they
   // are registered from the cycle count of the current ACCESS phase.
   always @(negedge clk) begin
+    if (predictive && predicted_valid && rst_n && cyc) begin
+      err_r = err_code(n_access - base, paddr);
+      if (!predicted_we)
+        for (i = 0; i < NB; i = i + 1) prdata[i*8+:8] = mem[((paddr & ~(NB - 1)) + i) % MEM_BYTES];
+    end
     if (!rst_n || !(psel && penable)) begin
-      ready_r = DIALECT == 2;
+      ready_r = DIALECT == 2 || (predictive && rst_n && cyc && predicted_valid && ctl[62] == 4);
       waited = 0;
     end else begin
       ready_r = ctl[READY_MODE] != 0
           ? nlv_ready_pattern(ctl[READY_MODE], ctl[READY_A1], ctl[READY_A2], cycle_count, waited, lfsr)
           : waited >= (ctl[SLOW_MASK] != 0 && (paddr & ctl[SLOW_MASK]) == ctl[SLOW_MATCH]
                        ? ctl[SLOW_WAIT] : ctl[WAIT_N]);
+      if (REGISTERED_FEEDBACK && ctl[62] >= 4)
+        ready_r = waited >= ((ctl[62] == 6 || !predicted_valid ? 1 : 0) +
+                             (ctl[62] == 5 ? 2 : 0));
       err_r = err_code(n_access - base, paddr);
       la = paddr & ~(NB - 1);
       if (!pwrite)
@@ -189,6 +231,11 @@ module nlv_wishbone_slave #(
                   "{\"t\":%0.0f,\"c\":%0d,\"p\":\"%0s\",\"k\":\"hs\",\"ch\":\"apb\",\"a\":\"%0h\",\"w\":%0d,\"d\":\"%0h\",\"s\":\"%0h\",\"pr\":%0d,\"r\":%0d,\"waits\":%0d}\n",
                   ($realtime * 1000.0), cycle_count, NAME, paddr, pwrite, pwrite ? pwdata : prdata,
                   DIALECT == 4 ? pstrb : {NB{1'b1}}, DIALECT == 4 ? pprot : 3'd0, pslverr, waited);
+          if (REGISTERED_FEEDBACK)
+            $fwrite(tb.nlv_fd,
+                "{\"t\":%0.0f,\"c\":%0d,\"p\":\"%0s\",\"k\":\"wb_tag\",\"a\":\"%0h\",\"cti\":%0d,\"bte\":%0d,\"sel\":%0d,\"waits\":%0d}\n",
+                ($realtime * 1000.0), cycle_count, NAME, paddr, cti, bte, sel, waited);
+          if (REGISTERED_FEEDBACK && ctl[62] >= 4) waited = 0;
           n_access = n_access + 1;
           if (pwrite) n_write = n_write + 1;
           else begin
