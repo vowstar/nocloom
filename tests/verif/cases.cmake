@@ -939,13 +939,20 @@ nocloom_verif_case(NAME verif_wishbone_bursts_checker LAYER unit TIER focused TI
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/wishbone_bursts_check.py)
 set_tests_properties(verif_wishbone_bursts_checker PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
 foreach(family IN ITEMS source width pressure banks)
+  set(wb_bursts_run ${NLV_RUN})
+  set(wb_bursts_param --param family=${family})
+  if(family STREQUAL "source")
+    set(wb_bursts_run ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/wishbone_bursts_source.py)
+    set(wb_bursts_param "")
+  endif()
   nocloom_verif_case(NAME verif_wishbone_bursts_${family} LAYER rtl TIER focused TIMEOUT 600
     FEATURES wishbone MEMORY_MB 2048
     CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.ERR.READ_ZERO WB.BURST.SEQUENCE
-    COMMAND ${NLV_RUN} --case ${NLV_CASES}/wishbone_bursts.py --param family=${family}
+    COMMAND ${wb_bursts_run} --case ${NLV_CASES}/wishbone_bursts.py ${wb_bursts_param}
       --cli $<TARGET_FILE:nocloom_cli>)
   set_tests_properties(verif_wishbone_bursts_${family} PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
 endforeach()
+set_property(TEST verif_wishbone_bursts_source APPEND PROPERTY LABELS ci)
 nocloom_verif_case(NAME verif_wishbone_bursts_configuration LAYER config TIER focused TIMEOUT 180
   FEATURES wishbone ci MEMORY_MB 512
   COMMAND ${NLV_CONFIG} --case ${NLV_CASES}/config_wishbone_bursts.py)

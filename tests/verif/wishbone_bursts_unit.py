@@ -186,10 +186,16 @@ BODY = r"""
       wait (receive_r_count == 8); @(negedge clk);
       $display("READ_CYCLES:%0d", last_cycle - first_cycle + 1);
     end else if (family == 1) begin
-      send_write(256, 32, 1);
-      send_write(384, 7, 2);
-      send_write(512, 16, 3);
-      send_write(640, 3, 0);
+      nl_wrsp_ready = 0;
+      fork
+        begin
+          send_write(256, 32, 1);
+          send_write(384, 7, 2);
+          send_write(512, 16, 3);
+          send_write(640, 3, 0);
+        end
+        begin repeat (400) @(negedge clk); nl_wrsp_ready = 1; end
+      join
       wait (b_count == 4); @(negedge clk);
       if (!both_banks || !overlap) $fatal(1, "CHECK_FAIL:bank_overlap_unreached");
       send_read(256, 32, 2);

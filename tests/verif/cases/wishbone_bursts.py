@@ -30,7 +30,12 @@ def target_scenario(tape, seed, ack, family="shapes", bits=32):
     tape.reset(8)
     tape.delay(10)
     tape.set("t0", "ack_mode", ack)
-    if family == "pressure":
+    if family == "read_only":
+        tape.write("s0", 0x1100, beats=8, size=2, prot=2)
+        tape.drain()
+        tape.read("s0", 0x1100, beats=8, size=2, prot=2)
+        tape.drain()
+    elif family == "pressure":
         tape.ready("s0", "r", "never")
         tape.read("s0", 0x1100, beats=32, size=2, prot=2)
         tape.delay(100)
@@ -50,6 +55,18 @@ def target_scenario(tape, seed, ack, family="shapes", bits=32):
             tape.drain()
             tape.read("s0", addr, beats=n, size=size, burst=burst, prot=2)
             tape.drain()
+        tape.set("t0", "reg0_lo", 0x404)
+        tape.set("t0", "reg0_hi", 0x408)
+        tape.set("t0", "reg0_c", 1)
+        tape.write("s0", 0x1400, beats=4, size=size, prot=2)
+        tape.drain()
+        tape.read("s0", 0x1400, beats=4, size=size, prot=2)
+        tape.drain()
+        tape.set("t0", "reg0_hi", 0)
+        tape.write("s0", 0x1400, beats=4, size=size, prot=2)
+        tape.drain()
+        tape.read("s0", 0x1400, beats=4, size=size, prot=2)
+        tape.drain()
         for size in (0, 1):
             # Start in the second half of a source word, with a 256-beat narrow stream.
             addr = 0x1400 + bits // 16 + 2
@@ -73,6 +90,12 @@ def target_scenario(tape, seed, ack, family="shapes", bits=32):
             tape.drain()
             tape.read("s0", 0x1100, beats=n, size=2, prot=2)
             tape.drain()
+        for burst in ("incr", "fixed"):
+            for size, addr in ((0, 0x1171), (1, 0x1172), (2, 0x1170)):
+                tape.write("s0", addr, beats=1, size=size, burst=burst, prot=2)
+                tape.drain()
+                tape.read("s0", addr, beats=1, size=size, burst=burst, prot=2)
+                tape.drain()
         for n in (2, 4, 8, 16):
             for start in range(n):
                 addr = 0x1800 + start * 4
@@ -103,6 +126,8 @@ def target_scenario(tape, seed, ack, family="shapes", bits=32):
             tape.read("s0", 0x1400, beats=8, size=2, prot=2)
             tape.drain()
         tape.set("t0", "reg0_hi", 0)
+        tape.write("s0", 0x1400, beats=8, size=2, prot=2)
+        tape.drain()
         tape.read("s0", 0x1400, beats=8, size=2, prot=2)
         tape.drain()
     tape.end()
@@ -124,6 +149,42 @@ def source_scenario(tape, seed, ack, family="source", bits=32):
             addr = 0x1100 + ((3 + k) % n if bte else k) * 4
             tape.read("s0", addr, prot=2)
             tape.drain()
+    # These source sequences deliberately end without a final tag.
+    tape.set("s0", "bte", 0)
+    tape.set("s0", "cti", 2)
+    tape.set("t0", "r_lat", 80)
+    tape.read("s0", 0x1200, prot=2)
+    tape.delay(16)
+    tape.set("s0", "abort", 1)
+    tape.delay(4)
+    tape.set("s0", "abort", 0)
+    tape.delay(100)
+    tape.set("t0", "r_lat", 2)
+    tape.set("s0", "cti", 0)
+    tape.read("s0", 0x1204, prot=2)
+    tape.drain()
+    tape.set("s0", "cti", 2)
+    tape.write("s0", 0x1240, prot=2)
+    tape.drain()
+    tape.set("s0", "cti", 0)
+    tape.write("s0", 0x1244, prot=2)
+    tape.drain()
+    # The middle word reports SLVERR, then the source finishes and recovers.
+    tape.set("t0", "reg0_lo", 0x284)
+    tape.set("t0", "reg0_hi", 0x288)
+    tape.set("t0", "reg0_w", 2)
+    tape.set("t0", "reg0_r", 2)
+    for direction in (tape.write, tape.read):
+        for k in range(3):
+            tape.set("s0", "cti", 7 if k==2 else 2)
+            direction("s0", 0x1280+4*k, prot=2)
+            tape.drain()
+    tape.set("t0", "reg0_hi", 0)
+    tape.set("s0", "cti", 0)
+    tape.write("s0", 0x1284, prot=2)
+    tape.drain()
+    tape.read("s0", 0x1284, prot=2)
+    tape.drain()
     for cti in (0, 1, 3, 4, 5, 6, 7):
         tape.set("s0", "cti", cti)
         tape.set("s0", "bte", 0)
@@ -144,8 +205,17 @@ def burst_oracle(checker, events, sources, targets):
     if checker.case.get("scenario_args", {}).get("family") == "source":
         return []
     out = []
+    for event in tags.values():
+        if event["sel"] == 0:
+            out.append(dict(detail="zero SEL reached the bus"))
+        if not checker.bench["bfms"]["t0"].get("word", False) and int(event["a"],16) % 4:
+            out.append(dict(detail="unaligned physical byte address", address=event["a"]))
+    if checker.case.get("scenario_args", {}).get("family")=="read_only" and any(t.dir=="w" for t in targets):
+        out.append(dict(detail="read-only target wrote to the bus"))
     for s in sources:
         selected = [tags[t.t] for t in s.targets if t.t in tags]
+        if s.burst in (0,1) and any(e["bte"] != 0 for e in selected):
+            out.append(dict(detail="non-wrapping BTE"))
         source_bytes = checker.bench["bfms"]["s0"]["data_bits"] // 8
         if s.burst == 1 and (1 << s.size) == source_bytes and selected:
             # Include zero-SEL words when reconstructing packets from source byte masks.
@@ -196,7 +266,8 @@ def burst_oracle(checker, events, sources, targets):
             if s.burst == 0:
                 masks = [mask for _, mask in s.beats] if s.dir == "w" else [15] * s.length
                 fixed = len(masks) > 1 and len(set(masks)) == 1 and masks[0] != 0
-                expected = ([1] * (len(selected) - 1) + [7]) if fixed else [0] * len(selected)
+                count = sum(mask != 0 for mask in masks)
+                expected = ([1] * (count - 1) + [7]) if fixed else [0] * count
                 if [e["cti"] for e in selected] != expected:
                     out.append(dict(detail="FIXED CTI", got=[e["cti"] for e in selected], want=expected))
             elif s.burst == 2 and s.length in (4, 8, 16):
@@ -256,6 +327,12 @@ if family == "shapes":
     retry["dut"]["config"]["targets"][0]["retry"] = "error"
     retry["bfms"][1]["retry"] = True
     configs.append(retry)
+    readonly = variant()
+    readonly["label"] = "read_only"
+    readonly["dut"]["config"]["targets"][0]["access"] = "read_only"
+    readonly["model"]["targets"] = nlconfig.targets(readonly["dut"]["config"], error_data_zero=True)
+    readonly["scenario_args"]["family"] = "read_only"
+    configs.append(readonly)
     for bits in (64, 128):
         entry = variant(bits)
         entry["scenario_args"].update(family=family, bits=bits)

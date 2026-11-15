@@ -26,12 +26,12 @@ module tb;
   task nlv_fail_report(input string rule, input string name, input integer detail);
     $display("OBSERVED:%s:%s", name, rule);
   endtask
-  nlv_wishbone_check #(.NAME("burst"), .REGISTERED_FEEDBACK(1), .MASTER(1)) check (
+  nlv_wishbone_check #(.NAME("burst"), .REGISTERED_FEEDBACK(1), .MASTER(@MASTER@), .WORD(@WORD@)) check (
       .clk(clk), .rst_n(rst_n), .cyc(cyc), .stb(stb), .we(1'b1),
       .ack(ack), .err(err), .rty(rty), .constant_ack(1'b0), .stall(1'b0),
       .adr(adr), .dat_w(32'h12345678), .dat_r(32'b0), .sel(sel), .cti(cti), .bte(bte));
   task beat(input [31:0] a, input [2:0] c, input [1:0] b, input [3:0] s);
-    @(negedge clk); cyc = 1; stb = 1; adr = a; cti = c; bte = b; sel = s; ack = 1;
+    @(negedge clk); cyc = 1; stb = 1; adr = @WORD@ ? a/4 : a; cti = c; bte = b; sel = s; ack = 1;
     @(negedge clk); stb = 0; ack = 0;
   endtask
   initial begin
@@ -70,7 +70,7 @@ module tb;
       end
       14: begin
         beat(0, 2, 0, 15);
-        @(negedge clk); stb = 1; adr = 4; cti = 2; err = 1;
+        @(negedge clk); stb = 1; adr = @WORD@ ? 1:4; cti = 2; err = 1;
         @(negedge clk); stb = 0; err = 0;
         beat(8, 7, 0, 15);
       end
@@ -80,6 +80,8 @@ module tb;
         @(negedge clk); ack = 1;
         @(negedge clk); ack = 0;
       end
+      21: begin beat(12,2,1,15); beat(0,7,1,15); end
+      22: begin beat(12,2,1,15); beat(16,7,1,15); end
       19, 20: begin
         beat(0, 2, 0, 15);
         if (mode == 19) err = 1; else rty = 1;
@@ -104,23 +106,39 @@ def main():
     args = parser.parse_args()
     args.work.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="run-", dir=args.work)).resolve()
-    (work / "tb.sv").write_text(BENCH)
+    rows = []
+    for master, word in ((1,0),(0,0),(1,1)):
+        rows.extend(controls(args, work, master, word))
+    (work / "results.json").write_text(json.dumps(rows, indent=2))
+    return 0 if all(row["passed"] for row in rows) else 1
+
+
+def controls(args, root, master, word):
+    work = root / f"master-{master}-word-{word}"
+    work.mkdir()
+    (work / "tb.sv").write_text(BENCH.replace("@MASTER@",str(master)).replace("@WORD@",str(word)))
     (work / "network.v").write_text(
         (Path(__file__).parent / "sv/nlv_wishbone_check.sv").read_text())
     sim = sim_engine.Simulation(work, "network.v", engine=args.sim, config=args.sim_config,
                                 success=("CHECK_PASS",))
     rows = []
-    for mode in range(21):
+    expected = dict(EXPECTED)
+    expected[22] = ["burst:WB.RULE_4_40"]
+    if master == 0:
+        expected[1] = []
+        for mode in (9,19,20):
+            expected[mode] = ["burst:WB.RULE_3_50"]
+        expected[18] = ["burst:WB.RULE_3_30","burst:WB.RULE_3_50"]
+    for mode in range(23):
         result = sim.run([f"+MODE={mode}"])
         observed = sorted({line.removeprefix("OBSERVED:") for line in result.stdout.splitlines()
                            if line.startswith("OBSERVED:")})
-        row = dict(mode=mode, expected=EXPECTED.get(mode, []), observed=observed,
-                   passed=result.returncode == 0 and observed == EXPECTED.get(mode, []))
+        row = dict(master=master,word=word,mode=mode, expected=expected.get(mode, []), observed=observed,
+                   passed=result.returncode == 0 and observed == expected.get(mode, []))
         rows.append(row)
         (work / f"mode-{mode}.log").write_text(result.stdout)
         print(json.dumps(row))
-    (work / "results.json").write_text(json.dumps(rows, indent=2))
-    return 0 if all(row["passed"] for row in rows) else 1
+    return rows
 
 
 if __name__ == "__main__":
