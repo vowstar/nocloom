@@ -325,10 +325,11 @@ The next D owner is selected in round-robin slot order, starting after the
 previous owner. A network read can be selected when its next response beat
 is at the front of the internal read-response queue.
 
-Several single-beat Gets can be in flight. A multibeat Get waits for all other
-Gets to retire, and blocks other Gets until it retires. A multibeat D message
-blocks new first A beats from its selection through its final handshake.
+Several single-beat Gets can be in flight. A multibeat Get waits for all
+other Gets to retire, and blocks other Gets until it retires.
 
+A multibeat D message blocks new first A beats from its selection through its
+final handshake. This block does not apply to AccessAck or HintAck responses.
 A Put already in progress can continue. A master can present a source again
 after its first D handshake. The port holds that new first A until the
 original message retires.

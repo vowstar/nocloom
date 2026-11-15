@@ -113,8 +113,10 @@ void TileLinkUhIngress::admission() {
   const auto blocked_read = l.both(
       get, l.either(l.any(long_reads),
                     l.both(l.inv(l.below(a.at("size"), l.num(p.tl_size_bits, 3))), l.any(reads))));
-  const auto locked =
-      l.both(owner, l.inv(l.below(select("size", owner_slot), l.num(p.tl_size_bits, 3))));
+  const auto multibeat =
+      l.both(l.eq(select("opcode", owner_slot), 1),
+             l.inv(l.below(select("size", owner_slot), l.num(p.tl_size_bits, 3))));
+  const auto locked = l.both(owner, multibeat);
   const auto room = l.inv(l.eq(q_count, 2));
   const auto head_ready = l.every(
       std::vector<ValueId>{l.any(available), l.inv(l.any(duplicate)), l.inv(ar_pending),
