@@ -291,6 +291,9 @@ beat can be withdrawn or changed.
 Each corrupt Put beat sends zero write strobes and makes the final AccessAck
 denied. The port does not roll back the other writes.
 
+For byte and halfword Puts, only mask bits within the addressed bytes
+become write strobes. Other mask bits are ignored.
+
 Messages of up to 4 bytes use one AXI INCR beat with size equal to A size.
 Larger messages use full-word AXI INCR transactions.
 

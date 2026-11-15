@@ -870,6 +870,15 @@ nocloom_verif_case(NAME verif_tilelink_uh_admission LAYER rtl TIER focused TIMEO
     --extra ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_admission.svh)
 set_tests_properties(verif_tilelink_uh_admission PROPERTIES RESOURCE_LOCK tilelink)
 
+nocloom_verif_case(NAME verif_tilelink_uh_mask LAYER rtl TIER focused TIMEOUT 300
+  FEATURES tilelink ci MEMORY_MB 1024 CONTRACTS TL.ACCESS
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh.py
+    --case ${NLV_CASES}/tilelink_uh.py --cli $<TARGET_FILE:nocloom_cli>
+    --maximum 4096 --slots 8
+    --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_regression_tb.svh
+    --extra ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_mask.svh)
+set_tests_properties(verif_tilelink_uh_mask PROPERTIES RESOURCE_LOCK tilelink)
+
 foreach(variant IN ITEMS windows tail_miss)
   set(uh_args --windows 4)
   if(variant STREQUAL "tail_miss")

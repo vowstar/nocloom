@@ -137,12 +137,19 @@ void TileLinkUhIngress::continuation() {
              l.pick(first, l.dec(beats), l.pick(l.both(take, collecting), l.dec(a_left), a_left)));
   const auto push = l.both(take, l.pick(collecting, l.inv(collect_local), l.both(legal, write)));
   l.bind("tl.w_push", push);
+  const auto lane = l.b.slice(a.at("address"), 0, 2);
+  auto byte_mask = l.num(4, 1);
+  for (unsigned k = 1; k < 4; ++k)
+    byte_mask = l.pick(l.eq(lane, k), l.num(4, 1U << k), byte_mask);
+  const auto mask = l.pick(
+      l.eq(a.at("size"), 0), byte_mask,
+      l.pick(l.eq(a.at("size"), 1),
+             l.pick(l.b.slice(a.at("address"), 1, 1), l.num(4, 12), l.num(4, 3)), l.num(4, 15)));
+  const auto strobe = l.pick(a.at("corrupt"), l.num(4, 0), l.both(a.at("mask"), mask));
   for (unsigned k = 0; k < queue.size(); ++k) {
     const auto enable = l.both(push, l.eq(q_tail, k));
     l.b.update(queue[k].at("data"), l.pick(enable, a.at("data"), queue[k].at("data")));
-    l.b.update(
-        queue[k].at("mask"),
-        l.pick(enable, l.pick(a.at("corrupt"), l.num(4, 0), a.at("mask")), queue[k].at("mask")));
+    l.b.update(queue[k].at("mask"), l.pick(enable, strobe, queue[k].at("mask")));
   }
   l.b.update(q_tail, l.pick(push, l.inv(q_tail), q_tail));
 }
