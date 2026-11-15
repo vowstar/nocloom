@@ -752,6 +752,12 @@ nocloom_verif_case(NAME verif_wishbone_pipelined_configuration LAYER config TIER
   FEATURES wishbone ci MEMORY_MB 512
   COMMAND ${NLV_CONFIG} --case ${NLV_CASES}/config_wishbone_pipelined.py
     --cli $<TARGET_FILE:nocloom_cli>)
+nocloom_verif_case(NAME verif_tilelink_gate LAYER rtl TIER focused TIMEOUT 300
+  FEATURES tilelink clock_gating ci MEMORY_MB 1024
+  CONTRACTS TL.ACCESS AXI.CLOCK.GATE
+  COMMAND ${Python3_EXECUTABLE} ${NLV_CASES}/tilelink_gate.py --cli $<TARGET_FILE:nocloom_cli>)
+set_tests_properties(verif_tilelink_gate PROPERTIES RESOURCE_LOCK tilelink)
+
 # TileLink peers use the shared tape, memory model and transaction scoreboard.
 foreach(pair IN ITEMS tl_ul:tl_ul tl_ul:axi4 axi4:tl_ul tl_ul:apb4 apb4:tl_ul tl_ul:ahb_lite ahb_lite:tl_ul)
   string(REPLACE ":" ";" ends "${pair}")

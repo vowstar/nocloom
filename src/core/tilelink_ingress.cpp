@@ -117,7 +117,6 @@ void TileLinkIngress::request() {
   const auto room = l.inv(l.either(full, l.both(local, local_response)));
   inputs["rready"] = l.both(room, turn);
   inputs["bready"] = l.both(room, l.inv(turn));
-  l.b.update(turn, l.inv(turn));
 }
 ValueId TileLinkIngress::select_size(ValueId source) {
   return std::accumulate(
@@ -127,6 +126,8 @@ ValueId TileLinkIngress::select_size(ValueId source) {
       });
 }
 void TileLinkIngress::response(const Fields &outputs) {
+  const auto waiting = l.either(outputs.at("bvalid"), outputs.at("rvalid"));
+  l.b.update(turn, l.pick(waiting, l.inv(turn), turn));
   const auto bfire = l.both(outputs.at("bvalid"), inputs.at("bready"));
   const auto rfire = l.both(outputs.at("rvalid"), inputs.at("rready"));
   const auto local_fire =

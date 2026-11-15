@@ -118,6 +118,10 @@ protocol logic wakes for network requests and target bus responses. An offered
 response keeps its receiving region active while the consumer applies back
 pressure.
 
+After a target timeout, the target protocol zone keeps its clock gate open
+until common reset. The status port `nl_t_<target>_timed_out` stays high for
+the same time.
+
 A high test or ungate input opens its gates.
 
 ## Asynchronous crossings
