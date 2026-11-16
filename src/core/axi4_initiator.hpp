@@ -144,8 +144,8 @@ struct Axi4InitiatorProfile {
     bool operator==(const MissKept &) const = default;
   };
   std::optional<MissKept> miss_kept = std::nullopt;
-  // Destinations (their index) inside a window it reaches, of targets it does not reach: its decode
-  // does not see them.
+  // Indices of routing windows the source cannot reach. Destination tracking excludes them,
+  // including windows in an admitted sub-page's page.
   std::vector<unsigned> hidden_destinations = {};
   // The record field of its requests (BurstProfile::record_bits): a lock bit of a decode miss above
   // the burst's bytes less one, less the start's offset in its first beat.

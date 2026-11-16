@@ -12,6 +12,7 @@ Report these as defects and include the definition.
 | --- | --- |
 | `NCL_CDC_BINDING` | A planned resource or dependency has an invalid binding |
 | `NCL_EXCHANGE_COMPOSE` | The composition of the network hardware fails an internal consistency check |
+| `NCL_EXCHANGE_DESTINATION_DECODE` | Source destination decoding fails an internal consistency check |
 
 ## Input and output
 

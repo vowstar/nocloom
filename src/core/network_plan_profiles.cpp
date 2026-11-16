@@ -418,12 +418,13 @@ static Axi4InitiatorProfile::MissKept kept_of_miss(const NetworkPlan &plan, unsi
       blocks, {}, [](const AddressWindow &b) { return std::pair{b.size, b.base}; });
   return {block.base, block.size - 1};
 }
-// The routing windows of the targets a source reaches.
+// The routing windows of the target flows a source reaches.
 static std::vector<AddressWindow> reached_windows_of(const NetworkPlan &plan, unsigned si) {
   std::vector<AddressWindow> out;
-  for (unsigned ti = 0; ti < plan.targets.size(); ++ti)
-    if (plan.route_index.reaching[si][ti].reached)
-      std::ranges::copy(plan.targets[ti].routes(), std::back_inserter(out));
+  for (const auto &target : plan.targets)
+    for (const auto &mapping : target.mappings)
+      if (reaching_flows(plan, plan.sources[si].name, target.name, mapping.flow))
+        std::ranges::copy(mapping.routes, std::back_inserter(out));
   return out;
 }
 // A packet's length field holds the longest burst of a source's word.
@@ -1319,11 +1320,7 @@ Axi4InitiatorProfile initiator_profile(const NetworkPlan &plan, unsigned index) 
     profile.destinations = plan.windows();
     const auto reached = reached_windows_of(plan, index);
     for (unsigned k = 0; k < profile.destinations.size(); ++k)
-      if (const auto &w = profile.destinations[k]; std::ranges::find(reached, w) == reached.end() &&
-                                                   std::ranges::any_of(reached, [&](const auto &x) {
-                                                     return w.base >= x.base &&
-                                                            w.base + w.size <= x.base + x.size;
-                                                   }))
+      if (std::ranges::find(reached, profile.destinations[k]) == reached.end())
         profile.hidden_destinations.push_back(k);
   }
   return profile;
