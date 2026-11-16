@@ -49,6 +49,19 @@ foreach(bits IN ITEMS 64 128)
       ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
   endforeach()
 endforeach()
+add_test(NAME exclusive_derived_owner
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/exclusive_derived_owner.py
+    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/exclusive_derived_owner)
+set_tests_properties(exclusive_derived_owner PROPERTIES TIMEOUT 30 PROCESSORS 1
+  LABELS "rtl;exclusive;focused" RESOURCE_LOCK exclusive_regression
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+add_test(NAME exclusive_packet_limits
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/exclusive_limits.py
+    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/exclusive_packet_limits)
+set_tests_properties(exclusive_packet_limits PROPERTIES
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 600 PROCESSORS 1
+  LABELS "rtl;exclusive;focused;ci" RESOURCE_LOCK exclusive_regression
+  ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
 add_executable(nocloom_tilelink_uh_target_fixture tilelink_uh_target_fixture.cpp)
 target_link_libraries(nocloom_tilelink_uh_target_fixture PRIVATE nocloom_core)
 target_include_directories(nocloom_tilelink_uh_target_fixture PRIVATE ${PROJECT_SOURCE_DIR}/src)

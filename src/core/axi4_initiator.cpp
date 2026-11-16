@@ -87,6 +87,57 @@ ValueId flow_in(logic::Logic &l, const std::vector<IdClassInterval> &ranges, Val
     values.push_back(l.bit((mask >> k) & 1));
   return class_value(l.b, id, ranges, values);
 }
+ValueId locked_packet_ok(logic::Logic &l, const Axi4InitiatorProfile &p, const Descriptor &d,
+                         const Admission &a, unsigned transport_address_bits,
+                         const std::string &prefix) {
+  // A locked INCR past floor(start, align) + max_bytes or the next boundary of the splitter window
+  // holding its start would be cut: it fails whole. An admitted INCR stays in its page, so with
+  // m = 2^size - 1 the last byte less floor(start, align) is ((start | m) & (align - 1)) + span,
+  // which reaches a power-of-two limit when a bit at or above it is set (no compare).
+  const unsigned w = transport_address_bits + 1;
+  const auto start = l.zext(d.addr, w);
+  constexpr unsigned run = 14;
+  const auto beat_last =
+      l.zext(l.either(l.b.slice(d.addr, 0, 12),
+                      l.per_size(d.size, 7, [&](unsigned n) { return l.num(12, (1U << n) - 1); })),
+             run);
+  const auto span = l.b.slice(a.span, 0, run);
+  // The first splitter window holding the start decides; windows of equal limits share one test.
+  std::vector<AddressWindow> windows;
+  std::vector<unsigned> classes;
+  std::vector<ValueId> cuts;
+  std::map<std::tuple<bool, std::uint64_t, std::uint64_t, std::uint64_t>, unsigned> seen;
+  for (const auto &x : p.lock_windows) {
+    const auto past = [&](std::uint64_t align, std::uint64_t limit) {
+      const auto k = static_cast<unsigned>(std::countr_zero(limit));
+      if (k >= run)
+        return l.bit(0);
+      const auto reach = l.plus(l.both(beat_last, l.num(run, (align - 1) & 4095)), span);
+      return l.inv(l.eq(l.b.slice(reach, k, run - k), 0));
+    };
+    windows.push_back(x.window);
+    const auto [at, fresh] =
+        seen.try_emplace({x.checked, x.align_bytes, x.max_bytes, x.boundary_bytes},
+                         static_cast<unsigned>(cuts.size()));
+    if (fresh)
+      cuts.push_back(x.checked ? l.either(past(x.align_bytes, x.max_bytes),
+                                          past(x.boundary_bytes, x.boundary_bytes))
+                               : l.bit(0));
+    classes.push_back(at->second);
+  }
+  const auto cut = l.window_class(start, windows, classes, cuts, l.bit(0));
+  const bool exclusive_cut = std::ranges::any_of(p.lock_windows, [&](const auto &x) {
+    return x.checked && (x.max_bytes < 128 || x.boundary_bytes < 128) &&
+           std::ranges::any_of(p.exclusive_windows, [&](const ExclusiveWindow &e) {
+             return x.window.base - e.window.base < e.window.size ||
+                    e.window.base - x.window.base < x.window.size;
+           });
+  });
+  if (!exclusive_cut)
+    return l.bind(prefix + ".lock_ok", l.inv(l.both(d.lock, l.both(l.eq(d.burst, 1), cut))));
+  const auto lock_incr = l.either(l.eq(d.burst, 1), l.both(a.locked, l.eq(d.burst, 2)));
+  return l.bind(prefix + ".lock_ok", l.inv(l.both(d.lock, l.both(lock_incr, cut))));
+}
 Admission check_admission(logic::Logic &l, const Axi4InitiatorProfile &p, const Descriptor &d,
                           const std::string &prefix) {
   const unsigned transport_address_bits =
@@ -195,44 +246,7 @@ Admission check_admission(logic::Logic &l, const Axi4InitiatorProfile &p, const 
   a.budget = l.bind(prefix + ".budget", l.b.binary(Op::Subtract, mask, offset));
   a.span_cross = l.bind(prefix + ".span_cross", l.b.binary(Op::UnsignedLess, a.budget, a.span));
   a.incr_ok = l.bind(prefix + ".incr_ok", l.either(l.inv(l.eq(d.burst, 1)), l.inv(a.span_cross)));
-  // A locked INCR past floor(start, align) + max_bytes or the next boundary of the splitter window
-  // holding its start would be cut: it fails whole. An admitted INCR stays in its page, so with
-  // m = 2^size - 1 the last byte less floor(start, align) is ((start | m) & (align - 1)) + span,
-  // which reaches a power-of-two limit when a bit at or above it is set (no compare).
-  const unsigned w = transport_address_bits + 1;
-  const auto start = l.zext(d.addr, w);
-  constexpr unsigned run = 14;
-  const auto beat_last =
-      l.zext(l.either(l.b.slice(d.addr, 0, 12),
-                      l.per_size(d.size, 7, [&](unsigned n) { return l.num(12, (1U << n) - 1); })),
-             run);
-  const auto span = l.b.slice(a.span, 0, run);
-  // The first splitter window holding the start decides; windows of equal limits share one test.
-  std::vector<AddressWindow> windows;
-  std::vector<unsigned> classes;
-  std::vector<ValueId> cuts;
-  std::map<std::tuple<bool, std::uint64_t, std::uint64_t, std::uint64_t>, unsigned> seen;
-  for (const auto &x : p.lock_windows) {
-    const auto past = [&](std::uint64_t align, std::uint64_t limit) {
-      const auto k = static_cast<unsigned>(std::countr_zero(limit));
-      if (k >= run)
-        return l.bit(0);
-      const auto reach = l.plus(l.both(beat_last, l.num(run, (align - 1) & 4095)), span);
-      return l.inv(l.eq(l.b.slice(reach, k, run - k), 0));
-    };
-    windows.push_back(x.window);
-    const auto [at, fresh] =
-        seen.try_emplace({x.checked, x.align_bytes, x.max_bytes, x.boundary_bytes},
-                         static_cast<unsigned>(cuts.size()));
-    if (fresh)
-      cuts.push_back(x.checked ? l.either(past(x.align_bytes, x.max_bytes),
-                                          past(x.boundary_bytes, x.boundary_bytes))
-                               : l.bit(0));
-    classes.push_back(at->second);
-  }
-  const auto cut = l.window_class(start, windows, classes, cuts, l.bit(0));
-  const auto lock_ok =
-      l.bind(prefix + ".lock_ok", l.inv(l.both(d.lock, l.both(l.eq(d.burst, 1), cut))));
+  const auto lock_ok = locked_packet_ok(l, p, d, a, transport_address_bits, prefix);
   const std::array checks{a.size_ok, lock_ok,    a.exclusive_ok, a.burst_ok,
                           a.wrap_ok, a.fixed_ok, a.incr_ok};
   auto admitted = l.every(checks);

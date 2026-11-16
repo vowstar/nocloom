@@ -654,6 +654,15 @@ std::vector<ExclusiveWindow> exclusive_windows(const NetworkPlan &plan, const st
     unsigned limit = std::min(128U, (1U << t.axi_len_bits.value_or(plan.packet_len_bits)) * word);
     if (t.protocol == Protocol::AhbLite || t.exclusive.mode == ExclusiveAccess::Target)
       limit = std::min(limit, 16 * word);
+    // Pair overrides constrain the whole exclusive burst, including WRAP accesses.
+    const auto si = source_index(plan, source);
+    for (const auto &pair : plan.pairs)
+      if (si && pair.source == *si && pair.target == plan.target_index(t.name)) {
+        if (pair.max_bytes)
+          limit = std::min<std::uint64_t>(limit, pair.max_bytes);
+        if (pair.boundary_bytes)
+          limit = std::min<std::uint64_t>(limit, pair.boundary_bytes);
+      }
     const bool strobeless = t.protocol == Protocol::Apb3 || t.protocol == Protocol::Apb2;
     std::ranges::transform(t.routes(), std::back_inserter(out), [&](const AddressWindow &w) {
       return ExclusiveWindow{w, static_cast<unsigned>(std::min<std::uint64_t>(limit, w.size)),
@@ -957,6 +966,9 @@ static void wishbone_packet_limits(const NetworkPlan &plan, Axi4PacketizerProfil
 static Axi4PacketWindow packet_window_policy(Axi4PacketizerProfile &profile, Axi4PacketWindow w,
                                              const TargetPlan &target, bool partial, bool aligned,
                                              std::uint64_t pack) {
+  profile.exclusive_can_cut =
+      profile.exclusive_can_cut || (target.exclusive.mode != ExclusiveAccess::None &&
+                                    (w.max_bytes < 128 || w.boundary_bytes < 128));
   w.exact = target.read_side_effects;
   w.partial = partial;
   w.refused = target.read_only;
@@ -1085,6 +1097,7 @@ Axi4PacketizerProfile packet_profile(const NetworkPlan &plan, unsigned index) {
   auto profile = burst_fields<Axi4PacketizerProfile>(plan, "s" + std::to_string(index));
   profile.data_bits = source.engine_bits;
   profile.split_narrow = source.split_narrow;
+  profile.exclusive_can_cut = false;
   profile.write = !source.read_only; // a read-only source has no write face to cut
   profile.level_bits = plan.burst_level_bits;
   profile.exclusive = plan.exclusive;
@@ -1281,15 +1294,17 @@ Axi4InitiatorProfile initiator_profile(const NetworkPlan &plan, unsigned index) 
   profile.exclusive = plan.exclusive;
   if (!profile.lite && !sp.read_only && !sp.write_only)
     profile.exclusive_windows = exclusive_windows(plan, source);
-  // Exclusive windows check locked bursts themselves; a decode miss reaches no target.
+  // Exclusive shape and packet limits both apply. A decode miss reaches no target.
   if (sp.packets && !profile.lite)
     for (const auto packets = packet_profile(plan, index); const auto &x : packets.windows)
-      profile.lock_windows.push_back(
-          {x.window, x.max_bytes, x.boundary_bytes, x.align_bytes,
-           !x.miss &&
-               std::ranges::none_of(profile.exclusive_windows, [&](const ExclusiveWindow &e) {
-                 return x.window.base - e.window.base < e.window.size;
-               })});
+      profile.lock_windows.push_back({x.window, x.max_bytes, x.boundary_bytes, x.align_bytes,
+                                      !x.miss && (x.max_bytes < 128 || x.boundary_bytes < 128 ||
+                                                  std::ranges::none_of(
+                                                      profile.exclusive_windows,
+                                                      [&](const ExclusiveWindow &e) {
+                                                        return x.window.base - e.window.base <
+                                                               e.window.size;
+                                                      }))});
   profile.late_id_binding = sp.qos.picks() && sp.pooled && sp.outstanding > 1 &&
                             std::ranges::any_of(sp.pipes, [](const auto &pipe) {
                               return pipe.name.ends_with("/pipe/packets");

@@ -388,9 +388,16 @@ struct PacketizerLowering {
     const auto page = l.b.slice(s, 12, wide - 12);
     const auto whole =
         l.b.concat(l.pick(l.b.slice(end, 12, 1), l.inc(page), page), l.b.slice(end, 0, 12));
+    // A locked burst keeps its own stop even when a window would cut an ordinary burst.
+    const auto cuts_exclusive = [](const Axi4PacketWindow &w) {
+      return w.max_bytes < 128 || w.boundary_bytes < 128;
+    };
+    const bool lock_can_cut = lock && p.exclusive_can_cut &&
+                              (std::ranges::any_of(p.windows, cuts_exclusive) ||
+                               (p.fallback && cuts_exclusive(*p.fallback)));
     return Packet{l.pick(limited, whole, unlimited),
                   l.pick(split, l.b.slice(words, 0, lb + 1), remaining),
-                  l.pick(short_of, end, burst_stop),
+                  l.pick(lock_can_cut ? split : short_of, end, burst_stop),
                   l.pick(split, l.b.slice(less_one, 0, lb), length_of(remaining)),
                   split,
                   limited,

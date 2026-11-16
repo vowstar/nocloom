@@ -100,6 +100,8 @@ struct Axi4PacketizerProfile : ComponentProfileBase {
   bool merger_holds = false;
   // Weft exclusive fields (message.hpp contract point 11).
   bool exclusive = false;
+  // Whether an exclusive request can reach a window whose limits cut its legal shape.
+  bool exclusive_can_cut = true;
   unsigned tag_bits = 0;
   unsigned user_bits = 0; // network user flags (message.hpp point 13)
   unsigned data_user_bits_per_byte = 0;
