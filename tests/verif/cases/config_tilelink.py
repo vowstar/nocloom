@@ -201,7 +201,11 @@ cfg = deepcopy(BASE)
 cfg["address_width"] = 2
 cfg["targets"][0]["mappings"][0]["size"] = "0x4"
 cfg["initiators"][0]["protocol"] = "tl_uh"
-CASES.append(dict(name="uh_address_two_bits", config=cfg, expect="accept"))
+CASES.append(dict(name="uh_address_two_bits", config=cfg, expect="reject",
+                  code="NCL_TILELINK_PROFILE", field="initiators[0].address_width"))
+cfg = deepcopy(cfg)
+cfg["initiators"][0]["max_transfer_bytes"] = 4
+CASES.append(dict(name="uh_address_two_bits_maximum_four", config=cfg, expect="accept"))
 
 for capacity in (1, 3, 64):
     for source_width in (0, 16):

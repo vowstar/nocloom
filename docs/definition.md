@@ -118,29 +118,13 @@ CLI switches select optional output files. See [output files](outputs.md).
 
 ## TileLink endpoint fields
 
-`protocol: tl_ul` and `protocol: tl_uh` accept 32-bit data on both endpoint
-roles. Both use `source_width`, `size_width`, `sink_width` and
-`max_transfer_bytes`. See the [TL-UL table](tilelink.md#endpoint-fields),
-[TL-UH initiator fields](tilelink.md#tl-uh-initiators) and
-[TL-UH target fields](tilelink.md#tl-uh-targets) for ranges and defaults.
-Other protocols reject these fields. C++ uses `Protocol::TlUl` and
-`Protocol::TlUh`.
+TL-UL and TL-UH endpoints use 32-bit data and take `source_width`,
+`size_width`, `sink_width` and `max_transfer_bytes`. Other protocols reject
+these fields. C++ uses `Protocol::TlUl` and `Protocol::TlUh`.
 
-Initiator `max_outstanding` is 1 to 64, with the transport default. TL-UL
-target `max_outstanding` is 1. TL-UH target `max_outstanding` is 1 to 16,
-default 1, shared between reads and writes. TileLink target `flows` is 1.
-
-TL-UH `max_transfer_bytes` accepts powers of two from 4 to 4096 bytes on both
-roles, default 64. TL-UH `size_width` is 2 to 4, default 3, and must encode
-the maximum size.
-
-TL-UH initiator source and sink widths use the TL-UL ranges and defaults.
-
-TL-UH target `source_width` defaults to ceil(log2(max_outstanding)), zero
-for one context. It can be widened to 16 and cannot be smaller than that
-default. The context number is the source until the packet retires. Target
-mappings align to `max_transfer_bytes`. Exclusive monitors and
-`timeout.completion: true` produce `NCL_TILELINK_PROFILE`.
+See [TL-UL fields](tilelink.md#endpoint-fields),
+[TL-UH initiators](tilelink.md#tl-uh-initiators) and
+[TL-UH targets](tilelink.md#tl-uh-targets) for ranges, defaults and limits.
 
 ## AHB5 endpoint fields
 

@@ -178,6 +178,7 @@ TL-UH initiators accept multibeat Get and Put and complete Intent locally.
 `max_transfer_bytes` is a power of two from 4 to 4096, with default 64.
 `size_width` is 2 to 4, with default 3, and must encode the largest message.
 Atomic operations return denied AccessAckData without network access.
+Initiator `address_width` must be at least `log2(max_transfer_bytes)`.
 See [TileLink](tilelink.md#tl-uh-initiators).
 
 ## TL-UH targets

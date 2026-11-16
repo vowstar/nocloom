@@ -287,6 +287,11 @@ A larger `max_transfer_bytes` needs `size_width: 4`. The default size width
 does not change with `max_transfer_bytes`. Every configuration accepts
 1-byte and 2-byte accesses.
 
+Addresses are byte addresses of 2 to 48 bits. The effective initiator
+`address_width` must be at least `log2(max_transfer_bytes)`. For example,
+an 8-bit address port permits a maximum of 256 bytes. A smaller address
+width produces `NCL_TILELINK_PROFILE` before generation.
+
 TL-UH initiators reject `id_width`, `len_width`, `access`, `narrow_bursts`,
 user ports, pipe changes, a 64-bit network, nonzero scheduling levels,
 shapers and error logs. Invalid TileLink fields produce

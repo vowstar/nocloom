@@ -184,7 +184,12 @@ See the [mesh topology helper](library.md#mesh-topology-helper).
 | --- | --- |
 | `NCL_TILELINK_PROFILE` | Invalid TileLink field, width, port option, target capacity or flow count. TileLink target timeout completion is rejected. TileLink fields on other protocols are rejected |
 
-TL-UH targets reject maxima above 4096 bytes, capacity outside 1 to 16,
-insufficient source width, unaligned mappings and exclusive monitors with
-`NCL_TILELINK_PROFILE`.
-Unknown protocol options produce `NCL_SCHEMA_UNKNOWN_FIELD`.
+TL-UH targets reject invalid maxima, capacity outside 1 to 16, a source width
+below the context encoding, unaligned mappings and exclusive monitors with
+`NCL_TILELINK_PROFILE`. TL-UH initiators also reject an effective address width
+below `log2(max_transfer_bytes)` with this code.
+
+TileLink fields on other protocols report
+`This field requires protocol tl_ul or tl_uh`. An invalid maximum does not
+also report insufficient `size_width`. Unknown protocol options produce
+`NCL_SCHEMA_UNKNOWN_FIELD`.

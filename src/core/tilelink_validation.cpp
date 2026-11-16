@@ -65,6 +65,13 @@ std::vector<Diagnostic> check_tilelink(const Definition &d) {
     fields(s, path, out);
     if (s.protocol != Protocol::TlUl && s.protocol != Protocol::TlUh)
       continue;
+    const auto maximum = s.max_transfer_bytes.value_or(64);
+    const auto address_bits = s.address_width.value_or(d.address_width);
+    reject(s.protocol == Protocol::TlUh && maximum >= 4 && maximum <= 4096 &&
+               std::has_single_bit(maximum) && address_bits >= 2 &&
+               address_bits < static_cast<unsigned>(std::bit_width(maximum - 1)),
+           path + ".address_width",
+           "TL-UH address_width must be at least log2(max_transfer_bytes)");
     reject(d.transport && d.transport->data_width == 64, "transport.data_width",
            "TileLink endpoints require a 32-bit network");
     const std::string level = s.protocol == Protocol::TlUh ? "TL-UH" : "TL-UL";

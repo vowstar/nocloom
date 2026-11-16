@@ -149,6 +149,35 @@ TEST_CASE("TL-UH invalid maxima do not suggest a larger size port", "[tilelink]"
   CHECK(result.diagnostics()[0].field == "initiators[0].max_transfer_bytes");
 }
 
+TEST_CASE("TL-UH initiator addresses can span the maximum message", "[tilelink]") {
+  for (unsigned bits = 2; bits <= 12; ++bits) {
+    auto d = tilelink_definition();
+    auto &source = d.initiators[0];
+    source.protocol = Protocol::TlUh;
+    source.max_transfer_bytes = 1U << bits;
+    source.size_width = 4;
+    source.address_width = bits;
+    d.targets[0].mappings[0].size = 4;
+    REQUIRE(build_network_plan(d));
+    if (bits > 2) {
+      source.address_width = bits - 1;
+      const auto invalid = generate(d);
+      REQUIRE_FALSE(invalid);
+      REQUIRE(invalid.diagnostics().size() == 1);
+      CHECK(invalid.diagnostics()[0].code == "NCL_TILELINK_PROFILE");
+      CHECK(invalid.diagnostics()[0].field == "initiators[0].address_width");
+    }
+  }
+  auto d = tilelink_definition();
+  d.address_width = 4;
+  d.targets[0].mappings[0].size = 4;
+  d.initiators[0].protocol = Protocol::TlUh;
+  const auto invalid = generate(d);
+  REQUIRE_FALSE(invalid);
+  REQUIRE(invalid.diagnostics().size() == 1);
+  CHECK(invalid.diagnostics()[0].field == "initiators[0].address_width");
+}
+
 TEST_CASE("TL-UH target sources encode the shared packet capacity", "[tilelink]") {
   for (unsigned capacity = 1; capacity <= 16; ++capacity) {
     auto d = tilelink_definition();

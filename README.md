@@ -148,7 +148,7 @@ traffic crosses its boundary.
 | Topology | One generated request switch and one generated response switch, or declared request and response graphs of 1 to 128 switches each |
 | Endpoint data width | AXI4, AXI3, AHB-Lite and AHB5: 32, 64, 128, 256, 512 or 1024 bits. AXI4-Lite: 32 or 64 bits. APB: 8, 16 or 32 bits. Wishbone and TileLink: 32 bits |
 | Network data width | 32 or 64 bits (`transport.data_width`). The default is the narrowest endpoint data width, where APB counts as 32 bits and the maximum is 64 bits. A 64-bit network accepts only 64-bit initiators, and no APB, Wishbone or TileLink endpoint or AHB target. Other definitions need a 32-bit network. Therefore, an initiator wider than 64 bits needs `transport.data_width: 32`, unless a 32-bit or APB endpoint already makes 32 bits the default |
-| Address width | 2 to 48 bits. AXI4, AXI3, AHB and Wishbone initiators need at least 12 bits. APB initiators use at most 32 bits. APB, AHB, Wishbone, TileLink and AXI4-Lite targets use at most 32 bits |
+| Address width | 2 to 48 bits. AXI4, AXI3, AHB and Wishbone initiators need at least 12 bits. TL-UH initiators need at least `log2(max_transfer_bytes)` bits. APB initiators use at most 32 bits. APB, AHB, Wishbone, TileLink and AXI4-Lite targets use at most 32 bits |
 | Clock domains | 1 to 64. More than one domain needs a `topology` whose switches name their clock domains. Clock domain crossings connect asynchronous clocks, or related clocks divided from one root |
 | Endpoint clock gating | Separate protocol and transport gates, one shared gate, or a transport gate with the protocol side on the domain clock |
 | Transactions | Several AXI transactions in flight, exclusive access, target timeouts and an error response on a decode miss |
