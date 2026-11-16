@@ -9,7 +9,7 @@ import tempfile
 
 def cover_guidance(capacity, scenario):
     # Concrete legal traffic guides reachability without constraining the proof.
-    return r'''
+    guide = r'''
 `ifdef NL_CONTEXT_COVER
 (* anyconst *) reg [1:0] cover_case;
 reg [4:0] cover_reads=0;
@@ -72,7 +72,35 @@ always @* begin
   end
 end
 `endif
-'''.replace('CAPACITY', str(capacity)).replace('assume(nl_tl_a_ready);',
+'''
+    if capacity >= 3:
+        start = guide.index("  end else if(cover_case==1) begin")
+        end = guide.index("  end else if(cover_case==2) begin", start)
+        guide = guide[:start] + r'''  end else if(cover_case==1) begin
+    assume(nl_rreq_valid==(cover_reads<2));
+    assume(nl_rreq_address==4096+cover_reads*256 && nl_rreq_length==1 && nl_rreq_id==cover_reads+1 && nl_rreq_source==0);
+    assume(nl_wreq_valid==(nl_probe_tl_x_context0_x_tl_x_rfull && nl_probe_tl_x_context0_x_tl_x_dfull &&
+      nl_probe_tl_x_context1_x_tl_x_rfull && nl_probe_tl_x_context1_x_tl_x_dfull &&
+      (cover_writes==0 || (cover_writes<4 && nl_probe_tl_x_context2_x_tl_x_d_done))));
+    assume(!nl_rrsp_ready && !nl_tl_d_denied);
+    if(nl_probe_tl_x_context0_x_tl_x_message && nl_probe_tl_x_context0_x_tl_x_a_done && !nl_probe_tl_x_context0_x_tl_x_d_done) begin
+      assume(nl_tl_d_valid && nl_tl_d_source==0 && nl_tl_d_size==3 && nl_tl_d_opcode==1);
+    end else if(nl_probe_tl_x_context1_x_tl_x_message && nl_probe_tl_x_context1_x_tl_x_a_done && !nl_probe_tl_x_context1_x_tl_x_d_done) begin
+      assume(nl_tl_d_valid && nl_tl_d_source==1 && nl_tl_d_size==3 && nl_tl_d_opcode==1);
+    end else begin
+      assume(nl_tl_d_valid==(nl_tl_a_valid && nl_tl_a_opcode!=4));
+      assume(nl_tl_d_source==2 && nl_tl_d_size==4 && nl_tl_d_opcode==0);
+    end
+''' + guide[end:]
+        guide = guide.replace("assume(!nl_wreq_valid && nl_rrsp_ready && !nl_tl_d_denied);",
+            "assume(nl_wreq_valid==(cover_reads>=2 && cover_writes<4)); assume(nl_rrsp_ready);")
+        guide = guide.replace("    assume(nl_tl_d_opcode==1);\n    if(nl_probe_tl_x_context0_x_tl_x_size==2", r'''    if(nl_tl_a_valid && nl_tl_a_opcode!=4 && nl_probe_tl_x_context2_x_tl_x_a_left==4 && !nl_probe_tl_x_context2_x_tl_x_d_done) begin
+      assume(nl_tl_d_valid && nl_tl_d_source==2 && nl_tl_d_size==4 && nl_tl_d_opcode==0 && nl_tl_d_denied);
+    end else begin
+    assume(nl_tl_d_opcode==1 && !nl_tl_d_denied);
+    if(nl_probe_tl_x_context0_x_tl_x_size==2''')
+        guide = guide.replace("    end\n  end\nend\n`endif", "    end\n    end\n  end\nend\n`endif")
+    return guide.replace('CAPACITY', str(capacity)).replace('assume(nl_tl_a_ready);',
         f'assume(cover_case=={scenario}); assume(nl_tl_a_ready);')
 
 
@@ -122,6 +150,8 @@ def harness(ports, capacity, scenario=None):
             f"if({slot}message && !{slot}a_done) assert(nl_probe_tl_x_a_active && nl_probe_tl_x_a_owner=={k});",
             f"if(nl_probe_tl_x_d_active && nl_probe_tl_x_d_owner=={k}) assert({slot}busy && {slot}message && !{slot}d_done && !{slot}write);",
             f"if(nl_probe_tl_x_read_active && nl_probe_tl_x_read_owner=={k}) assert({slot}busy && !{slot}write);",
+            f"if(nl_probe_tl_x_write_response_active && nl_probe_tl_x_write_response_owner=={k}) assert({slot}busy && {slot}write && {slot}words_left==0 && !{slot}message);",
+            f"if(response_segment_open && nl_probe_tl_x_read_owner=={k}) assert({slot}packet_x_id==segment_id && {slot}packet_x_source==segment_source && {slot}packet_x_tag==segment_tag);",
             f"assert(!{dep}[{k}]);",
             f"assert(!{slot}rfull || !nl_probe_tl_x_context{k}_x_cut || !{slot}response_x_last);",
             f"if(past_valid && $past({slot}busy && !{slot}release)) begin",
@@ -175,7 +205,7 @@ def harness(ports, capacity, scenario=None):
         "cover(" + " && ".join(covers) + ");",
         f"cover(nl_tl_a_valid && nl_tl_a_ready && nl_tl_d_valid && nl_tl_d_ready && nl_tl_a_opcode!=4 && ({first_put}) && ({full_read}));",
         "cover(early_denied && nl_probe_tl_x_context0_x_tl_x_message_complete && nl_probe_tl_x_context0_x_tl_x_a_done);",
-        "cover(segment_phase==4);",
+        "cover(segment_phase==4" + (" && overlap_ack" if capacity>=3 else "") + ");",
     ]
     reach = "\n".join(checks if scenario is None else [checks[scenario]])
     return f"""module formal_top({','.join('input '+p for p in inputs)});
@@ -207,13 +237,22 @@ wire [{capacity-1}:0] response_takes={{{takes}}}, packet_releases={{{releases}}}
 reg [2:0] segment_phase=0;
 reg [{(capacity-1).bit_length()-1}:0] p_owner=0, q_owner=0;
 reg [3:0] q_words=0;
-reg early_denied=0;
+reg early_denied=0, overlap_ack=0, response_segment_open=0;
+reg [3:0] segment_id=0, segment_source=0, segment_tag=0;
+always @(posedge nl_clk) if(!nl_reset_n) response_segment_open<=0;
+else if(nl_rrsp_valid && nl_rrsp_ready) begin
+  response_segment_open<=!nl_rrsp_last && !nl_probe_cut;
+  if(!response_segment_open) begin
+    segment_id<=nl_rrsp_id; segment_source<=nl_rrsp_source; segment_tag<=nl_rrsp_tag;
+  end
+end
 always @(posedge nl_clk) if(!nl_reset_n) begin
-  segment_phase<=0; early_denied<=0;
+  segment_phase<=0; early_denied<=0; overlap_ack<=0;
 end else begin
   if(nl_probe_tl_x_context0_x_tl_x_accept) early_denied<=0;
   if(nl_probe_tl_x_context0_x_tl_x_d_take && nl_probe_tl_x_context0_x_tl_x_write &&
      nl_tl_d_denied && nl_probe_tl_x_context0_x_tl_x_a_left>=3) early_denied<=1;
+  {"if(nl_probe_tl_x_context2_x_tl_x_d_take && nl_probe_tl_x_context2_x_tl_x_write && nl_probe_tl_x_context2_x_tl_x_a_left>=3 && nl_probe_tl_x_context0_x_tl_x_busy && !nl_probe_tl_x_context0_x_tl_x_write && nl_probe_tl_x_context1_x_tl_x_busy && !nl_probe_tl_x_context1_x_tl_x_write) overlap_ack<=1;" if capacity>=3 else ""}
   case(segment_phase)
     0: for(integer k=0;k<{capacity};k=k+1) if(response_takes[k] && nl_probe_cut) begin
       p_owner<=k; segment_phase<=1;
@@ -230,6 +269,14 @@ end else begin
 end
 always @(posedge nl_clk) if(nl_reset_n) begin
   assert(nl_probe_tl_x_write_active==(write_left!=0));
+  assert(!nl_probe_tl_x_write_response_active || nl_probe_tl_x_write_response_owner<{capacity});
+  assert(!(nl_probe_tl_x_write_response_active && nl_probe_tl_x_read_active));
+  assert(!(nl_rrsp_valid && nl_wrsp_valid));
+  assert(!nl_wrsp_valid || !nl_probe_tl_x_read_active);
+  if(response_segment_open) begin
+    assert(nl_probe_tl_x_read_active && !nl_wrsp_valid);
+    if(nl_rrsp_valid) assert(nl_rrsp_id==segment_id && nl_rrsp_source==segment_source && nl_rrsp_tag==segment_tag);
+  end
   assert(!nl_tl_a_valid || nl_tl_a_source<{capacity});
   assert(!nl_probe_tl_x_a_active || nl_probe_tl_x_a_owner<{capacity});
   assert(!nl_probe_tl_x_d_active || nl_probe_tl_x_d_owner<{capacity});
@@ -248,6 +295,14 @@ always @(posedge nl_clk) if(nl_reset_n) begin
   if(past_valid && $past(nl_probe_tl_x_d_active && !({d_end}))) begin
     assert(nl_probe_tl_x_d_active);
     assert(nl_probe_tl_x_d_owner==$past(nl_probe_tl_x_d_owner));
+  end
+  if(past_valid && $past(nl_rrsp_valid && !nl_rrsp_ready)) begin
+    assert(nl_rrsp_valid);
+    assert(nl_rrsp_id==$past(nl_rrsp_id) && nl_rrsp_source==$past(nl_rrsp_source) && nl_rrsp_tag==$past(nl_rrsp_tag));
+  end
+  if(past_valid && $past(nl_wrsp_valid && !nl_wrsp_ready)) begin
+    assert(nl_wrsp_valid);
+    assert(nl_wrsp_id==$past(nl_wrsp_id) && nl_wrsp_source==$past(nl_wrsp_source) && nl_wrsp_tag==$past(nl_wrsp_tag));
   end
   {reach}
 end

@@ -35,6 +35,8 @@ struct ContextPool {
   std::array<ReceiveBuffer, 2> receive;
   ValueId write_active, write_owner, a_active, a_owner, a_turn;
   ValueId d_active, d_owner, read_active, read_owner, read_turn;
+  ValueId write_response_active, write_response_owner, write_response_turn;
+  ValueId response_turn, read_response_end;
   ValueId free, free_valid, write_take, read_take, allocate_write;
   explicit ContextPool(const TileLinkUhOutletProfile &profile, const NodeHardware &kernel);
   ValueId wire(unsigned width) { return l.num(width, 0); }
@@ -67,6 +69,10 @@ ContextPool::ContextPool(const TileLinkUhOutletProfile &profile, const NodeHardw
   read_active = l.state("tl.read_active", 1);
   read_owner = l.state("tl.read_owner", index_bits);
   read_turn = l.state("tl.read_turn", index_bits);
+  write_response_active = l.state("tl.write_response_active", 1);
+  write_response_owner = l.state("tl.write_response_owner", index_bits);
+  write_response_turn = l.state("tl.write_response_turn", index_bits);
+  response_turn = l.state("tl.response_turn", 1);
   for (unsigned k = 0; k < receive.size(); ++k) {
     const auto name = "tl.dbuffer" + std::to_string(k);
     receive[k] = {l.state(name + ".valid", 1), l.state(name + ".owner", index_bits),
@@ -285,24 +291,35 @@ void ContextPool::packet_response(bool read) {
     lasts.push_back(slot.outputs.at(face + ".last"));
     wrap.push_back(slot.bound.at("wrap_end"));
   }
-  auto owner = choose(valid, read ? read_turn : l.num(index_bits, 0));
-  if (read)
-    owner = l.pick(read_active, read_owner, owner);
-  const auto offered = selected(owner, valid);
-  const auto permitted = read ? l.bit(1) : l.inv(output.at("rrsp.valid"));
+  const auto active = read ? read_active : write_response_active;
+  const auto held_owner = read ? read_owner : write_response_owner;
+  const auto turn = read ? read_turn : write_response_turn;
+  const auto owner = l.pick(active, held_owner, choose(valid, turn));
+  std::vector<ValueId> write_pending;
+  std::ranges::transform(contexts, std::back_inserter(write_pending),
+                         [&](const auto &slot) { return slot.outputs.at("wrsp.valid"); });
+  const auto permitted =
+      read ? l.both(l.inv(write_response_active),
+                    l.either(read_active, l.either(response_turn, l.inv(l.any(write_pending)))))
+           : l.both(l.inv(read_active), l.inv(output.at("rrsp.valid")));
+  const auto offered = l.both(permitted, selected(owner, valid));
   const auto ready = l.both(input.at(face + ".ready"), permitted);
   const auto take = l.both(offered, ready);
   const auto cut = selected(owner, cuts);
+  const auto end =
+      l.both(take, read ? l.either(selected(owner, lasts), cut) : selected(owner, lasts));
+  l.b.update(active, l.both(l.either(active, offered), l.inv(end)));
+  l.b.update(held_owner, l.pick(l.both(offered, l.inv(active)), owner, held_owner));
+  l.b.update(turn, l.pick(end, successor(owner), turn));
   if (read) {
-    const auto end = l.both(take, l.either(selected(owner, lasts), cut));
-    l.b.update(read_active, l.both(l.either(read_active, offered), l.inv(end)));
-    l.b.update(read_owner, l.pick(l.both(offered, l.inv(read_active)), owner, read_owner));
-    l.b.update(read_turn, l.pick(end, successor(owner), read_turn));
+    read_response_end = end;
     l.bind("cut", l.both(offered, cut));
-    l.bind("wrap_end", selected(owner, wrap));
+    l.bind("wrap_end", l.both(offered, selected(owner, wrap)));
     if (p.packet.response_run_bits)
       l.out("hint", "wrap_end", l.bindings.at("wrap_end"));
-  }
+  } else
+    l.b.update(response_turn,
+               l.pick(end, l.bit(1), l.pick(read_response_end, l.bit(0), response_turn)));
   for (unsigned k = 0; k < capacity; ++k)
     connect(contexts[k].inputs.at(face + ".ready"), l.both(ready, l.eq(owner, k)));
   for (const auto &[key, value] : output) {
@@ -312,7 +329,7 @@ void ContextPool::packet_response(bool read) {
     std::ranges::transform(contexts, std::back_inserter(values),
                            [&](const auto &slot) { return slot.outputs.at(key); });
     const auto selected_value = selected(owner, values);
-    connect(value, key == "wrsp.valid" ? l.both(permitted, selected_value) : selected_value);
+    connect(value, key == face + ".valid" ? offered : selected_value);
   }
 }
 void ContextPool::finish() {

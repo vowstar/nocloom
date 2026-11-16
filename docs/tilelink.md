@@ -404,7 +404,9 @@ final beat. While a write waits for Ack, independent Gets can use A.
 The first accepted D beat selects its owner through the final D beat.
 
 With more than one context, read responses from independent packets can
-alternate at TileLink message boundaries.
+alternate at TileLink message boundaries. All response words of one message
+stay together, including gaps between valid words. A write response waits
+until that group ends.
 
 The target covers each received byte interval with aligned power-of-two
 messages. Each block fits the remaining interval, mapping and maximum size.

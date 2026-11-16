@@ -219,7 +219,7 @@ initial begin #250000; nlv_fail_report("PROGRESS","timeout",0); end
 """
 
 
-def segments_body():
+def segments_body(other_source=1, other_id=2):
     return r"""
 localparam K=3;
 integer cycle=0, messages=0, returned=0;
@@ -249,6 +249,8 @@ always @(posedge nl_clk) if(nl_reset_n) begin
     width=1<<nl_tl_a_size;
     check(offset>=0 && offset+width<=(owner==0 ? 12 : owner==1 ? 32 : 4),"EXACT_GET_RANGE");
     if(owner==2) check(rcounts[0]==3,"SAME_KEY_SIDE_EFFECT_ORDER");
+    if(nl_tl_a_address==4104) check(nl_tl_a_source==sources[0],"SAME_PACKET_SOURCE");
+    if(nl_tl_a_address==8192) check(nl_tl_a_source!=sources[0],"DISTINCT_PACKET_SOURCES");
     for(integer b=0;b<width;b=b+1) begin
       check(seen[owner*32+offset+b]==0,"READ_SIDE_EFFECT_ONCE");
       seen[owner*32+offset+b]=1; counts[owner]=counts[owner]+1;
@@ -256,8 +258,8 @@ always @(posedge nl_clk) if(nl_reset_n) begin
   end
   if(nl_rrsp_valid && nl_rrsp_ready) begin
     owner=nl_rrsp_tag==1 ? 0 : nl_rrsp_tag==2 ? 1 : 2;
-    check(nl_rrsp_source==(owner==1 ? 1 : 0),"SOURCE_IDENTITY");
-    check(nl_rrsp_id==(owner==1 ? 2 : 1),"AXI_IDENTITY");
+    check(nl_rrsp_source==(owner==1 ? OTHER_SOURCE : 0),"SOURCE_IDENTITY");
+    check(nl_rrsp_id==(owner==1 ? OTHER_ID : 1),"AXI_IDENTITY");
     check(nl_rrsp_data==value_at(nl_rrsp_address) && nl_rrsp_result==0,"READ_DATA");
     check(nl_rrsp_first==(rcounts[owner]==0),"PACKET_FIRST");
     check(nl_rrsp_last==(rcounts[owner]==(owner==0 ? 2 : owner==1 ? 7 : 0)),"PACKET_LAST");
@@ -300,7 +302,7 @@ initial begin
   for(integer k=0;k<96;k=k+1) seen[k]=0;
   for(integer k=0;k<3;k=k+1) begin counts[k]=0; rcounts[k]=0; end
   repeat(160) @(negedge nl_clk); nl_reset_n=1; nl_tl_a_ready=1;
-  send_read(4100,2,1,0,1); send_read(8192,7,2,1,2); send_read(16384,0,1,0,3);
+  send_read(4100,2,1,0,1); send_read(8192,7,OTHER_ID,OTHER_SOURCE,2); send_read(16384,0,1,0,3);
   wait(messages==2); respond(0);
   repeat(8) @(negedge nl_clk); check(messages==2,"P2_WAIT_BUFFER"); drain=1;
   wait(messages==3); check(addresses[2]==4104,"P2_EXACT_START");
@@ -311,9 +313,9 @@ initial begin
   $display("UH_CONTEXTS_PASS segments=%0d responses=%0d",messages,returned); $finish;
 end
 initial begin #250000; nlv_fail_report("PROGRESS","timeout",0); end
-"""
+""".replace("OTHER_SOURCE", str(other_source)).replace("OTHER_ID", str(other_id))
 
-def run(args, capacity, source_bits, basic=False, segments=False):
+def run(args, capacity, source_bits, basic=False, segments=False, body=None):
     work = Path(tempfile.mkdtemp(prefix="contexts-", dir=args.work)).resolve()
     subprocess.run([str(args.fixture.resolve()), str(work), "contexts", "64",
                     str(capacity), str(source_bits)], check=True, timeout=60)
@@ -323,7 +325,8 @@ def run(args, capacity, source_bits, basic=False, segments=False):
         declarations.append(f"{'reg' if int(incoming) else 'wire'} [{int(width)-1}:0] {name}"
                             + ("=0;" if int(incoming) else ";"))
         connections.append(f".{name}({name})")
-    body = segments_body() if segments else basic_body() if basic else capacity_body(capacity, source_bits)
+    if body is None:
+        body = segments_body() if segments else basic_body() if basic else capacity_body(capacity, source_bits)
     (work / "tb.sv").write_text("`timescale 1ns/1ps\nmodule tb;\n" + "\n".join(declarations)
                                + "\nnocloom_tl_uh_outlet_probe dut(" + ",".join(connections)
                                + ");\n" + body + "\nendmodule\n")
