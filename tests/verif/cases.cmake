@@ -5,6 +5,13 @@ set(NLV_RUN ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/nlverif/run.py)
 set(NLV_CASES ${CMAKE_CURRENT_SOURCE_DIR}/cases)
 set(NLV_FIXTURE --fixture $<TARGET_FILE:nocloom_verif_fixture>)
 
+nocloom_verif_case(NAME verif_cdc_shaper LAYER negative TIER focused TIMEOUT 300
+  FEATURES axi4 qos cdc MEMORY_MB 1024
+  CONTRACTS AXI.ROUTE.LOCAL_OFFSET
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/cdc_shaper.py
+    --cli $<TARGET_FILE:nocloom_cli> --negative)
+set_property(TEST verif_cdc_shaper APPEND PROPERTY LABELS ci)
+
 nocloom_verif_case(NAME verif_axi4_timeout_write_drain LAYER negative TIER focused TIMEOUT 300
   FEATURES axi4 timeout MEMORY_MB 1024 CONTRACTS AXI.TIMEOUT.EXACT
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/axi4_timeout_write_drain.py

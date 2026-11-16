@@ -4,9 +4,14 @@ A diagnostic contains a code, field path and message. It can also contain a
 source line and column, and notes.
 
 This page lists the codes that a definition, a command line or an input file
-can produce. Any other code, for example a code that starts with
-`NCL_INTERNAL_`, reports a failed internal check of the generator. Report it as
-a defect and include the definition.
+can produce. Codes in the internal-check table below and unlisted codes, such
+as `NCL_INTERNAL_` codes, report a failed internal check of the generator.
+Report these as defects and include the definition.
+
+| Internal check | Condition |
+| --- | --- |
+| `NCL_CDC_BINDING` | A planned resource or dependency has an invalid binding |
+| `NCL_EXCHANGE_COMPOSE` | The composition of the network hardware fails an internal consistency check |
 
 ## Input and output
 

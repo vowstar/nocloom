@@ -122,6 +122,10 @@ foreach(capacity IN ITEMS 1 3)
     ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
 endforeach()
 add_executable(nocloom_unit unit/core.cpp unit/message.cpp unit/wishbone.cpp)
+add_test(NAME cdc_shaper_structure COMMAND nocloom_unit "[cdc-shaper]")
+set_tests_properties(cdc_shaper_structure PROPERTIES
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit TIMEOUT 120
+  LABELS "unit;quick;ci" PROCESSORS 1)
 target_sources(nocloom_unit PRIVATE unit/packet_lengths.cpp)
 add_test(NAME packet_lengths_structure COMMAND nocloom_unit "[packet-lengths]")
 set_tests_properties(packet_lengths_structure PROPERTIES

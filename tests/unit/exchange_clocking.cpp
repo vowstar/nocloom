@@ -89,6 +89,27 @@ ExchangeHardware lowered(const nocloom::Definition &d) {
 }
 } // namespace
 
+TEST_CASE("Source bandwidth controls wait for their own domain clock", "[cdc-shaper]") {
+  for (const auto protocol : {nocloom::Protocol::Axi3, nocloom::Protocol::Axi4})
+    for (const bool scheduler : {false, true}) {
+      auto d = placed();
+      auto &source = d.initiators[1];
+      source.protocol = protocol;
+      source.len_width = 4;
+      source.qos.shaper = nocloom::QosShaper{256, 16};
+      if (scheduler)
+        source.qos.scheduler = nocloom::QosScheduler{3, 1, 50};
+      const auto h = lowered(d);
+      const auto resource = std::string("source/s1/") + (scheduler ? "scheduler" : "shaper");
+      const auto at = std::ranges::find_if(h.plan.graph.waits, [&](const auto &wait) {
+        return wait.from == resource && wait.kind == CrossWaitKind::Environment;
+      });
+      REQUIRE(at != h.plan.graph.waits.end());
+      CHECK(at->to == "domain/b/clock");
+      CHECK(nocloom::generate(d));
+    }
+}
+
 TEST_CASE("Clock placement derives independent directed cuts at actual link words",
           "[exchange-clocking]") {
   auto d = placed();

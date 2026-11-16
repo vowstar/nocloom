@@ -28,9 +28,12 @@ void route_through_crossings(const NetworkPlan &p, CrossGraph &graph) {
   std::erase_if(graph.waits, [&](const auto &w) { return w.from == same_domain + "/init"; });
   for (auto &r : graph.resources)
     r.domain = p.resource_domains.at(r.id);
-  for (auto &w : graph.waits)
+  for (auto &w : graph.waits) {
     if (w.kind == CrossWaitKind::Startup && w.to == same_domain + "/init")
       w.to = "domain/" + p.resource_domains.at(w.from) + "/init";
+    if (w.kind == CrossWaitKind::Environment && w.to == same_domain + "/clock")
+      w.to = "domain/" + p.resource_domains.at(w.from) + "/clock";
+  }
   auto resource = [&](const std::string &id, const std::string &domain, const std::string &role,
                       unsigned bits, unsigned capacity = 1) {
     graph.resources.push_back({id, id, domain, role, "local clocked transport",
