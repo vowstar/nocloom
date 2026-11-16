@@ -202,8 +202,8 @@ void ContextPool::dependencies() {
       }
       const auto pending_write = l.both(
           older_write, l.either(l.inv(l.eq(older.at("tl.words_left"), 0)), older.at("tl.message")));
-      const auto wait =
-          l.both(older.at("tl.busy"), l.pick(allocate_write, pending_write, same_key));
+      const auto live = l.both(older.at("tl.busy"), l.inv(older.at("tl.release")));
+      const auto wait = l.both(live, l.pick(allocate_write, pending_write, same_key));
       const auto done =
           l.either(older.at("tl.release"), l.both(slot.bound.at("tl.write"), l.inv(pending_write)));
       const auto held = l.both(l.b.slice(slot.dependencies, j, 1), l.inv(done));

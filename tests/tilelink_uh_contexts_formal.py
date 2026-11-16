@@ -160,6 +160,9 @@ def harness(ports, capacity, scenario=None, maximum=1024):
               for field in ("id", "source", "tag")],
             "end",
         ])
+        for j in range(capacity):
+            older = f"nl_probe_tl_x_context{j}_x_tl_x_"
+            assertions.append(f"if({dep}[{j}]) assert({older}busy);")
         assumptions.append(f"if(nl_tl_d_valid && nl_tl_d_source=={k}) begin\n"
                            f"assume({slot}message && !{slot}d_done && {slot}local_code==0);\n"
                            f"assume({slot}a_done || {slot}a_take || "

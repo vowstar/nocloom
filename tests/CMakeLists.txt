@@ -55,6 +55,16 @@ set_tests_properties(tilelink_uh_target_ownership PROPERTIES
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 600 PROCESSORS 1
   LABELS "rtl;focused;ci" RESOURCE_LOCK tilelink
   ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+foreach(kind IN ITEMS read_release read_random)
+  add_test(NAME tilelink_uh_target_${kind}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_target_ordering.py
+      --cli $<TARGET_FILE:nocloom_cli>
+      --work ${CMAKE_CURRENT_BINARY_DIR}/tilelink_uh_target_${kind} --case ${kind})
+  set_tests_properties(tilelink_uh_target_${kind} PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 300 PROCESSORS 1
+    LABELS "rtl;focused;ci" RESOURCE_LOCK tilelink
+    ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+endforeach()
 if(UNIX)
   add_test(NAME large_address_map_small_stack
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/large_address_maps.py
