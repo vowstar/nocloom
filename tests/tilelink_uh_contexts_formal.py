@@ -163,6 +163,22 @@ def harness(ports, capacity, scenario=None, maximum=1024):
         for j in range(capacity):
             older = f"nl_probe_tl_x_context{j}_x_tl_x_"
             assertions.append(f"if({dep}[{j}]) assert({older}busy);")
+        for j in range(capacity):
+            if j == k:
+                continue
+            older = f"nl_probe_tl_x_context{j}_x_tl_x_"
+            age = f"older_write_{k}_{j}"
+            remembered.append(f"reg {age}=0; always @(posedge nl_clk) begin\n"
+                f"if(!nl_reset_n || {slot}release) {age}<=0;\n"
+                f"else if({slot}accept) {age}<=nl_probe_tl_x_w_take && {older}busy && {older}write && !{older}release;\n"
+                f"else if({older}release) {age}<=0; end")
+            assertions.extend([
+                f"if({age}) assert({older}busy && {older}write);",
+                f"if({slot}busy && {slot}write) assert(nl_probe_tl_x_context{k}_x_response_dependencies[{j}]=={age});",
+                f"if({slot}release && {slot}write) assert(!{age});",
+                f"if(nl_wrsp_valid && nl_probe_tl_x_write_response_selected=={k}) assert(!{age});",
+                f"if(nl_probe_tl_x_write_response_active && nl_probe_tl_x_write_response_owner=={k}) assert(!{age});",
+            ])
         assumptions.append(f"if(nl_tl_d_valid && nl_tl_d_source=={k}) begin\n"
                            f"assume({slot}message && !{slot}d_done && {slot}local_code==0);\n"
                            f"assume({slot}a_done || {slot}a_take || "

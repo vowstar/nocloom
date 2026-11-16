@@ -1,4 +1,4 @@
-"""Read progress through the generated target."""
+"""Read progress and write response order through the generated target."""
 import argparse
 import json
 from pathlib import Path
@@ -50,7 +50,7 @@ def bench(mapping, body):
 def run(args):
     args.work.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="ordering-", dir=args.work)).resolve()
-    capacity = 2
+    capacity = 3 if args.case == "write_random" else 2
     (work / "input.yaml").write_text(json.dumps(configuration(capacity)))
     generated = work / "generated"
     subprocess.run([str(args.cli.resolve()), "generate", str(work / "input.yaml"),
@@ -66,6 +66,9 @@ def run(args):
     cases = (["+MODE=1", "+DET=1", "+DMAX=0", "+RP=100", "+D=6"]
              if args.case == "read_release" else
              ["+seed=5", "+NR=40", "+NW=0", "+IDS=1", "+GAP=40"])
+    if args.case == "write_random":
+        cases = ["+seed=8", "+IDS=1", "+RIDS=8", "+RBASE=8", "+DEN=1",
+                 "+STALL=20", "+LMAX=15"]
     result = simulation.run(cases)
     print(result.stdout, work, flush=True)
     return result.returncode
@@ -75,7 +78,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cli", required=True, type=Path)
     parser.add_argument("--work", required=True, type=Path)
-    parser.add_argument("--case", required=True, choices=("read_release", "read_random"))
+    parser.add_argument("--case", required=True, choices=("read_release", "read_random", "write_random"))
     sim_engine.add_arguments(parser)
     return run(parser.parse_args())
 

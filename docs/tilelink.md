@@ -433,7 +433,7 @@ when read response storage is full.
 With more than one context, read responses from independent packets can
 alternate at TileLink message boundaries. All response words of one message
 stay together, including gaps between valid words. A write response waits
-until that group ends.
+until that group ends. Write responses keep packet acceptance order.
 
 For example, packet P needs a 4-byte message followed by an 8-byte message.
 Packet Q needs one 32-byte message. Q can return between P's messages if

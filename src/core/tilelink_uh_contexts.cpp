@@ -26,7 +26,7 @@ struct ContextPool {
   Fields input, output;
   struct Context {
     Fields inputs, outputs, bound;
-    ValueId dependencies{};
+    ValueId dependencies{}, response_dependencies{};
   };
   std::vector<Context> contexts;
   struct ReceiveBuffer {
@@ -54,6 +54,9 @@ struct ContextPool {
   void a_schedule();
   void d_receive();
   void d_buffer(ValueId take, ValueId source);
+  ValueId write_response_valid(const Context &slot) {
+    return l.both(slot.outputs.at("wrsp.valid"), l.eq(slot.response_dependencies, 0));
+  }
   void packet_response(bool read);
   void finish();
 };
@@ -116,6 +119,8 @@ void ContextPool::import(const NodeHardware &kernel) {
   for (unsigned k = 0; k < capacity; ++k) {
     auto &slot = contexts.emplace_back();
     slot.dependencies = l.state("tl.context" + std::to_string(k) + ".dependencies", capacity);
+    slot.response_dependencies =
+        l.state("tl.context" + std::to_string(k) + ".response_dependencies", capacity);
     IrComponent imported(l.b, kernel.ir);
     const auto first = l.both(receive[0].valid, l.eq(receive[0].owner, k));
     imported.replace(kernel.bindings.at("tl.ddata"),
@@ -187,7 +192,7 @@ void ContextPool::context_allocate() {
 void ContextPool::dependencies() {
   for (unsigned k = 0; k < capacity; ++k) {
     auto &slot = contexts[k];
-    auto next = l.num(capacity, 0);
+    auto next = l.num(capacity, 0), response_next = l.num(capacity, 0);
     for (unsigned j = 0; j < capacity; ++j) {
       if (j == k)
         continue;
@@ -208,10 +213,18 @@ void ContextPool::dependencies() {
           l.either(older.at("tl.release"), l.both(slot.bound.at("tl.write"), l.inv(pending_write)));
       const auto held = l.both(l.b.slice(slot.dependencies, j, 1), l.inv(done));
       const auto bit = l.pick(slot.bound.at("tl.accept"), wait, held);
+      const auto response_wait = l.both(allocate_write, l.both(live, older_write));
+      const auto response_held =
+          l.both(l.b.slice(slot.response_dependencies, j, 1), l.inv(older.at("tl.release")));
+      const auto response_bit = l.pick(slot.bound.at("tl.accept"), response_wait, response_held);
+      response_next =
+          l.either(response_next, l.pick(response_bit, l.num(capacity, std::uint64_t{1} << j),
+                                         l.num(capacity, 0)));
       next =
           l.either(next, l.pick(bit, l.num(capacity, std::uint64_t{1} << j), l.num(capacity, 0)));
     }
     l.b.update(slot.dependencies, next);
+    l.b.update(slot.response_dependencies, response_next);
   }
 }
 void ContextPool::a_schedule() {
@@ -286,7 +299,7 @@ void ContextPool::packet_response(bool read) {
   const std::string face = read ? "rrsp" : "wrsp";
   std::vector<ValueId> valid, cuts, lasts, wrap;
   for (const auto &slot : contexts) {
-    valid.push_back(slot.outputs.at(face + ".valid"));
+    valid.push_back(read ? slot.outputs.at("rrsp.valid") : write_response_valid(slot));
     cuts.push_back(slot.bound.at("cut"));
     lasts.push_back(slot.outputs.at(face + ".last"));
     wrap.push_back(slot.bound.at("wrap_end"));
@@ -295,15 +308,17 @@ void ContextPool::packet_response(bool read) {
   const auto held_owner = read ? read_owner : write_response_owner;
   const auto turn = read ? read_turn : write_response_turn;
   const auto owner = l.pick(active, held_owner, choose(valid, turn));
+  if (!read)
+    l.bind("tl.write_response_selected", owner);
   std::vector<ValueId> write_pending;
   std::ranges::transform(contexts, std::back_inserter(write_pending),
-                         [&](const auto &slot) { return slot.outputs.at("wrsp.valid"); });
+                         [&](const auto &slot) { return write_response_valid(slot); });
   const auto permitted =
       read ? l.both(l.inv(write_response_active),
                     l.either(read_active, l.either(response_turn, l.inv(l.any(write_pending)))))
            : l.both(l.inv(read_active), l.inv(output.at("rrsp.valid")));
   const auto offered = l.both(permitted, selected(owner, valid));
-  const auto ready = l.both(input.at(face + ".ready"), permitted);
+  const auto ready = l.both(input.at(face + ".ready"), offered);
   const auto take = l.both(offered, ready);
   const auto cut = selected(owner, cuts);
   const auto end =
