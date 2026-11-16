@@ -908,7 +908,7 @@ void EngineLowering::write_data() {
       l.latch("w.data", l.b.select(void_beat, l.b.constant(p.data_bits, 0), w.at("data")), load);
   auto strobes = l.b.select(void_beat, l.b.constant(p.data_bits / 8, 0), w.at("be"));
   auto wstrb = l.latch("w.strobes", strobes, load);
-  l.b.update(wlast, l.b.select(load, in_last, wlast));
+  l.b.update(wlast, l.b.select(w_load, in_last, wlast));
   l.b.update(wdrop, l.b.select(load, drop, wdrop));
   aw_id = target_id_bits ? descriptor_id(aw, 0) : zero;
   ValueId held_aw = zero, held_w = zero;
