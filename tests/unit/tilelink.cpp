@@ -137,6 +137,18 @@ TEST_CASE("TileLink UH validates message size and target packet capacity", "[til
   }
 }
 
+TEST_CASE("TL-UH invalid maxima do not suggest a larger size port", "[tilelink]") {
+  auto d = tilelink_definition();
+  d.initiators[0].protocol = Protocol::TlUh;
+  d.initiators[0].max_transfer_bytes = 65536;
+  d.initiators[0].size_width = 4;
+  const auto result = generate(d);
+  REQUIRE_FALSE(result);
+  REQUIRE(result.diagnostics().size() == 1);
+  CHECK(result.diagnostics()[0].code == "NCL_TILELINK_PROFILE");
+  CHECK(result.diagnostics()[0].field == "initiators[0].max_transfer_bytes");
+}
+
 TEST_CASE("TL-UH target sources encode the shared packet capacity", "[tilelink]") {
   for (unsigned capacity = 1; capacity <= 16; ++capacity) {
     auto d = tilelink_definition();

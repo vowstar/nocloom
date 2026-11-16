@@ -15,9 +15,11 @@ void uh_fields(const Endpoint &e, const std::string &path, std::vector<Diagnosti
   reject(e.source_width > 16U, "source_width", "TileLink source_width must be 0 to 16");
   reject(e.sink_width > 16U, "sink_width", "TileLink sink_width must be 0 to 16");
   reject(width < 2 || width > 4, "size_width", "TileLink size_width must be 2 to 4");
-  reject(maximum < 4 || maximum > 4096 || !std::has_single_bit(maximum), "max_transfer_bytes",
+  const bool valid_maximum = maximum >= 4 && maximum <= 4096 && std::has_single_bit(maximum);
+  reject(!valid_maximum, "max_transfer_bytes",
          "TL-UH max_transfer_bytes must be a power of two from 4 to 4096");
-  reject(width >= 2 && width <= 4 && static_cast<unsigned>(std::bit_width(maximum)) > (1U << width),
+  reject(valid_maximum && width >= 2 && width <= 4 &&
+             static_cast<unsigned>(std::bit_width(maximum)) > (1U << width),
          "size_width", "TileLink size_width cannot encode max_transfer_bytes");
   reject(e.id_width.has_value(), "id_width", "TileLink uses source_width instead of id_width");
   reject(e.len_width.has_value(), "len_width", "TileLink has no length port");
