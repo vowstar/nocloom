@@ -393,6 +393,10 @@ struct EngineLowering {
                                      d.at("cache"), d.at("protection"), write)
                     : map_attributes(l, map.prot, d.at("cache"), d.at("protection"), write);
       }
+      // An AXI3 exclusive access is non-cacheable. AXI3 reserves RA or WA without C, so only
+      // the bufferable bit remains.
+      if (field == "cache" && p.axi3 && passthrough)
+        value = l.b.select(d.at("lock"), l.both(value, l.num(4, 1)), value);
       if (field == "address" && windowed)
         value = mapping_decode::local(l, value, address_bits, p.mappings);
       if (field == "address" && p.address_bits < address_bits)

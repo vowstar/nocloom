@@ -93,6 +93,13 @@ or `11` returns an error without target access. W beats follow AW order. A WID
 mismatch still performs the write and marks its response as an error. An AXI3
 target receives at most 16 target words per packet.
 
+With `exclusive: target`, an exclusive access to an AXI3 target is
+non-cacheable. After attribute mapping, the network clears AxCACHE bits 3 to 1
+(write allocate, read allocate and cacheable) and keeps bit 0 (bufferable).
+User flags in AxUSER still follow the initiator attributes.
+Normal accesses keep their mapped attributes. With `exclusive: network`, the
+target receives normal accesses and keeps their mapped attributes.
+
 ## APB5
 
 APB5 uses APB4 transfer timing, PPROT and PSTRB. PAUSER carries request user

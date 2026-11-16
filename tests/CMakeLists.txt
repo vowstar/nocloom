@@ -49,6 +49,13 @@ foreach(bits IN ITEMS 64 128)
       ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
   endforeach()
 endforeach()
+add_test(NAME exclusive_axi3_cache
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/exclusive_cache.py
+    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/exclusive_axi3_cache)
+set_tests_properties(exclusive_axi3_cache PROPERTIES
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 300 PROCESSORS 1
+  LABELS "rtl;exclusive;focused;ci" RESOURCE_LOCK exclusive_regression
+  ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
 add_test(NAME exclusive_local_alias
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/exclusive_alias.py
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/exclusive_local_alias)
