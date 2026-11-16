@@ -20,7 +20,7 @@ int main(int argc, char **argv) {
     }
     TileLinkUhOutletProfile p;
     p.packet.name = "probe";
-    p.packet.packet_len_bits = 8;
+    p.packet.packet_len_bits = maximum > 1024 ? 10 : 8;
     if (std::string(argv[2]) == "contexts") {
       p.packet.max_outstanding = argc > 4 ? std::stoul(argv[4]) : 3;
       p.source_bits = argc > 5 ? std::stoul(argv[5]) : std::bit_width(p.packet.max_outstanding - 1);

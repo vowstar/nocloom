@@ -130,9 +130,9 @@ Initiator `max_outstanding` is 1 to 64, with the transport default. TL-UL
 target `max_outstanding` is 1. TL-UH target `max_outstanding` is 1 to 16,
 default 1, shared between reads and writes. TileLink target `flows` is 1.
 
-TL-UH `max_transfer_bytes` is a power of two, default 64. Initiators accept 4
-to 4096 bytes. Targets accept 4 to 1024 bytes. TL-UH `size_width` is 2 to 4,
-default 3, and must encode the maximum size.
+TL-UH `max_transfer_bytes` accepts powers of two from 4 to 4096 bytes on both
+roles, default 64. TL-UH `size_width` is 2 to 4, default 3, and must encode
+the maximum size.
 
 TL-UH initiator source and sink widths use the TL-UL ranges and defaults.
 

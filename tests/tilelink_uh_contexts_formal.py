@@ -104,7 +104,7 @@ end
         f'assume(cover_case=={scenario}); assume(nl_tl_a_ready);')
 
 
-def harness(ports, capacity, scenario=None):
+def harness(ports, capacity, scenario=None, maximum=1024):
     inputs, wires, connections = [], [], []
     for name, width, incoming in ports:
         declaration = f"[{width-1}:0] {name}" if width > 1 else name
@@ -208,7 +208,7 @@ def harness(ports, capacity, scenario=None):
         "cover(segment_phase==4" + (" && overlap_ack" if capacity>=3 else "") + ");",
     ]
     reach = "\n".join(checks if scenario is None else [checks[scenario]])
-    return f"""module formal_top({','.join('input '+p for p in inputs)});
+    body = f"""module formal_top({','.join('input '+p for p in inputs)});
 {';'.join('wire '+p for p in wires)};
 nocloom_tl_uh_outlet_probe dut({','.join(connections)});
 reg started=0, past_valid=0;
@@ -308,9 +308,13 @@ always @(posedge nl_clk) if(nl_reset_n) begin
 end
 endmodule
 """
+    if maximum > 1024:
+        body = body.replace("reg [8:0] write_left", "reg [10:0] write_left").replace("<=256", "<=1024").replace("size<=10", "size<=12")
+    return body
 
 
-def ranges_harness(ports, capacity):
+
+def ranges_harness(ports, capacity, maximum=1024):
     """Bound actual selectors and message counters under arbitrary D inputs."""
     inputs, wires, connections, checks = [], [], [], []
     for name, width, incoming in ports:
@@ -328,7 +332,7 @@ def ranges_harness(ports, capacity):
             f"assert(!{slot}d_take || ({slot}message && !{slot}d_done && nl_tl_d_source=={k}));",
             f"if(nl_tl_a_valid && nl_probe_tl_x_a_owner=={k}) assert(nl_tl_a_source=={k});",
         ])
-    return ("module formal_top(" + ",".join("input "+p for p in inputs) + ");\n"
+    body = ("module formal_top(" + ",".join("input "+p for p in inputs) + ");\n"
         + ";".join("wire "+p for p in wires) + ";\n"
         + "nocloom_tl_uh_outlet_probe dut(" + ",".join(connections) + ");\n"
         + "reg started=0; always @(posedge nl_clk) started<=1;\n"
@@ -339,6 +343,7 @@ def ranges_harness(ports, capacity):
         + f"if(nl_tl_d_source>={capacity}) assert(!nl_tl_d_ready);\n"
         + "if(nl_probe_tl_x_d_active && nl_tl_d_source!=nl_probe_tl_x_d_owner) assert(!nl_tl_d_ready);\n"
         + "\n".join(checks) + "\nend\nendmodule\n")
+    return body.replace("<=256", "<=1024").replace("size<=10", "size<=12") if maximum > 1024 else body
 
 
 def full_pool_cover(ports, capacity):
@@ -364,16 +369,42 @@ def full_pool_cover(ports, capacity):
         + "\n".join(seen) + "\nalways @(posedge nl_clk) if(nl_reset_n) cover("+" && ".join(full)+");\nendmodule\n")
 
 
+def max_message_cover(ports, maximum):
+    values = dict(nl_reset_n="started", nl_tl_a_ready="1", nl_wrsp_ready="1",
+        nl_wreq_valid="is_write && !accepted", nl_rreq_valid="!is_write && !accepted",
+        nl_wreq_address="4096", nl_wreq_start_address="4096", nl_wreq_size="2", nl_wreq_burst="1",
+        nl_wreq_length=str(maximum//4-1), nl_wreq_count="4", nl_wreq_be="15", nl_wreq_first="1",
+        nl_rreq_address="4096", nl_rreq_start_address="4096", nl_rreq_size="2", nl_rreq_burst="1",
+        nl_rreq_length=str(maximum//4-1), nl_rreq_count="4", nl_rreq_be="15", nl_rreq_first="1", nl_rreq_last="1",
+        nl_tl_d_valid="is_write && nl_tl_a_valid", nl_tl_d_source="nl_tl_a_source",
+        nl_tl_d_size=str(maximum.bit_length()-1), nl_tl_d_denied="is_write")
+    declarations, connections = [], []
+    for name, width, incoming in ports:
+        if name!="nl_clk":
+            declarations.append(f"wire [{width-1}:0] {name}"+("="+values.get(name,"0") if incoming else "")+";")
+        connections.append(f".{name}({name})")
+    return ("module formal_top(input nl_clk);\nreg started=0, accepted=0; (* anyconst *) reg is_write;\n"
+        + "always @(posedge nl_clk) begin started<=1; if(nl_reset_n && ((nl_wreq_valid && nl_wreq_ready) || (nl_rreq_valid && nl_rreq_ready))) accepted<=1; end\n"
+        + "\n".join(declarations) + "\nnocloom_tl_uh_outlet_probe dut("+",".join(connections)+");\n"
+        + "always @(posedge nl_clk) if(nl_reset_n) begin\n"
+        + f"cover(!is_write && nl_tl_a_valid && nl_tl_a_ready && nl_tl_a_size=={maximum.bit_length()-1} && nl_probe_tl_x_context0_x_tl_x_d_left=={maximum//4});\n"
+        + f"cover(is_write && nl_tl_a_valid && nl_tl_a_ready && nl_tl_d_valid && nl_tl_d_ready && nl_tl_a_size=={maximum.bit_length()-1} && nl_probe_tl_x_context0_x_tl_x_a_left=={maximum//4});\n"
+        + "end\nendmodule\n")
+
+
 def run(args, capacity):
     work = Path(tempfile.mkdtemp(prefix="pool-", dir=args.work)).resolve()
-    subprocess.run([str(args.fixture.resolve()), str(work), "contexts", "1024",
+    subprocess.run([str(args.fixture.resolve()), str(work), "contexts", str(args.maximum),
                     str(capacity), str(16 if capacity==16 else (capacity-1).bit_length())], check=True, timeout=60)
     ports = [(n, int(w), int(i)) for n, w, i in
              (line.split() for line in (work / "ports.tsv").read_text().splitlines())]
-    (work / "formal_top.sv").write_text(ranges_harness(ports, capacity) if capacity==16 else harness(ports, capacity))
-    scenarios = range(1) if capacity == 16 else range(4)
+    (work / "formal_top.sv").write_text(ranges_harness(ports, capacity, args.maximum) if capacity==16 else harness(ports, capacity, maximum=args.maximum))
+    scenarios = list(range(1) if capacity == 16 else range(4))
+    if args.maximum > 1024:
+        scenarios.append(4)
     for scenario in scenarios:
-        body = full_pool_cover(ports, capacity) if capacity==16 else harness(ports, capacity, scenario)
+        body = (max_message_cover(ports, args.maximum) if scenario==4 else
+                full_pool_cover(ports, capacity) if capacity==16 else harness(ports, capacity, scenario, args.maximum))
         (work / f"cover{scenario}.sv").write_text(body)
     tasks = ["prove"] + [f"cover{k}" for k in scenarios]
     options = "\n".join(f"{task}: mode {'prove' if task=='prove' else 'cover'}\n"
@@ -406,9 +437,10 @@ def main():
     parser.add_argument("--fixture", required=True, type=Path)
     parser.add_argument("--work", required=True, type=Path)
     parser.add_argument("--capacity", type=int)
+    parser.add_argument("--maximum", type=int, default=1024)
     args = parser.parse_args()
     args.work.mkdir(parents=True, exist_ok=True)
-    for capacity in ([args.capacity] if args.capacity else (2, 3, 4)):
+    for capacity in ([args.capacity] if args.capacity else (2, 3, 4, 16) if args.maximum > 1024 else (2, 3, 4)):
         result = run(args, capacity)
         if result:
             return result

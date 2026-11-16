@@ -373,7 +373,7 @@ atomic operations. Use the shared
 | Field | Values | Default |
 | --- | --- | --- |
 | `data_width` | 32 bits | Required |
-| `max_transfer_bytes` | Powers of two from 4 to 1024 bytes | 64 |
+| `max_transfer_bytes` | Powers of two from 4 to 4096 bytes | 64 |
 | `max_outstanding` | 1 to 16 packets in flight, reads and writes combined | 1 |
 | `source_width` | At least ceil(log2(max_outstanding)), at most 16 bits | ceil(log2(max_outstanding)), zero for one context |
 | `size_width` | 2 to 4 bits, sufficient to encode the maximum size | 3 |
@@ -381,6 +381,8 @@ atomic operations. Use the shared
 | `flows` | 1 | 1 |
 | `fixed_bursts` | `reject` or `single` | `reject` |
 | `read_side_effects` | Boolean | `false` |
+
+Set `size_width: 4` for a maximum above 128 bytes.
 
 Addresses are byte addresses of 2 to 32 local address bits. Mappings must
 align their base, size and local address to `max_transfer_bytes`.
@@ -410,7 +412,12 @@ until that group ends.
 
 The target covers each received byte interval with aligned power-of-two
 messages. Each block fits the remaining interval, mapping and maximum size.
-Reads access no bytes outside that interval.
+Messages use bytes from one network packet.
+
+An aligned AXI128 request with 256 beats can form one 4096-byte target
+message. A TL32 4096-byte ingress message first splits into four internal
+transactions and can form four 1024-byte target messages. Reads access no
+bytes outside that interval.
 
 Set `read_side_effects: true` to preserve non-modifiable AXI read byte ranges
 during packet formation. An unaligned INCR interval ends at the beat-aligned

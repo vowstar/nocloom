@@ -390,12 +390,14 @@ Result<NodeHardware> lower_tilelink_uh_outlet(const TileLinkUhOutletProfile &p) 
   const auto capacity = p.packet.max_outstanding;
   if (capacity < 1 || capacity > 16 || p.source_bits > 16 ||
       p.source_bits < static_cast<unsigned>(std::bit_width(capacity - 1)) || p.size_bits < 2 ||
-      p.size_bits > 4 || p.sink_bits > 16 || p.max_transfer_bytes < 4 ||
-      p.max_transfer_bytes > 1024 || !std::has_single_bit(p.max_transfer_bytes) ||
-      p.packet.timeout_completion || p.packet.exclusive_target.mode != ExclusiveAccess::None)
+      p.size_bits > 4 ||
+      static_cast<unsigned>(std::bit_width(p.max_transfer_bytes)) > (1U << p.size_bits) ||
+      p.sink_bits > 16 || p.max_transfer_bytes < 4 || p.max_transfer_bytes > 4096 ||
+      !std::has_single_bit(p.max_transfer_bytes) || p.packet.timeout_completion ||
+      p.packet.exclusive_target.mode != ExclusiveAccess::None)
     return Result<NodeHardware>::failure(
         {error("NCL_TILELINK_PROFILE", "tilelink_target",
-               "Expected 1 to 16 packet contexts, sufficient source bits, a 4 to 1024 byte maximum "
+               "Expected 1 to 16 packet contexts, sufficient source bits, a 4 to 4096 byte maximum "
                "and no exclusive monitor or "
                "timeout completion")});
   if (capacity > 1)

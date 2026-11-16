@@ -17,7 +17,7 @@ nocloom_selector dut(.nl_clk(nl_clk), .nl_reset_n(1'b1),
 wire [32:0] bytes=33'd1 << size;
 wire [32:0] twice=bytes << 1;
 always @* begin
-  assume(available>0 && available<=1024);
+  assume(available>0 && available<={max(1024,maximum)});
   assume({{1'b0,address}}+{{1'b0,available}}<=33'h100000000);
   assert(size<={maximum.bit_length()-1});
   assert(bytes<=available);
@@ -383,6 +383,14 @@ def endpoint(ports, module, maximum, footprint=False, write=False, errors=False)
         connections.append(f".{name}({signal})")
     extra = (error_properties(maximum) if errors else write_properties(maximum) if write
              else footprint_properties(maximum) if footprint else "")
+    if maximum > 1024:
+        extra = (extra.replace("reg [11:0] remaining", "reg [12:0] remaining")
+            .replace("wire [8:0] consumed", "wire [10:0] consumed")
+            .replace("wire [8:0] produced", "wire [10:0] produced")
+            .replace("remaining<=1024", "remaining<=4096")
+            .replace("words_left<=256", "words_left<=1024")
+            .replace("remaining+pending_d+staged==owed", "{2'd0,remaining}+{2'd0,pending_d}+{2'd0,staged}=={2'd0,owed}")
+            .replace("remaining+pending+offset==owed", "{2'd0,remaining}+{2'd0,pending}+{2'd0,offset}=={2'd0,owed}"))
     if footprint or write or errors:
         return f"""module formal_top(input wire nl_clk, {', '.join('input '+s for s in inputs)});
 {';'.join(wires)};
@@ -526,7 +534,7 @@ def main():
     parser.add_argument("--maximum", type=int, default=1024)
     parser.add_argument("--all-maxima", action="store_true")
     args = parser.parse_args()
-    for maximum in ([1 << n for n in range(2, 11)] if args.all_maxima else [args.maximum]):
+    for maximum in ([1 << n for n in range(2, 13)] if args.all_maxima else [args.maximum]):
         args.maximum = maximum
         result = run(args)
         if result:

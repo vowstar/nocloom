@@ -1095,6 +1095,14 @@ nocloom_verif_case(NAME verif_tilelink_uh_target_capacity LAYER rtl TIER focused
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/uh_target_capacity)
 set_tests_properties(verif_tilelink_uh_target_capacity PROPERTIES RESOURCE_LOCK tilelink)
 
+nocloom_verif_case(NAME verif_tilelink_uh_target_large LAYER rtl TIER focused TIMEOUT 600
+  FEATURES tilelink ci MEMORY_MB 2048 CONTRACTS TL.ACCESS
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_large.py
+    --case ${NLV_CASES}/tilelink_uh_large.py
+    --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_large_tb.svh
+    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/uh_target_large)
+set_tests_properties(verif_tilelink_uh_target_large PROPERTIES RESOURCE_LOCK tilelink)
+
 foreach(protocol IN ITEMS axi4 axi3 axi4_lite apb4 logged axi4_folded axi4_compact)
   nocloom_verif_case(NAME verif_initiator_error_responses_${protocol} LAYER negative TIER focused
     TIMEOUT 60 FEATURES errors MEMORY_MB 1024

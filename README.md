@@ -141,7 +141,7 @@ traffic crosses its boundary.
 | Initiator protocols | `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `apb3`, `ahb_lite` (AHB-Lite), `ahb5`, `wishbone`, `tl_ul` and `tl_uh` |
 | Target protocols | `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `apb3`, `apb2`, `ahb_lite` (AHB-Lite), `ahb5`, `wishbone`, `tl_ul` and `tl_uh` |
 | [Wishbone cycles](docs/wishbone.md) | 32-bit classic and pipelined reads and writes, byte SEL, ERR, optional target RTY as error, explicit byte or word addresses. Classic targets can send registered feedback bursts with CTI and BTE. Classic initiators accept these ports and ignore their values |
-| TileLink TL-UL | 32-bit single-beat Get, PutFullData and PutPartialData, with AccessAck and AccessAckData. Initiators can keep multiple sources in flight |
+| [TileLink](docs/tilelink.md) | TL-UL initiators and targets: 32-bit single-beat Get, PutFullData and PutPartialData, with AccessAck and AccessAckData. TL-UL initiators can keep multiple sources in flight. TL-UH initiators and targets: multibeat Get and Put of up to 4096 bytes. Initiators complete Intent locally. Targets share 1 to 16 packet contexts between reads and writes |
 | AHB5 properties | HPROT is 4 bits by default or 7 bits. HNONSEC is optional and defaults to absent. HMASTER is 0 to 32 bits |
 | Endpoint count | 1 to 256 initiators, 1 to 256 targets |
 | Topology | One generated request switch and one generated response switch, or declared request and response graphs of 1 to 128 switches each |
@@ -152,7 +152,6 @@ traffic crosses its boundary.
 | Endpoint clock gating | Separate protocol and transport gates, one shared gate, or a transport gate with the protocol side on the domain clock |
 | Transactions | Several AXI transactions in flight, exclusive access, target timeouts and an error response on a decode miss |
 | Scheduling | Fixed levels from 0 to 7 on AXI4, AXI3, AHB-Lite and AHB5 sources to full AXI4 or AXI3 targets, or on 32-bit APB networks. AXI4 and AXI3 sources also support AxQOS maps. AXI4, AXI3 and 32-bit APB sources support bandwidth limits |
-| TL-UH | 32-bit multibeat Get and Put. Initiators return local Intent responses and deny atomic operations. Targets share 1 to 16 packet contexts between reads and writes. Message maxima: powers of two from 4 to 4096 bytes for initiators and 4 to 1024 bytes for targets, default 64. |
 | Routing | NocLoom fixes each route at generation |
 | Output files | Always: Verilog-2001 RTL and three JSON files, which are the map, the bundle and the dependency graph. Optional: IP-XACT (`--ipxact`), address table (`--address-table`), CDC constraints (`--cdc-constraints`) and C headers (`--c-header`) |
 | C++ library | In-memory generation, tree and mesh topology helpers, and a CMake package. The core library does no file I/O and prints nothing |

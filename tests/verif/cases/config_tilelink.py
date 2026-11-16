@@ -211,14 +211,14 @@ for capacity in (1, 3, 64):
                                      size_width=4)
         CASES.append(dict(name=f"uh_capacity_{capacity}_source_{source_width}",
                           config=cfg, expect="accept"))
-for maximum in (4, 8, 16, 32, 64, 128, 256, 512, 1024):
+for maximum in (4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096):
     cfg = deepcopy(BASE)
     cfg["targets"][0].update(protocol="tl_uh", max_transfer_bytes=maximum,
                               size_width=2 if maximum<=8 else 3 if maximum<=128 else 4)
     CASES.append(dict(name=f"uh_target_maximum_{maximum}", config=cfg, expect="accept"))
 for field, value in (("max_transfer_bytes", 0), ("max_transfer_bytes", 3),
-                     ("max_transfer_bytes", 6), ("max_transfer_bytes", 2048),
-                     ("max_transfer_bytes", 4096), ("source_width", 17),
+                     ("max_transfer_bytes", 6), ("max_transfer_bytes", 8192),
+                     ("source_width", 17),
                      ("sink_width", 17), ("max_outstanding", 0),
                      ("max_outstanding", 17), ("flows", 2),
                      ("timeout", dict(cycles=16, completion=True))):

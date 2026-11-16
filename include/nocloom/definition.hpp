@@ -685,7 +685,7 @@ struct Target {
   std::optional<unsigned> source_width = std::nullopt;
   std::optional<unsigned> size_width = std::nullopt;
   std::optional<unsigned> sink_width = std::nullopt;
-  // TL-UL accepts 4 bytes. TL-UH accepts powers of two from 4 to 1024, default 64.
+  // TL-UL accepts 4 bytes. TL-UH accepts powers of two from 4 to 4096, default 64.
   std::optional<unsigned> max_transfer_bytes = std::nullopt;
 };
 struct TreeNode {

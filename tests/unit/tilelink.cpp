@@ -1,8 +1,8 @@
 #include "core/cone_walk.hpp"
 #include "core/exchange_composition.hpp"
 #include "core/network_plan.hpp"
-#include <bit>
 #include "core/tilelink_uh_outlet.hpp"
+#include <bit>
 #include <catch2/catch_test_macros.hpp>
 #include <nocloom/generation.hpp>
 
@@ -155,6 +155,32 @@ TEST_CASE("TL-UH target sources encode the shared packet capacity", "[tilelink]"
       CHECK(invalid.diagnostics().front().field == "targets[0].source_width");
     }
   }
+}
+
+TEST_CASE("TL-UH large targets keep AXI and packet lengths separate", "[tilelink]") {
+  auto d = tilelink_definition();
+  auto &source = d.initiators[0];
+  source.protocol = Protocol::Axi4;
+  source.data_width = 128;
+  source.id_width = 4;
+  source.len_width = 8;
+  auto &target = d.targets[0];
+  target.protocol = Protocol::TlUh;
+  target.max_transfer_bytes = 4096;
+  target.max_outstanding = 3;
+  target.size_width = 4;
+  REQUIRE(generate(d));
+  const auto plan = build_network_plan(d);
+  REQUIRE(plan);
+  CHECK(plan.value().sources[0].axi_len_bits == 8);
+  CHECK(plan.value().packet_len_bits == 10);
+
+  TileLinkUhOutletProfile profile;
+  profile.max_transfer_bytes = 4096;
+  profile.size_bits = 3;
+  const auto invalid = lower_tilelink_uh_outlet(profile);
+  REQUIRE_FALSE(invalid);
+  CHECK(invalid.diagnostics().front().code == "NCL_TILELINK_PROFILE");
 }
 
 TEST_CASE("TL-UH outlet watchdog rejects an out-of-range count", "[tilelink]") {

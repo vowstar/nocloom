@@ -84,8 +84,6 @@ std::vector<Diagnostic> check_tilelink(const Definition &d) {
       continue;
     const bool uh = t.protocol == Protocol::TlUh;
     if (uh) {
-      reject(t.max_transfer_bytes.value_or(64) > 1024, path + ".max_transfer_bytes",
-             "A TL-UH target maximum is at most 1024 bytes");
       reject(t.exclusive.value_or(ExclusiveAccess::None) != ExclusiveAccess::None,
              path + ".exclusive", "A TL-UH target supports no exclusive monitor");
       const auto maximum = t.max_transfer_bytes.value_or(64);
