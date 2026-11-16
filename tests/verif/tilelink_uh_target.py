@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import sim_engine
 
 
-def bench(mapping, body, address_base):
+def bench(mapping, body, address_base, wrap_regression=False):
     declarations, connections, assignments = ["wire same_ack;"], [], []
     for port in mapping["ports"]:
         name, width = port["name"], port["width"]
@@ -37,6 +37,7 @@ def bench(mapping, body, address_base):
         declarations.extend(["wire t_a_source=0;", "reg t_d_source=0;"])
     return ("`timescale 1ns/1ps\nmodule tb;\n" + "\n".join(declarations)
             + "\nnocloom_uh_target dut(" + ",".join(connections) + ");\n"
+            + f"localparam WRAP_REGRESSION={int(wrap_regression)};\n"
             + f"localparam MAX_BYTES={maximum}, CAPACITY={capacity}, SOURCE_WIDTH={max(1, source_width)}, SIZE_WIDTH={size_width}, ADDRESS_BASE=32'h{address_base:x};\n" + body + "\n"
             + "\n".join(assignments) + "\nendmodule\n")
 
@@ -46,6 +47,8 @@ def run(args):
     work = Path(tempfile.mkdtemp(prefix="run-", dir=args.work)).resolve()
     cfg = runpy.run_path(str(args.case))["configuration"](args.maximum)
     cfg["targets"][0]["max_outstanding"] = args.capacity
+    if args.wrap_regression:
+        cfg["targets"][0]["read_side_effects"] = False
     if args.source_width is not None:
         cfg["targets"][0]["source_width"] = args.source_width
     if args.size_width is not None:
@@ -64,7 +67,8 @@ def run(args):
         return result.returncode
     mapping = json.loads(next(generated.glob("*.map.json")).read_text())
     sv = Path(__file__).parent / "sv"
-    (work / "tb.sv").write_text(bench(mapping, args.bench.read_text(), address_base))
+    (work / "tb.sv").write_text(bench(mapping, args.bench.read_text(), address_base,
+                                     args.wrap_regression))
     rtl = sim_engine.generated_rtl(generated / "nocloom_uh_target.v")
     rtl += (sv / "nlv_tl_checker.sv").read_text()
     rtl += (sv / "nlv_tl_uh_axi_check.sv").read_text()
@@ -88,6 +92,7 @@ def main():
     parser.add_argument("--capacity", type=int, default=1)
     parser.add_argument("--size-width", type=int)
     parser.add_argument("--high-address", action="store_true")
+    parser.add_argument("--wrap-regression", action="store_true")
     sim_engine.add_arguments(parser)
     parser.add_argument("--all-maxima", action="store_true")
     args = parser.parse_args()

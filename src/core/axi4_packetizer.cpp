@@ -526,6 +526,13 @@ struct PacketizerLowering {
                      at, one,
                      [&](const Axi4PacketWindow &w) { return w.read_pack_aligned ? aligned : one; },
                      [](const Axi4PacketWindow &w) { return w.read_pack_aligned; }));
+      // A split WRAP inside one packing word needs a response for each run.
+      // Replaying that word across the container top would answer the head from the tail.
+      if (ordered_wrap_any) {
+        const auto short_wrap =
+            l.both(l.eq(f.at("burst"), 2), l.below(container_of(f), low_mask(word)));
+        eligible = l.both(eligible, l.inv(l.both(ordered_wrap(at), short_wrap)));
+      }
     }
     return l.either(folds(f, at, read), l.both(l.either(l.eq(f.at("burst"), 1), cut), eligible));
   }

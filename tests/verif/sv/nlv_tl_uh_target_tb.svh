@@ -311,6 +311,16 @@
     end
     repeat(160) @(negedge clk); reset_n=1;
     repeat(20) @(negedge clk);
+    if(WRAP_REGRESSION) begin
+      for(integer off=0;off<4;off=off+1) begin
+        transaction(2048+off,2,0,2,0);
+        transaction(4224+off,1,0,1,0);
+      end
+      repeat(40) @(negedge clk);
+      check(!s_rvalid && !s_bvalid && !t_a_valid,"WRAP_DRAINED");
+      $display("UH_PASS wrap messages=%0d gets=%0d puts=%0d",messages,gets,puts);
+      $finish;
+    end
     early=2;
     hold_a=1;
     fork
