@@ -378,7 +378,7 @@ void TileLinkUhOutlet::retire() {
     const auto d_wait = l.both(started, l.both(l.inv(d_done), l.either(write, l.inv(dfull))));
     const auto waiting = l.both(message, l.either(a_wait, d_wait));
     l.watchdog(timed_out, b.timeout_cycles, waiting,
-               l.either(l.inv(waiting), l.either(a_take, d_take)));
+               l.either(l.either(a_take, d_take), l.both(busy, l.inv(waiting))));
     l.out("status", "timed_out", timed_out);
   }
 }

@@ -491,6 +491,12 @@ the saved request, independent of the received D size or opcode. The external
 slave must return the response opcode, size, source and beat count required
 by its accepted A message.
 
-`timeout.completion: true` is rejected. With `completion: false`, expiry
-sets `timed_out` and retains all pending work until normal completion or
-common reset. It inserts no replacement response.
+`timeout.completion: true` is rejected. Each packet context has a watchdog.
+It counts target clock cycles while that context waits for the slave to
+accept an A beat or return a D beat. Each A or D handshake restarts the count.
+Waiting for network write data or response space alone does not count.
+
+Expiry raises `nl_t_<name>_timed_out` until common reset. Pending and later
+work continues and completes when the slave responds. The target inserts no
+replacement response. Its protocol clock gate can close again when no work
+is pending.

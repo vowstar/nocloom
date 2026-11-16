@@ -65,6 +65,17 @@ foreach(kind IN ITEMS read_release read_random write_random)
     LABELS "rtl;focused;ci" RESOURCE_LOCK tilelink
     ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
 endforeach()
+foreach(capacity IN ITEMS 1 3)
+  add_test(NAME tilelink_uh_target_timeout_${capacity}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_target_timeout.py
+      --cli $<TARGET_FILE:nocloom_cli> --fixture $<TARGET_FILE:nocloom_tilelink_uh_target_fixture>
+      --work ${CMAKE_CURRENT_BINARY_DIR}/tilelink_uh_target_timeout_${capacity}
+      --capacity ${capacity})
+  set_tests_properties(tilelink_uh_target_timeout_${capacity} PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 300 PROCESSORS 1
+    LABELS "rtl;focused;ci" RESOURCE_LOCK tilelink
+    ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+endforeach()
 if(UNIX)
   add_test(NAME large_address_map_small_stack
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/large_address_maps.py

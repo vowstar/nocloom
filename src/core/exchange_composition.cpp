@@ -4339,7 +4339,8 @@ private:
             b, ep.states,
             "tl.busy tl.wfull tl.rfull tl.dfull "
             "tl.context#.tl.busy tl.context#.tl.wfull tl.context#.tl.rfull tl.context#.tl.dfull "
-            "tl.dbuffer#.valid tl.read_active tl.write_response_active"));
+            "tl.context#.timeout.pending tl.dbuffer#.valid tl.read_active "
+            "tl.write_response_active"));
       c.hold_open(zone, stores);
       for (const auto *signal : {"bvalid", "rvalid", "d_valid"})
         if (ep.axi.contains(signal))
