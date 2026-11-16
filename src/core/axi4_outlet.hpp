@@ -196,10 +196,11 @@ struct Axi4OutletProfile {
   // The key (id_key) or the folded sequence occupies the remaining bits. A B or R names its burst's
   // flow.
   unsigned flows = 1;
-  // WRAP read alignment (with start_address, neither merged nor admitted): a read WRAP whose start
-  // address is not on a word (a packed narrow WRAP, Axi4PacketWindow::align_wrap) goes out at its
-  // start word; its first beat answers the lanes from the start address up and holds the lanes
-  // below, which answer after the target's last beat as the packet's last word, RREADY low
+  // WRAP read alignment (with start_address, neither merged nor admitted) applies to a multi-word
+  // WRAP with an unaligned start and packet SIZE == log2(data_bits / 8). Upstream packing sets
+  // this shape (Axi4PacketWindow::align_wrap). The read goes out at its start word. Its first beat
+  // answers the lanes from the start address up and holds the lanes below. Those lanes answer
+  // after the target's last beat as the packet's last word, RREADY low
   // meanwhile. Each read descriptor owns its saved word until its final response is accepted.
   // Different target IDs can retain saved words concurrently.
   bool align_wrap = false;

@@ -480,14 +480,15 @@ struct EngineLowering {
                       l.fit(in("axi", signal, p.response_user_port_bits), p.response_user_bits),
                       l.b.constant(p.response_user_bits, 0));
   }
-  // A read the outlet aligns (Axi4OutletProfile::align_wrap): a WRAP whose start address is not
-  // on a word.
+  // Upstream packing gives multi-word WRAP reads a full-word SIZE and preserves the raw start.
+  // A narrow WRAP that passes through unchanged needs no saved-word replay.
   ValueId aligning(const Fields &d) {
     if (!p.align_wrap)
       return zero;
     const unsigned lw = static_cast<unsigned>(std::bit_width(p.data_bits / 8)) - 1;
-    return l.both(l.both(l.eq(d.at("burst"), 2), l.inv(l.eq(d.at("length"), 0))),
-                  l.inv(l.eq(l.b.slice(d.at("start_address"), 0, lw), 0)));
+    auto aligned = l.both(l.both(l.eq(d.at("burst"), 2), l.inv(l.eq(d.at("length"), 0))),
+                          l.inv(l.eq(l.b.slice(d.at("start_address"), 0, lw), 0)));
+    return l.both(aligned, l.eq(d.at("size"), lw));
   }
   // The port inputs, taken from the handshakes that already read them.
   ValueId operand(ValueId value) { return l.b.ir.values.at(value.index).operands.at(1); }
