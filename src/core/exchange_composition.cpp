@@ -4052,41 +4052,9 @@ private:
     t.cut = c.wire(1);
     return t.cut;
   }
-  Channel attach_target(unsigned o, const Channel &offered) {
-    const auto &tp = plan.targets[o];
-    const auto &target = tp.name;
-    c.select_object("target/" + target);
-    // The pressure ends at the target (target_level_hint reads it from offered).
-    auto arriving = offered;
-    arriving.level_hint.reset();
-    TargetSide t;
-    const auto first = b.ir.states.size();
-    t.key = "burst_service/" + target;
-    t.word = word_at(target);
-    t.bits_ep = plan.per_endpoint ? t.word * 8 : 0;
-    t.upsize = tp.upsize.has_value();
-    // A shared-bus target serves in arrival order: a packet waits while packets of the other
-    // direction (turn) are between acquisition and release (count, at most four).
-    t.shared_bus = ahb_target(plan, target) || apb_target(plan, target) ||
-                   lite_target(plan, target) || tp.external_protocol == Protocol::TlUh;
-    // The arrival count holds the packets of one direction between
-    // acquisition and release: a pipelined AXI4-Lite outlet holds up to its
-    // packet capacity.
-    if (lite_target(plan, target) || tp.external_protocol == Protocol::TlUh)
-      t.count_bits = std::max(3U, static_cast<unsigned>(std::bit_width(tp.outstanding)));
-    t.count = t.shared_bus ? b.state(t.count_bits, c.clock, c.reset) : c.bit(0);
-    t.turn = t.shared_bus ? b.state(1, c.clock, c.reset) : c.bit(0);
-    // Formal-observation anchors: the request packet as it leaves the network
-    // toward this target, and the response packet as it re-enters it.
-    const auto write = arriving.data[c.burst_field_index(false, t.word, "write")];
-    c.bind(t.key + "/offer_valid", arriving.valid);
-    c.bind(t.key + "/offer_write", write);
-    c.bind(t.key + "/offer_error", arriving.data[c.burst_field_index(false, t.word, "error")]);
-    const auto object = "target/" + target;
-    auto arrived = endpoint_pipe(tp.pipes, "arrival", object, arriving);
-    const auto arrival = arrived;
-    // An AXI4 outlet's dispatch stage sits after admission: a head enters it only while the outlet
-    // pool has room for it, and counts there (Axi4OutletProfile::admitted).
+  // An AXI4 outlet's dispatch stage sits after admission: a head enters it only while the outlet
+  // pool has room for it, and counts there (Axi4OutletProfile::admitted).
+  Channel gate_dispatch(TargetSide &t, const TargetPlan &tp, Channel arrived) {
     if (!t.shared_bus && !t.upsize && tp.protocol == Protocol::Axi4 &&
         std::ranges::any_of(tp.pipes,
                             [](const EndpointPipe &e) { return pipe_place(e) == "dispatch"; })) {
@@ -4108,7 +4076,12 @@ private:
       t.admits = {c.and_(head, writes), c.and_(head, c.not_(writes))};
       arrived = gated;
     }
-    const auto taken = discard_raises(endpoint_pipe(tp.pipes, "dispatch", object, arrived), t.word);
+    return arrived;
+  }
+  // Packet-head admission depends on shared-bus capacity and direction, target flow,
+  // and single-context occupancy.
+  std::array<ValueId, 2> bus_open(TargetSide &t, const TargetPlan &tp, const Channel &taken) {
+    const auto &target = tp.name;
     std::array<ValueId, 2> open{c.or_(c.eq(t.count, 0), c.not_(t.turn)),
                                 c.or_(c.eq(t.count, 0), t.turn)};
     if (tp.external_protocol == Protocol::TlUh && tp.outstanding > 1) {
@@ -4150,12 +4123,15 @@ private:
       open = {c.and_(open[0], one), c.and_(open[1], one)};
       t.one_packet = t.shared_bus;
     }
-    // A default target answers one decode miss at a time. It takes a miss head once it is empty
-    // (a shared-bus target sees it one cycle after it arrives, so its local answer leaves as late
-    // as at an AXI4 target) (count: no packet of either direction between
-    // acquisition and release; at an AXI4 target its outlet's in-flight pool). From then on
-    // it takes no packet head until it is empty again and the miss's response tail has left
-    // (miss_answer; miss_replied: the tail has left while it is not empty yet).
+    return open;
+  }
+  // A default target answers one decode miss at a time. It takes a miss head once it is empty
+  // (a shared-bus target sees it one cycle after it arrives, so its local answer leaves as late
+  // as at an AXI4 target) (count: no packet of either direction between
+  // acquisition and release; at an AXI4 target its outlet's in-flight pool). From then on
+  // it takes no packet head until it is empty again and the miss's response tail has left
+  // (miss_answer; miss_replied: the tail has left while it is not empty yet).
+  ValueId miss_gate(unsigned o, TargetSide &t, const Channel &taken, std::array<ValueId, 2> &open) {
     ValueId pending{};
     if (!fallbacks) {
       fallbacks.emplace();
@@ -4181,6 +4157,55 @@ private:
       open = {c.and_(open[0], pass), c.and_(open[1], pass)};
       pending = c.and_(taken.valid, c.and_(starts, error_bit));
     }
+    return pending;
+  }
+  // A miss answer ends once the target is empty and the miss response's tail has left.
+  void close_miss(const TargetSide &t, ValueId pending, const Channel &taken, const Channel &sent) {
+    const auto tail = c.and_(c.and_(sent.valid, sent.ready),
+                             sent.data[c.burst_field_index(true, t.word, "last")]);
+    const auto replied = c.or_(tail, *t.miss_replied), done = c.and_(*t.empty, replied);
+    b.update(*t.miss_seen, c.and_(c.and_(pending, c.not_(taken.ready)), c.not_(*t.miss_answer)));
+    b.update(*t.miss_replied, c.and_(c.and_(*t.miss_answer, c.not_(done)), replied));
+    b.update(*t.miss_answer,
+             c.or_(c.and_(pending, taken.ready), c.and_(*t.miss_answer, c.not_(done))));
+  }
+  Channel attach_target(unsigned o, const Channel &offered) {
+    const auto &tp = plan.targets[o];
+    const auto &target = tp.name;
+    c.select_object("target/" + target);
+    // The pressure ends at the target (target_level_hint reads it from offered).
+    auto arriving = offered;
+    arriving.level_hint.reset();
+    TargetSide t;
+    const auto first = b.ir.states.size();
+    t.key = "burst_service/" + target;
+    t.word = word_at(target);
+    t.bits_ep = plan.per_endpoint ? t.word * 8 : 0;
+    t.upsize = tp.upsize.has_value();
+    // A shared-bus target serves in arrival order: a packet waits while packets of the other
+    // direction (turn) are between acquisition and release (count, at most four).
+    t.shared_bus = ahb_target(plan, target) || apb_target(plan, target) ||
+                   lite_target(plan, target) || tp.external_protocol == Protocol::TlUh;
+    // The arrival count holds the packets of one direction between
+    // acquisition and release: a pipelined AXI4-Lite outlet holds up to its
+    // packet capacity.
+    if (lite_target(plan, target) || tp.external_protocol == Protocol::TlUh)
+      t.count_bits = std::max(3U, static_cast<unsigned>(std::bit_width(tp.outstanding)));
+    t.count = t.shared_bus ? b.state(t.count_bits, c.clock, c.reset) : c.bit(0);
+    t.turn = t.shared_bus ? b.state(1, c.clock, c.reset) : c.bit(0);
+    // Formal-observation anchors: the request packet as it leaves the network
+    // toward this target, and the response packet as it re-enters it.
+    const auto write = arriving.data[c.burst_field_index(false, t.word, "write")];
+    c.bind(t.key + "/offer_valid", arriving.valid);
+    c.bind(t.key + "/offer_write", write);
+    c.bind(t.key + "/offer_error", arriving.data[c.burst_field_index(false, t.word, "error")]);
+    const auto object = "target/" + target;
+    auto arrived = endpoint_pipe(tp.pipes, "arrival", object, arriving);
+    const auto arrival = arrived;
+    arrived = gate_dispatch(t, tp, arrived);
+    const auto taken = discard_raises(endpoint_pipe(tp.pipes, "dispatch", object, arrived), t.word);
+    auto open = bus_open(t, tp, taken);
+    const auto pending = miss_gate(o, t, taken, open);
     const auto faces =
         c.steer(taken, c.not_(taken.data[c.burst_field_index(false, t.word, "write")]), open, 1,
                 false, t.word);
@@ -4229,15 +4254,8 @@ private:
     if (feedback)
       b.update(*feedback, b.concat(*next_offer, b.select(sent.valid, c.not_(sent.ready),
                                                          b.slice(*feedback, 0, 1))));
-    if (t.miss_answer) {
-      const auto tail = c.and_(c.and_(sent.valid, sent.ready),
-                               sent.data[c.burst_field_index(true, t.word, "last")]);
-      const auto replied = c.or_(tail, *t.miss_replied), done = c.and_(*t.empty, replied);
-      b.update(*t.miss_seen, c.and_(c.and_(pending, c.not_(taken.ready)), c.not_(*t.miss_answer)));
-      b.update(*t.miss_replied, c.and_(c.and_(*t.miss_answer, c.not_(done)), replied));
-      b.update(*t.miss_answer,
-               c.or_(c.and_(pending, taken.ready), c.and_(*t.miss_answer, c.not_(done))));
-    }
+    if (t.miss_answer)
+      close_miss(t, pending, taken, sent);
     observe_target(o, t, rejoined);
     c.bind(t.key + "/emit_valid", sent.valid);
     c.bind(t.key + "/emit_result", sent.data[c.burst_field_index(true, t.word, "result")]);
