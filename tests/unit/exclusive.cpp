@@ -391,8 +391,13 @@ TEST_CASE("The ingress applies the exclusive envelope inside exclusive windows o
 }
 
 TEST_CASE("The network monitor keys by the owner flags", "[exclusive]") {
-  Axi4OutletProfile p{
-      "t", 32, 2, 8, 2, true, std::vector<nocloom::AddressMapping>{{0x10000, 0x1000}}};
+  Axi4OutletProfile p{"t",
+                      32,
+                      2,
+                      8,
+                      2,
+                      true,
+                      std::vector<nocloom::AddressMapping>{{0x10000, 0x1000}, {0x50000, 0x1000}}};
   p.exclusive = true;
   p.user_bits = 3;
   // Flags 2 and 0 of the user field: flag 2 is the low bit of the key.
@@ -407,10 +412,10 @@ TEST_CASE("The network monitor keys by the owner flags", "[exclusive]") {
     return static_cast<std::size_t>(std::ranges::find(n.ir.ports, name, &Port::name) -
                                     n.ir.ports.begin());
   };
-  // Slot 0 holds key 0b10, an 8-byte granule at 0x10040.
+  // Slot 0 holds key 0b10, an 8-byte granule at local byte 0x40.
   const std::map<std::size_t, std::uint64_t> held{{state("exclusive.slot0.valid"), 1},
                                                   {state("exclusive.slot0.key"), 0b10},
-                                                  {state("exclusive.slot0.base"), 0x10040},
+                                                  {state("exclusive.slot0.base"), 0x40},
                                                   {state("exclusive.slot0.log"), 3}};
   auto failing = [&](std::uint64_t source, std::uint64_t id, std::uint64_t user, std::uint64_t addr,
                      std::uint64_t len, std::uint64_t size) {
@@ -419,12 +424,14 @@ TEST_CASE("The network monitor keys by the owner flags", "[exclusive]") {
                           {port("nl_wreq_source"), source},
                           {port("nl_wreq_id"), id},
                           {port("nl_wreq_user"), user},
+                          {port("nl_wreq_error"), 0},
                           {port("nl_wreq_address"), addr},
                           {port("nl_wreq_length"), len},
                           {port("nl_wreq_size"), size}});
   };
   // Flag 0 set, flags 1 free and 2 clear: key 0b10, whatever the source and AxID.
   CHECK(failing(2, 2, 0b001, 0x10040, 0, 2) == 0U);
+  CHECK(failing(2, 2, 0b001, 0x50040, 0, 2) == 0U); // the same local bytes through an alias
   CHECK(failing(2, 2, 0b011, 0x10044, 0, 2) == 0U); // same 8-byte granule, flag 1 outside the key
   CHECK(failing(2, 1, 0b001, 0x10040, 0, 2) == 0U); // another AxID
   CHECK(failing(0, 2, 0b001, 0x10040, 0, 2) == 0U); // another source

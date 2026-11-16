@@ -112,9 +112,9 @@ struct OutletBase {
   ValueId watch(const Fields &w) {
     monitor.emplace(l, "exclusive",
                     ExclusiveMonitorProfile{p.exclusive_target.monitors, p.exclusive_target.granule,
-                                            bits, p.exclusive_target.id_flags,
-                                            p.source_bits, p.id_bits});
-    const auto region = monitor->region(w.at("address"), w.at("length"), w.at("size"));
+                                            bits, p.exclusive_target.id_flags, p.source_bits,
+                                            p.id_bits});
+    const auto region = monitor->region(localized(w.at("address")), w.at("length"), w.at("size"));
     return l.bind("w.exclusive_failing",
                   l.both(w.at("lock"), l.inv(monitor->holds(monitor->key(w), region))));
   }
@@ -131,16 +131,17 @@ struct OutletBase {
   // the reservations it overlaps.
   void reserve(const Fields &w, const Fields &r, ValueId rt, ValueId reaching, ValueId clearing,
                const std::vector<Held> &writes, bool incoming_last = false) {
-    const auto region = monitor->region(r.at("address"), r.at("length"), r.at("size"));
+    const auto region = monitor->region(localized(r.at("address")), r.at("length"), r.at("size"));
     const auto incoming =
-        packet_range(l, w.at("address"), w.at("length"), w.at("size"), w.at("burst"));
+        packet_range(l, localized(w.at("address")), w.at("length"), w.at("size"), w.at("burst"));
     std::vector<ValueId> overlaps{l.both(reaching, monitor->overlaps(incoming, region))};
     for (const auto &h : writes) {
       const auto &f = *h.packet;
-      overlaps.push_back(l.both(l.both(h.held, l.inv(h.fail)),
-                                monitor->overlaps(packet_range(l, f.at("address"), f.at("length"),
-                                                               f.at("size"), f.at("burst")),
-                                                  region)));
+      overlaps.push_back(
+          l.both(l.both(h.held, l.inv(h.fail)),
+                 monitor->overlaps(packet_range(l, localized(f.at("address")), f.at("length"),
+                                                f.at("size"), f.at("burst")),
+                                   region)));
     }
     if (incoming_last)
       std::ranges::rotate(overlaps, overlaps.begin() + 1);

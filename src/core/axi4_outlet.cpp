@@ -365,6 +365,10 @@ struct EngineLowering {
         });
     return l.inv(known);
   }
+  ValueId localized(ValueId address) {
+    return p.mappings.empty() ? address
+                              : mapping_decode::local(l, address, address_bits, p.mappings);
+  }
   // With a timer, a failed target sees the frozen channel: held reports an
   // address still waiting for its ready from before expiry.
   void address_face(const std::string &prefix, const Fields &d, ValueId valid, ValueId id,
@@ -865,7 +869,7 @@ void EngineLowering::write_reject() {
                     ExclusiveMonitorProfile{p.exclusive_target.monitors, p.exclusive_target.granule,
                                             address_bits, p.exclusive_target.id_flags,
                                             p.source_bits, p.id_bits});
-    const auto region = monitor->region(w.at("address"), w.at("length"), w.at("size"));
+    const auto region = monitor->region(localized(w.at("address")), w.at("length"), w.at("size"));
     failing = l.bind("w.exclusive_failing",
                      l.both(w.at("lock"), l.both(l.inv(monitor->holds(monitor->key(w), region)),
                                                  l.inv(wreject))));
@@ -1402,9 +1406,9 @@ void EngineLowering::read_accept() {
   // stage's entries and the slots until their B. A write answered locally (failed exclusive, window
   // miss, error, timed-out target) never reaches the target.
   if (network) {
-    const auto region = monitor->region(r.at("address"), r.at("length"), r.at("size"));
+    const auto region = monitor->region(localized(r.at("address")), r.at("length"), r.at("size"));
     const auto incoming =
-        packet_range(l, w.at("address"), w.at("length"), w.at("size"), w.at("burst"));
+        packet_range(l, localized(w.at("address")), w.at("length"), w.at("size"), w.at("burst"));
     // A failing exclusive write changes nothing: it neither records nor clears.
     const auto reaching = l.both(head, l.both(l.inv(seen), l.inv(failing)));
     const auto read = l.bind("r.exclusive_read", l.both(take_r, r.at("lock")));
@@ -1412,9 +1416,9 @@ void EngineLowering::read_accept() {
     auto record = read;
     if (several) {
       const auto over = [&](ValueId held, const Fields &f, ValueId address, ValueId size) {
-        return l.both(
-            held, monitor->overlaps(packet_range(l, address, f.at("length"), size, f.at("burst")),
-                                    region));
+        return l.both(held, monitor->overlaps(packet_range(l, localized(address), f.at("length"),
+                                                           size, f.at("burst")),
+                                              region));
       };
       auto contaminated = l.both(reaching, monitor->overlaps(incoming, region));
       contaminated = l.either(contaminated, over(l.both(wb, l.inv(l.either(reject, excluded))), aw,

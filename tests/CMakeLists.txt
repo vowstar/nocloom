@@ -49,11 +49,18 @@ foreach(bits IN ITEMS 64 128)
       ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
   endforeach()
 endforeach()
+add_test(NAME exclusive_local_alias
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/exclusive_alias.py
+    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/exclusive_local_alias)
+set_tests_properties(exclusive_local_alias PROPERTIES
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 300 PROCESSORS 1
+  LABELS "rtl;exclusive;focused;ci" RESOURCE_LOCK exclusive_regression
+  ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
 add_test(NAME exclusive_derived_owner
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/exclusive_derived_owner.py
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/exclusive_derived_owner)
 set_tests_properties(exclusive_derived_owner PROPERTIES TIMEOUT 30 PROCESSORS 1
-  LABELS "rtl;exclusive;focused" RESOURCE_LOCK exclusive_regression
+  LABELS "rtl;exclusive;edit" RESOURCE_LOCK exclusive_regression
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 add_test(NAME exclusive_packet_limits
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/exclusive_limits.py

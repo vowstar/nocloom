@@ -8,6 +8,24 @@ import tempfile
 from exclusive_bench import _AHB, _APB, _AXI, _LITE, _SOURCE, _fill
 from sim_engine import Simulation, generated_rtl
 
+_WISHBONE = '''
+reg [7:0] @T@_mem [0:4095];
+integer @T@_i, @T@_wcount = 0, @T@_rcount = 0;
+initial for (@T@_i = 0; @T@_i < 4096; @T@_i = @T@_i + 1) @T@_mem[@T@_i] = 0;
+wire [11:0] @T@_word = {nl_t_@T@_adr[11:2], 2'b00};
+assign nl_t_@T@_ack = nl_t_@T@_cyc && nl_t_@T@_stb;
+assign nl_t_@T@_err = 0;
+assign nl_t_@T@_dat_r = {@T@_mem[@T@_word + 3], @T@_mem[@T@_word + 2],
+                         @T@_mem[@T@_word + 1], @T@_mem[@T@_word]};
+always @(posedge clk_main) if (reset_n && nl_t_@T@_ack) begin
+ if (nl_t_@T@_we) begin
+  for (@T@_i = 0; @T@_i < 4; @T@_i = @T@_i + 1)
+   if (nl_t_@T@_sel[@T@_i]) @T@_mem[@T@_word + @T@_i] <= nl_t_@T@_dat_w[8 * @T@_i +: 8];
+  @T@_wcount <= @T@_wcount + 1;
+ end else @T@_rcount <= @T@_rcount + 1;
+end
+'''
+
 
 def configuration(targets, width=32):
     return {
@@ -38,6 +56,8 @@ def target(name, protocol, base, size=4096, mode='network'):
     if protocol in ('axi4', 'axi3'):
         entry['len_width'] = 4
         entry['max_outstanding'] = 2
+    if protocol == 'wishbone':
+        entry['address_unit'] = 'byte'
     return entry
 
 
@@ -64,6 +84,9 @@ def bench(mapping, cfg, body, checks=''):
         elif protocol == 'ahb_lite':
             models.append(_fill(_AHB, **fields))
             signals = ('hreadyout', 'hresp', 'hrdata')
+        elif protocol == 'wishbone':
+            models.append(_fill(_WISHBONE, **fields))
+            signals = ('ack', 'err', 'dat_r')
         else:
             models.append(_fill(_LITE, **fields))
             signals = ('awready', 'wready', 'bvalid', 'bresp', 'arready',
