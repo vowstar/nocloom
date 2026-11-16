@@ -4,6 +4,33 @@ endif()
 find_package(Catch2 3.4.0...<4 CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
+if(UNIX)
+  add_test(NAME large_address_map_small_stack
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/large_address_maps.py
+      --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/large_address_map_small_stack
+      --count 4096 --stack-kib 1024)
+  set_tests_properties(large_address_map_small_stack PROPERTIES TIMEOUT 30 LABELS "config;quick;ci")
+endif()
+add_test(NAME large_address_map_scaling
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/large_address_maps.py
+    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/large_address_map_scaling
+    --count 16384 65536)
+set_tests_properties(large_address_map_scaling PROPERTIES TIMEOUT 600 LABELS "config;release")
+add_test(NAME command_agreement
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/command_agreement.py
+    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/command_agreement)
+set_tests_properties(command_agreement PROPERTIES TIMEOUT 30 LABELS "config;quick;ci")
+foreach(first IN ITEMS read write lock oversize narrow)
+  add_test(NAME ahb_reset_release_${first}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/ahb_reset_release_bench.py
+      --cli $<TARGET_FILE:nocloom_cli>
+      --work ${CMAKE_CURRENT_BINARY_DIR}/ahb_reset_release_${first}
+      --first ${first})
+  set_tests_properties(ahb_reset_release_${first} PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 300 PROCESSORS 1
+    LABELS "rtl;focused;ci" RESOURCE_LOCK ahb_initiator
+    ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+endforeach()
 add_executable(nocloom_clamp_read_fixture clamp_read_fixture.cpp)
 target_link_libraries(nocloom_clamp_read_fixture PRIVATE nocloom_core)
 target_include_directories(nocloom_clamp_read_fixture PRIVATE ${PROJECT_SOURCE_DIR}/src)
@@ -94,22 +121,6 @@ foreach(capacity IN ITEMS 1 3)
     LABELS "rtl;focused;ci" RESOURCE_LOCK tilelink
     ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
 endforeach()
-if(UNIX)
-  add_test(NAME large_address_map_small_stack
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/large_address_maps.py
-      --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/large_address_map_small_stack
-      --count 4096 --stack-kib 1024)
-  set_tests_properties(large_address_map_small_stack PROPERTIES TIMEOUT 30 LABELS "config;quick;ci")
-endif()
-add_test(NAME large_address_map_scaling
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/large_address_maps.py
-    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/large_address_map_scaling
-    --count 16384 65536)
-set_tests_properties(large_address_map_scaling PROPERTIES TIMEOUT 600 LABELS "config;release")
-add_test(NAME command_agreement
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/command_agreement.py
-    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/command_agreement)
-set_tests_properties(command_agreement PROPERTIES TIMEOUT 30 LABELS "config;quick;ci")
 add_executable(nocloom_unit unit/core.cpp unit/message.cpp unit/wishbone.cpp)
 target_sources(nocloom_unit PRIVATE unit/packet_lengths.cpp)
 add_test(NAME packet_lengths_structure COMMAND nocloom_unit "[packet-lengths]")

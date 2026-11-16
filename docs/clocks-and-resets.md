@@ -49,6 +49,13 @@ Domains can share a reset port and choose synchronization separately.
 If unrelated clocks share a direct reset port, the system must release reset
 at a time that is safe for all of them.
 
+AHB initiator address phase registers use their domain's `reset_port` directly.
+With the reset synchronizer, deassert this port synchronously after a rising
+HCLK edge. A direct connection follows the timing conditions above. HREADYOUT
+is high during reset. The first address phase after the reset port deasserts
+can be accepted. With the synchronizer, the data phase waits for domain reset
+release.
+
 `reset_coverage: all` resets payload and control registers. With `minimal`,
 pipe and clock crossing payload registers retain their contents and occupancy
 clears. After a common reset, a stored payload becomes valid after a new write.
@@ -170,23 +177,25 @@ divided-clock edges. With `enable_port`, count the edges the input selects.
 One-sided resets also follow the duration in [reset release](#reset-release).
 A stopped clock leaves registers unchanged, including unknown power-up values.
 
-With the reset synchronizer, reset enters on the first input-clock edge
-and clears domain
-registers on the next domain edge in synchronous mode. A directly driven reset
-clears on the first domain edge. Outputs can change before those edges, even
-while the reset port is low. A domain with a reset synchronizer releases
-on its second
-input-clock rising edge after the reset port rises. Until release, endpoint
-ready and valid stay low.
+With the reset synchronizer, reset enters on the first input-clock edge and
+clears domain registers on the next domain edge in synchronous mode. AHB
+address phase registers use the direct reset timing in [reset release](#reset-release).
+A directly driven reset clears on the first domain edge. Outputs can change
+before those edges, even while the reset port is low.
+
+With the reset synchronizer, a domain releases on its second input-clock rising
+edge after the reset port rises. Endpoint ready and valid stay low until release.
+AHB HREADYOUT is the exception. An AHB initiator drives it high while its reset
+port is low. Its HRESP stays low until release.
 
 For a domain with `ratio` or `enable_port`, reset resynchronization uses the
 input clock. The domain logic uses the selected clock.
 
-A domain still in reset accepts nothing. Traffic toward it waits in crossing
-storage or ahead of it. With `reset_coverage: all`, a selected word can acquire
-cleared payload during the one-sided-reset synchronization window. With
-`minimal`, pipe and crossing payloads retain their values while occupancy
-clears.
+Traffic waits in or before the crossing until domain reset releases. An AHB
+initiator can capture its first address phase during [reset release](#reset-release).
+With `reset_coverage: all`, a selected word can acquire cleared payload during
+the one-sided-reset synchronization window. With `minimal`, pipe and crossing
+payloads retain their values while occupancy clears.
 
 Related crossings reset their local and returned counts in both coverage modes
 to prevent stale-word replay.

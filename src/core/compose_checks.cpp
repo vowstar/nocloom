@@ -483,13 +483,19 @@ private:
     return i == (store == cut->name ? 4 : 5) + n ? (1U << n) - 1 : 0;
   }
   void control_owners() {
+    std::set<std::size_t> bus_reset;
+    for (const auto &source : h.plan.sources)
+      if (source.ahb)
+        bus_reset.insert(h.bindings.at("source/" + source.name + "/ahb.phase").index);
     for (const auto &store : h.storage)
       for (std::size_t i = 0; i < store.control.size(); ++i) {
         const auto resource =
             std::ranges::find(h.plan.graph.resources, store.resource, &CrossResource::id);
         const auto domain = h.plan.clocked() ? resource->domain : h.plan.domain.name;
-        const bool valid = claim(store.control[i], store.resource.ends_with("/init") ? 1 : 0,
-                                 reset_value(store.resource, i), domain);
+        const bool valid = claim(
+            store.control[i],
+            store.resource.ends_with("/init") || bus_reset.contains(store.control[i].index) ? 1 : 0,
+            reset_value(store.resource, i), domain);
         fault(!valid, "Control state must have one owner and the reset of its domain: " +
                           store.resource + " index " + decimal(i) + " value " +
                           decimal(store.control[i].index) + " " + claim_failure);

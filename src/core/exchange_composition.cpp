@@ -2459,6 +2459,30 @@ private:
     if (sp.ahb)
       zone.wake.push_back(c.and_(ep.axi.at("hsel"), c.not_(c.eq(ep.axi.at("htrans"), 0))));
   }
+  void ahb_address_reset(const SourcePlan &sp, const Imported &ep) {
+    if (!sp.ahb)
+      return;
+    const auto &domain =
+        plan.clocked()
+            ? *std::ranges::find(plan.domains, plan.object_domains.at("source/" + sp.name),
+                                 &DomainPlan::name)
+            : plan.domain;
+    if (!domain.release_stages)
+      return;
+    // AHB accepts an address on HREADY even while the engine's reset release is pending.
+    // Only the address phase capture follows the bus reset, so its data phase can wait.
+    const auto port = c.out.bindings.at("domain/" + domain.name + ".reset_port");
+    for (const auto *field : {"ahb.phase", "ahb.addr", "ahb.write", "ahb.size", "ahb.burst",
+                              "ahb.prot", "ahb.lock", "ahb.first", "ahb.nonsecure", "ahb.master"})
+      if (const auto it = ep.states.find(field); it != ep.states.end())
+        b.ir.states.at(b.ir.values.at(it->second.index).state.index).reset->signal = port;
+    // The engine must be able to retain the second ERROR cycle before HRESP can start.
+    for (auto &driver : b.ir.drivers) {
+      const auto &pin = b.ir.ports.at(driver.port.index);
+      if (pin.endpoint == "initiator:" + sp.name && pin.signal == "hresp")
+        driver.value = c.and_(c.reset, driver.value);
+    }
+  }
   void bind_source_charges(const SourcePlan &sp, SourceSide &side, const Imported &splitter,
                            const Channel &write, const Channel &read) {
     if (!axi_charge(sp))
@@ -2546,6 +2570,7 @@ private:
                                  {"rreq", &engine_rreq},
                                  {"rrsp", &init_rrsp}},
                                 source_ports, modes, sp.pipes);
+    ahb_address_reset(sp, side.ep);
     // The protocol zone wakes on a valid of the source face (an APB PSEL) or a response.
     if (auto *zone = c.region(key + "/protocol")) {
       zone->claim(b, first);
