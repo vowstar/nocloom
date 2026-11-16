@@ -90,7 +90,7 @@ See [protocols](protocols.md), [transactions](transactions.md),
 | `NCL_CONNECTIVITY_REFERENCE` | Unknown or unreachable endpoint, invalid flow index or no mapping within the initiator address limit |
 | `NCL_CONNECTIVITY_DUPLICATE`, `NCL_CONNECTIVITY_OVERLAP` | Repeated flow pair or overlapping shorthand initiator rows |
 | `NCL_CONNECTIVITY_UNUSED_SOURCE`, `NCL_CONNECTIVITY_UNUSED_TARGET` | Unused endpoint or mapping block |
-| `NCL_SOURCE_PATH`, `NCL_TARGET_PATH` | Invalid flow definitions or mapping flow selections |
+| `NCL_SOURCE_PATH`, `NCL_TARGET_PATH` | Invalid flow definitions or mapping flow selections, including unsupported [source flow connectivity within a page](address-map.md#target-mappings) |
 | `NCL_ROUTE_REFERENCE`, `NCL_ROUTE_DUPLICATE`, `NCL_ROUTE_PATH` | Invalid route endpoint, repeated flow pair or invalid path |
 | `NCL_SWITCH_ROUTE_MISSING`, `NCL_SWITCH_ROUTE_AMBIGUOUS` | Inferred route absent or not unique |
 | `NCL_SWITCH_ROUTE_CYCLE`, `NCL_SWITCH_UNUSED_OBJECT` | Route wait cycle or unused node or link |

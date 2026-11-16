@@ -149,6 +149,11 @@ foreach(capacity IN ITEMS 1 3)
     ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
 endforeach()
 add_executable(nocloom_unit unit/core.cpp unit/message.cpp unit/wishbone.cpp)
+target_sources(nocloom_unit PRIVATE unit/subpage_source_flows.cpp)
+add_test(NAME subpage_source_flows_structure COMMAND nocloom_unit "[subpage-source-flows]")
+set_tests_properties(subpage_source_flows_structure PROPERTIES
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit TIMEOUT 120
+  LABELS "unit;quick;ci" PROCESSORS 1)
 target_sources(nocloom_unit PRIVATE unit/subpage_destinations.cpp)
 add_test(NAME subpage_destinations_structure COMMAND nocloom_unit "[subpage-destinations]")
 set_tests_properties(subpage_destinations_structure PROPERTIES

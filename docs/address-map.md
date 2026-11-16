@@ -30,6 +30,12 @@ the part of one mapping that one initiator decodes to its target.
 An address in a sub-page tail hole returns an error without accessing a
 neighboring window.
 
+Within one 4 KiB page, each [flow](network.md#endpoint-flows) of an initiator
+that reaches a sub-page routing window must reach all such windows of the
+initiator. The flow need not reach windows of the initiator's
+[default target](#decode-misses). This rule applies to AXI4 and AXI3
+initiators with `max_outstanding` above 1.
+
 ## Address selectors
 
 `address_inputs` declares input ports with `name`, `width` and `clock_domain`.
@@ -62,8 +68,9 @@ Keep address inputs stable during affected traffic. See
 
 ## Decode misses
 
-A decode miss makes no target bus access. Set `default_target` to send misses
-to a connected target's response path.
+A miss reaches no data target. Each initiator can set `default_target` to a
+connected target's name. That target's response path completes the initiator's
+decode misses without a target bus access.
 
 Without an explicit selection, NocLoom selects the target of the smallest
 reached [aligned block](#overlap-and-packet-boundaries). A block counts only

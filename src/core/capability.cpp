@@ -94,7 +94,56 @@ std::set<unsigned> chain_stages(const NetworkPlan &plan) {
 }
 bool ladder(unsigned bytes) { return bytes == 4 || bytes == 8 || bytes == 16 || bytes == 32; }
 
+// Sub-page admission combines the reached source flows over a whole page. Destination tracking
+// cannot distinguish an unconnected flow there unless the window belongs to the miss target.
+std::optional<Finding> subpage_source_flows(const RuleView &v) {
+  const auto &plan = v.plan;
+  const auto &pair = plan.pairs[v.at];
+  const auto &source = plan.sources[pair.source];
+  const auto &target = plan.targets[pair.target];
+  if (source.protocol != P::Axi4 || source.outstanding < 2 || source.flows.size() < 2)
+    return std::nullopt;
+  if (const auto miss = miss_route(plan, source.name); miss && miss->target == pair.target)
+    return std::nullopt;
+  const auto flow_name = [&](unsigned f) {
+    return "flow " + std::to_string(f) + " (" + source.flows[f] + ")";
+  };
+  const auto window_name = [](const TargetPlan &t, const MappingPlan &m, const AddressWindow &r) {
+    return t.name + " flow " + std::to_string(m.flow) + " window [" + decimal(r.base) + ", " +
+           decimal(r.base + r.size) + ")";
+  };
+  for (const auto &m : target.mappings) {
+    const auto mask = reaching_flows(plan, source.name, target.name, m.flow);
+    if (!mask || mask == all_flows(source))
+      continue;
+    for (const auto &r : m.routes) {
+      if (r.size % 4096 == 0)
+        continue;
+      for (const auto &other : plan.targets)
+        for (const auto &n : other.mappings) {
+          const auto extra = reaching_flows(plan, source.name, other.name, n.flow) & ~mask;
+          if (!extra)
+            continue;
+          const auto same_page = std::ranges::find_if(n.routes, [&](const AddressWindow &s) {
+            return s.size % 4096 && s.base / 4096 == r.base / 4096;
+          });
+          if (same_page != n.routes.end())
+            return Finding{
+                "connectivity." + source.name,
+                "Initiator " + source.name + " " + flow_name(std::countr_zero(extra)) +
+                    " reaches " + window_name(other, n, *same_page) + " but does not reach " +
+                    window_name(target, m, r) + ", reached by " +
+                    flow_name(std::countr_zero(mask)) +
+                    ". Source flows sharing a 4 KiB page must all reach each reached non-default "
+                    "target window in that page when max_outstanding exceeds 1"};
+        }
+    }
+  }
+  return std::nullopt;
+}
+
 constexpr CapabilityRule rules[] = {
+    {"source.subpage_flows", "NCL_SOURCE_PATH", Scope::Pair, Stage::Plan, subpage_source_flows},
     {"ahb5.master_width", "NCL_AHB5_PROPERTIES", Scope::Pair, Stage::Plan,
      [](const RuleView &v) {
        const auto &pair = v.plan.pairs[v.at];

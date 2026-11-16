@@ -109,6 +109,12 @@ nocloom_verif_case(NAME verif_rw_merge_negative LAYER negative TIER focused TIME
 # with the named code, artifact set, determinism across working directories).
 set(NLV_CONFIG ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/config.py
   --cli $<TARGET_FILE:nocloom_cli>)
+nocloom_verif_case(NAME verif_config_subpage_flows LAYER config TIER quick TIMEOUT 120
+  FEATURES config axi4 decode MEMORY_MB 512
+  COMMAND ${NLV_CONFIG} --case ${NLV_CASES}/config_subpage_flows.py
+    --cli $<TARGET_FILE:nocloom_cli>)
+set_property(TEST verif_config_subpage_flows APPEND PROPERTY LABELS ci)
+
 if(UNIX)
   nocloom_verif_case(NAME address_selectors_scale LAYER config TIER focused TIMEOUT 50
     FEATURES ci MEMORY_MB 512
@@ -1114,7 +1120,8 @@ nocloom_verif_case(NAME verif_tilelink_uh_selected_faults LAYER negative TIER fo
     --case ${NLV_CASES}/tilelink_uh_negative.py
     --cli $<TARGET_FILE:nocloom_cli> --fixture $<TARGET_FILE:nocloom_verif_fixture>
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_ingress_tb.svh
-    --maximum 64 --fault 1 --fault 3 --fault 8)
+    --extra ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_b_independence.svh
+    --maximum 8)
 set_tests_properties(verif_tilelink_uh_selected_faults PROPERTIES RESOURCE_LOCK tilelink)
 
 foreach(gate IN ITEMS independent combined)

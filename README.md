@@ -170,6 +170,7 @@ See [Documentation](#documentation) for field definitions and limits.
 | AHB arbitration and responses | No multi-manager arbitration or HSPLIT. RETRY and SPLIT on two-bit `ahb_lite` targets fail the packet |
 | Other RTL languages | The output is Verilog-2001 only |
 | Adaptive routing | A route does not change with the load |
+| Source flow admission | Within one 4 KiB page, each flow of an initiator that reaches a sub-page routing window must reach all such windows of the initiator. The flow need not reach windows of the initiator's default target. This rule applies to AXI4 and AXI3 initiators with `max_outstanding` above 1. See [Address map](docs/address-map.md#target-mappings) |
 | Scheduling | Nonzero levels exclude AHB targets, other mixed protocol networks, exclusive access, target timeouts and targets wider than the network. AXI graphs also exclude one-direction endpoints. AHB sources have no AxQOS map, shaper or scheduler |
 | APB5 optional signals | PWAKEUP, parity check signals and RME PNSE are unsupported. PAUSER, PBUSER and per-byte PWUSER and PRUSER groups of 1 to 4 bits are supported |
 | AxREGION | AXI endpoints have no AxREGION ports |
@@ -177,8 +178,7 @@ See [Documentation](#documentation) for field definitions and limits.
 | Unchanged non-modifiable narrow bursts | With the default `narrow_bursts: merge`, an AXI target that is wider than the beats of a burst merges them regardless of AxCACHE. This can change non-modifiable transactions beyond the transformations that AXI A4.3 permits. See [width transformation details](docs/width-conversion.md#width-transformation-details) |
 
 The CLI rejects an invalid definition before it writes files. It reports a
-diagnostic code, a field path and a message, with the file line and column when
-known. [Diagnostics](docs/diagnostics.md) lists the codes.
+field path, a message, the file line and column when known, and a [diagnostic code](docs/diagnostics.md).
 
 ## Documentation
 
