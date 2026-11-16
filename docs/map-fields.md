@@ -122,7 +122,8 @@ These names are relative to `definition.contract`.
 | `apb_ingress`, `ahb_ingress`, `axi3_ingress`, `axi3_egress` | Protocol adapter rules |
 | `apb_targets`, `apb_target_words`, `apb_back_to_back` | APB target and word access behavior |
 | `ahb_targets`, `ahb_targets.data_width`, `ahb_bursts`, `ahb5_properties`, `fixed_bursts`, `dedicated_dialects` | Dedicated target transformations and AHB5 sidebands |
-| `wishbone` | Wishbone cycle modes, widths, retry and read SEL handling. `outputs.initiators` gates the registered ACK and ERR with CYC, and with STB in classic mode. `outputs.targets` are registered |
+| `wishbone` | Wishbone cycle modes, widths, retry and read SEL handling. `outputs.initiators` gates the registered ACK and ERR with CYC, and with STB in classic mode. `outputs.targets` are registered. `registered_feedback` records burst tag termination, packet order and error rules |
+| `tilelink`, `tilelink_uh`, `tilelink_uh_target` | TileLink operations, source reuse, response order, error mapping and progress |
 | `target_timeout`, `exclusive`, `exclusive_access` | Failed target and monitor rules |
 | `reset`, `crossing`, `physical_obligations` | Reset assertion, release, crossing coordination and timing obligations |
 | `arbitration` | Effective policies, candidates, override origin, priority and waiting bounds |

@@ -1,9 +1,7 @@
 # TileLink
 
-Set `protocol: tl_ul` on an initiator or target. The interface has channels A
-and D with 32-bit data. It supports single-beat Get, PutFullData and
-PutPartialData, with AccessAck and AccessAckData responses. The rules use
-[TileLink 1.8.1][spec], sections 3, 4, 6 and 7.
+TileLink endpoints have channels A and D with 32-bit data. The rules use
+[TileLink 1.8.1][spec], sections 3, 4, 6, 7 and 8.
 
 | Protocol value | Roles | Operations |
 | --- | --- | --- |

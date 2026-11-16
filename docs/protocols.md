@@ -106,12 +106,13 @@ The protocol rules follow Arm AMBA APB IHI 0024E, sections 3.8 and 4.1.
 
 ## APB initiators
 
-APB3 omits PSTRB and PPROT, uses full write strobes and supplies PPROT `010`.
+APB3 has no PSTRB or PPROT ports. Writes select all bytes in the APB word.
+Its network requests use PROT `010`.
 
-It issues from SETUP and returns PREADY in ACCESS one cycle after the response
-arrives. Every transfer has at least one wait state. The input address is
-rounded down to the containing initiator word. PSTRB selects bytes within that
-word.
+An APB initiator issues from SETUP and returns PREADY in ACCESS one cycle after
+the response arrives. Every transfer has at least one wait state. The input
+address is rounded down to the containing initiator word. When present, PSTRB
+selects bytes within that word.
 
 A failed read returns zero data. PRDATA and PSLVERR retain the most recent
 completed result between transfers. A completed write leaves PRDATA zero. After
@@ -127,7 +128,8 @@ with no WRAP. AXI initiator IDs zero-extend into the network and return at the
 original width. Zero ID width removes ID ports. AXI targets need enough ID bits
 for their flow and exclusive owner fields.
 
-The target's length capacity must hold one beat of every reaching initiator.
+For a full AXI target, `2^len_width` target words must hold one full-width beat
+of every connected initiator.
 
 Malformed burst descriptors return SLVERR locally. Reads return the declared
 zero-data beats with their original ID and RLAST. Writes consume the declared

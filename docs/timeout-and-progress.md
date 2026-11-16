@@ -64,7 +64,9 @@ Expiry raises `nl_t_<target>_timed_out` until common reset.
 
 Responses already held by the target adapter can still leave. Completed target
 accesses are not rolled back. Late responses are discarded. Unfinished reads
-continue at the target. Unfinished writes receive no further data.
+continue at the target, except on pipelined Wishbone. That target issues no
+further STB and holds an already offered request stable until acceptance.
+Unfinished writes receive no further data.
 
 Unfinished AHB write blocks stay BUSY. Issued AHB reads finish and leave IDLE.
 Only common reset clears the failed state.

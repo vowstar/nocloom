@@ -4,19 +4,29 @@
 
 Packet limits depend on both endpoints and the target window.
 `transport.packet_limits` can narrow them for selected connected AXI pairs. Each
-entry has `source`, `target`, and at least one of `max_bytes` or
-`boundary_bytes`. Values must be powers of two from the pair's alignment word
-through its default. A pair can appear only once.
+entry needs an AXI4 or AXI3 initiator and has `source`, `target`, and at least
+one of `max_bytes` or `boundary_bytes`. Values must be powers of two from the
+pair's alignment word through its default. A pair can appear only once.
 
-| Target | Default packet bytes | Boundary |
+The table gives each target's baseline limits. Field names in the table refer
+to that target.
+
+| Target | Baseline packet bytes | Boundary |
 | --- | --- | --- |
-| AXI4, AXI3 | Smaller of its AxLEN capacity and 4 KiB | At most 4 KiB and local address space |
-| AHB | Smaller of 16 target words and 1 KiB | At most 1 KiB and local address space |
-| APB, AXI4-Lite | 128 | Local address space |
+| AXI4, AXI3 | `min(2^len_width * data_width / 8, 4096)` | At most 4 KiB and local address space |
+| AHB, TL-UL | Smaller of 16 target words and 1 KiB | At most 1 KiB and local address space |
+| APB, AXI4-Lite, Wishbone | 128 | Local address space |
+| TL-UH | `max_transfer_bytes` | Local address space |
 
 Window alignment can further reduce the boundary. The alignment word is the
 larger endpoint word, with APB targets counting as 4 bytes. An initiator cannot
 reach a window smaller than that alignment word.
+
+For each pair, the effective default packet byte limit is the larger of the
+target's baseline limit and the alignment word. A TL-UH target's
+`max_transfer_bytes` still limits each TileLink message. For example, a 128-bit
+AXI4 initiator with a 4-byte TL-UH target maximum has a 16-byte packet limit.
+The target can split that packet into four 4-byte messages.
 
 A packet keeps its selected target and route. A burst can cross mapping
 boundaries and send later packets to another target. Before a packet changes
@@ -84,23 +94,23 @@ outside requested bytes unspecified. When a packed INCR read word answers
 several beats, its bytes beyond the burst end and below an unaligned start are
 zero. See [width conversion](width-conversion.md#width-transformation-details).
 
-`read_side_effects` defaults to `false`.
-Eligible exact blocks are limited by the
-pair's byte limit and boundary. Only an unaligned first beat can need blocks
-smaller than its beat size. Writes repeat that first beat with block-specific
-strobes. Reads merge its block results into one initiator beat.
+## Read side effects
+
+`read_side_effects` defaults to `false`. Set it to `true` on the target.
+
+The initiator then keeps eligible non-modifiable INCR accesses within their
+requested byte range. It decomposes each request into naturally aligned
+power-of-two blocks. This rule applies when AxCACHE's modifiable bit and AxLOCK
+are clear. The first address selects the rule for the whole burst.
+
+Eligible blocks are limited by the pair's byte limit and boundary. Only an
+unaligned first beat can need blocks smaller than its beat size. Writes repeat
+that first beat with block-specific strobes. Reads merge its block results
+into one initiator beat.
 
 Decode misses do not use exact blocks. An AHB target can read a block narrower
 than its word with that HSIZE. AXI shapers reject any connected target with read
 side effects.
-
-## Read side effects
-
-Set `read_side_effects: true` on the target. This configuration keeps eligible
-non-modifiable INCR accesses within their requested byte range. The initiator
-decomposes the request into naturally aligned power-of-two blocks. This rule
-applies when AxCACHE's modifiable bit and AxLOCK are clear. The first address
-selects the rule for the whole burst.
 
 For TL-UH targets, eligible WRAP tail and head runs also use exact blocks.
 FIXED, modifiable and exclusive bursts keep their packet rules. WRAP uses
