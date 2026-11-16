@@ -490,6 +490,12 @@ struct EngineLowering {
                           l.inv(l.eq(l.b.slice(d.at("start_address"), 0, lw), 0)));
     return l.both(aligned, l.eq(d.at("size"), lw));
   }
+  // Timeout completion keeps the container's replay shape, including a saved start word.
+  // A decode miss uses its length descriptor instead of replaying a data word.
+  ValueId completion_alignment() {
+    return l.both(aligning(recv),
+                  l.either(l.inv(recv_rejecting), l.both(failed, l.inv(recv_miss))));
+  }
   // The port inputs, taken from the handshakes that already read them.
   ValueId operand(ValueId value) { return l.b.ir.values.at(value.index).operands.at(1); }
 
@@ -1627,7 +1633,9 @@ void EngineLowering::read_receive() {
                   l.shl(l.b.unary(Op::BitNot, l.num(lanes, 0), lanes),
                         l.b.slice(recv.at("start_address"), 0, lw), lanes - 1),
                   lanes);
-    const auto aligned = l.both(aligning(recv), l.inv(recv_rejecting));
+    const auto aligned = timeout && p.timeout_completion
+                             ? completion_alignment()
+                             : l.both(aligning(recv), l.inv(recv_rejecting));
     below = strobe_lanes(l.b, candidate("r.spare_align_below", arriving_below), lanes);
     const auto cand_aligned = candidate("r.spare_aligned", aligned);
     aligned_first = l.both(cand_aligned, candidate("r.spare_align_first", first));
@@ -1936,7 +1944,9 @@ void EngineLowering::read_receive_joined() {
     live["user"] = l.b.select(first, *user, head_user);
   }
   if (p.align_wrap) {
-    const auto aligned = l.both(aligning(recv), l.inv(recv_rejecting));
+    const auto aligned = timeout && p.timeout_completion
+                             ? completion_alignment()
+                             : l.both(aligning(recv), l.inv(recv_rejecting));
     const auto aligned_first = l.both(rpush, l.both(first, aligned));
     const auto aligned_tail = l.both(rpush, l.both(rlast, aligned));
     const unsigned lanes = p.data_bits / 8;

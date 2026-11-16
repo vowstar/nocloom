@@ -11,11 +11,23 @@ nocloom_verif_case(NAME verif_axi4_timeout_write_drain LAYER negative TIER focus
     --cli $<TARGET_FILE:nocloom_cli> --negative)
 set_property(TEST verif_axi4_timeout_write_drain APPEND PROPERTY LABELS ci)
 
+nocloom_verif_case(NAME verif_axi3_shared_wrap_read LAYER negative TIER focused TIMEOUT 300
+  FEATURES axi3 axi4 width timeout MEMORY_MB 1024 CONTRACTS AXI.OUTLET.FRAMING
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/axi3_shared_wrap_read.py
+    --cli $<TARGET_FILE:nocloom_cli> --negative)
+set_property(TEST verif_axi3_shared_wrap_read APPEND PROPERTY LABELS ci)
+
 nocloom_verif_case(NAME verif_axi4_mixed_wrap_read LAYER negative TIER focused TIMEOUT 300
   FEATURES axi4 width MEMORY_MB 1024 CONTRACTS AXI.OUTLET.FRAMING
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/axi4_mixed_wrap_read.py
     --cli $<TARGET_FILE:nocloom_cli> --negative)
 set_property(TEST verif_axi4_mixed_wrap_read APPEND PROPERTY LABELS ci)
+
+nocloom_verif_case(NAME verif_axi4_timeout_wrap_read LAYER negative TIER focused TIMEOUT 300
+  FEATURES axi4 timeout MEMORY_MB 1024 CONTRACTS AXI.TIMEOUT.EXACT
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/axi4_timeout_wrap_read.py
+    --cli $<TARGET_FILE:nocloom_cli> --negative)
+set_property(TEST verif_axi4_timeout_wrap_read APPEND PROPERTY LABELS ci)
 
 nocloom_verif_case(NAME retirement_formal LAYER formal TIER formal TIMEOUT 3600
   TIMEOUT_REASON "Replay and cancellation models include completion covers and fault checks"
