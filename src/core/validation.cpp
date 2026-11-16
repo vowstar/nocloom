@@ -689,9 +689,7 @@ void check_transport(Checks &c) {
       c("NCL_AXI4_PACKETS", field,
         "AHB initiators take the target packet limits; a pair limit needs an AXI4 initiator");
     else if (!full_axi(source->protocol))
-      c("NCL_AXI4_PACKETS", field,
-        "Only AXI4 and AXI3 initiators issue bursts; AXI4-Lite and APB initiators have no "
-        "packets to limit");
+      c("NCL_AXI4_PACKETS", field, "A packet limit requires an AXI4 or AXI3 initiator");
     else if (!limited.emplace(limit.source, limit.target).second)
       c("NCL_AXI4_PACKETS", field, "A pair takes at most one packet limit");
     else if (!limit.max_bytes && !limit.boundary_bytes)
@@ -1063,7 +1061,8 @@ void check_wishbone(Checks &c, const Endpoint &e, const std::string &field, bool
     c("NCL_WISHBONE_CYCLES", field + ".cycles",
       "cycles requires wishbone and must be classic or pipelined");
   if (e.burst_tags && (!wb || (*e.burst_tags && e.cycles == WishboneCycles::Pipelined)))
-    c("NCL_WISHBONE_OPTION", field + ".burst_tags", "burst_tags requires classic Wishbone cycles");
+    c("NCL_WISHBONE_OPTION", field + ".burst_tags",
+      wb ? "burst_tags requires classic Wishbone cycles" : "burst_tags requires protocol wishbone");
   if (e.address_unit && !wb)
     c("NCL_WISHBONE_OPTION", field + ".address_unit", "address_unit requires wishbone");
   if (e.retry && (!wb || source || *e.retry != WishboneRetry::Error))

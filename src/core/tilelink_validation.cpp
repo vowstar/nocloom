@@ -39,7 +39,7 @@ void fields(const Endpoint &e, const std::string &path, std::vector<Diagnostic> 
          {std::pair{"source_width", e.source_width}, std::pair{"size_width", e.size_width},
           std::pair{"sink_width", e.sink_width},
           std::pair{"max_transfer_bytes", e.max_transfer_bytes}})
-      reject(value.has_value(), key, "This field requires protocol tl_ul");
+      reject(value.has_value(), key, "This field requires protocol tl_ul or tl_uh");
     return;
   }
   reject(e.data_width && e.data_width != 32, "data_width", "TL-UL supports only 32-bit data");
