@@ -71,6 +71,8 @@ struct Axi4WidthCutProfile : ComponentProfileBase {
   // A tagged local miss may arrive as one word (decode_packet.hpp): its target words become source
   // beats at once, and it leaves as one word still.
   bool decode_packets = false, decode_flag = false;
+  // Local read streams count source beats without consuming down response descriptors.
+  bool local_read_stream = true;
   // Weft exclusive fields (message.hpp contract point 11).
   bool exclusive = false;
   unsigned max_outstanding = 1;
@@ -104,6 +106,7 @@ struct Axi4WidthClampProfile : ComponentProfileBase {
   // Responses are runs (message.hpp point 18): the down face's count field holds the reach.
   bool response_runs = false;
   bool decode_packets = false, decode_flag = false; // Axi4WidthCutProfile
+  bool local_read_stream = true;                    // Axi4WidthCutProfile
   // Weft exclusive fields (message.hpp contract point 11).
   bool exclusive = false;
   unsigned tag_bits = 0;

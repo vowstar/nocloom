@@ -750,6 +750,10 @@ Axi4WidthClampProfile clamp_profile(const NetworkPlan &plan, unsigned index, boo
   profile.response_runs = plan.response_runs;
   profile.decode_packets = plan.failure_classes;
   profile.decode_flag = decode_flag(plan);
+  profile.local_read_stream = std::ranges::any_of(plan.pairs, [&](const PairPlan &pair) {
+    return pair.source == index && plan.targets[pair.target].external_protocol == Protocol::Axi4 &&
+           endpoint_word(plan, plan.targets[pair.target].name) * 8 < source.engine_bits;
+  });
   profile.exclusive = plan.exclusive;
   profile.max_outstanding = source.engine_slots;
   profile.tag_bits = profile.max_outstanding > 1 ? plan.burst_tag_bits : 0;

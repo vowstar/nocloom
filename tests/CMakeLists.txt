@@ -4,6 +4,24 @@ endif()
 find_package(Catch2 3.4.0...<4 CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
+add_executable(nocloom_clamp_read_fixture clamp_read_fixture.cpp)
+target_link_libraries(nocloom_clamp_read_fixture PRIVATE nocloom_core)
+target_include_directories(nocloom_clamp_read_fixture PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_compile_options(nocloom_clamp_read_fixture PRIVATE
+  $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>)
+foreach(bits IN ITEMS 64 128)
+  foreach(mode IN ITEMS 1 3 4)
+    add_test(NAME axi4_clamp_refused_${bits}_${mode}
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/axi4_clamp_refused_bench.py
+        --fixture $<TARGET_FILE:nocloom_clamp_read_fixture>
+        --work ${CMAKE_CURRENT_BINARY_DIR}/axi4_clamp_refused_${bits}_${mode}
+        --bits ${bits} --mode ${mode})
+    set_tests_properties(axi4_clamp_refused_${bits}_${mode} PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 300 PROCESSORS 1
+      LABELS "rtl;focused;ci" RESOURCE_LOCK width_stress
+      ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+  endforeach()
+endforeach()
 add_executable(nocloom_tilelink_uh_target_fixture tilelink_uh_target_fixture.cpp)
 target_link_libraries(nocloom_tilelink_uh_target_fixture PRIVATE nocloom_core)
 target_include_directories(nocloom_tilelink_uh_target_fixture PRIVATE ${PROJECT_SOURCE_DIR}/src)

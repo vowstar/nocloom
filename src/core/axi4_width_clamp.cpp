@@ -1124,10 +1124,13 @@ void WidthCutLowering::read_response() {
   const auto viewed = [&](ValueId state, const char *field) {
     return multi ? l.pick(handed_now, response_metadata.at(field), state) : state;
   };
-  const auto decoded = decode_word(
-      [&] { return walks ? l.b.slice(rr.at("address"), 0, lw) : aoffset_v; }, ac_v, asize_v);
+  auto decoded = decode_word([&] { return walks ? l.b.slice(rr.at("address"), 0, lw) : aoffset_v; },
+                             ac_v, asize_v);
   const auto a_pass = l.eq(amode, 0), a_cut = l.eq(amode, 1), a_reject = l.eq(amode, 2);
   const auto pass_v = l.eq(mode_v, 0), cut_v = l.eq(mode_v, 1);
+  // A locally rejected read owns no down response, including its descriptor mark and length.
+  if (p.local_read_stream)
+    decoded.on = l.both(decoded.on, l.inv(l.eq(mode_v, 2)));
   const auto word_address = floor_to(rr.at("address"), ac_v);
   const auto unless_fresh = [&](ValueId v) { return multi ? l.both(v, l.inv(handed_now)) : v; };
   const auto low_ready =
@@ -1320,7 +1323,9 @@ void WidthCutLowering::read_reassembly() {
   const auto pass_v = l.eq(word_mode, 0), cut_v = l.eq(word_mode, 1);
   const auto size_mask = low_mask(size, lw);
   walk_run(size);
-  const auto decoded = decode_word([&] { return l.b.slice(rr.at("address"), 0, lw); }, width, size);
+  auto decoded = decode_word([&] { return l.b.slice(rr.at("address"), 0, lw); }, width, size);
+  if (p.local_read_stream)
+    decoded.on = l.both(decoded.on, l.inv(rejecting));
   const auto word_end = l.same(
       l.both(walks ? part_end : l.either(l.b.slice(rr.at("address"), 0, lw), low_mask(width, lw)),
              size_mask),
@@ -1518,6 +1523,7 @@ Result<NodeHardware> lower_axi4_width_clamp(const Axi4WidthClampProfile &p) {
   cut.zero_failed_beats = p.zero_failed_beats;
   cut.decode_packets = p.decode_packets;
   cut.decode_flag = p.decode_flag;
+  cut.local_read_stream = p.local_read_stream;
   cut.response_runs = p.response_runs;
   cut.exclusive = p.exclusive;
   cut.tag_bits = p.tag_bits;
