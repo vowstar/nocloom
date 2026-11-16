@@ -288,7 +288,8 @@ endforeach()
 # faults drop the pipe slots from a gate's idle and clock pipes from another domain. Three more
 # networks (oneside_inflight.py) reset one domain alone while a packet crosses its boundary;
 # faults break a crossing side's reset handshake and the source's drop of unwaited responses.
-nocloom_verif_case(NAME verif_graph_clocked_ratios LAYER negative TIER focused TIMEOUT 600
+nocloom_verif_case(NAME verif_graph_clocked_ratios LAYER negative TIER focused TIMEOUT 1800
+  TIMEOUT_REASON "Icarus takes 1350 s for 14 configurations and 33 controls"
   FEATURES axi4 cdc graph MEMORY_MB 2048
   CONTRACTS AXI.RESET.DOMAIN AXI.CLOCK.GATE AXI.CDC.CROSSING AXI.PIPE.SLOTS
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/graph_clocked.py --param mode=ratios ${NLV_FIXTURE}
@@ -323,8 +324,15 @@ nocloom_verif_case(NAME verif_axi4_upsize_context_negative LAYER negative TIER f
 # attribute maps), each mode with its designated text faults.
 foreach(mode IN ITEMS graph clocked net64 packets attributes outstanding wide wide_packets
     wide_clocked)
+  set(mixed_timeout 600)
+  set(mixed_reason "")
+  if(mode STREQUAL "wide_packets")
+    set(mixed_timeout 900)
+    set(mixed_reason "Icarus takes 585 s for the wide packet configuration and four controls")
+  endif()
   nocloom_verif_case(NAME verif_mixed_widths_${mode}_negative LAYER negative TIER focused
-    TIMEOUT 600 FEATURES axi4 width MEMORY_MB 4096 CONTRACTS AXI.WIDTH.ENDPOINT
+    TIMEOUT ${mixed_timeout} TIMEOUT_REASON "${mixed_reason}"
+    FEATURES axi4 width MEMORY_MB 4096 CONTRACTS AXI.WIDTH.ENDPOINT
     COMMAND ${NLV_RUN} --case ${NLV_CASES}/mixed_widths.py --param mode=${mode}
       --cli $<TARGET_FILE:nocloom_cli> --negative)
 endforeach()
@@ -619,16 +627,38 @@ nocloom_verif_case(NAME verif_apb_outlet_negative LAYER negative TIER focused TI
   CONTRACTS AXI.ROUTE.LOCAL_OFFSET APB.TARGET.ACCESS
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/apb_outlet.py --cli $<TARGET_FILE:nocloom_cli>
     ${NLV_FIXTURE} --negative)
-# Target timeouts through the public CLI: twelve targets of every protocol,
-# the hung-target episodes on one clock and with the targets on a clock
-# three times slower; text faults stop four targets' timers (one clock). On
-# one clock four more targets with network exclusive monitors run exclusive
-# accesses after expiry, with oracle controls of those rules, and the source
-# names its default target or leaves it to the smallest mapping.
-nocloom_verif_case(NAME verif_target_timeouts_negative LAYER negative TIER focused TIMEOUT 600
-  FEATURES timeout apb ahb axi4_lite axi4 MEMORY_MB 3072 CONTRACTS AXI.TIMEOUT.EXACT
-  COMMAND ${NLV_RUN} --case ${NLV_CASES}/target_timeouts.py --cli $<TARGET_FILE:nocloom_cli>
-    --negative)
+# Exercise every target timeout mode on one clock and on a slower clock.
+# Exclusive response controls and timer faults use independent runs. The
+# clocked configuration also runs with test high, and an ungated companion
+# keeps the same traffic and checks.
+foreach(configuration IN ITEMS exclusive exclusive_timers implicit graph
+    clocked clocked-ungated)
+  set(timeout_configuration ${configuration})
+  set(timeout_selection "")
+  set(timeout_layer rtl)
+  set(timeout_contracts AXI.TIMEOUT.EXACT AXI.ERR.READ_ZERO
+    AXI.ROUTE.LOCAL_OFFSET AXI.RESET.CANCEL APB.SUBPAGE.DECODE)
+  string(REPLACE "-" "_" timeout_suffix "${configuration}")
+  set(timeout_name verif_target_timeouts_${timeout_suffix})
+  if(configuration STREQUAL "exclusive")
+    set(timeout_name verif_target_timeouts_negative)
+    set(timeout_layer negative)
+    set(timeout_contracts AXI.TIMEOUT.EXACT)
+    set(timeout_selection --negative --only
+      xp_exclusive_swapped,xl_exclusive_swapped,xx_exclusive_swapped,default_target_ignored)
+  elseif(configuration STREQUAL "exclusive_timers")
+    set(timeout_name verif_target_timeouts_exclusive_timers_negative)
+    set(timeout_configuration exclusive)
+    set(timeout_layer negative)
+    set(timeout_contracts AXI.TIMEOUT.EXACT)
+    set(timeout_selection --negative --only
+      pa_timer_stopped,ah_timer_stopped,lt_timer_stopped,ax_timer_stopped,mx_timer_stopped,ml_timer_stopped)
+  endif()
+  nocloom_verif_case(NAME ${timeout_name} LAYER ${timeout_layer} TIER focused TIMEOUT 600
+    FEATURES timeout apb ahb axi4_lite axi4 MEMORY_MB 3072 CONTRACTS ${timeout_contracts}
+    COMMAND ${NLV_RUN} --case ${NLV_CASES}/target_timeouts.py --cli $<TARGET_FILE:nocloom_cli>
+      --param configuration=${timeout_configuration} ${timeout_selection})
+endforeach()
 # The AHB outlet behind an AXI4 front of its width (fixture recipe
 # ahb_outlet), per data width: the case list of every outlet variant and
 # wait profile against the shape model and bus rules of cases/ahb_shape.py,

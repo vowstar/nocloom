@@ -222,6 +222,15 @@ CASE = dict(
 )
 
 
+CONFIGURATION = PARAMS.get("configuration")
+if CONFIGURATION is not None:
+    CASE["configs"] = [c for c in CASE["configs"] if c["label"] == CONFIGURATION]
+    if not CASE["configs"]:
+        raise ValueError("Unknown timeout configuration: " + CONFIGURATION)
+    if CONFIGURATION != "exclusive":
+        CASE["faults"] = []
+
+
 def scenario(t, seed, ratio=1, exclusive=False, named=False, swapped=None, ignored=False):
     s0, m0 = "s0", "m0"
     state = dict(episode=0)
