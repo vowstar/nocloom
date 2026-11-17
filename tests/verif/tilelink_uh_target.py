@@ -1,5 +1,6 @@
 """AXI byte footprints and TileLink ownership through generated RTL."""
 import argparse
+import concurrent.futures
 import json
 import runpy
 from pathlib import Path
@@ -63,8 +64,7 @@ def run(args):
                              "--out-dir", str(generated)], capture_output=True, text=True, timeout=60)
     (work / "generation.log").write_text(result.stdout + result.stderr)
     if result.returncode:
-        print(result.stderr)
-        return result.returncode
+        return result.returncode, work, result.stderr
     mapping = json.loads(next(generated.glob("*.map.json")).read_text())
     sv = Path(__file__).parent / "sv"
     (work / "tb.sv").write_text(bench(mapping, args.bench.read_text(), address_base,
@@ -76,9 +76,7 @@ def run(args):
     sim = sim_engine.Simulation(work, "network.v", engine=args.sim, config=args.sim_config,
                                 compile_timeout=180, run_timeout=120, success=("UH_PASS",))
     result = sim.run()
-    print(result.stdout)
-    print(work)
-    return result.returncode
+    return result.returncode, work, result.stdout
 
 
 def main():
@@ -95,16 +93,23 @@ def main():
     parser.add_argument("--wrap-regression", action="store_true")
     sim_engine.add_arguments(parser)
     parser.add_argument("--all-maxima", action="store_true")
+    parser.add_argument("--jobs", type=int, default=1,
+                        help="Maximum number of networks to simulate at once")
     args = parser.parse_args()
-    for maximum in ([1 << n for n in range(2, 11)] if args.all_maxima else [args.maximum]):
-        args.maximum = maximum
-        result = run(args)
-        if result:
-            return result
+    if args.jobs < 1:
+        parser.error("--jobs must be positive")
+    networks = [argparse.Namespace(**dict(vars(args), maximum=maximum))
+                for maximum in ([1 << n for n in range(2, 11)] if args.all_maxima
+                                else [args.maximum])]
     if args.all_maxima and args.source_width is None:
-        args.source_width = 16
-        return run(args)
-    return 0
+        networks.append(argparse.Namespace(**dict(vars(networks[-1]), source_width=16)))
+    exit_code = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
+        for code, work, output in pool.map(run, networks):
+            print(output)
+            print(work)
+            exit_code = exit_code or code
+    return exit_code
 
 
 if __name__ == "__main__":

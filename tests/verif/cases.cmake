@@ -293,15 +293,20 @@ endforeach()
 # register reset, and one endpoints and the twelve network run their tape with the test port low
 # and high: the same events. The gated staggered network, the twelve network and one
 # endpoints ratio carry link pipes, the gated staggered network every endpoint pipe kind;
-# faults drop the pipe slots from a gate's idle and clock pipes from another domain. Three more
-# networks (oneside_inflight.py) reset one domain alone while a packet crosses its boundary;
-# faults break a crossing side's reset handshake and the source's drop of unwaited responses.
-nocloom_verif_case(NAME verif_graph_clocked_ratios LAYER negative TIER focused TIMEOUT 1800
-  TIMEOUT_REASON "Icarus takes 1350 s for 14 configurations and 33 controls"
+# faults drop the pipe slots from a gate's idle and clock pipes from another domain.
+nocloom_verif_case(NAME verif_graph_clocked_ratios LAYER negative TIER focused TIMEOUT 1500
+  TIMEOUT_REASON "Includes clock and reset configurations with separate fault controls"
   FEATURES axi4 cdc graph MEMORY_MB 2048
   CONTRACTS AXI.RESET.DOMAIN AXI.CLOCK.GATE AXI.CDC.CROSSING AXI.PIPE.SLOTS
-  COMMAND ${NLV_RUN} --case ${NLV_CASES}/graph_clocked.py --param mode=ratios ${NLV_FIXTURE}
-    --cli $<TARGET_FILE:nocloom_cli> --negative)
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/graph_clocked.py --param mode=ratios
+    --param group=clocks ${NLV_FIXTURE} --cli $<TARGET_FILE:nocloom_cli> --negative)
+# Reset one domain while a packet crosses its boundary. Faults break the
+# reset handshake or the source's handling of responses after reset.
+nocloom_verif_case(NAME verif_graph_clocked_ratios_inflight LAYER negative TIER focused TIMEOUT 1500
+  TIMEOUT_REASON "The in-flight reset configuration runs each fault control"
+  FEATURES axi4 cdc graph MEMORY_MB 2048 CONTRACTS AXI.RESET.DOMAIN
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/graph_clocked.py --param mode=ratios
+    --param group=inflight ${NLV_FIXTURE} --cli $<TARGET_FILE:nocloom_cli> --negative)
 # The aligned-burst AXI4 outlet behind an AXI4 front and a packet shim, per
 # bus width: packet cases with the designated faults, the several-bursts
 # outlet (32 and 1024 bits), beat rates and (32 bits) random stress.
@@ -538,10 +543,7 @@ nocloom_verif_case(NAME verif_explicit_routes_negative LAYER negative TIER focus
     ${NLV_FIXTURE} --negative)
 # Unequal and wide source widths at native ports: contention and the cut
 # cases on every route (data: four width sets; downsizeN: both sources N bits).
-# Per-mode timeouts cover the full negative control (baseline plus the
-# faulted build, which simulates the core and every fault variant
-# concurrently): data runs four width sets, downsize256/512/1024 pay the
-# wide-bus cycle cost in every faulted run.
+# Per-mode timeouts cover the baseline and every fault control.
 foreach(mode IN ITEMS data downsize64 downsize128 downsize256 downsize512 downsize1024)
   if(mode STREQUAL "data")
     set(endpoint_contracts AXI.WIDTH.DOWNSIZE.PIECES)
@@ -558,10 +560,10 @@ foreach(mode IN ITEMS data downsize64 downsize128 downsize256 downsize512 downsi
     set(endpoint_reason "256-bit sources need a longer timeout")
   elseif(mode STREQUAL "downsize512")
     set(endpoint_timeout 2000)
-    set(endpoint_reason "512-bit sources: the faulted build evaluates four DUT copies per cycle")
+    set(endpoint_reason "512-bit sources need a longer timeout for the full tape")
   elseif(mode STREQUAL "downsize1024")
     set(endpoint_timeout 3300)
-    set(endpoint_reason "1024-bit sources: the faulted build evaluates four DUT copies per cycle")
+    set(endpoint_reason "1024-bit sources need a longer timeout for the full tape")
   endif()
   nocloom_verif_case(NAME verif_endpoint_widths_${mode}_negative LAYER negative TIER focused
     TIMEOUT ${endpoint_timeout} TIMEOUT_REASON "${endpoint_reason}"
@@ -858,15 +860,15 @@ foreach(scenario IN ITEMS single flood)
   set_tests_properties(verif_tilelink_arbitration_${scenario} PROPERTIES RESOURCE_LOCK tilelink)
 endforeach()
 
-# TileLink peers use the shared tape, memory model and transaction scoreboard.
+# Each maximum uses a separate network and work directory.
 nocloom_verif_case(NAME verif_tilelink_uh_target LAYER rtl TIER release TIMEOUT 600
-  FEATURES tilelink MEMORY_MB 2048
+  PROCESSORS 4 FEATURES tilelink MEMORY_MB 2048
   CONTRACTS TL.ACCESS
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_target.py
     --case ${NLV_CASES}/tilelink_uh_target.py
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_target_tb.svh
-    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/uh_target --all-maxima)
-set_tests_properties(verif_tilelink_uh_target PROPERTIES RESOURCE_LOCK tilelink)
+    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/uh_target --all-maxima
+    --jobs 4)
 nocloom_verif_case(NAME verif_tilelink_uh_target_single_maximum LAYER rtl TIER focused TIMEOUT 180
   FEATURES tilelink ci MEMORY_MB 2048 CONTRACTS TL.ACCESS
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_target.py

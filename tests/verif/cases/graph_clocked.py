@@ -580,8 +580,12 @@ if MODE == "ratios":
         dict(config("endpoints", r, lockstep=r == "7:5", pipes=r == "random:17"), faults=[])
         for r in ("1:1", "1:3", "3:1", "7:5", "random:5", "random:17")
     ] + [dict(config("twelve", "random:29", lockstep=True, pipes=True), faults=[])]
-    # A domain reset alone with a packet in flight across its boundary (oneside_inflight.py).
-    CONFIGS += oneside_inflight.configurations(peer_unmasked, response_undropped, rewire)
+    inflight = oneside_inflight.configurations(peer_unmasked, response_undropped, rewire)
+    groups = {"all": CONFIGS + inflight, "clocks": CONFIGS, "inflight": inflight}
+    group = PARAMS.get("group", "all")
+    if group not in groups:
+        raise ValueError(f"unknown clocked graph group {group}")
+    CONFIGS = groups[group]
 else:
     CONFIGS = [config(MODE)]
 CASE = dict(

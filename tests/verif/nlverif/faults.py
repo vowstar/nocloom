@@ -63,14 +63,33 @@ def wrapper(components, faults_json):
             w = "" if p["width"] == 1 else f"[{p['width']-1}:0] "
             decl.append(f"  {'input' if p['input'] else 'output'} wire {w}{p['name']}")
         body = [f"module {m['module']} (\n" + ",\n".join(decl) + "\n);",
-                "  reg [7:0] nlv_sel;",
+                "  reg [7:0] nlv_sel = 8'd0;",
                 "  integer nlv_value;",
                 "  initial begin",
                 "    nlv_sel = 8'd0;",
                 "    if ($value$plusargs(\"NLV_FAULT=%d\", nlv_value)) nlv_sel = nlv_value;",
                 "  end"]
         outputs = [p for p in ports if not p["input"]]
-        conns = [f".{p['name']}({p['name'] if p['input'] else 'core_' + p['name']})" for p in ports]
+        # Hold inactive inputs constant so inactive copies do not evaluate traffic.
+        copies = [v["index"] for v in m["variants"]]
+
+        def connections(active, prefix):
+            nets = []
+            for port in ports:
+                name = port["name"]
+                if not port["input"]:
+                    signal = prefix + name
+                elif copies:
+                    signal = f"{active} ? {name} : {port['width']}'d0"
+                else:
+                    signal = name
+                nets.append(f".{name}({signal})")
+            return nets
+
+        if copies:
+            body.append("  wire nlv_core_on = !(" + " || ".join(
+                f"nlv_sel == 8'd{k}" for k in copies) + ");")
+        conns = connections("nlv_core_on", "core_")
         if "sel_port" in m:
             conns.append(f".{m['sel_port']}(nlv_sel)")
         for p in outputs:
@@ -79,8 +98,8 @@ def wrapper(components, faults_json):
         body.append(f"  {m['core']} core (" + ", ".join(conns) + ");")
         for v in m["variants"]:
             prefix = "v%d_" % v["index"]
-            vc = [".%s(%s)" % (p["name"], p["name"] if p["input"] else prefix + p["name"])
-                  for p in ports]
+            body.append(f"  wire nlv_v{v['index']}_on = nlv_sel == 8'd{v['index']};")
+            vc = connections(f"nlv_v{v['index']}_on", prefix)
             for p in outputs:
                 w = "" if p["width"] == 1 else f"[{p['width']-1}:0] "
                 body.append(f"  wire {w}v{v['index']}_{p['name']};")

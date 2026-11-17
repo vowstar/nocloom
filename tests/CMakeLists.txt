@@ -81,7 +81,7 @@ target_link_libraries(nocloom_tilelink_uh_target_fixture PRIVATE nocloom_core)
 target_include_directories(nocloom_tilelink_uh_target_fixture PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_options(nocloom_tilelink_uh_target_fixture PRIVATE
   $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>)
-foreach(kind IN ITEMS selector endpoint footprint write errors)
+foreach(kind IN ITEMS selector endpoint write)
   add_test(NAME tilelink_uh_target_${kind}_formal
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_target_formal.py
       --fixture $<TARGET_FILE:nocloom_tilelink_uh_target_fixture>
@@ -89,6 +89,26 @@ foreach(kind IN ITEMS selector endpoint footprint write errors)
   set_tests_properties(tilelink_uh_target_${kind}_formal PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 6000 PROCESSORS 1
     LABELS "formal;focused" RESOURCE_LOCK tilelink_formal)
+endforeach()
+# Each pair uses the same prove and cover tasks with its own input directory.
+foreach(kind IN ITEMS footprint errors)
+  foreach(first IN ITEMS 4 16 64 256 1024 4096)
+    set(name tilelink_uh_target_${kind}_formal)
+    if(NOT first EQUAL 4)
+      string(APPEND name "_m${first}")
+    endif()
+    set(maxima ${first})
+    if(first LESS 4096)
+      math(EXPR second "${first} * 2")
+      list(APPEND maxima ${second})
+    endif()
+    add_test(NAME ${name}
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_target_formal.py
+        --fixture $<TARGET_FILE:nocloom_tilelink_uh_target_fixture>
+        --work ${CMAKE_CURRENT_BINARY_DIR}/${name} --kind ${kind} --maxima ${maxima})
+    set_tests_properties(${name} PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 1500 PROCESSORS 2 LABELS "formal;focused")
+  endforeach()
 endforeach()
 add_test(NAME tilelink_uh_target_contexts_formal
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_contexts_formal.py

@@ -665,6 +665,8 @@ def test_wrapper():
                             sel_port="nl_nlv_fault_sel", variants=[dict(index=2, module="nocloom_x__nlvf2")])])
     text = faults.wrapper(comps, fj)
     expect("NLV_FAULT=%d" in text and "(nlv_sel == 8'd2) ? v2_nl_y : core_nl_y" in text, "wrapper")
+    expect(".nl_a(nlv_v2_on ? nl_a : 1'd0)" in text and ".nl_a(nlv_core_on ? nl_a : 1'd0)" in text
+           and "nlv_core_on = !(nlv_sel == 8'd2)" in text, "only the selected copy sees the inputs")
     r = dict(status="FAIL", verdict=dict(first_rule="AXI.W.HOLD"), check=dict(mismatches=[]))
     expect(faults.classify(dict(expect=["AXI.W.HOLD"]), r) == "CAUGHT", "classify caught")
     expect(faults.classify(dict(expect=["X"]), r) == "CAUGHT_OTHER", "classify other")

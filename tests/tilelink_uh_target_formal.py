@@ -531,10 +531,13 @@ def main():
     parser.add_argument("--fixture", type=Path, required=True)
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--kind", choices=("selector", "endpoint", "footprint", "write", "errors"), required=True)
-    parser.add_argument("--maximum", type=int, default=1024)
-    parser.add_argument("--all-maxima", action="store_true")
+    sizes = parser.add_mutually_exclusive_group()
+    sizes.add_argument("--maximum", type=int, default=1024)
+    sizes.add_argument("--maxima", type=int, nargs="+")
+    sizes.add_argument("--all-maxima", action="store_true")
     args = parser.parse_args()
-    for maximum in ([1 << n for n in range(2, 13)] if args.all_maxima else [args.maximum]):
+    maxima = [1 << n for n in range(2, 13)] if args.all_maxima else args.maxima or [args.maximum]
+    for maximum in maxima:
         args.maximum = maximum
         result = run(args)
         if result:
