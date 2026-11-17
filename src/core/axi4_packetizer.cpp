@@ -1406,11 +1406,13 @@ void PacketizerLowering::read_response() {
                                    l.both(data, l.b.unary(Op::BitNot, lanes, p.data_bits)));
       const auto joined_result = merge(result, up.at("result"));
       const auto joined_error = l.either(flag, up.at("error"));
+      // A beat with a failed block returns zero data as a whole.
+      const auto failed = l.either(joined_error, l.inv(l.eq(joined_result, 0)));
       const auto take = l.both(fire, absorb);
       l.b.update(data, l.pick(load_k, l.num(p.data_bits, 0), l.pick(take, joined, data)));
       l.b.update(result, l.pick(load_k, l.num(2, 0), l.pick(take, joined_result, result)));
       l.b.update(flag, l.pick(load_k, zero, l.pick(take, joined_error, flag)));
-      gathered = {l.pick(merging, joined, gathered.first),
+      gathered = {l.pick(merging, l.pick(failed, l.num(p.data_bits, 0), joined), gathered.first),
                   l.pick(merging, joined_result, gathered.second)};
       gathered_error = l.pick(merging, joined_error, gathered_error);
       gathering = l.either(gathering, absorb);

@@ -37,6 +37,12 @@ nocloom_verif_case(NAME verif_axi4_mixed_wrap_read LAYER negative TIER focused T
     --cli $<TARGET_FILE:nocloom_cli> --negative)
 set_property(TEST verif_axi4_mixed_wrap_read APPEND PROPERTY LABELS ci)
 
+nocloom_verif_case(NAME verif_read_block_error LAYER negative TIER focused TIMEOUT 300
+  FEATURES axi4 ahb width MEMORY_MB 1024 CONTRACTS AXI.ERR.READ_ZERO
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/read_block_error.py
+    --cli $<TARGET_FILE:nocloom_cli> --negative)
+set_property(TEST verif_read_block_error APPEND PROPERTY LABELS ci)
+
 nocloom_verif_case(NAME verif_axi4_timeout_wrap_read LAYER negative TIER focused TIMEOUT 300
   FEATURES axi4 timeout MEMORY_MB 1024 CONTRACTS AXI.TIMEOUT.EXACT
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/axi4_timeout_wrap_read.py

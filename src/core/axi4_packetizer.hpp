@@ -36,7 +36,8 @@ namespace nocloom::detail {
 // the remaining bytes (at most the window's packet limit and boundary). A block smaller than the
 // beat (only inside an unaligned first beat) is one beat of the block's size at its own address: a
 // write sends the first beat once per block with the block's strobes, a read gathers the blocks'
-// responses into one source beat. A returned packed word answers only the beats of its block.
+// responses into one source beat, with zero data when a block failed. A returned packed word
+// answers only the beats of its block.
 struct Axi4PacketWindow {
   AddressWindow window;             // the target's own window (sub-page sizes kept)
   std::uint64_t max_bytes = 0;      // packet length limit, a power of two
