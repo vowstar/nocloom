@@ -947,6 +947,42 @@ foreach(shape IN ITEMS 128:3:1024 128:16:1024 128:1:1024 128:3:4096 128:16:4096 
         --seeds ${seeds})
   endforeach()
 endforeach()
+# A TL-UH target behind gated endpoints in another clock domain: three pool
+# sizes, every endpoint gating mode and sixteen clock pairs. Each half of a
+# sweep holds two pairs of every ratio class.
+set(NLV_UH_GATED ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_target_gating.py
+  --cli $<TARGET_FILE:nocloom_cli> --env ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_target_env.svh)
+set(NLV_UH_GATING ${NLV_UH_GATED} --case ${NLV_CASES}/tilelink_uh_target_gating.py
+  --scenario ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_target_gating.svh)
+nocloom_verif_case(NAME verif_tilelink_uh_target_gating LAYER rtl TIER focused TIMEOUT 300
+  FEATURES tilelink cdc ci MEMORY_MB 1024 CONTRACTS TL.ACCESS AXI.CLOCK.GATE
+  COMMAND ${NLV_UH_GATING} --network k3 --mode independent --pairs 1,6,9,13 --all-classes)
+set_tests_properties(verif_tilelink_uh_target_gating PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_verif_case(NAME verif_tilelink_uh_target_gating_faults LAYER negative TIER focused TIMEOUT 300
+  FEATURES tilelink cdc ci MEMORY_MB 1024 CONTRACTS TL.ACCESS AXI.CLOCK.GATE
+  COMMAND ${NLV_UH_GATING} --network k3 --mode independent --pairs 12 --negative
+    --fixture $<TARGET_FILE:nocloom_verif_fixture>)
+set_tests_properties(verif_tilelink_uh_target_gating_faults PROPERTIES RESOURCE_LOCK tilelink)
+foreach(network IN ITEMS k1 k3 k16)
+  foreach(mode IN ITEMS independent combined transport)
+    foreach(half IN ITEMS even odd)
+      set(uh_pairs 0,2,4,6,8,10,12,14 --seeds 1)
+      if(half STREQUAL "odd")
+        set(uh_pairs 1,3,5,7,9,11,13,15 --seeds 2)
+      endif()
+      set(uh_name verif_tilelink_uh_target_gating_${network}_${mode}_${half})
+      set(uh_limit 600)
+      if(network STREQUAL "k16")
+        set(uh_limit 1500 TIMEOUT_REASON "Eight clock pairs of the 16-context network")
+      endif()
+      nocloom_verif_case(NAME ${uh_name} LAYER rtl TIER focused TIMEOUT ${uh_limit}
+        FEATURES tilelink cdc MEMORY_MB 2048 CONTRACTS TL.ACCESS AXI.CLOCK.GATE
+        COMMAND ${NLV_UH_GATING} --network ${network} --mode ${mode} --pairs ${uh_pairs}
+          --all-classes)
+      set_tests_properties(${uh_name} PROPERTIES RESOURCE_LOCK tilelink)
+    endforeach()
+  endforeach()
+endforeach()
 foreach(pair IN ITEMS tl_ul:tl_ul tl_ul:axi4 axi4:tl_ul tl_ul:apb4 apb4:tl_ul tl_ul:ahb_lite ahb_lite:tl_ul)
   string(REPLACE ":" ";" ends "${pair}")
   list(GET ends 0 source)
