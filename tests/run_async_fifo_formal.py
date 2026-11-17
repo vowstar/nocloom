@@ -263,7 +263,7 @@ def main():
     p.add_argument("--check-driver", action="store_true", help="check result rejection before proving")
     p.add_argument("--self-test", action="store_true", help="check the driver without running proofs")
     p.add_argument("--shapes", default=os.environ.get("NOCLOOM_ASYNC_FORMAL_SHAPES", "all"),
-                   help="comma separated indexes into SHAPES, all, gate, cells, levels or product")
+                   help="shape indexes, all, fifo, gate, cells, levels or product")
     p.add_argument("--only", default=os.environ.get("NOCLOOM_ASYNC_FORMAL_ONLY", ""),
                    help="comma separated GATED labels to run alone (for focused reruns)")
     p.add_argument("--stages", default=os.environ.get("NOCLOOM_ASYNC_FORMAL_STAGES", ""),
@@ -277,7 +277,8 @@ def main():
         if args.self_test:
             return 0
     root = Path(tempfile.mkdtemp(prefix="run-", dir=root))
-    shapes = (SHAPES if args.shapes == "all" else [] if args.shapes in ("gate", "cells", "product", "levels")
+    fifo = args.shapes in ("all", "fifo")
+    shapes = (SHAPES if fifo else [] if args.shapes in ("gate", "cells", "product", "levels")
               else [SHAPES[int(i)] for i in args.shapes.split(",")])
 
     def generate(depth, n, fault, handshake=False, tag=""):
@@ -355,7 +356,7 @@ def main():
 
     def caught_gray(status, log):
         return status == "FAIL" and bool(set(violated(log)) & {"GRAY_ENABLED_W", "GRAY_ENABLED_R"})
-    for depth, n in (HANDSHAKE_SHAPES if args.shapes == "all" else []):
+    for depth, n in (HANDSHAKE_SHAPES if fifo else []):
         shape = [depth, n]
         work, meta, rtl = generate(depth, n, "none", True)
         jobs.append((dict(shape=shape, fault="none", stage="oneside_prove",

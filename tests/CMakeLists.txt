@@ -521,21 +521,41 @@ add_test(NAME endpoint_clock_gating_transactions
 set_tests_properties(endpoint_clock_gating_transactions PROPERTIES TIMEOUT 600 PROCESSORS 2
   RESOURCE_LOCK endpoint_clock_gating LABELS "rtl;cdc;clock-gating;ci"
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-# Unbounded control proofs; ORDER and SLOT_STABLE unbounded on most shapes, bounded on
-# the largest (see run_async_fifo_formal.py),
-# covers and fault BMC; a missing sby fails the test.
 add_test(NAME address_selector_span
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/address_selector_span.py
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/address_selector_span)
 set_tests_properties(address_selector_span PROPERTIES TIMEOUT 30 LABELS "rtl;edit"
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-add_test(NAME async_fifo_formal
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_async_fifo_formal.py
-    --check-driver
-    --fixture $<TARGET_FILE:nocloom_async_fifo_fixture>
-    --work ${CMAKE_CURRENT_BINARY_DIR}/async_fifo_formal)
-set_tests_properties(async_fifo_formal PROPERTIES TIMEOUT 5400 PROCESSORS 8
-  LABELS "formal;cdc;async-fifo" WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+# Keep proofs, covers and fault checks for one configuration in the same entry.
+function(nocloom_async_fifo_proof suffix shapes)
+  set(name async_fifo_formal${suffix})
+  add_test(NAME ${name}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_async_fifo_formal.py
+      --fixture $<TARGET_FILE:nocloom_async_fifo_fixture>
+      --work ${CMAKE_CURRENT_BINARY_DIR}/${name} --jobs 2 --shapes ${shapes} ${ARGN})
+  set_tests_properties(${name} PROPERTIES TIMEOUT 2400 PROCESSORS 2
+    LABELS "formal;cdc;async-fifo" WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+endfunction()
+nocloom_async_fifo_proof("" fifo --check-driver)
+foreach(shapes IN ITEMS gate levels cells)
+  nocloom_async_fifo_proof(_${shapes} ${shapes})
+endforeach()
+foreach(bits IN ITEMS 64 128)
+  foreach(contexts RANGE 1 4)
+    set(product product_${bits}_k${contexts}_distinct)
+    nocloom_async_fifo_proof(_${product} product --only ${product})
+  endforeach()
+endforeach()
+foreach(contexts RANGE 2 4)
+  set(product product_64_k${contexts}_distinct_write_only)
+  nocloom_async_fifo_proof(_${product} product --only ${product})
+endforeach()
+foreach(contexts IN ITEMS 1 4)
+  foreach(mode IN ITEMS uniform distinct_axi3)
+    set(product product_64_k${contexts}_${mode})
+    nocloom_async_fifo_proof(_${product} product --only ${product})
+  endforeach()
+endforeach()
 
 target_sources(nocloom_unit PRIVATE unit/related_clock.cpp unit/related_clock_public.cpp)
 add_test(NAME related_clock_structure COMMAND nocloom_unit "[related-clock]")
