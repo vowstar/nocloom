@@ -536,23 +536,28 @@ set_tests_properties(related_clock_transactions PROPERTIES TIMEOUT 900 PROCESSOR
 
 # The adapter contract and the process contract run as two entries. Each
 # keeps its scratch directories in the build tree.
+# These checks start many short processes. Use a hang limit with margin over
+# the observed 110 seconds under processor and disk load.
+set(NOCLOOM_FRAMEWORK_TIMEOUT 600)
 add_test(NAME simulation_engine_contract COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_CURRENT_SOURCE_DIR}/test_sim_engine.py Contract)
 add_test(NAME simulation_process_contract COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_CURRENT_SOURCE_DIR}/test_sim_engine.py ProcessContract)
-set_tests_properties(simulation_engine_contract simulation_process_contract PROPERTIES TIMEOUT 90
+set_tests_properties(simulation_engine_contract simulation_process_contract PROPERTIES
+  TIMEOUT ${NOCLOOM_FRAMEWORK_TIMEOUT}
   LABELS "unit;simulation" WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
 
 add_test(NAME simulation_metrics_contract COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_CURRENT_SOURCE_DIR}/test_sim_metrics.py)
-set_tests_properties(simulation_metrics_contract PROPERTIES TIMEOUT 30
+set_tests_properties(simulation_metrics_contract PROPERTIES TIMEOUT ${NOCLOOM_FRAMEWORK_TIMEOUT}
   LABELS "unit;simulation" WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
 foreach(contract IN ITEMS runner history adaptive probe)
   add_test(NAME suite_${contract}_contract
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_suite_${contract}.py -v)
-  set_tests_properties(suite_${contract}_contract PROPERTIES TIMEOUT 60 LABELS "unit;verification"
+  set_tests_properties(suite_${contract}_contract PROPERTIES
+    TIMEOUT ${NOCLOOM_FRAMEWORK_TIMEOUT} LABELS "unit;verification"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 endforeach()
 

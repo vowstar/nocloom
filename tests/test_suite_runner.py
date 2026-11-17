@@ -1,6 +1,7 @@
 """Check suite selection, resource refusal, tracing and truthful result handling."""
 
 import argparse
+import itertools
 import json
 import os
 import subprocess
@@ -8,8 +9,10 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
+import run_suite
 from run_suite import (
     GIB,
     budget,
@@ -21,6 +24,38 @@ from run_suite import (
 )
 
 HERE = Path(__file__).resolve().parent
+
+
+def set_runner_resources(
+    *, cpu_capacity=4, memory_available=8 * GIB, observed_memory=8 * GIB,
+    disk_free=8 * GIB,
+):
+    # Keep real affinity IDs for launching children, even on a single CPU.
+    allowed = sorted(os.sched_getaffinity(0))
+    cpus = list(itertools.islice(itertools.cycle(allowed), 4))
+    run_suite.host_resources = lambda: dict(
+        cpus=cpus,
+        cpu_capacity=cpu_capacity,
+        load1=0.0,
+        memory_total=8 * GIB,
+        memory_available=memory_available,
+    )
+    run_suite.memory = lambda: {"MemAvailable": observed_memory}
+    run_suite.shutil.disk_usage = lambda _: SimpleNamespace(free=disk_free)
+    idle_ticks = zip(itertools.count(step=100), itertools.count(step=100))
+    run_suite.suite_adaptive.cpu_ticks = idle_ticks.__next__
+
+
+def runner_command(here, **resources):
+    """Run the integration cases with a fixed input to the admission budget."""
+    return [
+        sys.executable,
+        "-c",
+        f"import sys;sys.path.insert(0,{str(here)!r});import run_suite;"
+        "from test_suite_runner import set_runner_resources;"
+        f"set_runner_resources(**{resources!r});"
+        "raise SystemExit(run_suite.main())",
+    ]
 
 
 def test(name, **props):
@@ -207,10 +242,20 @@ class SuiteContract(unittest.TestCase):
             "--",
             sys.executable,
             "-c",
-            "import time; a=bytearray(24*1024*1024); time.sleep(0.7); raise SystemExit(7)",
+            # Keep the allocation alive until the probe has sampled it.
+            "import json,time; a=bytearray(24*1024*1024)\n"
+            "deadline = time.monotonic() + 120\n"
+            "while time.monotonic() < deadline:\n"
+            " try:\n"
+            "  r=json.load(open(" + repr(str(record)) + "))\n"
+            "  if r['samples']>=2 and (r['peak_tree_rss_bytes'] or 0)>24*1024*1024: break\n"
+            " except (OSError, ValueError): pass\n"
+            " time.sleep(0.01)\n"
+            "else: raise SystemExit('probe did not record the allocation')\n"
+            "raise SystemExit(7)",
         ]
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=10, check=False
+            cmd, capture_output=True, text=True, timeout=300, check=False
         )
         self.assertEqual(result.returncode, 7, result.stderr)
         r = json.loads(record.read_text())
@@ -255,7 +300,7 @@ class SuiteContract(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=300,
             check=False,
         )
         self.assertNotEqual(result.returncode, 0)
@@ -403,6 +448,8 @@ class SuiteContract(unittest.TestCase):
                     "import sys,json\nfrom pathlib import Path\nsys.path.insert(0,"
                     + repr(str(HERE))
                     + ")\nimport run_suite\n"
+                    "from test_suite_runner import set_runner_resources\n"
+                    "set_runner_resources()\n"
                     "original=run_suite.read_results\nseen=set()\n"
                     "def injected(path, selected, *rest):\n"
                     " rows=original(path,selected,*rest)\n"
@@ -465,7 +512,7 @@ class SuiteContract(unittest.TestCase):
                 if mode == "unreadable" and os.geteuid() == 0:
                     continue
                 result = subprocess.run(
-                    command, capture_output=True, text=True, timeout=20, check=False
+                    command, capture_output=True, text=True, timeout=300, check=False
                 )
                 (root / "runner.log").write_text(result.stdout + result.stderr)
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
@@ -517,6 +564,38 @@ class SuiteContract(unittest.TestCase):
                     if not path.is_symlink():
                         path.chmod(0o600)
 
+    def test_resource_refusals_do_not_start_ctest_commands(self):
+        build = self.root / "build"
+        build.mkdir()
+        marker = self.root / "started"
+        command = f"from pathlib import Path; Path({str(marker)!r}).touch()"
+        (build / "CTestTestfile.cmake").write_text(
+            f"add_test(marker {cmake_quote(sys.executable)} -c {cmake_quote(command)})\n"
+        )
+        cases = {
+            "cpu_capacity": "Insufficient CPU/memory headroom",
+            "memory_available": "Insufficient CPU/memory headroom",
+            "observed_memory": "Memory availability changed",
+            "disk_free": "Insufficient scratch space",
+        }
+        for resource, message in cases.items():
+            with self.subTest(resource=resource):
+                result = subprocess.run(
+                    [
+                        *runner_command(HERE, **{resource: 0}),
+                        "--profile", "full", "--build", str(build), "--engine", "iverilog",
+                        "--output", str(self.root / resource),
+                        "--history", str(self.root / "history"), "--run",
+                        "--protection", "monitored", "--max-memory-gib", "1",
+                        "--reserve-gib", "0.1", "--memory-per-slot-gib", "0.1",
+                        "--disk-reserve-gib", "0.01",
+                    ],
+                    capture_output=True, text=True, timeout=60, check=False,
+                )
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn(f"{message}; no tests started", result.stderr)
+                self.assertFalse(marker.exists())
+
     def test_complete_runner_and_manifest(self):
         builds = []
         for engine in ["iverilog", "external"]:
@@ -538,8 +617,7 @@ class SuiteContract(unittest.TestCase):
         adapter.write_text("{}")
         out = self.root / "result"
         cmd = [
-            sys.executable,
-            str(HERE / "run_suite.py"),
+            *runner_command(HERE),
             "--history",
             str(self.root / "history"),
             "--profile",
@@ -573,7 +651,7 @@ class SuiteContract(unittest.TestCase):
             "0.01",
         ]
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=20, check=False
+            cmd, capture_output=True, text=True, timeout=300, check=False
         )
         self.assertEqual(result.returncode, 0, result.stderr + "\n" + result.stdout)
         r = json.loads((out / "results.json").read_text())

@@ -54,10 +54,12 @@ nocloom_verif_case(NAME retirement_formal LAYER formal TIER formal TIMEOUT 3600
   FEATURES axi4 ahb MEMORY_MB 4096
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/retirement_formal.py ${NLV_FIXTURE})
 
-nocloom_verif_case(NAME verif_selftest LAYER unit TIER quick TIMEOUT 60 FEATURES verif
+# These checks parse the registry and read many source files. Their timeout
+# bounds a hang and leaves time for process startup under load.
+nocloom_verif_case(NAME verif_selftest LAYER unit TIER quick TIMEOUT 600 FEATURES verif
   MEMORY_MB 256
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/selftest.py ${NLV_FIXTURE})
-nocloom_verif_case(NAME verif_registry LAYER structure TIER quick TIMEOUT 30 FEATURES verif
+nocloom_verif_case(NAME verif_registry LAYER structure TIER quick TIMEOUT 600 FEATURES verif
   MEMORY_MB 256
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/registry.py
     --registry ${CMAKE_BINARY_DIR}/tests/verif-registry.json --source ${CMAKE_CURRENT_SOURCE_DIR})

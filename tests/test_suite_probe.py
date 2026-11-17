@@ -42,7 +42,7 @@ class ProbeContract(unittest.TestCase):
                 result = subprocess.run(
                     [sys.executable, str(HERE / "suite_probe.py"), "--record", str(record),
                      "--", sys.executable, "-c", script],
-                    capture_output=True, text=True, timeout=10,
+                    capture_output=True, text=True, timeout=300,
                 )
                 expected = -sig if sig else 0
                 self.assertEqual(result.returncode, expected, result.stderr)
@@ -75,7 +75,7 @@ class ProbeContract(unittest.TestCase):
             for name, command in commands.items()))
         xml = self.root / "signals.xml"
         result = subprocess.run(["ctest", "--test-dir", str(build), "--output-junit", str(xml)],
-                                capture_output=True, text=True, timeout=20)
+                                capture_output=True, text=True, timeout=300)
         self.assertNotEqual(result.returncode, 0)
         verdicts = {r["name"]: r["status"] for r in read_results(xml, [{"name": n} for n in commands])}
         self.assertEqual(verdicts, {"plain": "FAIL", "wrapped": "FAIL", "ordinary_nonzero": "PASS"})
@@ -103,12 +103,12 @@ time.sleep(600)
         with subprocess.Popen([sys.executable, str(HERE / "suite_probe.py"), "--record", str(record),
                                "--", sys.executable, "-c", script],
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as process:
-            deadline = time.monotonic() + 30
+            deadline = time.monotonic() + 300
             while not child_pid.exists() and process.poll() is None and time.monotonic() < deadline:
                 time.sleep(0.01)
             self.assertTrue(child_pid.exists())
             process.send_signal(signal.SIGTERM)
-            stdout, stderr = process.communicate(timeout=30)
+            stdout, stderr = process.communicate(timeout=300)
             self.assertEqual(process.returncode, -signal.SIGTERM, stderr)
         receipt = json.loads(record.read_text())
         self.assertTrue(receipt["final"])
@@ -144,7 +144,7 @@ time.sleep(600)
             [sys.executable, "-c", wrapper],
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=300,
             check=False,
         )
         return run, json.loads(record.read_text())
@@ -191,11 +191,11 @@ time.sleep(600)
                 "--",
                 sys.executable,
                 "-c",
-                "import time;a=bytearray(8*1024*1024);time.sleep(30)",
+                "import time;a=bytearray(8*1024*1024);time.sleep(600)",
             ]
         )
         try:
-            deadline = time.monotonic() + 30
+            deadline = time.monotonic() + 300
             while not record.exists() and time.monotonic() < deadline:
                 time.sleep(0.01)
             self.assertTrue(record.exists())
@@ -203,7 +203,7 @@ time.sleep(600)
             self.assertFalse(running["final"])
             self.assertEqual(running["record_state"], "RUNNING")
             process.send_signal(signal.SIGTERM)
-            self.assertEqual(process.wait(timeout=30), -signal.SIGTERM)
+            self.assertEqual(process.wait(timeout=300), -signal.SIGTERM)
             final = json.loads(record.read_text())
             self.assertTrue(final["final"])
             self.assertEqual(final["record_state"], "INTERRUPTED")
@@ -215,7 +215,7 @@ time.sleep(600)
         finally:
             if process.poll() is None:
                 process.terminate()
-                process.wait(timeout=30)
+                process.wait(timeout=300)
 
     def test_stage_directory_propagation_and_hash_binding(self):
         from run_suite import collect_stage_metrics, sha
@@ -278,6 +278,7 @@ time.sleep(600)
             "suite_adaptive.py",
             "audit_suite.py",
             "suite_profiles.json",
+            "test_suite_runner.py",
         ):
             shutil.copy2(HERE / name, copied / name)
         probe = copied / "suite_probe.py"

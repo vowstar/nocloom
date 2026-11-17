@@ -30,13 +30,20 @@ LAYERS = {"unit", "config", "structure", "rtl", "negative", "formal", "install",
 TIERS = {"quick", "focused", "release", "full", "characterization", "formal"}
 
 
+LOADED = {}
+
+
 def load_module(path, name, params=()):
-    """A case file as its registration loads it (--param values as PARAMS)."""
-    spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
-    module.PARAMS = dict(p.split("=", 1) for p in params)
-    spec.loader.exec_module(module)
-    return module
+    """A case file as its registration loads it (--param values as PARAMS). One load serves
+    every check of the same file and values: the checks only read the module."""
+    key = (str(path), tuple(params))
+    if key not in LOADED:
+        spec = importlib.util.spec_from_file_location(name, path)
+        module = importlib.util.module_from_spec(spec)
+        module.PARAMS = dict(p.split("=", 1) for p in params)
+        spec.loader.exec_module(module)
+        LOADED[key] = module
+    return LOADED[key]
 
 
 def imports_of(path):

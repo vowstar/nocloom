@@ -18,7 +18,7 @@ from suite_adaptive import (
     merge_junit,
     take_wave,
 )
-from test_suite_runner import test
+from test_suite_runner import runner_command, test
 
 HERE = Path(__file__).resolve().parent
 
@@ -142,7 +142,8 @@ class AdaptiveContract(unittest.TestCase):
                 ("bad", "raise SystemExit(3)", {}),
                 (
                     "setup",
-                    f'from pathlib import Path;Path({str(marker)!r}).write_text("ok");Path({str(count)!r}).write_text("once")',
+                    f'from pathlib import Path; Path({str(marker)!r}).write_text("ok")\n'
+                    f'with Path({str(count)!r}).open("a") as records: records.write("setup\\n")',
                     {"FIXTURES_SETUP": "f"},
                 ),
                 (
@@ -186,8 +187,7 @@ class AdaptiveContract(unittest.TestCase):
                     )
             (build / "CTestTestfile.cmake").write_text("\n".join(lines))
             args = [
-                sys.executable,
-                str(HERE / "run_suite.py"),
+                *runner_command(HERE),
                 "--profile",
                 "full",
                 "--build",
@@ -219,7 +219,7 @@ class AdaptiveContract(unittest.TestCase):
                 "0.01",
             ]
             run = subprocess.run(
-                args, capture_output=True, text=True, timeout=30, check=False
+                args, capture_output=True, text=True, timeout=300, check=False
             )
             self.assertEqual(run.returncode, 1, run.stdout + run.stderr)
             results = json.loads((out / "results.json").read_text())
@@ -230,7 +230,7 @@ class AdaptiveContract(unittest.TestCase):
             self.assertGreater(len(waves), 1)
             names = [n for w in waves for n in w["names"]]
             self.assertEqual(len(names), len(set(names)))
-            self.assertEqual(count.read_text(), "once")
+            self.assertEqual(count.read_text().splitlines(), ["setup"])
             self.assertFalse(marker.exists())
             self.assertEqual(
                 len(json.loads((out / "durations.json").read_text())["rows"]), 6

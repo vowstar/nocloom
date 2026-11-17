@@ -1,8 +1,10 @@
 """Exercise adapter failure boundaries without an HDL engine or private tools."""
 
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
+import select
 import subprocess
 import sys
 import tempfile
@@ -23,11 +25,12 @@ NONTERMINAL_MARKERS = {
 }
 
 
-def wait_for_process_exit(pid, timeout=10.0):
+def wait_for_process_exit(pid, timeout=60.0):
     """Allow signaled descendants to finish exiting; reject a live survivor.
 
     The wait returns as soon as the process is gone, so a long limit costs
-    nothing on an idle host and tolerates a loaded one."""
+    nothing on an idle host and tolerates a loaded one.
+    """
     if not (Path("/proc") / "self/stat").is_file():
         raise RuntimeError("Process-exit observation requires Linux /proc")
     start = time.monotonic()
@@ -42,6 +45,25 @@ def wait_for_process_exit(pid, timeout=10.0):
             return dict(pid=pid, state=state, elapsed=elapsed,
                         exited=state in ("GONE", "Z"))
         time.sleep(0.01)
+
+
+@contextmanager
+def limit_expires_when(ready, method, wait_seconds=0.05):
+    """Let a real timeout expire after the child has had time to signal readiness."""
+    real = getattr(subprocess.Popen, method)
+    limits = []
+
+    def timed(process, *args, timeout=None, **kwargs):
+        if timeout is None:
+            return real(process, *args, **kwargs)
+        limits.append(timeout)
+        deadline = time.monotonic() + 120
+        while process.poll() is None and not ready(process) and time.monotonic() < deadline:
+            time.sleep(0.01)
+        return real(process, *args, timeout=wait_seconds, **kwargs)
+
+    with patch.object(subprocess.Popen, method, timed):
+        yield limits
 
 
 class Contract(unittest.TestCase):
@@ -204,10 +226,13 @@ class Contract(unittest.TestCase):
         self.assertFalse((self.work / "simulation.log").exists())
 
     def test_timeout_preserves_output(self):
-        engine = self.engine("import time; print('started', flush=True); time.sleep(30)", run_timeout=10)
-        with self.assertRaises(subprocess.TimeoutExpired):
-            engine.run()
-        self.assertIn("started", (self.work / "simulation.log").read_text())
+        engine = self.engine("import time; print('started', flush=True); time.sleep(600)", run_timeout=10)
+        log = self.work / "simulation.log"
+        with limit_expires_when(lambda process: "started" in log.read_text(), "wait") as limits:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                engine.run()
+        self.assertEqual(limits, [10])
+        self.assertIn("started", log.read_text())
         receipt = json.loads((self.work / "sim-engine.json").read_text())
         self.assertEqual(receipt["steps"][-1]["error"], "TimeoutExpired")
 
@@ -386,13 +411,20 @@ class ProcessContract(unittest.TestCase):
                          "Linux /proc required for descendant state observation")
     def test_timeout_cleans_descendants(self):
         self.cfg["run"] = [sys.executable, "-c",
-            "import subprocess,sys,time; p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)']); "
-            "print(p.pid,flush=True); time.sleep(30)", "{options}"]
+            "import subprocess,sys,time; p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(600)']); "
+            "print(p.pid,flush=True); time.sleep(600)", "{options}"]
         self.config.write_text(json.dumps(self.cfg))
         self.compile()
-        with self.assertRaises(subprocess.TimeoutExpired) as caught:
-            self.process.run([self.work / "obj_dir/sim"], cwd=self.work, env=self.env,
-                             capture_output=True, text=True, timeout=10)
+
+        def printed(process):
+            # The descendant's line has reached the caller's pipe.
+            return bool(select.select([process.stdout], [], [], 0)[0])
+
+        with limit_expires_when(printed, "communicate") as limits:
+            with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                self.process.run([self.work / "obj_dir/sim"], cwd=self.work, env=self.env,
+                                 capture_output=True, text=True, timeout=10)
+        self.assertEqual(limits, [10])
         pid = int(caught.exception.output.strip())
         observed = wait_for_process_exit(pid)
         self.assertTrue(observed["exited"], observed)
@@ -427,7 +459,7 @@ class ProcessContract(unittest.TestCase):
         self.config.write_text(json.dumps(self.cfg))
         self.compile()
         result = self.process.run([self.work / "obj_dir/sim"], cwd=self.work,
-                                  env=dict(self.env, **environment), capture_output=True, timeout=10)
+                                  env=dict(self.env, **environment), capture_output=True, timeout=60)
         event = json.loads((self.work / "simulation-process.jsonl").read_text().splitlines()[-1])
         return result, event
 

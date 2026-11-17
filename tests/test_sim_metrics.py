@@ -102,18 +102,23 @@ class Metrics(unittest.TestCase):
         self.assertIsNone(record['user_seconds'])
 
     def test_timeout_is_partial(self):
+        from test_sim_engine import limit_expires_when
+
         cfg = json.loads(self.config.read_text())
-        cfg['run'] = [sys.executable, '-c', "import time; print('started',flush=True); time.sleep(10)", '{options}']
+        cfg['run'] = [sys.executable, '-c', "import time; print('started',flush=True); time.sleep(600)", '{options}']
         self.config.write_text(json.dumps(cfg))
         engine = Simulation(self.work, 'network.v', engine='external', config=self.config, run_timeout=.3)
-        with self.assertRaises(subprocess.TimeoutExpired):
-            engine.run()
+        log = self.work / 'simulation.log'
+        with limit_expires_when(lambda process: 'started' in log.read_text(), 'wait', wait_seconds=.3) as limits:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                engine.run()
+        self.assertEqual(limits, [.3])
         r = next(r for r in self.records() if r['stage'] == 'simulation')
         self.assertEqual(r['status'], 'TIMEOUT')
         self.assertIsNone(r['max_rss_bytes'])
         self.assertIsNone(r['user_seconds'])
         self.assertGreaterEqual(r['elapsed_seconds'], .3)
-        self.assertIn('started', (self.work/'simulation.log').read_text())
+        self.assertIn('started', log.read_text())
 
     def test_internal_adapter_timeout_is_visible(self):
         cfg = json.loads(self.config.read_text())
@@ -122,7 +127,7 @@ class Metrics(unittest.TestCase):
         self.config.write_text(json.dumps(cfg))
         with patch.dict(os.environ, NOCLOOM_SIM='external', NOCLOOM_SIM_CONFIG=str(self.config)):
             sim_process.run(['verilator', '--binary', '--top-module', 'tb', '-o', 'sim', 'tb.sv', 'network.v'], cwd=self.work, check=True, capture_output=True)
-            result = sim_process.run([self.work/'obj_dir/sim'], cwd=self.work, capture_output=True, timeout=3)
+            result = sim_process.run([self.work/'obj_dir/sim'], cwd=self.work, capture_output=True, timeout=120)
         self.assertNotEqual(result.returncode, 0)
         row = next(r for r in self.records() if r['stage'] == 'simulation')
         self.assertEqual(row['status'], 'TIMEOUT')

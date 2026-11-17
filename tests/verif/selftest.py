@@ -722,7 +722,7 @@ def test_install_timeout(work):
     import install
     ctx = install.Context(argparse.Namespace(source="."), Path(work))
     try:
-        ctx.run(["sleep", "5"], "slow_step", cwd=work, timeout=0.1)
+        ctx.run(["sleep", "600"], "slow_step", cwd=work, timeout=0.1)
         expect(False, "step past its limit refused")
     except AssertionError as error:
         expect(str(error) == "slow_step: no result within 0.1 s", f"timeout text: {error}")
@@ -777,7 +777,7 @@ endmodule
     binary = directory / "sim.vvp"
     for label, command in (("compile", ["iverilog", "-g2012", "-s", "tb", "-o", binary, source]),
                            ("run", ["vvp", binary])):
-        result = subprocess.run(command, capture_output=True, text=True, timeout=15)
+        result = subprocess.run(command, capture_output=True, text=True, timeout=120)
         output = result.stdout + result.stderr
         (directory / (label + ".log")).write_text(output)
         expect(result.returncode == 0, f"idle function {label}: {output[-1000:]}")
@@ -787,22 +787,25 @@ endmodule
 
 
 def test_rule_selection(work):
+    # A refused selection leaves no work directory: nothing was generated or simulated.
     path = Path(__file__).with_name("rulecheck.py")
+    target = Path(work) / "unknown-rule"
     result = subprocess.run([sys.executable, path, "--stub", path.with_name("sv") / "nlv_rule_stub.v",
-                             "--work", Path(work) / "unknown-rule", "--only", "not_a_rule"],
-                            capture_output=True, text=True, timeout=5)
-    expect(result.returncode == 2 and "Unknown rule scenario" in result.stderr,
-           "an unknown rule selection fails before simulation")
+                             "--work", target, "--only", "not_a_rule"],
+                            capture_output=True, text=True)
+    expect(result.returncode == 2 and "Unknown rule scenario" in result.stderr
+           and not target.exists(), "an unknown rule selection fails before simulation")
 
 
 def test_throughput_selection(fixture, work):
     path = Path(__file__).resolve().parents[1] / "run_graph_clocked_throughput.py"
+    target = Path(work) / "unknown-throughput"
     for names, message in ((["not_a_variant"], "Unknown throughput variant"),
                            ([], "At least one throughput variant")):
         result = subprocess.run([sys.executable, path, "--cli", fixture,
-                                 "--work", Path(work) / "unknown-throughput", "--variants", *names],
-                                capture_output=True, text=True, timeout=5)
-        expect(result.returncode == 2 and message in result.stderr,
+                                 "--work", target, "--variants", *names],
+                                capture_output=True, text=True)
+        expect(result.returncode == 2 and message in result.stderr and not target.exists(),
                "an empty throughput selection fails before generation")
 
 
