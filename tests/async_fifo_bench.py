@@ -146,6 +146,9 @@ def write_bench(work, meta):
         # Clocks: even picosecond half periods and jitter; control events use odd picoseconds.
         "initial begin #0.002; #(phase/1000.0); forever begin #((ta/2+2*pick_a(jitter/2+1))/1000.0); if(run_a) nl_clk_0=~nl_clk_0; end end",
         "initial begin #0.002; forever begin #((tb_/2+2*pick_b(jitter/2+1))/1000.0); if(run_b) nl_clk_1=~nl_clk_1; end end",
+        "realtime last_a=0, last_b=0; reg jitter_a=0, jitter_b=0;",
+        "always @(posedge nl_clk_0) begin if(last_a>0 && $realtime-last_a>ta/1000.0+0.001) jitter_a=1; last_a=$realtime; end",
+        "always @(posedge nl_clk_1) begin if(last_b>0 && $realtime-last_b>tb_/1000.0+0.001) jitter_b=1; last_b=$realtime; end",
         "always @(negedge nl_clk_0) begin",
         " if(!nl_reset_n_0) begin nl_stream_valid=0; taken=0; end",
         " else begin",
@@ -249,6 +252,7 @@ def write_bench(work, meta):
         " for(ev=0; ev<oneside; ev=ev+1) begin",
         "  wait(tx>=(ev+1)*words/(oneside+1)); #(0.001+2*pick_ctl(slow/2)/1000.0);",
         "  side=pick_ctl(2);",
+        '  $display("ASYNC_FIFO_ONE_SIDE side=%0d pending=%0d",side,tx-rx);',
         "  if(side==0) begin alone_a=1; nl_reset_n_0=0; end else nl_reset_n_1=0;",
         f"  #(({nb + 4}*slow+2*pick_ctl(slow*2))/1000.0);",
         "  if(side==0) nl_reset_n_0=1; else nl_reset_n_1=1;",
@@ -275,6 +279,7 @@ def write_bench(work, meta):
         "  if(want==1 && measure+1<cycles) fail(\"THROUGHPUT\");",
         "  if(want==2 && measure+1>=cycles) fail(\"NO_BUBBLE\");",
         " end",
+        ' $display("ASYNC_FIFO_CLOCK_JITTER sender=%0d receiver=%0d",jitter_a,jitter_b);',
         f" $display(\"{PASS} delivered=%0d canceled=%0d generations=%0d meta_events=%0d latency_min=%0d latency_max=%0d lost=%0d\",delivered,canceled,resets+1,meta_events,min_lat,max_lat,lost);",
         " $finish;",
         "end",
@@ -288,6 +293,12 @@ def write_bench(work, meta):
 
 def parse(text):
     result = {}
+    resets = re.findall(r"ASYNC_FIFO_ONE_SIDE side=([01]) pending=(\d+)", text)
+    if resets:
+        result["inflight_reset_sides"] = sorted({int(side) for side, pending in resets if int(pending) > 0})
+    jitter = re.search(r"ASYNC_FIFO_CLOCK_JITTER sender=([01]) receiver=([01])", text)
+    if jitter:
+        result["clock_jitter"] = list(map(int, jitter.groups()))
     m = re.search(PASS + r" delivered=(\d+) canceled=(-?\d+) generations=(\d+) meta_events=(\d+) latency_min=(\d+) latency_max=(\d+) lost=(\d+)", text)
     if m:
         result.update(zip(("delivered", "canceled", "generations", "meta_events", "latency_min", "latency_max",

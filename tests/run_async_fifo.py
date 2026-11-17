@@ -8,6 +8,8 @@ Cases:
               with the reset handshake also one side reset alone mid-stream
   throughput  steady-state words per slow-clock period at the formula depth,
               and the bubble at one entry less with aligned equal clocks
+  ratio_controls  offset, jitter and in-flight resets with selected clock ratios
+                  and fault controls on the same stimulus
   faults      designated faults must fail with their named check; the
               unmodified design passes the same stimulus; the same for the
               clock gate cell (clock_gate_bench.py). One side reset alone must
@@ -205,6 +207,41 @@ END_TO_END_FAILURES = {
 }
 
 
+def case_ratio_controls(designs):
+    # Exercise both ends of the clock ratio range and reset each side with
+    # queued words. Match each fault to a passing run with the same stimulus.
+    offset = dict(ta=10000, tb=10000, jitter=0, phase=3000, pvalid=60, pready=60)
+    fast_sender = dict(ta=5000, tb=40000, jitter=400, phase=200, pvalid=100, pready=60)
+    fast_receiver = dict(ta=40000, tb=5000, jitter=400, phase=200, pvalid=60, pready=100)
+    cases = [
+        ("offset", (6, 2), False, offset,
+         {"binary_count": "CDC_ONE_BIT", "early_nonempty": "RECEIVE_LATENCY"}),
+        ("fast_sender", (2, 2), False, fast_sender,
+         {"full_late": "STOPPED_RECEIVER_BOUND", "last_slot_wrong": "ORDER"}),
+        ("fast_receiver", (10, 4), False, fast_receiver, {"last_slot_wrong": "ORDER"}),
+        ("oneside", (6, 2), True, ONE_SIDE, {"peer_unmasked": "PHANTOM", "no_handshake": "PHANTOM"}),
+    ]
+    rows = []
+    for name, shape, handshake, options, faults in cases:
+        args = {"words": 200, "resets": 1, "meta": 1, "seed": 20261001, **options}
+        for fault, expected in {"none": "PASS", **faults}.items():
+            design = (designs.get(*shape) if fault == "no_handshake"
+                      else designs.get(*shape, fault, handshake))
+            row = designs.run(design, f"{name}_{fault}", args)
+            row["expected"] = expected
+            if fault == "none":
+                row["accepted"] = row["passed"] and row.get("meta_events", 0) > 0
+                row["accepted"] &= row.get("clock_jitter") == [int(bool(args["jitter"]))] * 2
+                if handshake:
+                    row["accepted"] &= row.get("inflight_reset_sides") == [0, 1]
+                else:
+                    row["accepted"] &= row.get("delivered", 0) >= args["words"]
+            else:
+                row["accepted"] = not row["passed"] and row.get("failure") == expected
+            rows.append(row)
+    return rows
+
+
 def case_faults(designs, rng):
     rows = []
     for fault, labels, stimulus_ in FAULTS:
@@ -262,7 +299,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--fixture", required=True)
     p.add_argument("--work", required=True)
-    p.add_argument("--case", choices=("ratios", "throughput", "faults"), required=True)
+    p.add_argument("--case", choices=("ratios", "ratio_controls", "throughput", "faults"), required=True)
     p.add_argument("--seeds", type=int, default=3, help="random ratios per design shape")
     p.add_argument("--rng", type=int, default=20261001)
     args = p.parse_args()
@@ -272,6 +309,7 @@ def main():
     rng = random.Random(f"{args.case}:{args.rng}")
     designs = Designs(args.fixture, root)
     rows = {"ratios": lambda: case_ratios(designs, rng, args.seeds),
+            "ratio_controls": lambda: case_ratio_controls(designs),
             "throughput": lambda: case_throughput(designs, rng),
             "faults": lambda: case_faults(designs, rng)
             + clock_gate_bench.case_rows(args.fixture, root, rng)}[args.case]()

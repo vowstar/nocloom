@@ -171,9 +171,9 @@ if(CMAKE_TOOLCHAIN_FILE)
   set(nlv_toolchain_args --toolchain "${CMAKE_TOOLCHAIN_FILE}")
 endif()
 if(NOCLOOM_DETERMINISM_COMPILERS)
-  nocloom_verif_case(NAME verif_determinism_compilers LAYER structure TIER release TIMEOUT 1800
+  nocloom_verif_case(NAME verif_determinism_compilers LAYER structure TIER focused TIMEOUT 1800
     TIMEOUT_REASON "builds the CLI with a second compiler before generating every example"
-    PROCESSORS 6 FEATURES examples determinism MEMORY_MB 4096
+    PROCESSORS 6 FEATURES examples determinism ci MEMORY_MB 4096
     COMMAND ${NLV_CONFIG} --case ${NLV_CASES}/config_examples.py --case ${NLV_CASES}/config_tilelink.py
       --other-cxx=${nocloom_other_cxx} --source ${PROJECT_SOURCE_DIR} --cmake ${CMAKE_COMMAND}
       "--generator=${CMAKE_GENERATOR}" --jobs 6 ${nlv_toolchain_define}
@@ -769,6 +769,7 @@ nocloom_verif_case(NAME verif_register_chain LAYER unit TIER focused TIMEOUT 300
   MEMORY_MB 512
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/register_chain.py ${NLV_FIXTURE}
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_register_chain_tb.sv)
+set_property(TEST verif_register_chain APPEND PROPERTY LABELS precommit)
 
 # The outlet of a register window at its faces, three banks behind it, words of four sources one
 # under way at a time as the network admits them, both response faces stalled at random: the
@@ -779,6 +780,7 @@ nocloom_verif_case(NAME verif_service_outlet LAYER unit TIER focused TIMEOUT 300
   MEMORY_MB 512
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/service_outlet.py ${NLV_FIXTURE}
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_service_outlet_tb.sv)
+set_property(TEST verif_service_outlet APPEND PROPERTY LABELS edit)
 
 
 nocloom_verif_case(NAME mesh_topology_structure LAYER unit TIER quick TIMEOUT 120
@@ -953,7 +955,8 @@ foreach(shape IN ITEMS 128:3:1024 128:16:1024 128:1:1024 128:3:4096 128:16:4096 
 endforeach()
 # A TL-UH target behind gated endpoints in another clock domain: three pool
 # sizes, every endpoint gating mode and sixteen clock pairs. Each half of a
-# sweep holds two pairs of every ratio class.
+# sweep holds two pairs of every ratio class. Each sweep uses its own work
+# directory, so the release scheduler can run several at once.
 set(NLV_UH_GATED ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_target_gating.py
   --cli $<TARGET_FILE:nocloom_cli> --env ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_target_env.svh)
 set(NLV_UH_GATING ${NLV_UH_GATED} --case ${NLV_CASES}/tilelink_uh_target_gating.py
@@ -979,17 +982,17 @@ foreach(network IN ITEMS k1 k3 k16)
       if(network STREQUAL "k16")
         set(uh_limit 1500 TIMEOUT_REASON "Eight clock pairs of the 16-context network")
       endif()
-      nocloom_verif_case(NAME ${uh_name} LAYER rtl TIER focused TIMEOUT ${uh_limit}
+      nocloom_verif_case(NAME ${uh_name} LAYER rtl TIER release TIMEOUT ${uh_limit}
         FEATURES tilelink cdc MEMORY_MB 2048 CONTRACTS TL.ACCESS AXI.CLOCK.GATE
         COMMAND ${NLV_UH_GATING} --network ${network} --mode ${mode} --pairs ${uh_pairs}
           --all-classes)
-      set_tests_properties(${uh_name} PROPERTIES RESOURCE_LOCK tilelink)
     endforeach()
   endforeach()
 endforeach()
 # Long runs of the same target with more requests in flight than contexts and
-# bounded stalls on every channel. Each network runs 20 seeds of 200000 clock
-# cycles, five in each entry, one clock pair in each entry.
+# bounded stalls on every channel. Each release configuration runs 20 seeds of
+# 200000 clock cycles. Each entry runs five seeds at one clock pair and uses a
+# separate work directory.
 set(NLV_UH_SOAK ${NLV_UH_GATED} --case ${NLV_CASES}/tilelink_uh_target_soak.py
   --scenario ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_target_soak.svh)
 nocloom_verif_case(NAME verif_tilelink_uh_target_soak LAYER rtl TIER focused TIMEOUT 300
@@ -1019,12 +1022,11 @@ foreach(config IN ITEMS k1:transport k3:combined k16:independent k3:off k16:off)
     endforeach()
     list(JOIN uh_seeds "," uh_seeds)
     set(uh_name verif_tilelink_uh_target_soak_${network}_${mode}_${part})
-    nocloom_verif_case(NAME ${uh_name} LAYER rtl TIER focused TIMEOUT 3000
+    nocloom_verif_case(NAME ${uh_name} LAYER rtl TIER release TIMEOUT 3000
       TIMEOUT_REASON "Five seeds of 200000 clock cycles each"
       FEATURES tilelink cdc MEMORY_MB 2048 CONTRACTS TL.ACCESS
       COMMAND ${NLV_UH_SOAK} --network ${network} --mode ${mode} ${uh_domain} --pairs ${part}
         --seeds ${uh_seeds} --plus GOAL=200000 --run-timeout 1500)
-    set_tests_properties(${uh_name} PROPERTIES RESOURCE_LOCK tilelink)
   endforeach()
 endforeach()
 foreach(pair IN ITEMS tl_ul:tl_ul tl_ul:axi4 axi4:tl_ul tl_ul:apb4 apb4:tl_ul tl_ul:ahb_lite ahb_lite:tl_ul)
@@ -1362,6 +1364,18 @@ nocloom_verif_case(NAME verif_tilelink_uh_target_bridge LAYER rtl TIER focused T
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_bridge_tb.svh --mode bridge
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/uh_target_bridge)
 set_tests_properties(verif_tilelink_uh_target_bridge PROPERTIES RESOURCE_LOCK tilelink)
+
+# These short fault controls cover decode, write drain and mixed-width read framing.
+set_property(TEST verif_subpage_destinations verif_axi4_timeout_write_drain
+  verif_axi3_shared_wrap_read verif_axi4_mixed_wrap_read APPEND PROPERTY LABELS edit)
+
+# Keep the full width, timing and seed sweeps available for the release run.
+string(CONCAT NOCLOOM_RELEASE_PATTERN "^verif_("
+  "graph_clocked_ratios.*|arbitration|install_examples|read_decode_packet_negative|response_runs.*|"
+  "endpoint_widths_.*_negative|mixed_widths_.*_negative|axi4_width_cut_(256|512|1024)_32_negative|"
+  "width_stress_.*1024(_negative)?|subpage_(graph|uniform|widths|packets|fixed)_negative|"
+  "target_timeouts.*|ahb_outlet_(512|1024)_negative|ahb_wide_graph_negative|"
+  "tilelink_uh_target_(interleave|miss)_w.*)$")
 
 foreach(protocol IN ITEMS axi4 axi3 axi4_lite apb4 logged axi4_folded axi4_compact)
   nocloom_verif_case(NAME verif_initiator_error_responses_${protocol} LAYER negative TIER focused

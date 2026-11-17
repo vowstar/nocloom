@@ -31,6 +31,12 @@ def test_model():
     from axi4_width_stress_bench import MODES, configuration
     for mode in MODES:
         config = configuration(mode, True)
+        target = config["targets"][0]
+        expect(config.get("schema_version") == 10, f"{mode} schema version")
+        expect(target.get("exclusive") == "target"
+               and target.get("exclusive_owner_flags") == ["owner"]
+               and config["transport"].get("user_flags") == ["owner"],
+               f"{mode} exclusive configuration")
         owners = [s["user_flags"]["owner"] for s in config["initiators"]]
         expect(owners == [i % 2 for i in range(len(owners))], f"{mode} exclusive owners")
     expect(model.beat_addr(0x1034, 4, 2, 2, 3) == 0x1030, "wrap beat 3")

@@ -119,7 +119,7 @@ function(nocloom_verif_case)
 endfunction()
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/cases.cmake)
-nocloom_label_ci_sample()
+nocloom_label_test_tiers()
 
 get_property(registry GLOBAL PROPERTY NOCLOOM_VERIF_REGISTRY)
 string(REGEX REPLACE ",\n$" "\n" registry "${registry}")

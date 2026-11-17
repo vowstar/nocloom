@@ -1,4 +1,5 @@
 """AHB5 request properties under waited transfers and asynchronous clocks."""
+from concurrent.futures import ThreadPoolExecutor
 import copy
 import hashlib
 import json
@@ -590,6 +591,11 @@ def run_case(cli, work, clocked, bits, protection, security, target_protection,
             ('nonsecure', fault_bench(tb, 'nl_t_tx_awprot', 3, "fault_value & 3'h5"), 'AW_ATTRIBUTES')]
     if target_security:
         negatives.append(('security', fault_bench(tb, 'nl_t_th_hnonsec', 1, '!fault_value'), 'HNONSEC'))
+    if target_protection == 4 and target_security:
+        # Clearing the bufferable bit for AxCACHE=3 must fail on a four-bit target.
+        for label, direction in [('cache3', ''), ('cache3_read', ' && !want_write')]:
+            expression = f'fault_value & ((axi_active && want_cache == 3{direction}) ? 4\'hb : 4\'hf)'
+            negatives.append((label, fault_bench(tb, 'nl_t_th_hprot', 4, expression), 'HPROT'))
     if bits > 32:
         bad_tb = tb.replace("want_addr = 32'h1380;", "want_addr = 32'h13e0;")
         assert bad_tb != tb
@@ -602,6 +608,10 @@ def run_case(cli, work, clocked, bits, protection, security, target_protection,
         nrc = simulate(bad, work / 'compiled')
         nlog = (bad / 'simulation.log').read_text()
         assert nrc != 0 and 'ASSERT_FAIL:AHB5.' + assertion in nlog and 'NOCLOOM_PASS' not in nlog, (label, nlog[-3000:])
+        if label in ('cache3', 'cache3_read'):
+            assert 'HPROT got=9 want=0000000d' in nlog, nlog[-3000:]
+            write_passed = 'AXI_HPROT cache=00000003 prot=00000000 write=1 hp=d' in nlog
+            assert write_passed == (label == 'cache3_read'), nlog[-3000:]
     (work / 'results.json').write_text(json.dumps(dict(status='PASS', bits=bits,
         protection=protection, security=security, master_width=master_width,
         target_master_width=target_master_width, target_protection=target_protection,
@@ -609,21 +619,24 @@ def run_case(cli, work, clocked, bits, protection, security, target_protection,
         negatives=[n[0] for n in negatives], rtl_sha256=hashlib.sha256(rtl.encode()).hexdigest()), indent=1) + '\n')
 
 
-def run(cli, base, clocked):
+def run(cli, base, clocked, jobs):
     base = Path(base).resolve()
     base.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix='run-', dir=base))
     (base / 'latest.txt').write_text(str(work) + '\n')
     reject_properties(cli, work)
-    for name, bits, hp, sec, target_hp in [('extended', 32, 7, True, 7),
-                                          ('wide', 256, 7, True, 7),
-                                          ('compact', 32, 4, False, 7),
-                                          ('target4', 32, 7, True, 4)]:
-        run_case(cli, work / name, clocked, bits, hp, sec, target_hp)
-    run_case(cli, work / 'master_extension', clocked, 32, 7, True, 7, 5, 7)
-    for width in (4, 7):
-        run_case(cli, work / f'target{width}_no_security', clocked, 32, 7, True, width,
-                 target_security=False)
-    run_case(cli, work / 'lite_target', clocked, 32, 7, True, 4,
-             target_master_width=0, target_security=False, target_protocol='ahb_lite')
-    print('NOCLOOM_PASS ahb5 properties matrices=8')
+    cases = [
+        ('wide', 256, 7, True, 7),
+        ('extended', 32, 7, True, 7),
+        ('compact', 32, 4, False, 7),
+        ('target4', 32, 7, True, 4),
+        ('master_extension', 32, 7, True, 7, 5, 7),
+        ('target4_no_security', 32, 7, True, 4, 32, 32, False),
+        ('target7_no_security', 32, 7, True, 7, 32, 32, False),
+        ('lite_target', 32, 7, True, 4, 32, 0, False, 'ahb_lite'),
+    ]
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        checks = [pool.submit(run_case, cli, work / name, clocked, *shape) for name, *shape in cases]
+        for check in checks:
+            check.result()
+    print(f'NOCLOOM_PASS ahb5 properties matrices={len(cases)}')

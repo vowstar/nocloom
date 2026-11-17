@@ -209,19 +209,18 @@ to omit the test and its compiler requirement.
 ```sh
 cmake -S . -B build -G Ninja -DNOCLOOM_BUILD_TESTS=ON -DNOCLOOM_BUILD_EXAMPLES=ON
 cmake --build build
-ctest --test-dir build -L quick --output-on-failure
+ctest --test-dir build -L '^edit$' --output-on-failure
 cmake --build build --target clang-format
 cmake --build build --target cppcheck
 ```
 
-The `quick` label selects a short subset of the tests. The `ci` label selects
-the sample that the Build workflow runs. `ctest --test-dir build` runs all
-tests. The tests with the `formal` label also need SymbiYosys (`sby`) with the
-Z3 solver, and Lean 4.24.0 with `lake`. The `clang-format` target reformats the
-sources in place.
+The `edit` label selects quick checks and short simulations. The `ci` label
+selects the tests that the Build workflow runs. `ctest --test-dir build` runs
+all tests. Formal tests also need SymbiYosys (`sby`) with Z3, and Lean 4.24.0
+with `lake`. The `clang-format` target reformats the sources in place.
 
-[tests/SUITES.md](tests/SUITES.md) describes the daily and the full test runs
-and their resource limits. The suite runner plans 8 GiB of memory for each test
+[tests/SUITES.md](tests/SUITES.md) describes the test tiers and resource limits.
+The suite runner plans 8 GiB of memory for each test
 slot and keeps 16 GiB or more free.
 [tests/VERIFICATION_POLICY.md](tests/VERIFICATION_POLICY.md) describes which
 tests a change needs, and [formal/lean/README.md](formal/lean/README.md)

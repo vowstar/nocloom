@@ -282,7 +282,7 @@ endforeach()
 add_test(NAME liveness_formal_driver
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_liveness_formal.py
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/liveness_formal_driver --self-test)
-set_tests_properties(liveness_formal_driver PROPERTIES TIMEOUT 120 LABELS "formal;quick")
+set_tests_properties(liveness_formal_driver PROPERTIES TIMEOUT 120 LABELS quick)
 add_test(NAME connectivity_formal
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_connectivity_formal.py
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/connectivity_formal)
@@ -504,7 +504,7 @@ set_tests_properties(async_fifo_structure PROPERTIES WORKING_DIRECTORY ${CMAKE_C
 add_executable(nocloom_async_fifo_fixture generate_async_fifo.cpp generate_fifo_levels.cpp)
 target_link_libraries(nocloom_async_fifo_fixture PRIVATE nocloom_io nocloom_core nlohmann_json::nlohmann_json)
 target_include_directories(nocloom_async_fifo_fixture PRIVATE ${PROJECT_SOURCE_DIR}/src)
-foreach(case IN ITEMS ratios throughput faults)
+foreach(case IN ITEMS ratios ratio_controls throughput faults)
   add_test(NAME async_fifo_${case}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_async_fifo.py --case ${case}
       --fixture $<TARGET_FILE:nocloom_async_fifo_fixture>
@@ -512,6 +512,8 @@ foreach(case IN ITEMS ratios throughput faults)
   set_tests_properties(async_fifo_${case} PROPERTIES TIMEOUT 1800 LABELS "rtl;cdc;async-fifo"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 endforeach()
+set_property(TEST async_fifo_ratio_controls async_fifo_faults APPEND PROPERTY LABELS ci)
+set_tests_properties(async_fifo_ratio_controls async_fifo_faults PROPERTIES TIMEOUT 120)
 add_test(NAME endpoint_clock_gating_transactions
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/clock_gate_bench.py
     --cli $<TARGET_FILE:nocloom_cli>
@@ -525,9 +527,8 @@ set_tests_properties(endpoint_clock_gating_transactions PROPERTIES TIMEOUT 600 P
 add_test(NAME address_selector_span
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/address_selector_span.py
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/address_selector_span)
-set_tests_properties(address_selector_span PROPERTIES TIMEOUT 30 LABELS "rtl;focused"
+set_tests_properties(address_selector_span PROPERTIES TIMEOUT 30 LABELS "rtl;edit"
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-
 add_test(NAME async_fifo_formal
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_async_fifo_formal.py
     --check-driver
@@ -803,12 +804,18 @@ set_tests_properties(apb_initiator_apb5 apb_initiator_apb5_clocked
   LABELS "rtl;axi4;apb;focused;ci" PROCESSORS 2 RESOURCE_LOCK apb5_user)
 # AHB-Lite initiators: every HBURST, BUSY, ERROR, early ends and width conversion.
 foreach(ahb_mode IN ITEMS switch wide clocked ahb5 ahb5_clocked cache)
+  set(ahb_jobs)
+  set(ahb_processors 2)
+  if(ahb_mode STREQUAL "ahb5")
+    set(ahb_jobs --jobs 4)
+    set(ahb_processors 4)
+  endif()
   add_test(NAME ahb_initiator_${ahb_mode}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_ahb_initiator.py
       --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/ahb_initiator_${ahb_mode}
-      --mode ${ahb_mode})
+      --mode ${ahb_mode} ${ahb_jobs})
   set_tests_properties(ahb_initiator_${ahb_mode} PROPERTIES TIMEOUT 1800 LABELS "rtl;axi4;ahb;focused"
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} PROCESSORS 2 RESOURCE_LOCK rtl_memory)
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} PROCESSORS ${ahb_processors} RESOURCE_LOCK rtl_memory)
 endforeach()
 set_property(TEST ahb_initiator_ahb5 ahb_initiator_cache APPEND PROPERTY LABELS ci)
 # AXI3 initiators: two-bit AxLOCK, WID, width conversion and exclusive pairs; AXI3
@@ -941,7 +948,7 @@ set_tests_properties(register_bank_plan PROPERTIES TIMEOUT 120 LABELS "unit;focu
 add_test(NAME service_target_plan COMMAND nocloom_unit "[service]")
 set_tests_properties(service_target_plan PROPERTIES TIMEOUT 120 LABELS "unit;focused")
 add_test(NAME error_log_plan COMMAND nocloom_unit "[error-log]")
-set_tests_properties(error_log_plan PROPERTIES TIMEOUT 120 LABELS "unit;focused")
+set_tests_properties(error_log_plan PROPERTIES TIMEOUT 120 LABELS "unit;edit")
 
 add_test(NAME axi4_packetizer_multi_cdc
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_axi4_packetizer_multi_cdc.py
@@ -1100,10 +1107,9 @@ else()
   endif()
 endif()
 
-# The sample a small public CI runner finishes (ctest -L ci): every unit and quick test, and the
-# cases named here. They cover each protocol family, width conversion, clock domain crossing,
-# clock gating, error logging and the installed package. The three suite contracts stay out: they
-# compare the free processors with the load average and refuse to start on a loaded runner.
+# The CI sample covers each protocol family, conversion, clock domains and
+# the installed package. The edit and pre-commit selections also use these
+# labels in the verification directory.
 set(NOCLOOM_CI_CASES cli install verif_examples verif_soc_mixed
   axi4_public_installed multi_outstanding_graph multi_outstanding_clocked exclusive_graph
   verif_axi4_write_miss_answer verif_source_merge verif_qos_outstanding link_pipeline_network
@@ -1112,26 +1118,42 @@ set(NOCLOOM_CI_CASES cli install verif_examples verif_soc_mixed
   apb_initiator_graph apb_initiator_clocked verif_apb_target_widths verif_small_address
   ahb_initiator_switch ahb_initiator_wide ahb_initiator_clocked ahb_target_protocol
   width_adapter_roundtrip_32x16 verif_axi4_width_cut_128_32
-  async_fifo_ratios related_clock_transactions graph_clocked_installed_endpoints)
-# Two cases are registered on a condition.
+  related_clock_transactions)
 if(TARGET nocloom_api_example)
   list(APPEND NOCLOOM_CI_CASES api_example mesh_topology_transactions)
 endif()
-if(NOCLOOM_DETERMINISM_COMPILERS)
-  list(APPEND NOCLOOM_CI_CASES verif_determinism_compilers)
-endif()
-set(NOCLOOM_CI_EXCLUDED suite_runner_contract suite_adaptive_contract suite_probe_contract)
+set(NOCLOOM_EDIT_CASES width_adapter_roundtrip_8x4
+  axi4_clamp_refused_64_1 exclusive_axi3_cache)
+set(NOCLOOM_RELEASE_CASES async_fifo_ratios async_fifo_throughput ahb_public_installed
+  graph_clocked_installed_endpoints graph_clocked_installed_twelve ahb_initiator_ahb5_clocked
+  arbiter_library_dynamic fixed_qos_arbiter)
 set_property(GLOBAL PROPERTY NOCLOOM_CI_MISSING "${NOCLOOM_CI_CASES}")
-# Labels the sample among the tests of the calling directory.
-function(nocloom_label_ci_sample)
+
+function(nocloom_label_test_tiers)
   get_property(tests DIRECTORY PROPERTY TESTS)
   get_property(missing GLOBAL PROPERTY NOCLOOM_CI_MISSING)
   foreach(test IN LISTS tests)
     get_property(labels TEST ${test} PROPERTY LABELS)
-    if(("unit" IN_LIST labels OR "quick" IN_LIST labels OR test IN_LIST NOCLOOM_CI_CASES)
-        AND NOT test IN_LIST NOCLOOM_CI_EXCLUDED)
-      set_property(TEST ${test} APPEND PROPERTY LABELS ci)
+    if("formal" IN_LIST labels OR "characterization" IN_LIST labels
+        OR test IN_LIST NOCLOOM_RELEASE_CASES
+        OR (NOCLOOM_RELEASE_PATTERN AND test MATCHES "${NOCLOOM_RELEASE_PATTERN}"))
+      list(APPEND labels release)
     endif()
+    if("release" IN_LIST labels)
+      list(REMOVE_ITEM labels ci)
+    else()
+      if("quick" IN_LIST labels OR "edit" IN_LIST labels OR test IN_LIST NOCLOOM_EDIT_CASES)
+        list(APPEND labels edit)
+      endif()
+      if("edit" IN_LIST labels OR "unit" IN_LIST labels OR "config" IN_LIST labels)
+        list(APPEND labels precommit)
+      endif()
+      if("precommit" IN_LIST labels OR test IN_LIST NOCLOOM_CI_CASES)
+        list(APPEND labels ci)
+      endif()
+    endif()
+    list(REMOVE_DUPLICATES labels)
+    set_property(TEST ${test} PROPERTY LABELS "${labels}")
     list(REMOVE_ITEM missing ${test})
   endforeach()
   set_property(GLOBAL PROPERTY NOCLOOM_CI_MISSING "${missing}")
@@ -1157,7 +1179,7 @@ set_tests_properties(clock_qualified_period PROPERTIES WORKING_DIRECTORY ${CMAKE
 
 # Unified verification environment; see tests/verif/CMakeLists.txt.
 add_subdirectory(verif)
-nocloom_label_ci_sample()
+nocloom_label_test_tiers()
 get_property(nocloom_ci_missing GLOBAL PROPERTY NOCLOOM_CI_MISSING)
 if(nocloom_ci_missing)
   message(FATAL_ERROR "The CI sample names tests that are not registered: ${nocloom_ci_missing}")

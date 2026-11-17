@@ -1,4 +1,30 @@
-# Daily and full verification
+# Test tiers
+
+Configure and build NocLoom with tests enabled before running a tier.
+Set the number of jobs to suit the available processors and memory.
+
+| When | Command | Selection |
+| --- | --- | --- |
+| After editing | `ctest --test-dir build -L '^edit$' --output-on-failure` | Quick checks and short simulations |
+| Before a commit | `python3 tests/run_tier.py build precommit --area '^tilelink_uh_target_watchdog'` | Edit checks, unit and configuration tests, then focused cases that match the area |
+| Before pushing | `ctest --test-dir build -L '^ci$' --output-on-failure` | The Build workflow selection |
+| At release | `ctest --test-dir build --output-on-failure` | The full configured inventory, including formal, soak, scale and install tests |
+
+Replace the area expression with a CTest name regex for the changed area.
+The runner skips tests already in `precommit` and tests marked `release`
+when it selects the additional focused checks.
+Run a release check directly by name when a change affects its scope.
+
+The `release` label identifies tests reserved for release. Run the full
+inventory without a label filter for each release engine configuration.
+Power, performance and area tests use a separate setup.
+
+The CI selection runs the AHB5 property matrix, the liveness proof driver
+self-test and the comparison of generated files from two C++ compilers.
+It also runs asynchronous FIFO transactions with clock skew, jitter and
+one-sided resets. The release run adds the full FIFO clock ratio matrix.
+
+## Daily and full verification
 
 Configure and build each simulation engine in a separate directory. Use one
 source revision and compatible toolchains.
@@ -216,13 +242,3 @@ CTest includes the preparation fixture automatically.
 
 These checks do not establish arbitrary-topology liveness, CDC convergence or a
 network drain bound.
-
-## CI sample
-
-`ctest --test-dir build -L '^ci$'` runs the sample that the public workflow runs
-on a 4-processor runner.
-The sample holds every `unit` and `quick` entry and the cases in
-`NOCLOOM_CI_CASES` in `tests/CMakeLists.txt`.
-It leaves out the three suite contracts. They compare free processors with the
-load average and refuse to start on a loaded host.
-The sample does not replace the daily or the full profile.
