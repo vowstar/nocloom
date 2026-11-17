@@ -983,6 +983,46 @@ foreach(network IN ITEMS k1 k3 k16)
     endforeach()
   endforeach()
 endforeach()
+# Long runs of the same target with more requests in flight than contexts and
+# bounded stalls on every channel. Each network runs 20 seeds of 200000 clock
+# cycles, five in each entry, one clock pair in each entry.
+set(NLV_UH_SOAK ${NLV_UH_GATED} --case ${NLV_CASES}/tilelink_uh_target_soak.py
+  --scenario ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_target_soak.svh)
+nocloom_verif_case(NAME verif_tilelink_uh_target_soak LAYER rtl TIER focused TIMEOUT 300
+  FEATURES tilelink cdc ci MEMORY_MB 1024 CONTRACTS TL.ACCESS
+  COMMAND ${NLV_UH_SOAK} --network k3 --mode independent --pairs 0,1 --seeds 1
+    --plus GOAL=12000 --plus LONG=12)
+set_tests_properties(verif_tilelink_uh_target_soak PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_verif_case(NAME verif_tilelink_uh_target_soak_faults LAYER negative TIER focused TIMEOUT 300
+  FEATURES tilelink cdc ci MEMORY_MB 1024 CONTRACTS TL.ACCESS
+  COMMAND ${NLV_UH_SOAK} --network k3 --mode independent --pairs 0 --seeds 1 --negative
+    --plus GOAL=30000 --fixture $<TARGET_FILE:nocloom_verif_fixture>)
+set_tests_properties(verif_tilelink_uh_target_soak_faults PROPERTIES RESOURCE_LOCK tilelink)
+foreach(config IN ITEMS k1:transport k3:combined k16:independent k3:off k16:off)
+  string(REPLACE ":" ";" uh_config "${config}")
+  list(GET uh_config 0 network)
+  list(GET uh_config 1 mode)
+  set(uh_domain "")
+  if(mode STREQUAL "off")
+    set(uh_domain --single-domain)
+  endif()
+  foreach(part IN ITEMS 0 1 2 3)
+    math(EXPR uh_first "${part} * 5 + 1")
+    math(EXPR uh_last "${part} * 5 + 5")
+    set(uh_seeds "")
+    foreach(seed RANGE ${uh_first} ${uh_last})
+      list(APPEND uh_seeds ${seed})
+    endforeach()
+    list(JOIN uh_seeds "," uh_seeds)
+    set(uh_name verif_tilelink_uh_target_soak_${network}_${mode}_${part})
+    nocloom_verif_case(NAME ${uh_name} LAYER rtl TIER focused TIMEOUT 3000
+      TIMEOUT_REASON "Five seeds of 200000 clock cycles each"
+      FEATURES tilelink cdc MEMORY_MB 2048 CONTRACTS TL.ACCESS
+      COMMAND ${NLV_UH_SOAK} --network ${network} --mode ${mode} ${uh_domain} --pairs ${part}
+        --seeds ${uh_seeds} --plus GOAL=200000 --run-timeout 1500)
+    set_tests_properties(${uh_name} PROPERTIES RESOURCE_LOCK tilelink)
+  endforeach()
+endforeach()
 foreach(pair IN ITEMS tl_ul:tl_ul tl_ul:axi4 axi4:tl_ul tl_ul:apb4 apb4:tl_ul tl_ul:ahb_lite ahb_lite:tl_ul)
   string(REPLACE ":" ";" ends "${pair}")
   list(GET ends 0 source)
