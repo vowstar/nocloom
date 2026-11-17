@@ -127,6 +127,13 @@ set_tests_properties(tilelink_uh_target_ownership PROPERTIES
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 600 PROCESSORS 1
   LABELS "rtl;focused;ci" RESOURCE_LOCK tilelink
   ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+add_test(NAME tilelink_uh_target_read_rotation
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_target_read_rotation.py
+    --cli $<TARGET_FILE:nocloom_cli> --fixture $<TARGET_FILE:nocloom_verif_fixture>
+    --work ${CMAKE_CURRENT_BINARY_DIR}/tilelink_uh_target_read_rotation)
+set_tests_properties(tilelink_uh_target_read_rotation PROPERTIES
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 60
+  LABELS "rtl;edit" RESOURCE_LOCK tilelink)
 foreach(kind IN ITEMS read_release read_random write_random)
   add_test(NAME tilelink_uh_target_${kind}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_target_ordering.py
