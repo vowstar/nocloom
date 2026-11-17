@@ -893,6 +893,33 @@ nocloom_verif_case(NAME verif_tilelink_uh_target_high_address LAYER rtl TIER foc
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_target_tb.svh
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/uh_target_high --high-address)
 set_tests_properties(verif_tilelink_uh_target_high_address PROPERTIES RESOURCE_LOCK tilelink)
+
+# TL-UH target packet contexts under seeded AXI4 tapes of several IDs. Each
+# sweep entry runs five seeds on one build.
+set(uh_interleave ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_interleave.py
+  --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_interleave_tb.svh --cli $<TARGET_FILE:nocloom_cli>)
+set(uh_interleave_case ${uh_interleave} --case ${NLV_CASES}/tilelink_uh_target_interleave.py)
+nocloom_verif_case(NAME verif_tilelink_uh_target_interleave LAYER rtl TIER focused TIMEOUT 300
+  FEATURES tilelink ci MEMORY_MB 2048 CONTRACTS TL.ACCESS
+  COMMAND ${uh_interleave_case} --batches 2 --seeds 1,2)
+set_tests_properties(verif_tilelink_uh_target_interleave PROPERTIES RESOURCE_LOCK tilelink)
+# width:contexts:message bytes
+foreach(shape IN ITEMS 128:3:1024 128:16:1024 128:1:1024 128:3:4096 128:16:4096 128:16:64
+    64:3:1024 32:3:1024)
+  string(REPLACE ":" ";" uh_shape "${shape}")
+  list(GET uh_shape 0 uh_width)
+  list(GET uh_shape 1 uh_contexts)
+  list(GET uh_shape 2 uh_last)
+  set(uh_name interleave_w${uh_width}_k${uh_contexts}_m${uh_last})
+  set(uh_args --maximum ${uh_last})
+  foreach(seeds IN ITEMS 1-5 6-10 11-15 16-20)
+    string(REPLACE "-" "_" uh_seeds "${seeds}")
+    nocloom_verif_case(NAME verif_tilelink_uh_target_${uh_name}_s${uh_seeds} LAYER rtl TIER focused
+      TIMEOUT 600 FEATURES tilelink MEMORY_MB 2048 CONTRACTS TL.ACCESS
+      COMMAND ${uh_interleave_case} --width ${uh_width} --capacity ${uh_contexts} ${uh_args}
+        --seeds ${seeds})
+  endforeach()
+endforeach()
 foreach(pair IN ITEMS tl_ul:tl_ul tl_ul:axi4 axi4:tl_ul tl_ul:apb4 apb4:tl_ul tl_ul:ahb_lite ahb_lite:tl_ul)
   string(REPLACE ":" ";" ends "${pair}")
   list(GET ends 0 source)
