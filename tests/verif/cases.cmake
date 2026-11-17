@@ -903,15 +903,25 @@ nocloom_verif_case(NAME verif_tilelink_uh_target_interleave LAYER rtl TIER focus
   FEATURES tilelink ci MEMORY_MB 2048 CONTRACTS TL.ACCESS
   COMMAND ${uh_interleave_case} --batches 2 --seeds 1,2)
 set_tests_properties(verif_tilelink_uh_target_interleave PROPERTIES RESOURCE_LOCK tilelink)
-# width:contexts:message bytes
+nocloom_verif_case(NAME verif_tilelink_uh_target_miss LAYER rtl TIER focused TIMEOUT 300
+  FEATURES tilelink ci MEMORY_MB 2048 CONTRACTS TL.ACCESS
+  COMMAND ${uh_interleave_case} --profile miss --other --batches 2 --seeds 1)
+set_tests_properties(verif_tilelink_uh_target_miss PROPERTIES RESOURCE_LOCK tilelink)
+# width:contexts:message bytes, then width:contexts:default target for the
+# decode miss tapes beside a second target.
 foreach(shape IN ITEMS 128:3:1024 128:16:1024 128:1:1024 128:3:4096 128:16:4096 128:16:64
-    64:3:1024 32:3:1024)
+    64:3:1024 32:3:1024 128:3:t 128:3:q 128:3:auto 128:16:t 128:1:t 32:3:t)
   string(REPLACE ":" ";" uh_shape "${shape}")
   list(GET uh_shape 0 uh_width)
   list(GET uh_shape 1 uh_contexts)
   list(GET uh_shape 2 uh_last)
-  set(uh_name interleave_w${uh_width}_k${uh_contexts}_m${uh_last})
-  set(uh_args --maximum ${uh_last})
+  if(uh_last MATCHES "^[0-9]+$")
+    set(uh_name interleave_w${uh_width}_k${uh_contexts}_m${uh_last})
+    set(uh_args --maximum ${uh_last})
+  else()
+    set(uh_name miss_w${uh_width}_k${uh_contexts}_${uh_last})
+    set(uh_args --profile miss --other --default ${uh_last})
+  endif()
   foreach(seeds IN ITEMS 1-5 6-10 11-15 16-20)
     string(REPLACE "-" "_" uh_seeds "${seeds}")
     nocloom_verif_case(NAME verif_tilelink_uh_target_${uh_name}_s${uh_seeds} LAYER rtl TIER focused

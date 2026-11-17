@@ -1,4 +1,4 @@
-"""Seeded AXI4 tapes of several IDs at a TL-UH target."""
+"""Seeded AXI4 tapes of several IDs at a TL-UH target, with decode misses."""
 import argparse
 import json
 import runpy
@@ -236,11 +236,66 @@ def interleave_tape(seed, width, capacity, maximum, batches, require):
     return tape
 
 
-def requirements(capacity):
+def miss_tape(seed, width, capacity, maximum, other, batches, require):
+    tape = Tape(seed, width, capacity, maximum, require)
+    rng = tape.rng
+    full = tape.full
+    ids = rng.shuffled(range(32))
+    miss = lambda: rng.pick(MISS_PAGES) + rng.below(8) * tape.lanes
+    # Misses while two target reads are in flight, and misses back to back.
+    tape.control(latency=40, d=200, order=0)
+    tape.request(READ, TARGET, ids[0], *tape.several(0 * PAGE))
+    tape.request(READ, TARGET, ids[1], *tape.several(1 * PAGE))
+    tape.request(READ, MISS, ids[2], miss(), 8, full, wait=3)
+    tape.request(WRITE, MISS, ids[3], miss(), 8, full, wait=3)
+    tape.request(READ, MISS, ids[4], miss(), 1, full)
+    tape.request(READ, MISS, ids[4], miss(), 16, full)
+    tape.request(WRITE, MISS, ids[3], miss(), 1, full)
+    tape.request(READ, TARGET, ids[5], *tape.several(2 * PAGE))
+    if other:
+        tape.request(READ, OTHER, ids[2], OTHER_BASE + 64, 8, full)
+    # A miss behind an in-flight read of its ID, and a target read behind that miss.
+    tape.control(latency=30, d=180, r=160)
+    tape.request(READ, TARGET, ids[6], *tape.several(3 * PAGE))
+    tape.request(READ, MISS, ids[6], miss(), 4, full, wait=2)
+    tape.request(READ, TARGET, ids[6], *tape.several(4 * PAGE))
+    tape.request(WRITE, TARGET, ids[6], 5 * PAGE, 16, full)
+    tape.request(WRITE, MISS, ids[6], miss(), 4, full)
+    tape.request(WRITE, TARGET, ids[6], 5 * PAGE + 64, 16, full)
+    if other:
+        tape.request(WRITE, OTHER, ids[6], OTHER_BASE + 1024, 8, full, strobe=1)
+    # Miss writes between the beats of target reads.
+    tape.control(r=50, w=120, d=220)
+    tape.request(READ, TARGET, ids[7], *tape.several(6 * PAGE))
+    tape.request(READ, TARGET, ids[8], *tape.several(7 * PAGE))
+    tape.request(WRITE, MISS, ids[9], miss(), 8, full, wait=2)
+    tape.request(WRITE, MISS, ids[10], miss(), 3, max(0, full - 1), wait=2, strobe=1)
+    tape.request(READ, MISS, ids[11], miss(), 2, full, wait=2)
+    # Misses while every context has a message in flight.
+    tape.control(hold=1, extra=40, order=1, d=220)
+    for index in range(capacity):
+        tape.request(READ, TARGET, ids[12 + index], *tape.single((8 + index % 8) * PAGE))
+    tape.request(READ, MISS, ids[30], miss(), 4, full, wait=1)
+    tape.request(WRITE, MISS, ids[31], miss(), 4, full, wait=1)
+    tape.request(READ, MISS, ids[12], miss(), 2, full, wait=1)
+    tape.request(READ, TARGET, ids[30], *tape.several(0), wait=1)
+    tape.corners()
+    kinds = (TARGET,) * 5 + (MISS,) * 3 + ((OTHER,) * 2 if other else ())
+    for _ in range(batches):
+        tape.random_batch(8 + rng.below(8), kinds, long_share=25)
+    tape.read_back()
+    return tape
+
+
+def requirements(profile, capacity, other):
     names = ["full", "wrap", "incr", "unaligned", "narrow", "wide", "r_stall", "d_gap", "a_stall",
              "aw_overlap", "writes"]
     if capacity > 1:
         names += ["cross", "resume", "later", "d_reorder"]
+    if profile == "miss":
+        names += ["miss_two", "miss_w_between", "miss_same", "miss_pair", "miss_full"]
+        names += ["miss_gets"] if capacity > 1 else []
+        names += ["other"] if other else []
     return names
 
 
@@ -292,7 +347,8 @@ def bench(mapping, cfg, body):
 
 
 def build(args, work):
-    cfg = runpy.run_path(str(args.case))["configuration"](args.width, args.capacity, args.maximum)
+    cfg = runpy.run_path(str(args.case))["configuration"](
+        args.width, args.capacity, args.maximum, args.other, None if args.default == "auto" else args.default)
     (work / "input.yaml").write_text(json.dumps(cfg))
     generated = work / "generated"
     result = subprocess.run([str(args.cli.resolve()), "generate", str(work / "input.yaml"),
@@ -301,6 +357,9 @@ def build(args, work):
     if result.returncode:
         raise RuntimeError(result.stderr)
     mapping = json.loads(next(generated.glob("*.map.json")).read_text())
+    selected = mapping["definition"].get("default_targets", {})
+    if (args.default == "auto") != (selected == {}) or (args.default != "auto" and selected != {"s": args.default}):
+        raise RuntimeError(f"default target is {selected}")
     sv = Path(__file__).parent / "sv"
     rtl = sim_engine.generated_rtl(generated / (mapping["module"] + ".v"))
     checks = (sv / "nlv_tl_checker.sv").read_text() + (sv / "nlv_tl_uh_axi_check.sv").read_text()
@@ -308,7 +367,9 @@ def build(args, work):
 
 
 def tape_for(args, seed):
-    require = requirements(args.capacity)
+    require = requirements(args.profile, args.capacity, args.other)
+    if args.profile == "miss":
+        return miss_tape(seed, args.width, args.capacity, args.maximum, args.other, args.batches, require)
     return interleave_tape(seed, args.width, args.capacity, args.maximum, args.batches, require)
 
 
@@ -351,9 +412,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("cli", "case", "bench", "work"):
         parser.add_argument("--" + name, type=Path, required=True)
+    parser.add_argument("--profile", choices=("interleave", "miss"), default="interleave")
     parser.add_argument("--width", type=int, default=128)
     parser.add_argument("--capacity", type=int, default=3)
     parser.add_argument("--maximum", type=int, default=1024)
+    parser.add_argument("--other", action="store_true")
+    parser.add_argument("--default", choices=("t", "q", "auto"), default="t")
     parser.add_argument("--batches", type=int, default=4, help="Random batches after the directed ones")
     parser.add_argument("--seeds", type=seed_list, default=[1], help="Such as 1,2,3 or 6-10")
     parser.add_argument("--run-timeout", type=int, default=240)
