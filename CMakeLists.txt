@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(nocloom VERSION 0.4.0 LANGUAGES CXX)
+project(nocloom VERSION 0.5.0 LANGUAGES CXX)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 option(NOCLOOM_BUILD_CONFIG "Build YAML and file adapters" ON)
@@ -28,8 +28,8 @@ add_library(nocloom_core STATIC src/core/validation.cpp src/core/hardware.cpp sr
   src/backends/address_table.cpp src/backends/c_header.cpp src/backends/constraints/cdc_sdc.cpp)
 add_library(nocloom::core ALIAS nocloom_core)
 set_target_properties(nocloom_core PROPERTIES EXPORT_NAME core)
-# The generated files name this version. A non-empty suffix marks an unreleased build.
-set(NOCLOOM_VERSION_SUFFIX "")
+# The bundle names this version. A non-empty suffix marks an unreleased build.
+set(NOCLOOM_VERSION_SUFFIX "-dev")
 target_compile_definitions(nocloom_core
   PRIVATE NOCLOOM_VERSION="${PROJECT_VERSION}${NOCLOOM_VERSION_SUFFIX}")
 target_compile_features(nocloom_core PUBLIC cxx_std_20)
