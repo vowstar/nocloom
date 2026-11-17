@@ -7,6 +7,8 @@
 // batch starts when every response has arrived, after a whole-memory check.
 // A request can wait for a full pool (1), for a target read between its R
 // beats (2) or for two Gets in flight (3). Each wait has a cycle limit.
+// Rows after the control row name target words that answer every Get beat
+// with corrupt set during that batch.
 localparam LANES=DATA_WIDTH/8;
 localparam NID=1<<ID_WIDTH;
 localparam MEM=65536, QMEM=4096, MAXT=8192, QD=128, WF=262144;
@@ -91,6 +93,24 @@ reg [7:0] wf_data[0:WF-1];
 integer wf_head=0, wf_count=0;
 integer uh_cover[0:15];
 integer q_cover=0;
+reg [31:0] failed_words[0:15];
+integer failed_count=0;
+
+// A word that the target answers with corrupt, and a byte range that uses one.
+function failed_word(input [31:0] address);
+  integer i;
+  begin
+    failed_word=0;
+    for(i=0;i<failed_count;i=i+1) if(failed_words[i]==(address & ~32'd3)) failed_word=1;
+  end
+endfunction
+function failed_range(input [31:0] lo, input [31:0] hi);
+  reg [31:0] word;
+  begin
+    failed_range=0;
+    for(word=lo & ~32'd3;word<hi;word=word+4) if(failed_word(word)) failed_range=1;
+  end
+endfunction
 
 // Transaction state by tape index.
 reg t_done[0:MAXT-1], t_wlast[0:MAXT-1];
@@ -114,6 +134,9 @@ integer expected_gets=0, expected_puts_low=0, expected_puts_high=0;
 integer c_reads=0, c_writes=0, c_r_beats=0, c_incr=0, c_wrap=0, c_unaligned=0, c_narrow=0, c_full=0;
 integer c_switch=0, c_cross=0, c_resume=0, c_later=0, c_later_uh=0, c_pool_full=0, c_r_stall=0;
 integer c_d_gap=0, c_a_stall=0, c_d_reorder=0, c_early_ack=0, c_aw_overlap=0, c_max_bytes=0;
+// c_r_error: R beats that use a corrupt target word. c_error_switch: such a
+// beat follows a beat of another read that is not complete.
+integer c_r_error=0, c_error_switch=0;
 // Misses are counted at their request handshake: with two target reads
 // pending (c_miss_two), with two Gets in flight (c_miss_gets), with another
 // miss pending (c_miss_pair), with a full pool (c_miss_full), and behind a
@@ -278,7 +301,8 @@ always @(negedge clk) begin : drive_target
         rnd_d=xs(rnd_d);
         if(rnd_d[15:8]<=d_density) begin
           t_d_valid=1; t_d_opcode=m_get[d_source_now]; t_d_size=m_size[d_source_now];
-          t_d_source=d_source_now; t_d_param=0; t_d_denied=0; t_d_corrupt=0; t_d_data=0;
+          t_d_source=d_source_now; t_d_param=0; t_d_denied=0; t_d_data=0;
+          t_d_corrupt=m_get[d_source_now] && failed_word(d_cursor);
           if(m_get[d_source_now]) for(b=0;b<4;b=b+1) begin
             covered=m_size[d_source_now]>=2 || (d_cursor+b>=m_addr[d_source_now] &&
                    d_cursor+b<m_addr[d_source_now]+(32'd1<<m_size[d_source_now]));
@@ -316,10 +340,10 @@ always @(negedge clk) begin : drive_other
 end
 
 always @(posedge clk) if(reset_n) begin : monitor
-  integer id, index, k, count, size, burst, kind, s, lane, p;
+  integer id, index, k, count, size, burst, kind, s, lane, p, resp;
   reg [31:0] lo, hi, b, start;
   reg [159:0] e;
-  reg last, bad;
+  reg last, bad, failed;
   cycle=cycle+1;
   if(tl_inflight==CAPACITY) begin c_pool_full=c_pool_full+1; if(!full_seen) hold_from=cycle; full_seen=1; end
   if(s_rvalid && !s_rready) c_r_stall=c_r_stall+1;
@@ -413,18 +437,24 @@ always @(posedge clk) if(reset_n) begin : monitor
     if(trace && (k==0 || k==e_len(e))) $display("TRACE R cycle=%0d transaction=%0d id=%0d beat=%0d", cycle, index, id, k);
     count=e_len(e)+1; size=e_size(e); burst=e_burst(e); last=k==count-1;
     lo=beat_lo(e_addr(e),k,size,count,burst); hi=beat_hi(lo,size);
+    failed=kind==K_UH && failed_range(lo,hi);
     bad=0;
-    if(kind==K_MISS) bad=s_rdata!=0;
+    if(kind==K_MISS || failed) bad=s_rdata!=0;
     else for(b=lo;b!=hi;b=b+1) begin
       lane=b & (LANES-1);
       if(s_rdata[lane*8+:8]!=(kind==K_UH ? expected_memory[b[15:0]] : q_expected[b[11:0]])) bad=1;
     end
-    if(bad || s_rresp!=(kind==K_MISS ? 2'd3 : 2'd0) || s_rlast!=last)
-      $display("READ transaction=%0d id=%0d address=%h beat=%0d of %0d size=%0d burst=%0d kind=%0d data=%h resp=%0d last=%0d",
-               index, id, e_addr(e), k, count, size, burst, kind, s_rdata, s_rresp, s_rlast);
-    if(s_rresp!=(kind==K_MISS ? 2'd3 : 2'd0)) nlv_fail_report("UH.R.RESP","interleave",index);
+    resp=kind==K_MISS ? 3 : failed ? 2 : 0;
+    if(bad || s_rresp!=resp || s_rlast!=last)
+      $display("READ transaction=%0d id=%0d address=%h beat=%0d of %0d size=%0d burst=%0d kind=%0d data=%h resp=%0d expected_resp=%0d last=%0d",
+               index, id, e_addr(e), k, count, size, burst, kind, s_rdata, s_rresp, resp, s_rlast);
+    if(s_rresp!=resp) nlv_fail_report("UH.R.RESP","interleave",index);
     if(bad) nlv_fail_report(kind==K_MISS ? "UH.R.MISS_DATA" : "UH.R.DATA","interleave",index);
     if(s_rlast!=last) nlv_fail_report("UH.R.LAST","interleave",index);
+    if(failed) begin
+      c_r_error=c_r_error+1;
+      if(prev_r>=0 && prev_r!=index) c_error_switch=c_error_switch+1;
+    end
     if(prev_r>=0 && prev_r!=index) begin
       c_switch=c_switch+1;
       if(e_kind(tape[prev_r])==K_UH && kind==K_UH && e_low(tape[prev_r])>=2 && e_low(e)>=2) begin
@@ -638,7 +668,11 @@ initial begin : main
     a_density=e[11:4]; d_density=e[19:12]; d_latency=e[27:20]; d_order=e[29:28];
     r_density=e[37:30]; b_density=e[45:38]; w_density=e[53:46]; hold_mode=e[55:54];
     early_ack=e[56]; hold_extra=e[64:57]*4; q_density=e[72:65];
-    batch_lo=index+1; batch_hi=batch_lo;
+    failed_count=0; batch_lo=index+1;
+    while(e_op(tape[batch_lo])==5) begin
+      failed_words[failed_count]=e_addr(tape[batch_lo]); failed_count=failed_count+1; batch_lo=batch_lo+1;
+    end
+    batch_hi=batch_lo;
     while(e_op(tape[batch_hi])==1 || e_op(tape[batch_hi])==2) batch_hi=batch_hi+1;
     ar_index=next_entry(batch_lo,1); aw_index=next_entry(batch_lo,2); ar_since=0; aw_since=0;
     full_seen=0; batch_start=cycle; hold_from=cycle; last_progress=cycle; batch_active=1;
@@ -660,8 +694,8 @@ initial begin : main
            c_reads, c_writes, c_r_beats, c_incr, c_wrap, c_unaligned, c_narrow, c_full, c_max_bytes);
   $display("UH_COVER switch=%0d cross_packet=%0d resume=%0d later_first=%0d later_first_target=%0d pool_full=%0d",
            c_switch, c_cross, c_resume, c_later, c_later_uh, c_pool_full);
-  $display("UH_COVER r_stall=%0d d_gap=%0d a_stall=%0d d_reorder=%0d early_ack=%0d aw_overlap=%0d gets=%0d puts=%0d",
-           c_r_stall, c_d_gap, c_a_stall, c_d_reorder, c_early_ack, c_aw_overlap, gets, puts);
+  $display("UH_COVER r_stall=%0d d_gap=%0d a_stall=%0d d_reorder=%0d early_ack=%0d aw_overlap=%0d gets=%0d puts=%0d r_error=%0d error_switch=%0d",
+           c_r_stall, c_d_gap, c_a_stall, c_d_reorder, c_early_ack, c_aw_overlap, gets, puts, c_r_error, c_error_switch);
   $display("UH_COVER miss_reads=%0d miss_writes=%0d miss_two_reads=%0d miss_two_gets=%0d miss_same_id=%0d miss_pair=%0d",
            c_miss_r, c_miss_w, c_miss_two, c_miss_gets, c_miss_same, c_miss_pair);
   $display("UH_COVER miss_pool_full=%0d miss_w_between=%0d miss_b_between=%0d miss_r_between=%0d target_after_miss=%0d other_reads=%0d other_writes=%0d",
@@ -677,6 +711,7 @@ initial begin : main
   need(16,c_miss_pair,"back-to-back misses"); need(17,c_miss_full,"miss with a full pool");
   need(18,c_d_reorder,"reordered target responses"); need(19,c_miss_gets,"miss with two target reads");
   need(20,c_writes,"writes"); need(21,c_q_reads+c_q_writes,"second target access");
+  need(22,c_r_error,"corrupt target word");
   $display("UH_PASS interleave seed=%0d batches=%0d reads=%0d writes=%0d messages=%0d cycle=%0d",
            header[35:4], batch_no, c_reads, c_writes, messages, cycle);
   $finish;

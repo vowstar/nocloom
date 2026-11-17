@@ -15,6 +15,7 @@ FAULTS = {
         4: ("changed_read_id", ("UH.R.ID", "UH.R.DATA", "UH.R.LAST")),
         5: ("corrupt_write_word", ("UH.W.DATA", "UH.W.UNSELECTED")),
         6: ("early_read_last", ("UH.R.LAST",)),
+        11: ("cleared_response_error", ("UH.R.RESP",)),
     },
     "miss": {
         1: ("swapped_response_sources", ("UH.R.DATA",)),

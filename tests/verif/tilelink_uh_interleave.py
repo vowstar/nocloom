@@ -11,7 +11,7 @@ import tempfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import sim_engine
 
-READ, WRITE, CONTROL, HEADER = 1, 2, 3, 4
+READ, WRITE, CONTROL, HEADER, FAILED = 1, 2, 3, 4, 5
 TARGET, OTHER, MISS = 0, 1, 2
 INCR, WRAP = 1, 2
 PAGE = 4096
@@ -20,7 +20,8 @@ MISS_PAGES = (0x10000, 0x1F000, 0x21000, 0x30000, 0x40000000, 0xFFFFF000)
 # Coverage requirement bits of the tape header; the bench reads the same order.
 REQUIRE = ("cross", "resume", "later", "full", "wrap", "incr", "unaligned", "narrow", "wide",
            "r_stall", "d_gap", "a_stall", "aw_overlap", "miss_two", "miss_w_between",
-           "miss_same", "miss_pair", "miss_full", "d_reorder", "miss_gets", "writes", "other")
+           "miss_same", "miss_pair", "miss_full", "d_reorder", "miss_gets", "writes", "other",
+           "r_error")
 
 
 class Random:
@@ -73,6 +74,12 @@ def runs(address, beats, size, burst):
     return [(address, (address & ~(step - 1)) + beats * step)]
 
 
+def middle(shape):
+    """The address of the middle beat of a burst."""
+    address, beats, size, _ = shape
+    return address + beats // 2 * (1 << size)
+
+
 class Tape:
     def __init__(self, seed, width, capacity, maximum, require):
         self.rng = Random(seed)
@@ -86,11 +93,15 @@ class Tape:
         self.transactions = 0
 
     def control(self, a=255, d=255, latency=0, order=0, r=255, b=255, w=255, hold=0, early=0,
-                extra=0, q=255):
-        """Ready and valid densities of 256, response latency and order, and the response hold."""
+                extra=0, q=255, failed=()):
+        """Ready and valid densities of 256, response latency and order, and the response hold.
+
+        `failed` lists target words that answer Gets with corrupt set in this batch.
+        """
         fields = ((4, 8, a), (12, 8, d), (20, 8, latency), (28, 2, order), (30, 8, r), (38, 8, b),
                   (46, 8, w), (54, 2, hold), (56, 1, early), (57, 8, extra), (65, 8, q))
         self.rows.append(self.pack(CONTROL, fields))
+        self.rows += [self.pack(FAILED, ((12, 32, address & ~3),)) for address in failed]
 
     @staticmethod
     def pack(op, fields):
@@ -191,13 +202,15 @@ class Tape:
 
     def random_batch(self, count, kinds, long_share=0):
         rng = self.rng
-        self.control(a=rng.pick((255, 255, 200, 120)), d=rng.pick((255, 220, 150, 90)),
-                     latency=rng.pick((0, 0, 4, 20, 60)), order=rng.below(3),
-                     r=rng.pick((255, 230, 140, 70)), b=rng.pick((255, 160, 60)),
-                     w=rng.pick((255, 200, 100)), early=rng.below(2), q=rng.pick((255, 160)))
         pages = rng.shuffled(range(16))
         split = 1 + rng.below(4)
         write_pages, read_pages = pages[:split], pages[split:]
+        failed = [rng.pick(read_pages) * PAGE + rng.below(PAGE // 4) * 4 for _ in range(rng.below(4))]
+        self.control(a=rng.pick((255, 255, 200, 120)), d=rng.pick((255, 220, 150, 90)),
+                     latency=rng.pick((0, 0, 4, 20, 60)), order=rng.below(3),
+                     r=rng.pick((255, 230, 140, 70)), b=rng.pick((255, 160, 60)),
+                     w=rng.pick((255, 200, 100)), early=rng.below(2), q=rng.pick((255, 160)),
+                     failed=failed)
         other_writes = rng.chance(50)
         ids = [rng.below(32) for _ in range(rng.pick((2, 4, 8)))]
         for _ in range(count):
@@ -226,10 +239,13 @@ def interleave_tape(seed, width, capacity, maximum, batches, require):
     for index in range(2):
         tape.request(READ, TARGET, capacity + index, *tape.several((capacity + index) % 16 * PAGE), wait=1)
     # Long reads of different IDs under response gaps and read backpressure.
-    tape.control(order=0, d=150, a=180, r=150, latency=2)
+    # Two of them use one corrupt target word each.
+    shapes = [tape.several(page * PAGE) for page in rng.shuffled(range(16))[:4]]
+    failed = [middle(shape) for shape in shapes[:2]]
+    tape.control(order=0, d=150, a=180, r=150, latency=2, failed=failed)
     first = rng.below(32)
     for index, ident in enumerate((first, (first + 1) % 32, (first + 2) % 32, first)):
-        tape.request(READ, TARGET, ident, *tape.several(rng.below(16) * PAGE), delay=index)
+        tape.request(READ, TARGET, ident, *shapes[index], delay=index)
     tape.corners()
     for _ in range(batches):
         tape.random_batch(6 + rng.below(8), (TARGET,), long_share=20)
@@ -244,9 +260,10 @@ def miss_tape(seed, width, capacity, maximum, other, batches, require):
     ids = rng.shuffled(range(32))
     miss = lambda: rng.pick(MISS_PAGES) + rng.below(8) * tape.lanes
     # Misses while two target reads are in flight, and misses back to back.
-    tape.control(latency=40, d=200, order=0)
-    tape.request(READ, TARGET, ids[0], *tape.several(0 * PAGE))
-    tape.request(READ, TARGET, ids[1], *tape.several(1 * PAGE))
+    shapes = [tape.several(0 * PAGE), tape.several(1 * PAGE)]
+    tape.control(latency=40, d=200, order=0, failed=[middle(shapes[1])])
+    tape.request(READ, TARGET, ids[0], *shapes[0])
+    tape.request(READ, TARGET, ids[1], *shapes[1])
     tape.request(READ, MISS, ids[2], miss(), 8, full, wait=3)
     tape.request(WRITE, MISS, ids[3], miss(), 8, full, wait=3)
     tape.request(READ, MISS, ids[4], miss(), 1, full)
@@ -290,7 +307,7 @@ def miss_tape(seed, width, capacity, maximum, other, batches, require):
 
 def requirements(profile, capacity, other):
     names = ["full", "wrap", "incr", "unaligned", "narrow", "wide", "r_stall", "d_gap", "a_stall",
-             "aw_overlap", "writes"]
+             "aw_overlap", "writes", "r_error"]
     if capacity > 1:
         names += ["cross", "resume", "later", "d_reorder"]
     if profile == "miss":
@@ -468,6 +485,7 @@ def faulted(rtl, module, source_width):
         logic += "assign nlv_d_source=0;\nassign nlv_a_source=0;\n"
     incoming("nl_t_t_d_data", lambda v: f"({v} ^ (nlv_corrupt ? 32'h00010000 : 32'h0))")
     incoming("nl_t_t_d_valid", lambda v: f"({v} && !nlv_drop)")
+    incoming("nl_t_t_d_corrupt", lambda v: f"({v} && nlv_fault!=11)")
     outgoing("nl_i_s_rid", lambda v: f"({v} ^ (nlv_fault==4 && nlv_r_beats==40 ? 1'b1 : 1'b0))")
     outgoing("nl_t_t_a_data", lambda v: f"({v} ^ (nlv_fault==5 && nl_t_t_a_opcode!=4 && nlv_put_beats==3 ? 32'h100 : 32'h0))")
     outgoing("nl_i_s_rlast", lambda v: f"({v} || (nlv_fault==6 && nlv_r_beats>=60 && nlv_r_beats<64))")
