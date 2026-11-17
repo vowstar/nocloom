@@ -185,11 +185,13 @@ target ID. A target-local read completion waits until earlier reads are
 received. APB, AHB and Wishbone reject multi-packet configured capacity. Lite
 can overlap packets in one direction only.
 
-Splitting, conversion and crossings preserve per-ID order. Split bursts progress
-independently of unrelated earlier bursts. Later bursts follow once their
-requests and W beats leave. See [packet capacity](packets.md#bounded-packets). A
-converted packet requiring several target bursts instead waits for earlier
-responses and excludes later packets until its final response returns.
+Splitting, conversion and crossings preserve per-ID order. A split burst does
+not wait for unrelated earlier bursts, and later bursts follow once its requests
+and W beats leave. The initiator's
+[split-packet limit](packets.md#split-packet-limit) can delay the split burst
+and the later bursts. A converted packet requiring several target bursts instead
+waits for earlier responses and excludes later packets until its final response
+returns.
 
 ## Target ID guarantees
 

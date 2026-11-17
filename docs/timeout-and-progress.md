@@ -29,9 +29,11 @@ ports separately. The definition does not model them.
 
 Unlimited backpressure provides no cross-initiator progress bound. A waiting
 ordering key or full ID table holds later requests, and a busy target can occupy
-shared request switches. A stalled multibeat R can block B behind it. In the
-single-domain automatic 32-bit profile, a stopped R consumer buffers two
-initiator beats from APB4 or three from AXI4.
+shared request switches. An initiator at its
+[split-packet limit](packets.md#split-packet-limit) also holds later requests. A
+stalled multibeat R can block B behind it. In the single-domain automatic 32-bit
+profile, a stopped R consumer buffers two initiator beats from APB4 or three
+from AXI4.
 
 A wider initiator can additionally hold a partly gathered beat. AHB can hold two
 read responses, and explicit graphs can add storage. Timeouts count target

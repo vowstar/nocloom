@@ -19,8 +19,8 @@ own storage. Under these conditions, an AXI4 target sees AW, AR and W one cycle
 after the initiator handshake.
 
 Single-packet bursts can issue back to back with sufficient
-[capacity](transactions.md#capacity-and-ordering-boundaries). See
-[split-packet limits](packets.md#bounded-packets).
+[capacity](transactions.md#capacity-and-ordering-boundaries). See the
+[split-packet limit](packets.md#split-packet-limit).
 
 ## AXI target requests
 

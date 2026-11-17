@@ -30,9 +30,9 @@ The target can split that packet into four 4-byte messages.
 
 A packet keeps its selected target and route. A burst can cross mapping
 boundaries and send later packets to another target. Before a packet changes
-target, it waits for all earlier packets of that burst to complete. At most four
-packets per direction of a split burst can await responses. For the same target,
-later packets need not wait for earlier responses when capacity permits.
+target, it waits for all earlier packets of that burst to complete. For the same
+target, later packets need not wait for earlier responses when capacity and the
+[split-packet limit](#split-packet-limit) permit.
 
 A write still returns one B, and a read retains its original beat count and last
 beat.
@@ -52,6 +52,41 @@ as a separate packet when AxLOCK is clear. Modifiable bursts can still pack into
 words. This option changes non-modifiable
 transaction shapes beyond AXI A4.3 permissions. Use it only with targets that
 accept those transformations.
+
+## Split-packet limit
+
+Each initiator that sends bursts can have four counted packets in flight for
+reads and four for writes. The count is fixed. `transport.packet_limits` and
+`max_outstanding` do not change it.
+
+A counted burst is a burst that the initiator splits into several packets,
+folds, or packs from several beats. Its packets are counted packets. A packet is
+in flight from the time its request leaves until its response completes. All
+counted bursts of one initiator share the count, with any IDs and targets. A
+burst that leaves unchanged as one packet is not counted. The packets that
+`merge_modifiable` makes are not counted, although that option also splits
+bursts.
+
+While four counted packets of one direction are in flight, later packets of that
+direction wait until one of the four completes:
+
+| Direction | Waits | Does not wait |
+| --- | --- | --- |
+| Read | Every later read packet, counted or not, to any target | Packets that `merge_modifiable` makes, unless an earlier read of this initiator waits |
+| Write | Every later packet of a counted burst | A write that is not counted, unless an earlier write of this initiator waits |
+
+Other initiators do not wait. The other direction of the same initiator waits in
+one case. A burst that has sent a packet and waits before a later packet keeps
+the initiator request path until its last packet leaves.
+
+Data, responses and per-ID order do not change. If a target never answers a
+counted packet, the wait does not end. A
+[target timeout](timeout-and-progress.md#target-timeouts) with
+`completion: true` answers that packet and ends the wait.
+
+A separate limit counts bursts. For each direction, an initiator can have four
+unfinished bursts that are counted or that `merge_modifiable` splits. A
+fifth such burst waits until one completes.
 
 ## Packet shape rules
 

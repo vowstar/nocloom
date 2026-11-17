@@ -467,8 +467,11 @@ struct Initiator {
   // one destination and wait to change it. Combines with exclusive access
   // support, clocked graphs, packets and width conversion, including
   // per-target widths. A conversion that needs several pieces or a local
-  // error drains earlier responses and excludes later packets until complete;
-  // up to four packets of its burst can remain in flight. Every AXI4 and
+  // error drains earlier responses and excludes later packets until complete.
+  // The bursts that this source splits into several packets, folds, or packs
+  // from several beats share four packets in flight for reads and four for
+  // writes. max_outstanding does not change that count
+  // (docs/packets.md#split-packet-limit). Every AXI4 and
   // AXI4-Lite source also keeps at most n = max_outstanding transactions in
   // flight, reads and writes together: a burst takes one entry as its first
   // packet leaves and holds it until the last packet of its response arrives
@@ -624,7 +627,8 @@ struct Target {
   // Every reaching source has the target width in uniform-width mode; per-target width merges
   // retain K restoration contexts per direction. AXI4-Lite and APB sources reach it with AxID 0.
   // Packets each occupy one pool entry, independently of the source's original burst capacity and
-  // its limit of four packets of a split burst in flight.
+  // its split-packet limit, which is four counted packets in flight for each direction
+  // (docs/packets.md#split-packet-limit).
   std::optional<unsigned> max_outstanding = std::nullopt;
   // Exclusive access support; absent means ExclusiveAccess::None.
   // Network needs a read-write target; Target needs a read-write AXI4 or AXI3 target.
