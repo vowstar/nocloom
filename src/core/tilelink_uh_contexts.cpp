@@ -277,6 +277,17 @@ void ContextPool::d_receive() {
   l.b.update(d_owner, l.pick(l.both(take, l.inv(d_active)), l.fit(source, index_bits), d_owner));
   d_buffer(l.any(reads), source);
   connect(output.at("tl.d_ready"), l.active(l.any(ready)));
+  if (!p.packet.timeout_cycles)
+    return;
+  // A context waits for the slave only while the pool can take its D beat: no other context
+  // owns the D channel, a read has receive space and a write is not behind a refused read beat.
+  const auto refused = l.both(input.at("tl.d_valid"), l.inv(l.any(ready)));
+  for (unsigned k = 0; k < capacity; ++k) {
+    const auto space =
+        l.either(available, l.both(contexts[k].bound.at("tl.write"), l.inv(refused)));
+    connect(contexts[k].inputs.at("hint.d_open"),
+            l.both(l.either(l.inv(d_active), l.eq(d_owner, k)), space));
+  }
 }
 void ContextPool::d_buffer(ValueId take, ValueId source) {
   std::vector<ValueId> occupied;

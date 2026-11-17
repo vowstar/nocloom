@@ -148,6 +148,30 @@ foreach(capacity IN ITEMS 1 3)
     LABELS "rtl;focused;ci" RESOURCE_LOCK tilelink
     ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
 endforeach()
+# A context watchdog counts slave waits only: network stalls stay quiet and slave stalls expire
+# at the exact cycle. The long case keeps the 1024-cycle stalls. The negative case runs three
+# contexts, then removes one watchdog term at a time.
+foreach(kind IN ITEMS 1 2 16 long negative)
+  set(watchdog_labels "rtl;focused;ci")
+  set(watchdog_arguments --capacity ${kind})
+  if(kind STREQUAL "long")
+    set(watchdog_arguments --capacity 1 2 3 --cycles 1024 --stall 2500 --reproductions)
+  elseif(kind STREQUAL "negative")
+    set(watchdog_arguments --capacity 3 --negative
+      --fixture $<TARGET_FILE:nocloom_verif_fixture>)
+  elseif(NOT kind EQUAL 16)
+    set(watchdog_labels "rtl;focused")
+  endif()
+  add_test(NAME tilelink_uh_target_watchdog_${kind}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_target_watchdog.py
+      --cli $<TARGET_FILE:nocloom_cli>
+      --work ${CMAKE_CURRENT_BINARY_DIR}/tilelink_uh_target_watchdog_${kind}
+      ${watchdog_arguments})
+  set_tests_properties(tilelink_uh_target_watchdog_${kind} PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 600 PROCESSORS 1
+    LABELS "${watchdog_labels}" RESOURCE_LOCK tilelink
+    ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+endforeach()
 add_executable(nocloom_unit unit/core.cpp unit/message.cpp unit/wishbone.cpp)
 target_sources(nocloom_unit PRIVATE unit/subpage_source_flows.cpp)
 add_test(NAME subpage_source_flows_structure COMMAND nocloom_unit "[subpage-source-flows]")

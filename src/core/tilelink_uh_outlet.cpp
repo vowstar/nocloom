@@ -369,13 +369,12 @@ void TileLinkUhOutlet::retire() {
   l.b.update(busy, l.either(accept, l.both(busy, l.inv(release))));
   if (b.timeout_cycles) {
     const auto timed_out = l.state("tl.timed_out", 1);
-    const auto expected_a = l.pick(
-        write,
-        l.per_size(size, 12, [&](unsigned n) { return l.num(11, n <= 2 ? 1 : 1U << (n - 2)); }),
-        l.num(11, 1));
-    const auto started = l.either(a_done, l.below(a_left, expected_a));
+    // The slave delays an offered A beat, or the D beat that it owes after the last A beat and
+    // that this context can take. A pool adds the state of the shared D channel.
     const auto a_wait = l.both(l.inv(a_done), l.either(l.inv(write), wfull));
-    const auto d_wait = l.both(started, l.both(l.inv(d_done), l.either(write, l.inv(dfull))));
+    auto d_wait = l.both(a_done, l.both(l.inv(d_done), l.either(write, l.inv(dfull))));
+    if (p.scheduled)
+      d_wait = l.both(d_wait, l.in("hint", "d_open", 1));
     const auto waiting = l.both(message, l.either(a_wait, d_wait));
     l.watchdog(timed_out, b.timeout_cycles, waiting,
                l.either(l.either(a_take, d_take), l.both(busy, l.inv(waiting))));
