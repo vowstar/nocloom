@@ -907,6 +907,17 @@ nocloom_verif_case(NAME verif_tilelink_uh_target_miss LAYER rtl TIER focused TIM
   FEATURES tilelink ci MEMORY_MB 2048 CONTRACTS TL.ACCESS
   COMMAND ${uh_interleave_case} --profile miss --other --batches 2 --seeds 1)
 set_tests_properties(verif_tilelink_uh_target_miss PROPERTIES RESOURCE_LOCK tilelink)
+foreach(profile IN ITEMS interleave miss)
+  set(uh_fault_args --batches 0)
+  if(profile STREQUAL "miss")
+    set(uh_fault_args --profile miss --other --batches 0)
+  endif()
+  nocloom_verif_case(NAME verif_tilelink_uh_target_${profile}_negative LAYER negative TIER focused
+    TIMEOUT 300 FEATURES tilelink ci MEMORY_MB 2048 CONTRACTS TL.ACCESS
+    COMMAND ${uh_interleave} --case ${NLV_CASES}/tilelink_uh_target_interleave_negative.py
+      --negative ${uh_fault_args})
+  set_tests_properties(verif_tilelink_uh_target_${profile}_negative PROPERTIES RESOURCE_LOCK tilelink)
+endforeach()
 # width:contexts:message bytes, then width:contexts:default target for the
 # decode miss tapes beside a second target.
 foreach(shape IN ITEMS 128:3:1024 128:16:1024 128:1:1024 128:3:4096 128:16:4096 128:16:64

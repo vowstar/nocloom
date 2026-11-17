@@ -1,6 +1,7 @@
 """Seeded AXI4 tapes of several IDs at a TL-UH target, with decode misses."""
 import argparse
 import json
+import re
 import runpy
 from pathlib import Path
 import subprocess
@@ -366,11 +367,175 @@ def build(args, work):
     return cfg, mapping, rtl, checks
 
 
-def tape_for(args, seed):
-    require = requirements(args.profile, args.capacity, args.other)
+def tape_for(args, seed, covered=True):
+    require = requirements(args.profile, args.capacity, args.other) if covered else []
     if args.profile == "miss":
         return miss_tape(seed, args.width, args.capacity, args.maximum, args.other, args.batches, require)
     return interleave_tape(seed, args.width, args.capacity, args.maximum, args.batches, require)
+
+
+FAULT_STATE = """
+integer nlv_fault=0;
+initial if(!$value$plusargs("FAULT=%d",nlv_fault)) nlv_fault=0;
+reg nlv_get0=0, nlv_get1=0, nlv_other=0, nlv_hit=0, nlv_leak=0;
+reg [3:0] nlv_size0=0, nlv_size1=0;
+integer nlv_d_left=0, nlv_gets_done=0, nlv_phase=0, nlv_r_beats=0, nlv_put_beats=0;
+integer nlv_miss_r=0, nlv_miss_b=0, nlv_inflight=0, nlv_put_left=0;
+wire [3:0] nlv_d_source, nlv_a_source;
+wire nlv_d_first, nlv_d_final, nlv_swap_begin, nlv_swap_end, nlv_swap, nlv_corrupt, nlv_drop;
+wire nlv_miss_request, nlv_leak_now;
+"""
+FAULT_LOGIC = """
+assign nlv_d_first=nl_t_t_d_valid && nlv_d_left==0;
+assign nlv_d_final=nl_t_t_d_valid && (nlv_d_left==1 ||
+  (nlv_d_left==0 && !(nl_t_t_d_opcode==1 && nl_t_t_d_size>2)));
+assign nlv_swap_begin=nlv_fault==1 && nlv_phase==0 && nlv_d_first && nl_t_t_d_opcode==1 &&
+  nlv_d_source<2 && nlv_get0 && nlv_get1 && nlv_size0==nlv_size1;
+assign nlv_swap_end=nlv_fault==1 && nlv_phase==2 && nlv_d_first && nlv_d_source=={3'b0,nlv_other};
+assign nlv_swap=nlv_swap_begin || nlv_phase==1 || nlv_swap_end || nlv_phase==3;
+assign nlv_corrupt=nlv_fault==2 && !nlv_hit && nl_t_t_d_opcode==1 && nlv_gets_done>=1 && nlv_d_left>1;
+assign nlv_drop=nlv_fault==3 && nl_t_t_d_opcode==1 && nlv_gets_done>=2 && nlv_d_final && !nlv_hit;
+assign nlv_miss_request=nl_i_s_arvalid && nl_i_s_arready && nl_i_s_araddr>=32'h10000 &&
+  nl_i_s_araddr[31:12]!=20'h20;
+assign nlv_leak_now=nlv_fault==10 && nlv_leak && !NLV_A_VALID && nlv_inflight==0 && nlv_put_left==0;
+always @(posedge clk) begin
+  if(!reset_n) begin
+    nlv_get0=0; nlv_get1=0; nlv_hit=0; nlv_leak=0; nlv_d_left=0; nlv_gets_done=0; nlv_phase=0;
+    nlv_r_beats=0; nlv_put_beats=0; nlv_miss_r=0; nlv_miss_b=0; nlv_inflight=0; nlv_put_left=0;
+  end else begin
+    if(nlv_miss_request && nlv_miss_r==0 && !nlv_hit) nlv_leak=1;
+    if(nl_t_t_d_valid && nl_t_t_d_ready) begin
+      if(nlv_corrupt || nlv_drop) nlv_hit=1;
+      if(nlv_swap_begin) begin nlv_phase=1; nlv_other=!nlv_d_source[0]; end
+      if(nlv_swap_end) nlv_phase=3;
+      if(nlv_d_final) begin
+        if(nl_t_t_d_opcode==1) begin
+          nlv_gets_done=nlv_gets_done+1;
+          if(nlv_d_source==0) nlv_get0=0;
+          if(nlv_d_source==1) nlv_get1=0;
+        end
+        if(nlv_phase==1) nlv_phase=2;
+        if(nlv_phase==3) nlv_phase=4;
+        nlv_d_left=0; nlv_inflight=nlv_inflight-1;
+      end else if(nlv_d_left==0) nlv_d_left=(1<<(nl_t_t_d_size-2))-1;
+      else nlv_d_left=nlv_d_left-1;
+    end
+    if(nl_t_t_a_valid && nl_t_t_a_ready) begin
+      if(nlv_leak_now) begin nlv_leak=0; nlv_hit=1; end
+      if(nl_t_t_a_opcode==4) begin
+        nlv_inflight=nlv_inflight+1;
+        if(nlv_a_source==0) begin nlv_get0=1; nlv_size0=nl_t_t_a_size; end
+        if(nlv_a_source==1) begin nlv_get1=1; nlv_size1=nl_t_t_a_size; end
+      end else begin
+        nlv_put_beats=nlv_put_beats+1;
+        if(nlv_put_left==0) begin
+          nlv_inflight=nlv_inflight+1;
+          nlv_put_left=nl_t_t_a_size>2 ? (1<<(nl_t_t_a_size-2)) : 1;
+        end
+        nlv_put_left=nlv_put_left-1;
+      end
+    end
+    if(nl_i_s_rvalid && nl_i_s_rready) begin
+      nlv_r_beats=nlv_r_beats+1;
+      if(NLV_R_RESP==3) nlv_miss_r=nlv_miss_r+1;
+    end
+    if(nl_i_s_bvalid && nl_i_s_bready && nl_i_s_bresp==3) nlv_miss_b=nlv_miss_b+1;
+  end
+end
+"""
+
+
+def faulted(rtl, module, source_width):
+    """The network with selectable faults; +FAULT=0 leaves every signal as generated."""
+
+    def substitute(pattern, replacement):
+        nonlocal rtl
+        rtl, count = re.subn(pattern, replacement, rtl, flags=re.M)
+        if count != 1:
+            raise RuntimeError(f"fault anchor matched {count} times: {pattern}")
+
+    def incoming(port, value):
+        substitute(rf"^(assign nl_internal_v\d+ = )({port});$", lambda m: f"{m[1]}{value(m[2])};")
+
+    def outgoing(port, value):
+        substitute(rf"^(assign {port} = )(nl_internal_v\d+);$", lambda m: f"{m[1]}{value(m[2])};")
+
+    logic = FAULT_LOGIC
+    if source_width:
+        incoming("nl_t_t_d_source", lambda v: f"(nlv_swap ? {v} ^ {source_width}'d1 : {v})")
+        logic += "assign nlv_d_source=nl_t_t_d_source;\nassign nlv_a_source=nl_t_t_a_source;\n"
+    else:
+        logic += "assign nlv_d_source=0;\nassign nlv_a_source=0;\n"
+    incoming("nl_t_t_d_data", lambda v: f"({v} ^ (nlv_corrupt ? 32'h00010000 : 32'h0))")
+    incoming("nl_t_t_d_valid", lambda v: f"({v} && !nlv_drop)")
+    outgoing("nl_i_s_rid", lambda v: f"({v} ^ (nlv_fault==4 && nlv_r_beats==40 ? 1'b1 : 1'b0))")
+    outgoing("nl_t_t_a_data", lambda v: f"({v} ^ (nlv_fault==5 && nl_t_t_a_opcode!=4 && nlv_put_beats==3 ? 32'h100 : 32'h0))")
+    outgoing("nl_i_s_rlast", lambda v: f"({v} || (nlv_fault==6 && nlv_r_beats>=60 && nlv_r_beats<64))")
+    response = re.search(r"^assign nl_i_s_rresp = (nl_internal_v\d+);$", rtl, flags=re.M)[1]
+    logic = logic.replace("NLV_R_RESP", response)
+    outgoing("nl_i_s_rresp", lambda v: f"(nlv_fault==7 && {v}==2'd3 && nlv_miss_r==1 ? 2'd0 : {v})")
+    outgoing("nl_i_s_rdata", lambda v: f"({v} | (nlv_fault==8 && {response}==2'd3 && nlv_miss_r==2 ? 512 : 0))")
+    outgoing("nl_i_s_bid", lambda v: f"({v} ^ (nlv_fault==9 && nl_i_s_bresp==2'd3 && nlv_miss_b==0 ? 1'b1 : 1'b0))")
+    valid = re.search(r"^assign nl_t_t_a_valid = (nl_internal_v\d+);$", rtl, flags=re.M)[1]
+    logic = logic.replace("NLV_A_VALID", valid)
+    outgoing("nl_t_t_a_valid", lambda v: f"({v} || nlv_leak_now)")
+    outgoing("nl_t_t_a_opcode", lambda v: f"(nlv_leak_now ? 3'd4 : {v})")
+    outgoing("nl_t_t_a_size", lambda v: f"(nlv_leak_now ? 4'd2 : {v})")
+    outgoing("nl_t_t_a_address", lambda v: f"(nlv_leak_now ? 32'hf000 : {v})")
+    outgoing("nl_t_t_a_mask", lambda v: f"(nlv_leak_now ? 4'hf : {v})")
+    if source_width:
+        outgoing("nl_t_t_a_source", lambda v: f"(nlv_leak_now ? {source_width}'d0 : {v})")
+    start = rtl.index("module " + module)
+    head = rtl.index("\n", rtl.index(");", start))
+    tail = rtl.index("endmodule", start)
+    return rtl[:head] + FAULT_STATE + rtl[head:tail] + logic + rtl[tail:]
+
+
+def summary(output):
+    return [line for line in output.splitlines() if line.startswith(("UH_COVER", "UH_PASS"))]
+
+
+def negative(args):
+    """Each fault must stop the bench with one of its rules. The fault copy with
+    no fault selected must behave as the generated network."""
+    args.work.mkdir(parents=True, exist_ok=True)
+    root = Path(tempfile.mkdtemp(prefix="run-", dir=args.work)).resolve()
+    faults = runpy.run_path(str(args.case))["FAULTS"][args.profile]
+    cfg, mapping, rtl, checks = build(args, root)
+    target = mapping["definition"]["tilelink"]["targets"]["t"]
+    tape = tape_for(args, args.seeds[0], covered=False)
+    options = ["+TAPE=tape.hex", f"+ROWS={len(tape.rows) + 1}"]
+    sims = {}
+    for name, text in (("normal", rtl), ("faults", faulted(rtl, mapping["module"], target["source_width"]))):
+        work = root / name
+        work.mkdir()
+        (work / "tb.sv").write_text(bench(mapping, cfg, args.bench.read_text()))
+        (work / "network.v").write_text(text + checks)
+        (work / "tape.hex").write_text(tape.text())
+        sims[name] = sim_engine.Simulation(work, "network.v", engine=args.sim, config=args.sim_config,
+                                           compile_timeout=600, run_timeout=args.run_timeout,
+                                           success=("UH_PASS",))
+    base = sims["normal"].run(options)
+    if base.returncode:
+        raise RuntimeError(f"generated network failed: {base.stdout[-2000:]}")
+    disabled = sims["faults"].run(options + ["+FAULT=0"])
+    if disabled.returncode or summary(disabled.stdout) != summary(base.stdout):
+        raise RuntimeError("the fault copy with no fault differs from the generated network")
+    rows = [dict(selector=0, status="PASS", summary=summary(base.stdout)[-1])]
+    for selector, (name, rules) in faults.items():
+        if selector == 1 and not target["source_width"]:
+            continue
+        result = sims["faults"].run(options + [f"+FAULT={selector}"])
+        (root / f"fault-{selector}.log").write_text(result.stdout)
+        assertion = next((line for line in result.stdout.splitlines() if "ASSERT_FAIL:" in line), "")
+        caught = result.returncode != 0 and any(f"ASSERT_FAIL:{rule} " in assertion for rule in rules)
+        stuck = next((line for line in result.stdout.splitlines() if line.startswith("STUCK")), "")
+        rows.append(dict(selector=selector, fault=name, status="CAUGHT" if caught else "SURVIVED",
+                         assertion=assertion, stuck=stuck))
+        print(json.dumps(rows[-1]), flush=True)
+    (root / "results.json").write_text(json.dumps(rows, indent=2))
+    print(root)
+    return 0 if all(row["status"] in ("PASS", "CAUGHT") for row in rows) else 1
 
 
 def run(args):
@@ -422,8 +587,10 @@ def main():
     parser.add_argument("--seeds", type=seed_list, default=[1], help="Such as 1,2,3 or 6-10")
     parser.add_argument("--run-timeout", type=int, default=240)
     parser.add_argument("--trace", action="store_true", help="Log requests and target messages")
+    parser.add_argument("--negative", action="store_true", help="Run the fault table of the case")
     sim_engine.add_arguments(parser)
-    return run(parser.parse_args())
+    args = parser.parse_args()
+    return negative(args) if args.negative else run(args)
 
 
 if __name__ == "__main__":
