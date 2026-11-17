@@ -47,11 +47,7 @@ def configuration():
         cfg["targets"].append(target("slow", "axi4", SLOW,
                                      timeout=dict(cycles=16, completion=True)))
         if FULL:
-            cfg.setdefault("transport", {})["user_flags"] = ["owner"]
-            for owner, initiator in enumerate(cfg["initiators"]):
-                initiator["user_flags"] = {"owner": owner}
-            cfg["targets"].append(target("monitor", "apb4", EXCLUSIVE, exclusive="network",
-                                         exclusive_owner_flags=["owner"]))
+            cfg["targets"].append(target("monitor", "apb4", EXCLUSIVE, exclusive="network"))
     return cfg
 
 
