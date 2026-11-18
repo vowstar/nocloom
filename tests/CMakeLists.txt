@@ -814,12 +814,11 @@ foreach(kind IN ITEMS apb4 apb3 axi4_lite ahb_lite axi4)
   # The AXI4-Lite outlet safety checks run bounded to 12 cycles. Expiry
   # reachability needs a 1030-frame trace and is covered by
   # verif_target_timeouts_negative. The other outlets are proved unbounded.
-  # The AXI4 outlet is also proved with two bursts in flight (its expiry is
-  # reached in verif_target_timeouts_negative).
+  # The AXI4 proof and directed expiry witness also run with two bursts in flight.
   if(kind STREQUAL "axi4_lite")
     set(formal_mode_args --mode bmc --depth 12 --tasks check)
   elseif(kind STREQUAL "axi4")
-    set(formal_mode_args --capacities 1,2)
+    set(formal_mode_args --capacities 1,2 --timeout 360)
   else()
     set(formal_mode_args)
   endif()
@@ -830,6 +829,9 @@ foreach(kind IN ITEMS apb4 apb3 axi4_lite ahb_lite axi4)
       ${formal_mode_args})
   set_tests_properties(target_timeout_formal_${kind} PROPERTIES TIMEOUT 5400 LABELS "formal;focused"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+  if(kind STREQUAL "axi4")
+    set_tests_properties(target_timeout_formal_${kind} PROPERTIES TIMEOUT 600)
+  endif()
 endforeach()
 add_test(NAME target_timeout_formal_axi4_shared
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_timeout_formal.py
