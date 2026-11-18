@@ -90,8 +90,8 @@ APB5 uses endpoint `user_width`, `user_flags`, `user` and
 The request port is at most 128 bits and the response port at most 16 bits.
 Both default to zero.
 
-Endpoint `data_user_width` enables PWUSER and PRUSER. On APB5 endpoints it is 0
-or `transport.data_user_bits_per_byte * data_width / 8` and defaults to 0.
+Endpoint `data_user_width` enables PWUSER and PRUSER. It defaults to 0. On APB5
+endpoints it is 0 or `transport.data_user_bits_per_byte * data_width / 8`.
 A nonzero width requires a transport value from 1 to 4. Other protocols accept
 zero. The C++ fields have the same names, defaults and limits.
 
@@ -122,9 +122,10 @@ TL-UL and TL-UH endpoints use 32-bit data and take `source_width`,
 `size_width`, `sink_width` and `max_transfer_bytes`. Other protocols reject
 these fields. C++ uses `Protocol::TlUl` and `Protocol::TlUh`.
 
-See [TL-UL fields](tilelink.md#endpoint-fields),
-[TL-UH initiators](tilelink.md#tl-uh-initiators) and
-[TL-UH targets](tilelink.md#tl-uh-targets) for ranges, defaults and limits.
+See [TL-UL fields](tilelink-ul.md),
+[TL-UH initiators](tilelink-uh-initiators.md#tl-uh-initiators) and
+[TL-UH targets](tilelink-uh-targets.md#tl-uh-targets) for ranges, defaults
+and limits.
 
 ## AHB5 endpoint fields
 
@@ -217,8 +218,8 @@ The complete field types are in
 ## Required fields and diagnostics
 
 Missing endpoint `protocol` or `data_width` produces `NCL_SCHEMA_MISSING_FIELD`.
-These fields belong on each endpoint. `id_table_entries` limits active ordering
-keys.
+These fields belong on each endpoint. `id_table_entries` limits active
+ordering keys.
 
 Only `schema_version: 10` is accepted. Values 1 through 9 produce
 `NCL_SCHEMA_REMOVED`. Other values produce `NCL_SCHEMA_VERSION`.

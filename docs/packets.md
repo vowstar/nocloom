@@ -44,7 +44,8 @@ WRAP packets follow the initiator and target wrap limits. A WRAP that needs
 decomposition becomes INCR runs in wrap address order. A narrow WRAP read folds
 only when its container fits one physical target word and one initiator word. A
 narrow WRAP write folds when its container fits one initiator word. Paths to
-[TL-UH targets](tilelink.md#tl-uh-targets) keep separate tail and head runs.
+[TL-UH targets](tilelink-uh-targets.md#tl-uh-targets) keep separate tail
+and head runs.
 
 An exclusive or locked burst stays in one packet. A shape beyond its packet
 or window boundary returns an error without target access.

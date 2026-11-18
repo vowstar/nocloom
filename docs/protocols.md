@@ -178,8 +178,8 @@ See [AHB-Lite initiators](ahb.md#ahb-lite-initiators).
 
 TL-UL supports single-beat Get and Put on A, with AccessAck and
 AccessAckData on D. Initiators support multiple sources in flight. Targets
-support one message in flight. See [TileLink](tilelink.md) for fields, error
-semantics, progress requirements and the TL-UL and TL-UH option table.
+support one message in flight. See [TL-UL](tilelink-ul.md) for message and
+error behavior and [TileLink](tilelink.md) for shared fields and progress.
 
 ## TileLink TL-UH initiators
 
@@ -188,11 +188,11 @@ TL-UH initiators accept multibeat Get and Put and complete Intent locally.
 `size_width` is 2 to 4, with default 3, and must encode the largest message.
 Atomic operations return denied AccessAckData without network access.
 Initiator `address_width` must be at least `log2(max_transfer_bytes)`.
-See [TileLink](tilelink.md#tl-uh-initiators).
+See [TL-UH initiators](tilelink-uh-initiators.md#tl-uh-initiators).
 
 ## TL-UH targets
 
 TL-UH targets use 32-bit data and 1 to 16 packet contexts shared between
 reads and writes. `max_outstanding` defaults to 1. Message limits, size and
 source widths, mapping alignment and rejected fields are in
-[TL-UH targets](tilelink.md#tl-uh-targets).
+[TL-UH targets](tilelink-uh-targets.md#tl-uh-targets).

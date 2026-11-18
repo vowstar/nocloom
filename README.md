@@ -165,7 +165,7 @@ See [Documentation](#documentation) for field definitions and limits.
 | --- | --- |
 | Wishbone options | No LOCK or user tags. Burst tags require classic cycles. A tagged target cannot use timeout. Pipelined targets accept one request at a time. See [Wishbone](docs/wishbone.md) |
 | Other protocols | For example AXI5, ACE and APB2 initiators |
-| TileLink | TL-UL targets support one message in flight and one flow. TL-UH targets support 1 to 16 packet contexts and one flow. Coherent channels are unsupported. TL-UH initiators deny atomic operations, so they do not conform to TL-UH. See [TileLink](docs/tilelink.md) for error and progress rules |
+| TileLink | TL-UL targets support one message in flight and one flow. TL-UH targets support 1 to 16 packet contexts and one flow. Coherent channels are unsupported. TL-UH initiators deny atomic operations, so they do not conform to TL-UH. See [TileLink](docs/tilelink.md#errors-and-progress) for progress rules |
 | AHB5 optional signals | HEXCL, HEXOKAY and HAUSER, HWUSER, HRUSER and HBUSER are unsupported. See [AHB5 properties](docs/ahb.md#ahb5-basic-properties) |
 | AHB arbitration and responses | No multi-manager arbitration or HSPLIT. RETRY and SPLIT on two-bit `ahb_lite` targets fail the packet |
 | Other RTL languages | The output is Verilog-2001 only |
@@ -189,7 +189,7 @@ field path, a message, the file line and column when known, and a [diagnostic co
 | [Network](docs/network.md) | Connectivity, graphs, routes, flows, arbitration and pipes |
 | [Address map](docs/address-map.md) | Mappings, address inputs, decode misses and error responses |
 | [Protocols](docs/protocols.md) | Initiator and target protocols, width conversion and packets |
-| [TileLink](docs/tilelink.md) | TL-UL and TL-UH endpoint fields, error and progress rules, option table and protocol mappings |
+| [TileLink](docs/tilelink.md) | Shared fields and integration, [TL-UL](docs/tilelink-ul.md), [TL-UH initiators](docs/tilelink-uh-initiators.md) and [TL-UH targets](docs/tilelink-uh-targets.md) |
 | [Transactions](docs/transactions.md) | Bursts in flight, target IDs, read interleaving, exclusive access and timeouts |
 | [Scheduling](docs/scheduling.md) | Levels, AxQOS maps, bandwidth shapers and bandwidth schedulers |
 | [Output files](docs/outputs.md) | Map, bundle, dependency graph, IP-XACT, address table, CDC constraints and C headers |

@@ -71,7 +71,7 @@ directions. Each response channel still shares its count across IDs, so
 continued responses on that channel can hide an unanswered request.
 
 TL-UH uses a watchdog for each packet context. Each A or D handshake of that
-context restarts its count. See [TL-UH targets](tilelink.md#tl-uh-targets)
+context restarts its count. See the [TL-UH watchdog](tilelink-uh-targets.md#watchdog)
 for shared D channel waits and responses after expiry. All TileLink targets
 reject `completion: true`.
 

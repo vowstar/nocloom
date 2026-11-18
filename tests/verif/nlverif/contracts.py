@@ -21,8 +21,10 @@ CONTRACTS = {
         text="A decode miss uses the source's bandwidth budget at request admission for a shaper "
              "or at response completion for a bandwidth scheduler",
         source="docs/scheduling.md#bandwidth-shapers"),
-    "TL.ACCESS": dict(text="TileLink messages preserve source, size, masks, errors and channel ownership",
-                      source="docs/tilelink.md; TileLink 1.8.1 sections 4.4, 4.5, 6.4 and 7.2"),
+    "TL.ACCESS": dict(
+        text="TileLink messages preserve source, size, masks, errors and channel ownership",
+        source="docs/tilelink.md; docs/tilelink-ul.md; docs/tilelink-uh-initiators.md; "
+               "docs/tilelink-uh-targets.md; TileLink 1.8.1 sections 4.4, 4.5, 6.4 and 7.2"),
     "AXI.ROUTE.LOCAL_OFFSET": dict(
         text="A target receives the source address minus its window base, once",
         source="map contract address_transform=target_local_byte_offset_once"),

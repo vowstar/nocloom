@@ -129,7 +129,7 @@ After a target timeout, the target protocol zone keeps its clock gate open
 until common reset. The status port `nl_t_<target>_timed_out` stays high for
 the same time. A TL-UH target is an exception. Its status stays high, but its
 gate can close when no work is pending. See
-[TL-UH targets](tilelink.md#tl-uh-targets).
+[TL-UH targets](tilelink-uh-targets.md#tl-uh-targets).
 
 A high test or ungate input opens its gates.
 
