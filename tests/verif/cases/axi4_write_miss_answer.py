@@ -30,7 +30,7 @@ def config(capacity):
         'clock_domains': [{'name': 'main', 'clock_port': 'clk_main', 'reset_port': 'reset_n',
                            'test_port': 'test'}],
         'initiators': [{'name': 's0', 'clock_domain': 'main', 'protocol': 'axi4', 'data_width': 32,
-                        'max_outstanding': capacity}],
+                        'max_outstanding': capacity, 'default_target': 't0'}],
         'targets': [{'name': 't0', 'clock_domain': 'main', 'protocol': 'axi4', 'data_width': 32,
                      'attributes': 'amba', 'max_outstanding': capacity,
                      'mappings': [{'base': '0x0', 'size': '0x1000'}]}],

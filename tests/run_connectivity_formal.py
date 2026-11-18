@@ -25,13 +25,13 @@ unconnected pair, not an unmapped address), and s0 holds two open bursts on
 each direction. Controls: the same harness on the network generated with
 connectivity all fails NO_T1 (a counterexample exists); on that network, with
 every burst into t1's window opened behind another one (it waits in the port
-pipe), ADMISSION_R and ADMISSION_B each fail; and the sparse network with the
-s0 admission match forced true still passes, because the generated switch has
-no s0 input at t1's output.
+pipe), ADMISSION_R and ADMISSION_B each fail. The sparse network with s0
+admission forced true still has no route to t1. With a named default
+target, all checks also hold after forcing admission.
 
-A miss goes to the default target. ADMISSION_B is a bounded check
-(abc bmc3, depth 16), with a control that removes the miss packet's error bit
-and must fail ADMISSION_B. The unbounded write property is not established.
+ADMISSION_B is checked to depth 16 (abc bmc3). Controls remove the error bit
+on a routed miss and clear DECERR on a local answer. Both must fail
+ADMISSION_B. The unbounded write property is not established.
 
 Read helpers L1R..L7R are assumptions of the unbounded task. They describe
 s0's port pipe, engine state and offer through map-derived probe ports.
@@ -55,7 +55,7 @@ reset_ports: [{name: reset_n}]
 clock_gating: false
 clock_domains: [{name: main, clock_port: clk_main, reset_port: reset_n}]
 initiators:
-  - {name: s0, clock_domain: main, protocol: axi4, data_width: 32, id_width: 1}
+  - {name: s0, clock_domain: main, protocol: axi4, data_width: 32, id_width: 1@DEFAULT_TARGET@}
   - {name: s1, clock_domain: main, protocol: axi4, data_width: 32, id_width: 1}
 targets:
   - {name: t0, clock_domain: main, protocol: axi4, data_width: 32, attributes: amba, mappings: [{base: '0x0', size: '0x1000'}]}
@@ -119,8 +119,9 @@ def probed(rtl, mapping):
     pipe = next(s for s in mapping['network']['storage'] if s['resource'] == 'source/s0/pipe/ar')
     assert len(pipe['control']) == 1, pipe
     net = lambda v: 'nl_internal_v' + v.split('/')[1]
+    # The face's RLAST includes both a network tail and a stored local miss tail.
     nets = [net(pipe['control'][0]), net(s0['read_state']), net(s0['pre_merge_read_valid']),
-            f"{net(s0['read_staged_full'])} & {net(s0['read_staged_last'])}",
+            f"{net(s0['read_staged_full'])} & nl_i_s0_rlast",
             net(s0['read_desc_id'])]
     header = 'module nocloom_formal (\n'
     assert rtl.count(header) == 1
@@ -129,6 +130,20 @@ def probed(rtl, mapping):
     end = rtl.index('endmodule')
     return rtl[:end] + ''.join(f'assign {name} = {value};\n'
                                for (name, _, _), value in zip(PROBES, nets)) + rtl[end:]
+
+
+def replace_signal(rtl, signal, value):
+    pattern = rf'^(assign {re.escape(signal)} = )([^;]+);$'
+    changed, count = re.subn(pattern, lambda match: match[1] + value(match[2]) + ';', rtl,
+                             flags=re.M)
+    assert count == 1, signal
+    return changed
+
+
+def force_write_admission(rtl, mapping):
+    admission = next(a for a in mapping['network']['admission'] if a['source'] == 's0')
+    signal = 'nl_internal_v' + admission['write_route_match'].split('/')[1]
+    return replace_signal(rtl, signal, lambda _: "1'b1")
 
 
 def harness(ports, assume_r=False, checks=('NO_T1', 'DEPTH', 'ORDER', 'ADMISSION_R', 'ADMISSION_B'),
@@ -261,9 +276,10 @@ def main():
     work = Path(tempfile.mkdtemp(prefix='run-', dir=base))
     (base / 'latest.txt').write_text(str(work) + '\n')
 
-    def generate(label, connectivity):
+    def generate(label, connectivity, default_target=''):
         config = work / f'{label}.yaml'
-        config.write_text(YAML.replace('@CONNECTIVITY@', connectivity))
+        config.write_text(YAML.replace('@CONNECTIVITY@', connectivity)
+                          .replace('@DEFAULT_TARGET@', default_target))
         proc = subprocess.run([args.cli, 'generate', str(config), '--out-dir', str(work / label)],
                               capture_output=True, text=True, timeout=300, check=False)
         assert proc.returncode == 0, proc.stderr
@@ -275,19 +291,20 @@ def main():
 
     mapping, sparse = generate('sparse', SPARSE)
     full_map, full = generate('all', 'connectivity: all')
+    routed_map, routed = generate('routed', SPARSE, ', default_target: t0')
     ports = [(p['name'], p['width'], p['direction'] == 'input') for p in mapping['ports']]
     assert ports == [(p['name'], p['width'], p['direction'] == 'input') for p in full_map['ports']]
-    admission = next(a for a in mapping['network']['admission'] if a['source'] == 's0')
-    signal = 'nl_internal_v' + admission['write_route_match'].split('/')[1]
-    forced, count = re.subn(r'(assign ' + signal + r' = )([^;]+);', r"\g<1>1'b1;", sparse)
-    assert count == 1
+    assert ports == [(p['name'], p['width'], p['direction'] == 'input') for p in routed_map['ports']]
+    forced = force_write_admission(routed, routed_map)
+    forced_local = force_write_admission(sparse, mapping)
     # Negative control for the bounded write check: the miss write packet's
     # error bit (the pre-merge formal anchor) forced low, so the miss reaches
     # t0 as an ordinary write and may answer OKAY -- ADMISSION_B must fail.
-    miss_error = mapping['network']['formal']['sources']['s0']['pre_merge_write_error']
+    miss_error = routed_map['network']['formal']['sources']['s0']['pre_merge_write_error']
     miss_signal = 'nl_internal_v' + miss_error.split('/')[1]
-    miss_okay, count = re.subn(r'(assign ' + miss_signal + r' = )([^;]+);', r"\g<1>1'b0;", sparse)
-    assert count == 1
+    miss_okay = replace_signal(routed, miss_signal, lambda _: "1'b0")
+    local_okay = replace_signal(sparse, 'nl_i_s0_bresp',
+                                lambda resp: f"({resp} == 2'b11) ? 2'b00 : {resp}")
     engine = {'prove': 'abc pdr', 'bmc': f'smtbmc {args.solver}', 'cover': f'smtbmc {args.solver}',
               'abc_bmc': 'abc bmc3'}
     # With s0's write admission forced, the write into t1's window reaches t0's
@@ -312,8 +329,11 @@ def main():
              ('cover', sparse, 'cover', 16, 'PASS', '', {}),
              ('control_all', full, 'bmc', 16, 'FAIL', ('NO_T1', 'ADMISSION'), {}),
              ('control_forced_admission', forced, 'abc_bmc', 12, 'PASS', '', {}),
+             ('control_forced_local_route', forced_local, 'abc_bmc', 12, 'PASS', '',
+              {'checks': ('NO_T1', 'DEPTH', 'ORDER', 'ADMISSION_R')}),
              ('admission_b_bounded', sparse, 'abc_bmc', 16, 'PASS', '', {}),
              ('control_miss_okay', miss_okay, 'abc_bmc', 16, 'FAIL', ('ADMISSION_B',), {}),
+             ('control_local_miss_okay', local_okay, 'abc_bmc', 16, 'FAIL', ('ADMISSION_B',), {}),
              ('control_second_r', full, 'abc_bmc', 16, 'FAIL', ('ADMISSION_R',), second_r),
              ('control_second_b', full, 'abc_bmc', 16, 'FAIL', ('ADMISSION_B',), second_b)]
     rows = []

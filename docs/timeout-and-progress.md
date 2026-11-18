@@ -109,4 +109,4 @@ response is discarded.
 
 An already driven AHB address phase can complete once when HREADY returns. No
 other write transfer starts. A failed default target applies its timeout
-behavior to later misses too.
+behavior to later misses sent to it.

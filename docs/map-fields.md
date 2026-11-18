@@ -38,6 +38,7 @@ formats. Profile-specific JSON records appear only for that profile.
 | `definition.address_inputs`, `definition.address_selectors`, `network.address_selectors` | Address selection ports, selector conditions and their signal bindings |
 | `definition.default_targets` | Explicitly selected miss targets |
 | `definition.address_selection_holes` | Coverage by initiator when the network has more than 16 selectors. `possible` is true if a selector assignment leaves an unmapped address or the search reaches its budget. `exact` is false when `possible` is based on the budget |
+| `definition.local_decode_misses` | Initiators that answer decode misses without sending a network request |
 | `definition.outstanding` | Configured capacities by endpoint |
 | `definition.outstanding.initiator_id_tables` | Ordering-key limits for multi-burst initiators where recorded |
 | `definition.target_id_bits` | Effective target ID widths for multi-burst or target-monitor profiles |
@@ -109,7 +110,8 @@ These names are relative to `definition.contract`.
 | Field | Rules |
 | --- | --- |
 | `profile`, `routing`, `progress`, `capacity` | Exchange profile, route selection, progress and shared capacity |
-| `connectivity`, `transport_address`, `address_transform`, `start_address` | Admission, restored addresses, target local address and burst start address |
+| `connectivity` | Admission and miss responses. When `local_decode_misses` is present, the miss rule names the local path and `target_fallback` describes any target path. A named default takes precedence over implicit target selection |
+| `transport_address`, `address_transform`, `start_address` | Restored addresses, target local address and burst start address |
 | `burst_admission`, `attributes`, `omitted_attributes`, `target_attributes` | Burst limits and endpoint attribute handling |
 | `unmapped`, `target_response`, `read_error`, `write_error`, `write_last_mismatch` | Error handling in the exchange |
 | `write_data_unstrobed_bytes`, `user_flags`, `data_user`, `response_user` | Inactive byte values and user sidebands |
@@ -133,6 +135,10 @@ These names are relative to `definition.contract`.
 Use `axi_initiator_failure_responses` for the code at an AXI port. Shared rules
 can describe a decode failure as DECERR inside the network even when every
 AXI port returns SLVERR. A log that records the class uses the internal encoding.
+
+Initiators with a bandwidth shaper or scheduler use a target response path.
+See [decode misses](address-map.md#decode-misses) for the conditions and target
+selection rules.
 
 An output policy records `set_by` as `default` or `output`. Per-output wait
 bounds require the consumer and endpoint duties in

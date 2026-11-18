@@ -362,6 +362,42 @@ nocloom_verif_case(NAME verif_axi4_write_miss_answer LAYER rtl TIER focused TIME
   CONTRACTS AXI.ERR.UNMAPPED_DECERR
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/axi4_write_miss_answer.py
     --cli $<TARGET_FILE:nocloom_cli> --negative)
+foreach(protocol IN ITEMS axi4 axi3 axi4_lite apb4 ahb_lite wishbone tl_ul)
+  nocloom_verif_case(NAME verif_source_decode_miss_${protocol} LAYER rtl TIER focused
+    TIMEOUT 60 FEATURES errors MEMORY_MB 1024
+    CONTRACTS FABRIC.ERR.DECODE_MISS
+    COMMAND ${NLV_RUN} --case ${NLV_CASES}/source_decode_miss.py
+      --param protocol=${protocol} --cli $<TARGET_FILE:nocloom_cli> --negative)
+  set_property(TEST verif_source_decode_miss_${protocol} APPEND PROPERTY LABELS ci)
+endforeach()
+foreach(mode IN ITEMS clocked uniform)
+  nocloom_verif_case(NAME verif_source_decode_miss_${mode} LAYER rtl TIER focused
+    TIMEOUT 60 FEATURES errors MEMORY_MB 1024
+    CONTRACTS FABRIC.ERR.DECODE_MISS
+    COMMAND ${NLV_RUN} --case ${NLV_CASES}/source_decode_miss.py
+      --param ${mode}=1 --cli $<TARGET_FILE:nocloom_cli> --negative)
+  set_property(TEST verif_source_decode_miss_${mode} APPEND PROPERTY LABELS ci)
+endforeach()
+foreach(protocol IN ITEMS axi4 axi3 axi4_lite apb4 logged axi4_folded axi4_compact)
+  nocloom_verif_case(NAME verif_initiator_error_responses_${protocol} LAYER negative TIER focused
+    TIMEOUT 60 FEATURES errors MEMORY_MB 1024
+    CONTRACTS FABRIC.ERR.DECODE_MISS
+    COMMAND ${NLV_RUN} --case ${NLV_CASES}/initiator_error_responses.py
+      --param protocol=${protocol} --cli $<TARGET_FILE:nocloom_cli> --negative)
+  set_property(TEST verif_initiator_error_responses_${protocol} APPEND PROPERTY LABELS ci)
+endforeach()
+set(source_miss_fallback ${Python3_EXECUTABLE} ${NLV_CASES}/source_miss_fallback.py
+  --cli $<TARGET_FILE:nocloom_cli>)
+nocloom_verif_case(NAME verif_source_miss_fallback_paths LAYER unit TIER quick
+  TIMEOUT 15 FEATURES errors MEMORY_MB 256 CONTRACTS FABRIC.ERR.DECODE_MISS
+  COMMAND ${source_miss_fallback} --case paths)
+set_property(TEST verif_source_miss_fallback_paths APPEND PROPERTY LABELS edit)
+foreach(rate IN ITEMS zero nonzero)
+  nocloom_verif_case(NAME verif_source_miss_rate_${rate} LAYER rtl TIER focused
+    TIMEOUT 45 FEATURES apb qos MEMORY_MB 1024 CONTRACTS QOS.SHAPER.DECODE_MISS
+    COMMAND ${source_miss_fallback} --case ${rate})
+  set_property(TEST verif_source_miss_rate_${rate} APPEND PROPERTY LABELS edit)
+endforeach()
 # Target IDs follow the map; requests of one ID wait, those of different IDs overtake.
 nocloom_verif_case(NAME verif_target_id_rule LAYER rtl TIER focused TIMEOUT 600
   FEATURES axi4 outstanding MEMORY_MB 2048
@@ -1390,12 +1426,3 @@ string(CONCAT NOCLOOM_RELEASE_PATTERN "^verif_("
   "width_stress_.*1024(_negative)?|subpage_(graph|uniform|widths|packets|fixed)_negative|"
   "target_timeouts.*|ahb_outlet_(512|1024)_negative|ahb_wide_graph_negative|"
   "tilelink_uh_target_(interleave|miss)_w.*)$")
-
-foreach(protocol IN ITEMS axi4 axi3 axi4_lite apb4 logged axi4_folded axi4_compact)
-  nocloom_verif_case(NAME verif_initiator_error_responses_${protocol} LAYER negative TIER focused
-    TIMEOUT 60 FEATURES errors MEMORY_MB 1024
-    CONTRACTS FABRIC.ERR.DECODE_MISS
-    COMMAND ${NLV_RUN} --case ${NLV_CASES}/initiator_error_responses.py
-      --param protocol=${protocol} --cli $<TARGET_FILE:nocloom_cli> --negative)
-  set_property(TEST verif_initiator_error_responses_${protocol} APPEND PROPERTY LABELS ci)
-endforeach()

@@ -2155,23 +2155,28 @@ void add_descriptor(std::vector<std::string> &words, const std::string &stem, bo
 }
 // A source engine's words besides its descriptor. An APB face holds the transfer: the engine keeps
 // its progress and no payload.
-void add_source_progress(Names &words, bool read, bool apb, bool lite, bool tracked) {
+void add_source_progress(Names &words, const Imported &ep, const SourcePlan &sp, bool read) {
   auto &[fields, controls] = words;
-  if (apb) {
+  if (sp.apb) {
     controls =
         read ? Names::second_type{"rr.state"} : Names::second_type{"wr.state", "wr.beat_full"};
   } else if (!read) {
     fields.push_back("wr.beat_addr");
     controls = {"wr.state", "wr.remaining", "wr.poisoned"};
     // A Lite engine's beat buffer; a full AXI4 engine passes W beats through.
-    if (lite) {
+    if (sp.protocol == Protocol::Axi4Lite) {
       fields.insert(fields.end(), {"wr.beat_data", "wr.beat_be"});
       controls.push_back("wr.beat_full");
     }
-  } else if (tracked)
+  } else if (sp.engine_slots > 1)
     controls = {"rr.state", "rr.beat", "rr.tag", "rr.local_burst", "rr.offered"};
   else
     controls = {"rr.state", "rr.remaining"};
+  const auto *miss = read ? "rr.miss_response" : "wr.miss_response";
+  if (ep.states.contains(miss))
+    controls.push_back(miss);
+  if (read && ep.states.contains("rr.miss_tail"))
+    controls.push_back("rr.miss_tail");
 }
 // The ID and source words of a stem, where the network carries them.
 void add_id_source(std::vector<std::string> &words, const std::string &stem, unsigned id_bits,
@@ -3379,7 +3384,7 @@ private:
       if (!sp.apb)
         add_descriptor(fields, dir + ".desc.", id, plan.burst_user_bits, mapped,
                        plan.burst_audit_bits != 0);
-      add_source_progress(words, read, sp.apb.has_value(), lite, outstanding > 1);
+      add_source_progress(words, side.ep, sp, read);
       plane_words(side.ep.states, dir, words);
       if (read)
         wishbone_words(side.ep, words);

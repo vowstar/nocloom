@@ -865,6 +865,16 @@ private:
         definition["default_targets"][s.name] = *s.default_target;
         contract()["connectivity"]["named_default_target"] = "the_listed_sources_send_misses_to_it";
       }
+    for (unsigned si = 0; si < p.sources.size(); ++si)
+      if (local_decode_miss(p, si))
+        definition["local_decode_misses"].push_back(p.sources[si].name);
+    if (definition.contains("local_decode_misses")) {
+      auto &rules = contract()["connectivity"];
+      auto &miss = rules["unconnected_pair_or_address_outside_routing_windows"];
+      if (any(p.route_index.misses, [](const auto &route) { return route.has_value(); }))
+        rules["target_fallback"] = miss;
+      miss = "DECERR_at_the_initiators_listed_in_local_decode_misses_without_a_network_request";
+    }
     if (any(p.targets, [](const auto &t) {
           return any(t.mappings, [](const MappingPlan &m) {
             return m.window.size % 4096 || m.routes != std::vector{m.window};
@@ -1838,7 +1848,8 @@ private:
   void clock_gates(Json &network, Json &semantics) const {
     for (auto it = h.bindings.lower_bound("gate/");
          it != h.bindings.end() && it->first.starts_with("gate/"); ++it) {
-      if (!it->first.ends_with(".clock"))
+      if (!it->first.ends_with(".clock") ||
+          it->second.index >= h.ir.emitted.value_or(h.ir.values.size()))
         continue;
       const auto stem = it->first.substr(0, it->first.size() - 6), object = stem.substr(5);
       const auto owner = gate_owner(object);

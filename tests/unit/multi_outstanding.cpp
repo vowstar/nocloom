@@ -825,9 +825,11 @@ TEST_CASE("The Weft tag exists only with several bursts in flight", "[multi-outs
   auto crossed = [](unsigned global, std::map<std::string, unsigned> own) {
     auto d = queued(false);
     d.transport->max_outstanding = global;
-    for (auto &i : d.initiators)
+    for (auto &i : d.initiators) {
+      i.default_target = d.targets.front().name;
       if (own.contains(i.name))
         i.max_outstanding = own.at(i.name);
+    }
     d.clock_domains.push_back({"far", "clk_far", "reset_n", "test"});
     for (auto &t : d.targets)
       t.clock_domain = "far";

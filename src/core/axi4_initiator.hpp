@@ -131,13 +131,14 @@ struct Axi4InitiatorProfile {
   // per direction (with several, while a slot is free); with one burst the next starts in the
   // cycle the previous burst's B or last R beat leaves.
   bool port_pipes = false;
-  // Optional source admission windows. A miss completes locally with DECERR
-  // (SLVERR with slverr_only), or, with
-  // miss_window, leaves as an error request at that window (the default target's): its address
+  // Optional source admission windows. With local_decode_miss an address miss returns DECERR
+  // (SLVERR with slverr_only). With miss_window it leaves as an error request at that window.
+  // The address
   // moves into the window, a write sends one fragment after its last W beat, and the target
   // answers DECERR without access.
   std::optional<std::vector<AddressWindow>> admitted_windows = std::nullopt;
   std::optional<AddressWindow> miss_window = std::nullopt;
+  bool local_decode_miss = false;
   // An error logger records a miss's address: it keeps these bits of its own, the rest of base.
   struct MissKept {
     std::uint64_t base = 0, bits = 0;

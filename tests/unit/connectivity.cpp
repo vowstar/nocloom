@@ -294,6 +294,8 @@ TEST_CASE("The generated crossbar equals an explicit one-switch graph", "[connec
 
 TEST_CASE("Unconnected and unmapped accesses answer at the default target", "[connectivity]") {
   auto d = crossbar(2, 2);
+  for (auto &source : d.initiators)
+    source.max_outstanding = 2;
   d.connectivity = pairs({{"s0", "t0"}, {"s1", "t0"}, {"s1", "t1"}});
   const auto artifacts = generate(d);
   REQUIRE(artifacts);
@@ -326,6 +328,7 @@ TEST_CASE("The default target owns the lowest based of the smallest mappings", "
   // t1 and t2 hold the smallest mappings; t2's is lower, so t2 answers misses
   // although t1 comes first by name. A larger mapping never wins.
   auto d = crossbar(1, 3);
+  d.initiators[0].max_outstanding = 2;
   d.targets[0].mappings = {{0x40000, 0x20000, 0}};
   d.targets[1].mappings = {{0x20000, 0x10000, 0}};
   d.targets[2].mappings = {{0x10000, 0x10000, 0}};
@@ -341,6 +344,7 @@ TEST_CASE("The default target owns the lowest based of the smallest mappings", "
 TEST_CASE("A block above a source's address space answers none of its misses", "[connectivity]") {
   // t0's 4 KiB block is the smallest overall but lies above s0, whose misses go to t1.
   auto d = crossbar(2, 2);
+  d.transport->max_outstanding = 2;
   d.address_width = 32;
   d.initiators[0].address_width = 16;
   d.targets[0].mappings = {{0x8000, 0x4000, 0}, {0x10000, 0x1000, 0}};
@@ -355,6 +359,7 @@ TEST_CASE("Equal default target blocks use address order independently of access
           "[connectivity]") {
   // The lowest of three equal blocks answers misses, regardless of side effects or limits.
   auto d = crossbar(1, 3);
+  d.initiators[0].max_outstanding = 2;
   for (unsigned j = 0; j < 3; ++j)
     d.targets[j].mappings = {{0x2000ULL * j, 0x2000, 0}};
   d.targets[0].read_side_effects = true;

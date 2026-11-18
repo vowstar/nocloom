@@ -148,26 +148,25 @@ def named_default(target):
     return cfg
 
 
-def default_check(target, same):
-    """The map lists the named default target. The Verilog never equals the band matrix's: a named
-    target adds an aperture to the target IDs where it answers misses (docs/transactions.md#target-identifiers)."""
+def default_check(target):
+    """Naming a target adds a network path for misses from s0."""
     def check(mapping, out, peers):
         definition = mapping['definition']
         assert definition['default_targets'] == {'s0': target}, definition.get('default_targets')
         assert 'named_default_target' in definition['contract']['connectivity']
+        assert 's0' not in definition['local_decode_misses']
         band = peers['matrix_band']
         mine, theirs = [sorted(d.glob('*.v')) for d in (out, band)]
-        equal = [a.read_bytes() for a in mine] == [b.read_bytes() for b in theirs]
-        assert equal == same, f"Verilog equal to the implicit default: {equal}"
+        assert [a.read_bytes() for a in mine] != [b.read_bytes() for b in theirs]
     return check
 
 
-# s0 reaches t0 and t1 on the band matrix; t0 (lowest base, equal sizes) is its implicit default.
+# s0 reaches t0 and t1 on the band matrix and answers its misses locally.
 CASES += [
-    dict(name="default_target_implicit", config=named_default('t0'), expect="accept",
-         commands=("generate",), check=default_check('t0', True)),
-    dict(name="default_target_other", config=named_default('t1'), expect="accept",
-         commands=("generate",), check=default_check('t1', False)),
+    dict(name="default_target_explicit_t0", config=named_default('t0'), expect="accept",
+         commands=("generate",), check=default_check('t0')),
+    dict(name="default_target_explicit_t1", config=named_default('t1'), expect="accept",
+         commands=("generate",), check=default_check('t1')),
     dict(name="default_target_unreached", config=named_default('t2'), expect="reject",
          code="NCL_CONNECTIVITY_REFERENCE"),
     dict(name="default_target_unknown", config=named_default('t9'), expect="reject",

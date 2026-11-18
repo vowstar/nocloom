@@ -147,6 +147,9 @@ std::string default_target(const Json &d, const std::string &source,
   if (const auto named = lookup<std::string>(d.value("default_targets", Json{}), source, "");
       !named.empty())
     return named;
+  if (const auto local = d.find("local_decode_misses");
+      local != d.end() && std::find(local->begin(), local->end(), source) != local->end())
+    return "";
   std::map<std::string, unsigned> target_indices;
   for (const auto &m : mappings)
     target_indices.emplace(m.target, 0);

@@ -14,6 +14,7 @@ inline std::string flow_id(const std::string &source, const std::string &operati
 }
 bool reaches(const NetworkPlan &plan, const std::string &source, const std::string &target);
 std::optional<unsigned> default_target(const NetworkPlan &plan, const std::string &source);
+bool local_decode_miss(const NetworkPlan &plan, unsigned source);
 // Reached mappings with global bases and target indices in name order.
 std::optional<DecodeEntry> select_default_mapping(std::span<const DecodeEntry> mappings,
                                                   unsigned address_bits);

@@ -64,9 +64,8 @@ void apb_storage(const PublicArtifacts &a, const std::string &target) {
   // buffer.
   CHECK((*resource)["payload_bits"] == 19);
   CHECK(a.storage_bits(id, "payload") == 19);
-  // Phase and owner, the arrival order (a 3-bit packet count and its direction) and, at a default
-  // target, the decode miss head seen, a miss being answered and its response having left.
-  CHECK(a.storage_bits(id, "control") == 10);
+  // Phase and owner, and the arrival order (a 3-bit packet count and its direction).
+  CHECK(a.storage_bits(id, "control") == 7);
   for (const auto *signal : {"psel", "penable", "pready", "pslverr", "paddr", "pwrite", "pwdata",
                              "pstrb", "pprot", "prdata"})
     CHECK(a.has_port("nl_t_" + target + "_" + signal));

@@ -124,6 +124,29 @@ static std::optional<std::pair<unsigned, std::size_t>> derive_implicit_miss(cons
   return best ? std::optional{std::pair<unsigned, std::size_t>{best->target, best->mapping}}
               : std::nullopt;
 }
+bool local_decode_miss(const NetworkPlan &plan, unsigned index) {
+  return plan.route_index.implicit_misses[index].has_value() &&
+         !plan.route_index.misses[index].has_value();
+}
+
+// A whole burst can complete at its source when the admission window cannot hold a hole.
+// A local response uses the issue stage, and the error logger observes packets at the target.
+static bool can_answer_miss_locally(const NetworkPlan &plan, unsigned index) {
+  const auto &source = plan.sources[index];
+  // Shaped requests use the network packet admission and completion events for accounting.
+  if (source.default_target || source.engine_slots != 1 || source.qos.shaper ||
+      plan.observes_miss_address || !plan.address_selectors.empty())
+    return false;
+  return std::ranges::none_of(plan.targets, [&](const TargetPlan &target) {
+    return std::ranges::any_of(target.mappings, [&](const MappingPlan &mapping) {
+      return reaching_flows(plan, source.name, target.name, mapping.flow) &&
+             std::ranges::any_of(mapping.routes, [](const AddressWindow &window) {
+               return window.base % 4096 || window.size % 4096;
+             });
+    });
+  });
+}
+
 // A miss uses the first routed block of its flow in condition and address order.
 static AddressWindow miss_window(const TargetPlan &target, unsigned flow) {
   auto mapped = target.mappings | std::views::filter([&](const MappingPlan &m) {
@@ -139,15 +162,16 @@ static std::optional<MissRoute> derive_miss_route(const NetworkPlan &plan, unsig
   std::optional<unsigned> target;
   if (source.default_target)
     target = plan.target_index(*source.default_target);
-  else if (const auto at = plan.route_index.implicit_misses[index])
+  else if (const auto &at = plan.route_index.implicit_misses[index];
+           at && !can_answer_miss_locally(plan, index))
     target = at->first;
   if (!target)
     return std::nullopt;
   const auto &tp = plan.targets[*target];
-  const auto implicit =
-      source.default_target ? std::nullopt : plan.route_index.implicit_misses[index];
-  const auto flow = implicit ? tp.mappings[implicit->second].flow
-                             : smallest_reached(plan, source.name, *target)->flow;
+  const auto &implicit = plan.route_index.implicit_misses[index];
+  const auto flow = !source.default_target && implicit
+                        ? tp.mappings[implicit->second].flow
+                        : smallest_reached(plan, source.name, *target)->flow;
   const auto flows = reaching_flows(plan, source.name, tp.name, flow);
   return MissRoute{*target, miss_window(tp, flow), flow,
                    static_cast<unsigned>(std::countr_zero(flows))};
@@ -611,17 +635,10 @@ void build_route_index(NetworkPlan &plan) {
   for (unsigned ti = 0; ti < plan.targets.size(); ++ti)
     index.target_id_layouts.push_back(derive_target_id_layout(plan, ti));
 }
-// The target that answers a source's decode misses: the one it names, else the owner of its
-// implicit_miss mapping; none when it reaches none.
+// The target that answers a source's decode misses, if they travel to a target.
 std::optional<unsigned> default_target(const NetworkPlan &plan, const std::string &source) {
-  const auto index = source_index(plan, source);
-  if (!index)
-    return std::nullopt;
-  if (plan.sources[*index].default_target)
-    return plan.target_index(*plan.sources[*index].default_target);
-  if (const auto at = plan.route_index.implicit_misses[*index])
-    return at->first;
-  return std::nullopt;
+  const auto route = miss_route(plan, source);
+  return route ? std::optional{route->target} : std::nullopt;
 }
 std::optional<MissRoute> miss_route(const NetworkPlan &plan, const std::string &source) {
   const auto index = source_index(plan, source);
@@ -985,8 +1002,7 @@ static void packet_windows(const NetworkPlan &plan, unsigned index,
                            Axi4PacketizerProfile &profile) {
   const auto &source = plan.sources[index];
   const auto source_wrap = source_wrap_limit(source), largest = wrap_container(source);
-  const auto missed = *miss_route(plan, source.name);
-  const auto fallback = missed.target;
+  const auto &missed = plan.route_index.misses[index];
   const auto &implicit = plan.route_index.implicit_misses[index];
   bool across = false;
   Axi4PacketWindow miss{};
@@ -1049,9 +1065,9 @@ static void packet_windows(const NetworkPlan &plan, unsigned index,
       if (held < x.window.size)
         add(x.window, 0);
       profile.serialize = profile.serialize || x.shared;
-      bool is_miss_mapping =
-          pair.target == fallback && (!miss.window.size || x.window.size < miss.window.size);
-      if (!source.default_target && implicit)
+      bool is_miss_mapping = missed && pair.target == missed->target &&
+                             (!miss.window.size || x.window.size < miss.window.size);
+      if (missed && !source.default_target && implicit)
         is_miss_mapping = implicit->first == pair.target && implicit->second == m;
       if (is_miss_mapping)
         miss = (holds ? outer : profile.windows).back();
@@ -1064,22 +1080,25 @@ static void packet_windows(const NetworkPlan &plan, unsigned index,
   std::ranges::copy(outer, std::back_inserter(profile.windows));
   // A decode miss is cut as at the implicit_miss mapping or, when the source names its default
   // target, by the limits of a window over the whole space, and answered by the default target.
-  if (!miss.window.size)
-    miss.group = plan.flow_group(fallback, missed.target_path);
-  miss.miss = missed.window;
-  miss.exact = false;
-  miss.refused = false;
-  miss.align_wrap = false;
-  miss.ordered_wrap = false;
-  miss.read_granule = 0;
-  if (source.default_target)
-    std::tie(miss.max_bytes, miss.boundary_bytes) = named_miss_limits(plan, index, fallback);
-  // The rest of a cut page is a decode miss.
-  for (const auto &[page, owner] : pages) {
-    auto &w = profile.windows.emplace_back(miss);
-    w.window = {page * 4096, 4096};
-    w.boundary_bytes = std::min<std::uint64_t>(w.boundary_bytes, 4096);
-    profile.serialize = profile.serialize || miss.group != owner;
+  if (missed) {
+    if (!miss.window.size)
+      miss.group = plan.flow_group(missed->target, missed->target_path);
+    miss.miss = missed->window;
+    miss.exact = false;
+    miss.refused = false;
+    miss.align_wrap = false;
+    miss.ordered_wrap = false;
+    miss.read_granule = 0;
+    if (source.default_target)
+      std::tie(miss.max_bytes, miss.boundary_bytes) =
+          named_miss_limits(plan, index, missed->target);
+    // The rest of a cut page is a decode miss.
+    for (const auto &[page, owner] : pages) {
+      auto &w = profile.windows.emplace_back(miss);
+      w.window = {page * 4096, 4096};
+      w.boundary_bytes = std::min<std::uint64_t>(w.boundary_bytes, 4096);
+      profile.serialize = profile.serialize || miss.group != owner;
+    }
   }
   // Cutting only at cut page edges keeps every WRAP container within its window's boundary.
   if (!profile.decompose_wrap_bursts && across) {
@@ -1103,11 +1122,11 @@ Axi4PacketizerProfile packet_profile(const NetworkPlan &plan, unsigned index) {
   profile.exclusive = plan.exclusive;
   profile.max_outstanding = source.engine_slots;
   profile.tag_bits = profile.max_outstanding > 1 ? plan.burst_tag_bits : 0;
-  const auto missed = *miss_route(plan, source.name);
   // The source moves an admission miss into its miss window (initiator_profile) and hands its own
   // addresses over (address_hints).
-  if (source.protocol != Protocol::Axi4Lite)
-    profile.source_miss = missed.window;
+  if (const auto &missed = plan.route_index.misses[index];
+      missed && source.protocol != Protocol::Axi4Lite)
+    profile.source_miss = missed->window;
   if (plan.observes_miss_address)
     profile.miss_kept_bits =
         kept_of_miss(plan, index).bits & ((std::uint64_t{1} << source.address_bits) - 1);
@@ -1230,7 +1249,9 @@ Axi4InitiatorProfile initiator_profile(const NetworkPlan &plan, unsigned index) 
   profile.address_bits = sp.address_bits;
   profile.transport_address_bits = plan.burst_address_bits;
   profile.start_address = true;
-  profile.slverr_only = !plan.failure_classes || sp.slverr_only;
+  profile.local_decode_miss = local_decode_miss(plan, index);
+  profile.slverr_only = !plan.failure_classes || sp.slverr_only ||
+                        (profile.local_decode_miss && sp.external_protocol == Protocol::Wishbone);
   profile.lite = sp.protocol == Protocol::Axi4Lite;
   profile.apb = sp.apb;
   profile.apb_data_bits = sp.apb_bits;

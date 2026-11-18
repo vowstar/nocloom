@@ -40,7 +40,9 @@ def definition(sources, data_target, pipes):
             "reset_ports: [{name: reset_n}]", "test_ports: [{name: test}]",
             "clock_domains: [{name: main, clock_port: clk, reset_port: reset_n, test_port: test}]",
             "initiators:"]
-    text += [f"  - {{name: {n}, clock_domain: main, protocol: apb4, data_width: 32}}" for n in names]
+    for name in names:
+        default = ", default_target: service" if name in source_names else ""
+        text.append(f"  - {{name: {name}, clock_domain: main, protocol: apb4, data_width: 32{default}}}")
     text += ["targets:",
              "  - {name: service, clock_domain: main, protocol: apb4, data_width: 32, "
              "address_width: 20, attributes: amba, mappings: [{base: '0x100000', size: '0x100000'}]}"]

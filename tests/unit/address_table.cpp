@@ -201,7 +201,7 @@ TEST_CASE("Address tables report full AXI exclusive modes", "[address-table]") {
       const auto json = nlohmann::json::parse(named(table, ".address_table.json").text);
       CHECK(json["initiators"][0]["windows"][0]["exclusive"] == expected);
       CHECK(named(table, ".address_table.csv")
-                .text.find(std::string(",read_write,") + expected + ",true\n") !=
+                .text.find(std::string(",read_write,") + expected + ",false\n") !=
             std::string::npos);
     }
 }
@@ -228,17 +228,23 @@ TEST_CASE("Address table defaults use reachable aligned blocks", "[address-table
     const auto json = nlohmann::json::parse(named(table, ".address_table.json").text);
     INFO(narrow);
     for (unsigned s = 0; s < 2; ++s) {
-      const auto expected = narrow && s == 1 ? "t1" : "t0";
+      const auto expected = narrow ? s == 1 ? "t1" : "t0" : "";
       CHECK(json["initiators"][s]["default_target"] == expected);
       const auto fallback = detail::default_target(plan.value(), "s" + std::to_string(s));
-      REQUIRE(fallback);
-      CHECK(plan.value().targets[*fallback].name == expected);
+      if (narrow) {
+        REQUIRE(fallback);
+        CHECK(plan.value().targets[*fallback].name == expected);
+      } else {
+        CHECK_FALSE(fallback);
+        CHECK(detail::local_decode_miss(plan.value(), s));
+      }
       for (const auto &window : json["initiators"][s]["windows"])
         CHECK(window["default_target"] == (window["target"] == expected));
     }
     const auto &csv = named(table, ".address_table.csv").text;
     CHECK(csv.find(std::string("s0,0x00000000,") + (narrow ? "0x00000800" : "0x00003000") +
-                   ",t0,0x00000000,read_write,none,true\n") != std::string::npos);
+                   ",t0,0x00000000,read_write,none," + (narrow ? "true" : "false") + "\n") !=
+          std::string::npos);
   }
 }
 

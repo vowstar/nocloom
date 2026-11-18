@@ -17,6 +17,10 @@ CONTRACTS = {
              "zero read data, and makes no target access. AXI returns DECERR by default and "
              "SLVERR with slverr_only. APB, AHB, Wishbone and TileLink report their protocol errors",
         source="docs/address-map.md#decode-misses"),
+    "QOS.SHAPER.DECODE_MISS": dict(
+        text="A decode miss uses the source's bandwidth budget at request admission for a shaper "
+             "or at response completion for a bandwidth scheduler",
+        source="docs/scheduling.md#bandwidth-shapers"),
     "TL.ACCESS": dict(text="TileLink messages preserve source, size, masks, errors and channel ownership",
                       source="docs/tilelink.md; TileLink 1.8.1 sections 4.4, 4.5, 6.4 and 7.2"),
     "AXI.ROUTE.LOCAL_OFFSET": dict(

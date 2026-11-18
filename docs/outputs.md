@@ -112,7 +112,8 @@ their stated meaning.
 
 JSON records format, generator, module, global width and initiators in name
 order. Each initiator lists its default target and reached windows in base
-order. CSV has one row per reached routing window. It excludes disconnected
+order. The default target name is empty when the initiator answers its misses
+locally. CSV has one row per reached routing window. It excludes disconnected
 targets and unmapped intervals.
 
 Contiguous pieces of one mapping join into one window. Aliases keep separate

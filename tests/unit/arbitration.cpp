@@ -408,7 +408,10 @@ TEST_CASE("Fixed levels compose with registered links and bursts in flight", "[f
   d.topology->response = {{{"a"}, {"b"}}, {{"b", "a"}}, {{"t0", "b"}}, {{"s0", "a"}, {"s1", "a"}}};
   d.initiators[0].qos.levels = {7, 1};
   d.initiators[1].qos.levels = {1, 7};
-  REQUIRE(generate(d));
+  const auto generated = generate(d);
+  for (const auto &diagnostic : generated.diagnostics())
+    UNSCOPED_INFO(diagnostic.code << " " << diagnostic.message);
+  REQUIRE(generated);
   d.transport = TransportOptions{.max_outstanding = 4};
   d.targets[0].max_outstanding = 4;
   REQUIRE(generate(d));

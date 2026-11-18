@@ -68,19 +68,28 @@ Keep address inputs stable during affected traffic. See
 
 ## Decode misses
 
-A miss reaches no data target. Each initiator can set `default_target` to a
-connected target's name. That target's response path completes the initiator's
-decode misses without a target bus access.
+A decode miss makes no target bus access. Set `default_target` to send misses
+to a connected target's response path.
 
-Without an explicit selection, NocLoom selects the target of the smallest
+Local completion requires one outstanding transaction per direction and no
+`default_target`. All reachable routing windows must start and end on 4 KiB
+boundaries. Legal AXI bursts stay within one such page.
+Networks with error logging or address selectors use a target response path.
+Initiators with multiple outstanding transactions and TL-UH also use that path.
+
+Initiators with `qos.shaper` use a target response path. The shaper charges
+the miss at request admission, or the bandwidth scheduler charges it at
+completion when `qos.scheduler` is set.
+
+If a miss needs a target and none is named, NocLoom selects the target of the smallest
 reached [aligned block](#overlap-and-packet-boundaries). A block counts only
 when it starts inside the initiator's address space and belongs to a mapping of
 a target flow that the initiator reaches. Equal block sizes select the lowest
 global base, then the target name in lexical order. Target access attributes and
 burst boundaries do not affect this choice.
 
-This choice affects response timing and timeout behavior. A default target that
-timed out with `completion: false` does not answer later misses. See
+Local misses use no network links and complete independently of target state.
+A target that timed out with `completion: false` does not answer later misses. See
 [target timeouts](timeout-and-progress.md#target-timeouts).
 
 ## Error responses
@@ -163,11 +172,11 @@ internal base, and use the first routing window of the first mapping.
 Malformed burst shapes return SLVERR before decode. Width-conversion refusal
 follows decode, so an unmapped request still returns a decode error.
 
-An automatic default uses the smallest reached aligned block below the initiator
-address limit. A named default instead derives miss cuts from the whole address
-space. Its boundary is the smaller of protocol boundary and natural alignment of
-unconditional reached mapping bases. Zero bases and bases at another mapping's
-end do not narrow it. Conditional mappings do not narrow it.
+An automatic default uses the smallest reached aligned block below the
+initiator's address limit. A named default derives miss cuts from the whole
+address space. Its boundary is the smaller of the protocol boundary and the
+natural alignment of unconditional reached mapping bases. Zero bases and bases
+at another mapping's end do not narrow it. Conditional mappings do not narrow it.
 
 The protocol boundary is 4 KiB for AXI, 1 KiB for AHB, or the local address
 space if smaller. APB and AXI4-Lite use the local address space.

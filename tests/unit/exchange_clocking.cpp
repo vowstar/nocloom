@@ -1082,6 +1082,7 @@ TEST_CASE("Endpoint path components preserve names in gate clocks and maps",
            {"protocol", "transport", "protocol_edge", "transport_edge", "x_protocol", "x_transport",
             "x_protocol_edge", "x_transport_edge"}) {
         auto d = named_endpoint(name, target, graph);
+        d.initiators[0].default_target = d.targets[0].name;
         const auto plain = lowered(d);
         const auto owner = std::string(target ? "target/" : "source/") + name;
         const auto stem = "gate/" + owner;
