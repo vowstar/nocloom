@@ -189,9 +189,11 @@ wait, ordering and two-cycle ERROR rules on this page. Targets require
 | `exclusive` | `false` only | `false` |
 | `hauser_width`, `hwuser_width`, `hruser_width`, `hbuser_width` | 0 only | 0 |
 
+The exclusive transfer and user fields follow AHB signals. Their accepted
+values omit HEXCL, HEXOKAY and the user ports.
+
 Other protocols reject the object. Unsupported values and per-bit attribute
 maps produce `NCL_AHB5_PROPERTIES`.
-HEXCL, HEXOKAY and user ports are absent.
 HMASTLOCK returns ERROR without target access. Multi-manager arbitration,
 HSPLIT and full RETRY/SPLIT are unsupported.
 
@@ -235,9 +237,8 @@ With AxPROT `000`, it gives HPROT `0001001`. Four-bit targets map
 AxCACHE[1:0] directly to HPROT[3:2], giving `1101` for that request.
 Reads use ARCACHE and ARPROT. Writes use AWCACHE and AWPROT.
 
-The map records the endpoint protocol as `ahb5`. Under
-`definition.ahb5_properties`, `initiators` and `targets` list each endpoint's
-`hprot_width`, `hnonsec` and `hmaster_width` by name.
+The map records protocol `ahb5` and lists `hprot_width`, `hnonsec` and
+`hmaster_width` for each endpoint in `definition.ahb5_properties`.
 IP-XACT uses the AMBA3 AHBLite subset and maps four-bit HPROT on the bus.
 Seven-bit HPROT, HNONSEC and HMASTER are plain model ports outside that mapping.
 

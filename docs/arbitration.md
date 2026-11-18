@@ -22,6 +22,14 @@ gaps within a segment do not release the output.
 | `level_round_robin` | Keep a separate round-robin position per level |
 | `fixed_priority` | Use the declared candidate order |
 
+| Policy | State per output with `n` candidates | Use |
+| --- | --- | --- |
+| `round_robin` | One position of `ceil(log2(n))` bits | Equal turns with one position |
+| `fifo` | One order bit per pair of candidates | Serve the oldest request |
+| `rotating_priority` | One counter of `ceil(log2(n))` bits | Change priority order after each packet independently of the winner |
+| `level_round_robin` | One position per scheduling level | Keep each level's turn |
+| `fixed_priority` | No policy state | Give a chosen requester first priority |
+
 A node can override its individual outputs with another explicit policy.
 
 The top-level `arbitration` object has an optional `policy`. The default is `round_robin`.

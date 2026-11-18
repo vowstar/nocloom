@@ -69,6 +69,9 @@ The bundle lists the top module, optional outputs, synthesis sources, simulation
 sources and library cell models separately. Its `version` field is the generator
 version.
 
+The synthesis and simulation source lists contain the same files. Bound
+library cell models are listed in `library_cell_models` only.
+
 ## Address table
 
 JSON and CSV derive per-initiator routing windows from the map. See the

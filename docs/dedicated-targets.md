@@ -76,6 +76,7 @@ WSTRB zero.
 | `single` | One repeated-address access per beat, one R per initiator beat or one combined B |
 
 AXI targets receive supported FIXED bursts directly and reject this option.
+Use `single` for a dedicated target that accepts repeated accesses at one address.
 
 ## Dedicated FIXED limits
 

@@ -48,6 +48,9 @@ select initiator AxQOS ports of 1, 2, 3 or 4 bits. Entry q is the level of a
 burst whose AWQOS or ARQOS is q. Entries must be nondecreasing integers from 0
 to 7. The initiator captures the level with the burst address.
 
+The port indexes the table directly, so each additional bit doubles the
+number of entries. Nondecreasing entries preserve priority across AxQOS values.
+
 A map cannot combine with fixed levels, a shaper or a scheduler on that
 initiator. Initiators without a map have no AxQOS input ports. The generated map
 file records scheduling configuration under

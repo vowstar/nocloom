@@ -16,6 +16,10 @@ inverted. Attribute names are `bufferable`, `modifiable`, `allocate`, `lookup`,
 
 ## User signals
 
+Each interface defines the meaning and position of its user bits. Declare the
+shared names in `transport.user_flags`, drive them in each initiator's
+`user_flags` and place them on each target with `user`.
+
 `transport.user_flags` declares named request bits. A driver selects an AMBA
 attribute, user port bit or constant, optionally inverted. AXI4, AXI3,
 AXI4-Lite and APB5 targets map flags into `user`.
@@ -36,6 +40,9 @@ mappings. Constants are 0 and 1. Prefix a driver with `~` to invert it.
 Bufferable is CACHE bit 0, modifiable bit 1, allocate read bit 2 or write bit 3,
 and lookup is CACHE bit 2 OR bit 3. Privileged, nonsecure and instruction are
 PROT bits 0, 1 and 2.
+
+The named attributes describe AXI AxCACHE and AxPROT and AHB HPROT.
+Use the per-bit table when the target changes signal positions or polarity.
 
 The AMBA preset drives read CACHE as bufferable, modifiable, allocate and lookup
 from low to high. Write CACHE uses bufferable, modifiable, lookup and allocate.
@@ -116,6 +123,8 @@ Widths above the PAUSER and PBUSER limits produce `NCL_APB5_USER_WIDTH`.
 
 `transport.data_user_bits_per_byte` sets the number of user bits per data byte,
 called `k`. It defaults to 0 and accepts 0 to 4. Zero carries no data user.
+Four bits per byte is half the data width, the recommended maximum for
+APB5 PWUSER and PRUSER.
 
 Each APB5 endpoint sets `data_user_width` to 0 or `k * data_width / 8`.
 Zero omits both PWUSER and PRUSER. A nonzero width requires nonzero `k`.

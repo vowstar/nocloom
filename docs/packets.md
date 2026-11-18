@@ -8,6 +8,9 @@ entry needs an AXI4 or AXI3 initiator and has `source`, `target`, and at least
 one of `max_bytes` or `boundary_bytes`. Values must be powers of two from the
 pair's alignment word through its default. A pair can appear only once.
 
+`max_bytes` caps each packet's length. `boundary_bytes` keeps it within an
+aligned address block. AXI packets also obey burst length and 4 KiB limits.
+
 The table gives each target's baseline limits. Field names in the table refer
 to that target.
 
@@ -128,6 +131,7 @@ zero. See [width conversion](width-conversion.md#width-transformation-details).
 ## Read side effects
 
 `read_side_effects` defaults to `false`. Set it to `true` on the target.
+Use it for devices where extra reads change state, such as a FIFO data register.
 
 The initiator then keeps eligible non-modifiable INCR accesses within their
 requested byte range. It decomposes each request into naturally aligned
