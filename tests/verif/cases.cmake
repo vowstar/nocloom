@@ -144,7 +144,7 @@ nocloom_verif_case(NAME verif_config LAYER config TIER quick TIMEOUT 600 FEATURE
     --tool public=$<TARGET_FILE:nocloom_verif_api_axi4_public>
     --case ${NLV_CASES}/config_dedicated.py --case ${NLV_CASES}/config_outlets.py
     --case ${NLV_CASES}/config_shorthand.py --case ${NLV_CASES}/config_modes.py
-    --case ${NLV_CASES}/config_routes.py
+    --case ${NLV_CASES}/config_routes.py --case ${NLV_CASES}/config_route_cycles.py
     --case ${NLV_CASES}/config_target_ids.py
     --tool timeout_public=$<TARGET_FILE:nocloom_verif_api_timeout_public>)
 # Every shipped example: artifact set, determinism and the AHB HRESP width;

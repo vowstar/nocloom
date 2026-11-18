@@ -23,12 +23,24 @@ Both commands take `--target verilog` and use it by default. They also accept
 Each flag enables the checks for that output. `generate` also writes the
 requested [output files](outputs.md).
 
+`validate` and `generate` accept two limits of the
+[route cycle report](network.md#route-cycle-report).
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--cycle-limit` | 4 | Cycles reported for each direction, 1 to 1024 |
+| `--contributor-limit` | 8 | Contributors listed for each wait. A contributor is a route. 0 lists all |
+
+A negative number, a fraction, a word or a value above 4294967295 is a command
+syntax error. A cycle limit of 0, or from 1025 to 4294967295, is rejected with
+`NCL_VALIDATION_OPTION` and exit code 1.
+
 `--version` reports the generator version.
 
 | Exit code | Meaning |
 | --- | --- |
 | 0 | Success, or equal diff inputs |
-| 1 | Invalid definition, unsupported generation or invalid comparison input |
+| 1 | Invalid definition or limit, unsupported generation or invalid comparison input |
 | 2 | Command syntax error |
 | 3 | An `NCL_IO_` code, for example a read or write failure, an unsafe output path or an output directory that is present |
 | 4 | Diff found changes |

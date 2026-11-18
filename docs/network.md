@@ -130,12 +130,13 @@ cycle. The graph determines which alternative paths are available.
 
 The report does not depend on the order of the declarations.
 
-Two limits bound the report. Both are members of `ValidationOptions` in C++.
+The CLI takes both limits in `validate` and `generate`. In C++ both are members
+of `ValidationOptions`.
 
-| Member | Default | Values |
-| --- | --- | --- |
-| `cycle_limit` | 4 | The cycles reported for each direction, 1 to 1024. 0 and values above 1024 are rejected with `NCL_VALIDATION_OPTION` |
-| `contributor_limit` | 8 | The contributors listed in each note. 0 lists all contributors |
+| CLI option | Member | Default | Values |
+| --- | --- | --- | --- |
+| `--cycle-limit` | `cycle_limit` | 4 | The cycles reported for each direction, 1 to 1024. 0 and values above 1024 are rejected with `NCL_VALIDATION_OPTION` |
+| `--contributor-limit` | `contributor_limit` | 8 | The contributors listed in each note. 0 lists all contributors |
 
 The report takes at most one extra cycle in report order per direction to check
 for truncation. If it finds one, the last diagnostic for that direction gets a

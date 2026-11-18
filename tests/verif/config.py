@@ -5,9 +5,13 @@ Each case file defines CASES, a list of entries:
   name      unique within the file
   text      the input (YAML text), or config: a dict written as JSON
   commands  the CLI commands to run, default ("validate", "generate")
+  args      more CLI arguments of every command
   expect    "accept" or "reject"
   code      a diagnostic code the rejection must name (stderr)
   field     the field path on the same diagnostic line
+  exit      the exit code of the rejection (any nonzero code when absent)
+  stderr    the exact lines of the rejection's stderr, without the source
+            location that starts a diagnostic line
   files     accepted generate: the number of artifacts (exactly the bundle's)
   check     accepted generate: a function of (mapping, out_dir, peers) that
             raises AssertionError when the artifacts break the case's
@@ -48,6 +52,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -91,7 +96,7 @@ def run_entry(cli, root, entry, outputs, second_cli=None, tools=None):
     source.write_text(entry["text"] if "text" in entry else json.dumps(entry["config"], indent=1) + "\n")
     row = dict(name=name, expect=entry["expect"], commands=[])
     for command in entry.get("commands", ("validate", "generate")):
-        argv = [cli, command, str(source)]
+        argv = [cli, command, str(source)] + list(entry.get("args", ()))
         out = work / "out"
         if command == "generate":
             argv += ["--out-dir", str(out)]
@@ -107,6 +112,13 @@ def run_entry(cli, root, entry, outputs, second_cli=None, tools=None):
             if entry.get("field") and not any(entry["code"] in line and f"[{entry['field']}]" in line
                                                for line in r.stderr.splitlines()):
                 return row, f"{command} did not name diagnostic field {entry['field']}: {r.stderr[-400:]}"
+            if "exit" in entry and r.returncode != entry["exit"]:
+                return row, f"{command} exit {r.returncode}, want {entry['exit']}"
+            if "stderr" in entry:
+                lines = [re.sub(r"^.*:\d+:\d+: (?=NCL_)", "", line)
+                         for line in r.stderr.splitlines()]
+                if lines != list(entry["stderr"]):
+                    return row, f"{command} stderr {lines}, want {list(entry['stderr'])}"
             if command == "generate" and out.exists():
                 return row, "rejected generate left an output directory"
             continue
@@ -135,14 +147,15 @@ def run_entry(cli, root, entry, outputs, second_cli=None, tools=None):
         # Same names and bytes from another working directory and output.
         other = work / "again"
         other.mkdir()
-        again = subprocess.run([cli, command, str(source.resolve()), "--out-dir", "elsewhere"],
-                               capture_output=True, text=True, timeout=entry.get("timeout", 120),
-                               cwd=other)
+        again = subprocess.run([cli, command, str(source.resolve()), "--out-dir", "elsewhere"]
+                               + list(entry.get("args", ())), capture_output=True, text=True,
+                               timeout=entry.get("timeout", 120), cwd=other)
         if again.returncode != 0 or digests(out) != digests(other / "elsewhere"):
             return row, "second generation differs"
         if second_cli:
             built = subprocess.run([second_cli, command, str(source), "--out-dir",
-                                    str(work / "other-compiler")], capture_output=True,
+                                    str(work / "other-compiler")] + list(entry.get("args", ())),
+                                   capture_output=True,
                                    text=True, timeout=entry.get("timeout", 120), cwd=work)
             if built.returncode != 0 or digests(out) != digests(work / "other-compiler"):
                 return row, "the CLI of the other compiler generates other bytes"
