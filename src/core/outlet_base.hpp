@@ -106,11 +106,6 @@ struct OutletBase {
     l.out("status", "timed_out", failed);
     return expiry;
   }
-  ValueId watchdog(ValueId pending, ValueId responding) {
-    const auto expiry = l.watchdog(failed, timeout, pending, responding);
-    l.out("status", "timed_out", failed);
-    return expiry;
-  }
   // Network exclusive monitor: an exclusive write without a matching
   // reservation is failing, so it reaches the target without strobes.
   ValueId watch(const Fields &w) {

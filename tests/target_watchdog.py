@@ -10,10 +10,11 @@ import sim_engine
 
 DRIVEN = {"t_pready", "t_ack", "t_stall", "t_hreadyout", "t_a_ready", "t_d_valid", "t_d_opcode",
           "t_d_size", "t_awready", "t_wready", "t_bvalid", "t_arready", "t_rvalid",
-          "t_rdata", "t_rlast"}
+          "t_rdata", "t_rlast", "t_bid", "t_rid"}
 
 
 def configuration(kind, completion):
+    source = dict(name="s", clock_domain="main", protocol="axi4", data_width=32, len_width=8)
     target = dict(name="t", clock_domain="main", protocol=kind, data_width=32,
                   mappings=[dict(base="0x0", size="0x1000")],
                   timeout=dict(cycles=32 if kind == "tl_ul" else 16, completion=completion))
@@ -21,11 +22,15 @@ def configuration(kind, completion):
         target.update(protocol="wishbone", cycles=kind[3:], address_unit="byte")
     if kind not in ("apb3", "wb_classic", "wb_pipelined", "tl_ul"):
         target["attributes"] = "amba"
+    if kind in ("axi3", "axi4", "axi3_multi", "axi4_multi"):
+        target.update(protocol=kind.split("_")[0], len_width=4)
+    if kind in ("axi3_multi", "axi4_multi"):
+        target["max_outstanding"] = 4
+        source["max_outstanding"] = 8
     return dict(schema_version=10, name="target_watchdog", clock_gating=False,
                 address_width=32, reset_ports=[dict(name="reset_n")],
                 clock_domains=[dict(name="main", clock_port="clk", reset_port="reset_n")],
-                initiators=[dict(name="s", clock_domain="main", protocol="axi4",
-                                 data_width=32, len_width=8)],
+                initiators=[source],
                 targets=[target], connectivity="all",
                 output=dict(backend="verilog", language="verilog_2001"))
 
@@ -41,15 +46,18 @@ def bench(mapping, kind, completion):
                             + ("=0;" if incoming and alias not in DRIVEN else ";"))
     if kind.startswith("apb"):
         kind = "apb"
+    if kind in ("axi3", "axi3_multi", "axi4_multi"):
+        kind = "axi4"
     cycles = 32 if kind == "tl_ul" else 16
     body = Path(__file__).with_suffix(".sv").read_text()
     return (f"`timescale 1ns/1ps\n`define TARGET_{kind.upper()}\nmodule tb;\n"
             + "\n".join(declarations)
             + f"\nnocloom_target_watchdog dut({','.join(connections)});\n"
-            + f"localparam COMPLETION={int(completion)}, CYCLES={cycles};\n" + body + "\nendmodule\n")
+            + f"localparam COMPLETION={int(completion)}, CYCLES={cycles};\n"
+            + body + "\nendmodule\n")
 
 
-def faulted(rtl, fixture, config, work):
+def faulted(rtl, fixture, config, work, kind):
     probe = work / "probe"
     subprocess.run([str(fixture.resolve()), "tilelink_uh_probe", str(probe),
                     "--param", f"config={config}", "--list-bindings"], check=True, timeout=30)
@@ -58,14 +66,29 @@ def faulted(rtl, fixture, config, work):
     if probe_rtl != rtl:
         raise RuntimeError("Probe RTL differs from generated RTL")
     bindings = json.loads((probe / "bindings.json").read_text())["dut"]
-    key, = (key for key in bindings if key.endswith("/timeout.waiting"))
-    net = f"nl_internal_v{bindings[key]['index']}"
-    rtl, count = re.subn(rf"^assign {net} = (.*);$",
-                         rf"assign {net} = watchdog_fault==1 ? 1'b0 : "
-                         rf"(\1) | (watchdog_fault==2 && partial_write && !nl_i_s_wvalid);",
-                         rtl, flags=re.M)
-    if count != 1:
-        raise RuntimeError(f"Expected one wait expression, found {count}")
+
+    def replace(name, expression):
+        nonlocal rtl
+        key, = (key for key in bindings if key.endswith(f"/timeout.{name}"))
+        net = f"nl_internal_v{bindings[key]['index']}"
+        rtl, count = re.subn(rf"^assign {net} = (.*);$", f"assign {net} = {expression};",
+                             rtl, flags=re.M)
+        if count != 1:
+            raise RuntimeError(f"Expected one {name} expression, found {count}")
+
+    channels = ("aw.", "w.", "ar.", "b.", "r.") if kind.startswith("axi") else ("",)
+    for channel in channels:
+        gap = (r" | (watchdog_fault==2 && partial_write && !nl_i_s_wvalid)"
+               if channel in ("", "w.") else "")
+        masking = (r" && (watchdog_fault!=5 || !(nl_t_t_rvalid && nl_t_t_rready))"
+                   if channel == "aw." and kind.endswith("_multi") else "")
+        replace(f"{channel}waiting", r"watchdog_fault==1 ? 1'b0 : ((\1)" + gap + ")" + masking)
+    if kind.endswith("_multi") or kind == "axi4_lite":
+        replace("response_blocked", r"watchdog_fault==3 ? 1'b0 : (\1)")
+    if kind.endswith("_multi"):
+        replace("b_owed", r"(\1) | (watchdog_fault==4 && nl_t_t_wvalid && nl_t_t_wlast)")
+        replace("w_tail_held", r"(\1) | (watchdog_fault==6 && nl_t_t_wvalid && "
+                r"nl_t_t_wlast && !nl_t_t_wready)")
     start = rtl.index("\n", rtl.index(");", rtl.index("module nocloom_target_watchdog")))
     return (rtl[:start] + """
 integer watchdog_fault;
@@ -86,15 +109,24 @@ def run(args, completion):
                    check=True, timeout=30)
     mapping = json.loads((generated / "nocloom_target_watchdog.map.json").read_text())
     rtl = sim_engine.generated_rtl(generated / "nocloom_target_watchdog.v")
-    if args.negative:
-        rtl = faulted(rtl, args.fixture, config, work)
+    negative = args.negative and (completion or args.kind == "tl_ul")
+    if negative:
+        rtl = faulted(rtl, args.fixture, config, work, args.kind)
     (work / "tb.sv").write_text(bench(mapping, args.kind, completion))
     (work / "network.v").write_text(rtl)
     simulation = sim_engine.Simulation(work, "network.v", engine=args.sim, config=args.sim_config,
-                                       compile_timeout=30, run_timeout=10, success=("WATCHDOG_PASS",))
+                                       compile_timeout=30, run_timeout=10, success=("CHECK_PASS",))
     scenarios = (0, 1) if args.baseline else (0, 1, 2, 3, 4)
     if args.kind in ("wb_pipelined", "ahb_lite", "tl_ul") and not args.baseline:
         scenarios += (5,)
+    if not args.baseline:
+        scenarios += (5, 6, 7) if args.kind.startswith("axi") else (6,)
+        if args.kind.endswith("_multi") or args.kind == "axi4_lite":
+            scenarios += (8,)
+        if args.kind.startswith("axi") and args.kind != "axi4_lite":
+            scenarios += (9,)
+        if args.kind.endswith("_multi"):
+            scenarios += (10, 11, 12, 13)
     for scenario in scenarios:
         result = simulation.run([f"+SCENARIO={scenario}"])
         print(result.stdout, end="", flush=True)
@@ -103,8 +135,15 @@ def run(args, completion):
                 return 1
         elif result.returncode:
             return result.returncode
-    if args.negative:
-        for fault, scenario, check in ((1, 2, "MISSING_EXPIRY"), (2, 1, "EARLY_EXPIRY")):
+    if negative:
+        faults = [(1, 2, "MISSING_EXPIRY"), (2, 1, "EARLY_EXPIRY")]
+        if args.kind.endswith("_multi") or args.kind == "axi4_lite":
+            faults.append((3, 8, "EARLY_EXPIRY"))
+        if args.kind.endswith("_multi"):
+            faults.extend(((4, 9, "EARLY_EXPIRY"), (5, 10, "AW_MISSING_EXPIRY"),
+                           (3, 11, "SHARED_RESPONSE_EXPIRY"),
+                           (3, 12, "SHARED_RESPONSE_EXPIRY"), (6, 13, "B_MISSING_EXPIRY")))
+        for fault, scenario, check in faults:
             result = simulation.run([f"+SCENARIO={scenario}", f"+FAULT={fault}"])
             print(result.stdout, end="", flush=True)
             if result.returncode == 0 or f"CHECK_FAIL {check}" not in result.stdout:
@@ -128,7 +167,7 @@ def main():
     args.work.mkdir(parents=True, exist_ok=True)
     if args.kind == "tl_ul":
         return run(args, False)
-    return run(args, True) or (0 if args.baseline or args.negative else run(args, False))
+    return run(args, True) or (0 if args.baseline else run(args, False))
 
 
 if __name__ == "__main__":

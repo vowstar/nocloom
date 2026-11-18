@@ -15,12 +15,8 @@ UNLESS_FAILED = {"op": "BitAnd", "args": [
 WIDTH = int(os.environ.get("NLV_LITE_WIDTH", "32"))
 SB = WIDTH // 8
 BASE = 0x1000
-# Rising edges from the target's AW or AR handshake of the waiting burst to
-# the edge that first samples the timed-out status. The watchdog counts from
-# the cycle after the request reaches the outlet; the pipelined outlet's bus
-# load is two edges before that handshake: timeout_cycles (1024) minus those
-# two, plus one for that cycle and one because the status is a register output
-# seen at the following edge. The window is exact.
+# The write case stalls W on the AW handshake edge. The read case counts from
+# the edge after AR. Both cases sample the registered status on a rising edge.
 GAP = 1024
 
 CASE = dict(
@@ -53,11 +49,11 @@ CASE = dict(
                      "TARGET_UNATTRIBUTED"],
              contract="AXI.LITE.WORD_ACCESS", note="added state: WVALID one cycle late"),
         dict(id="timer_late", component="target", op="replace",
-             at={"binding": "timeout.waiting"}, **{"with": {"delay": {"self": True}}},
+             at={"binding": "timeout.w.waiting"}, **{"with": {"delay": {"self": True}}},
              expect=["CONTRACT.TIMEOUT.GAP"],
              contract="AXI.TIMEOUT.EXACT", note="added state: the count starts a cycle late"),
         dict(id="timer_stopped", component="target", op="replace",
-             at={"binding": "timeout.waiting"}, **{"with": {"const": 0}},
+             at={"binding": "timeout.w.waiting"}, **{"with": {"const": 0}},
              expect=["CONTRACT.TIMEOUT.GAP"],
              contract="AXI.TIMEOUT.EXACT"),
         dict(id="exclusive_pending", component="target", op="replace",
@@ -225,8 +221,8 @@ def scenario(t, seed, report=False):
     t.write(s0, BASE + 0xC0, lock=1, prot=3, id=1, resp=0, bytes="none")
     t.wait(s0, "b", "==", 1, since=m[(s0, "b")])
     t.expect_now(t0, "w", "==", 1, "FAILED_EXCLUSIVE_WSTRB_ZERO", since=m[(t0, "w")])
-    # 9: AW done, W stalled: the write times out exactly 1024 target cycles
-    # after it reached the outlet; the stalled W stays offered, later words answer SLVERR
+    # 9: AW done, W stalled: the write times out after 1024 stalled W cycles.
+    # The stalled W stays offered, later words answer SLVERR
     # without access, and the late B is accepted and discarded.
     t.mark("case", 9)
     reset()
@@ -258,8 +254,9 @@ def scenario(t, seed, report=False):
     t.mark("case", 10)
     m = snaps()
     t.set(t0, "gap_dir", 2)
-    t.set(t0, "gap_lo", GAP)
-    t.set(t0, "gap_hi", GAP)
+    # The first R wait is the cycle after AR, and the monitor samples status on an edge.
+    t.set(t0, "gap_lo", GAP + 1)
+    t.set(t0, "gap_hi", GAP + 1)
     t.gate(t0, "r", False)
     t.read(s0, BASE + 0x40, prot=5, id=1, resp=2, target="any")
     t.wait(t0, "ar", "==", 1, since=m[(t0, "ar")])

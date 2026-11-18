@@ -277,13 +277,27 @@ struct Logic {
   }
   ValueId active(ValueId v) { return both(reset, v); }
   // Consecutive target wait cycles. An edge without a wait starts a new interval.
-  ValueId watchdog(ValueId failed, unsigned cycles, ValueId waiting) {
-    const auto count = state("timeout.count", static_cast<unsigned>(std::bit_width(cycles - 1)));
-    const auto counting = bind("timeout.waiting", both(waiting, inv(failed)));
+  ValueId watchdog_expiry(ValueId failed, unsigned cycles, ValueId waiting,
+                          const std::string &prefix) {
+    const auto count = state(prefix + ".count", std::bit_width(cycles - 1));
+    const auto counting = bind(prefix + ".waiting", both(waiting, inv(failed)));
     b.update(count, pick(counting, inc(count), num(width(count), 0)));
-    const auto expiry = both(counting, eq(count, cycles - 1));
+    return both(counting, eq(count, cycles - 1));
+  }
+  ValueId watchdog(ValueId failed, unsigned cycles, ValueId waiting) {
+    const auto expiry = watchdog_expiry(failed, cycles, waiting, "timeout");
     b.update(failed, either(failed, expiry));
     return expiry;
+  }
+  void axi_watchdog(ValueId failed, unsigned cycles, const std::array<ValueId, 5> &waits,
+                    ValueId response_blocked) {
+    const auto blocked = bind("timeout.response_blocked", response_blocked);
+    constexpr std::array channels{"aw", "w", "ar", "b", "r"};
+    std::array<ValueId, channels.size()> expiry;
+    for (std::size_t i = 0; i < channels.size(); ++i)
+      expiry[i] = watchdog_expiry(failed, cycles, both(waits[i], inv(blocked)),
+                                  std::string("timeout.") + channels[i]);
+    b.update(failed, either(failed, any(expiry)));
   }
   // Packet context watchdog: the current message supplies the restart condition.
   ValueId watchdog(ValueId failed, unsigned cycles, ValueId pending, ValueId responding) {

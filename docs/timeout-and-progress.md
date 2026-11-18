@@ -46,14 +46,9 @@ integer from 16 to 1048576. The maximum uses the full range of a 20-bit
 counter that starts at zero. `completion` defaults to `false`. APB2 targets
 reject timeouts.
 
-TL-UH targets use a watchdog for each packet context and continue work after
-expiry. See [TL-UH targets](tilelink.md#tl-uh-targets) for those rules. The
-rest of this section describes other target protocols. All TileLink targets
-reject `completion: true`.
-
-APB, AHB, Wishbone and TL-UL targets count consecutive target clock cycles
-with a transfer waiting for the target. A cycle without a target wait
-restarts the count.
+Each watchdog counts consecutive target clock cycles with a transfer waiting
+for the target. A cycle without a target wait restarts the count. A target
+whose clock stops cannot report expiry.
 
 | Target | Cycles that count |
 | --- | --- |
@@ -61,18 +56,27 @@ restarts the count.
 | Classic Wishbone | CYC and STB high without ACK, ERR or an enabled RTY |
 | Pipelined Wishbone | STALL high during a request, or an accepted request without ACK, ERR or an enabled RTY |
 | AHB | HREADY low with an address or data phase still on the bus, or with a transfer ready to replace BUSY |
+| AXI3, AXI4 | AW, W or AR valid without READY. B missing after AW and the last W handshake, or R missing after AR, while the adapter can take the beat |
+| AXI4-Lite | AW, W or AR valid without READY. B missing after AW and W, or R missing after AR, while the adapter can take the beat |
 | TL-UL | A valid without A ready, or no D valid after the A handshake |
+| TL-UH | A beat offered without A ready, or D still due after the last A beat while its context can accept D |
 
 APB SETUP, AHB BUSY with no transfer to advance, waits for more write data
 and waits for network response space do not count.
 
-On AXI, one watchdog covers both directions and all target packets in flight.
-It counts target clock cycles while work is waiting and no response is
-offered to the network. Every offered B or R beat restarts the count, even
-when the initiator has not accepted it. Slow initiator write data can therefore
-contribute to expiry. A stopped target clock is not detected.
+AXI counts AW, W, AR, B and R separately. Any channel that reaches the
+limit sets the target status. When the adapter holds off an offered B or R,
+all five counts restart. This lets a target share one path for both response
+directions. Each response channel still shares its count across IDs, so
+continued responses on that channel can hide an unanswered request.
 
-Expiry raises `nl_t_<target>_timed_out` until common reset.
+TL-UH uses a watchdog for each packet context. Each A or D handshake of that
+context restarts its count. See [TL-UH targets](tilelink.md#tl-uh-targets)
+for shared D channel waits and responses after expiry. All TileLink targets
+reject `completion: true`.
+
+Expiry raises `nl_t_<target>_timed_out` until common reset. With the exception
+of TL-UH, the target adapter applies the following response rules.
 
 | Setting | Responses after expiry |
 | --- | --- |
@@ -90,10 +94,10 @@ Only common reset clears the failed state.
 
 ## Timeout edge cases
 
-On AXI, the watchdog starts counting cycles after a request is offered
-or accepted work is still unanswered. An idle target does not count, except
-the cycle after its final response. After expiry, system logic must observe the
-status output if completion is disabled.
+The cycle in which a wait reaches `cycles` sets the status. A handshake
+that ends the wait on that cycle prevents expiry from that wait.
+After expiry, system logic must observe the status output if completion
+is disabled.
 
 With completion enabled, failed reads continue from their current beat with zero
 data. Writes return one B after consuming remaining W. AXI initiators

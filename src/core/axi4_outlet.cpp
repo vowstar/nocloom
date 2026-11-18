@@ -10,6 +10,7 @@
 #include "message.hpp"
 #include "strobe_lanes.hpp"
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <functional>
 #include <iterator>
@@ -145,11 +146,12 @@ struct EngineLowering {
   const bool indexed;
   const unsigned target_id_bits, flow_bits, timeout;
   const ValueId zero, one;
-  // Target timeout: one watchdog for every burst in flight; failed holds until the
-  // common reset; without completion a failed target absorbs every response.
+  // Any channel can fail the target until common reset. Without completion the
+  // failed target absorbs every response.
   const ValueId failed;
   const bool report_only, write_timer;
   const ValueId silent;
+  ValueId b_wait = zero, b_blocked = zero;
   const bool windowed;
   BurstProfile profile;
   // The in-flight pool shared by both directions: pool counts admitted bursts (heads) minus those
@@ -638,7 +640,9 @@ struct EngineLowering {
   ParkedB park_b(ValueId bid, ValueId bresp);
   // BREADY and the B taken into the stage (fire), and the B that parks in this cycle (load).
   std::pair<ValueId, ValueId> take_b(const ParkedB &b, ValueId spare, ValueId any_local,
-                                     ValueId any_match);
+                                     ValueId any_match, ValueId owed);
+  std::pair<ValueId, ValueId> unaccepted_tail(ValueId alloc);
+  void watchdog(ValueId rready, ValueId target_rvalid, ValueId receiving, ValueId r_owed);
   // The BUSER of a B taken (fire), a parked one's from its register; none without the port.
   std::optional<ValueId> b_user(const ParkedB &b, ValueId fire, ValueId load);
   void read_accept();
@@ -972,12 +976,20 @@ EngineLowering::ParkedB EngineLowering::park_b(ValueId bid, ValueId bresp) {
 // it BREADY reads no BID, and a B that names no write whose turn has come parks and is matched
 // from the register. After expiry BREADY stays high and a late B is taken and discarded.
 std::pair<ValueId, ValueId> EngineLowering::take_b(const ParkedB &b, ValueId spare,
-                                                   ValueId any_local, ValueId any_match) {
+                                                   ValueId any_local, ValueId any_match,
+                                                   ValueId owed) {
   // Behind the merger a B in the main entry that the merger does not offer holds BREADY low too.
   if (!p.merger_hints && !ilv) {
     const auto bready = active(l.both(l.inv(spare), l.both(l.inv(any_local), any_match)));
     out("axi", "bready", timeout ? l.either(bready, active(failed)) : bready);
-    return {l.bind("w.b_fire", l.both(bready, in("axi", "bvalid", 1))), zero};
+    const auto valid = in("axi", "bvalid", 1);
+    const auto fire = l.bind("w.b_fire", l.both(bready, valid));
+    if (timeout) {
+      const auto room = l.both(l.inv(spare), l.inv(any_local));
+      b_wait = l.both(room, l.both(owed, l.inv(fire)));
+      b_blocked = l.both(l.both(valid, any_match), l.inv(room));
+    }
+    return {fire, zero};
   }
   // In interleave mode the B pipe's full flag alone holds BREADY low.
   const auto unoffered =
@@ -985,9 +997,15 @@ std::pair<ValueId, ValueId> EngineLowering::take_b(const ParkedB &b, ValueId spa
   const auto room = l.both(l.inv(l.either(spare, unoffered)), l.inv(any_local));
   const auto bready = active(l.both(room, l.inv(b.parked)));
   out("axi", "bready", timeout ? l.either(bready, active(failed)) : bready);
-  const auto arriving = l.both(bready, in("axi", "bvalid", 1));
+  const auto valid = in("axi", "bvalid", 1);
+  const auto arriving = l.both(bready, valid);
   const auto fire =
       l.bind("w.b_fire", active(l.both(l.either(b.parked, arriving), l.both(room, any_match))));
+  if (timeout) {
+    b_wait = l.both(room, l.both(owed, l.inv(fire)));
+    // A parked B already crossed the target port. Check the current offer.
+    b_blocked = l.both(l.both(valid, owed), l.inv(bready));
+  }
   const auto load = l.both(arriving, l.inv(fire));
   const auto keep = l.both(l.either(b.parked, arriving), l.inv(fire));
   l.b.update(b.parked, timeout ? l.both(keep, l.inv(failed)) : keep);
@@ -1031,16 +1049,31 @@ void EngineLowering::write_respond() {
                 face.stored, one, one, l.b.constant(p.data_bits, 0), face.exclusive, bstored_user);
 }
 
+std::pair<ValueId, ValueId> EngineLowering::unaccepted_tail(ValueId alloc) {
+  // A burst can move to its B slot while its last W beat is still in the W entry.
+  // B becomes due only after that beat has crossed the target port.
+  const auto tail_pending = l.state("timeout.w_tail_pending", 1);
+  const auto loaded = l.both(main_beat, in_last);
+  // A head stored before its AW belongs to the next burst.
+  const auto held = l.bind("timeout.w_tail_held",
+                           l.every(std::array{wvalid, wlast, l.inv(w_fire), l.inv(head_in)}));
+  const auto defer = l.both(l.both(push, l.inv(reject)), l.either(loaded, held));
+  const auto slot = l.latch("timeout.w_tail_slot", alloc, defer);
+  l.b.update(tail_pending, l.either(defer, l.both(tail_pending, l.inv(w_fire))));
+  return {tail_pending, slot};
+}
+
 // Several bursts: the write slots, the B match and the response stage.
 void EngineLowering::write_respond_several(ValueId bresp, ValueId bid, WriteFace &face) {
   ValueId bpop{};
   // The main burst's error flag including a beat taken in the push cycle.
   const auto bad_now = l.either(bad, l.both(main_beat, beat_error));
   const auto alloc = first_of(l, free_slot, std::max(1U, index_bits));
+  const auto [tail_pending, tail_slot] = timeout ? unaccepted_tail(alloc) : std::pair{zero, zero};
   // Responses: a B selects the slot of its target ID whose older writes of
   // the same source are done; a local slot completes when its turn comes.
   // A failed target answers every slot locally (in the same order) and matches no B.
-  std::vector<ValueId> network_slot, matched, eligible_network, eligible_local, slot_ids;
+  std::vector<ValueId> network_slot, matched, eligible_network, eligible_local, slot_ids, owed;
   const auto held_b = park_b(bid, bresp);
   bresp = held_b.resp;
   for (const auto &slot : ws) {
@@ -1048,6 +1081,10 @@ void EngineLowering::write_respond_several(ValueId bresp, ValueId bid, WriteFace
     const auto local = timeout ? l.either(slot.local, failed) : slot.local;
     network_slot.push_back(l.both(slot.valid, l.inv(local)));
     eligible_network.push_back(l.both(network_slot.back(), turn));
+    if (timeout) {
+      const auto staged = l.both(tail_pending, l.eq(tail_slot, owed.size()));
+      owed.push_back(l.both(eligible_network.back(), l.inv(staged)));
+    }
     eligible_local.push_back(l.both(slot.valid, l.both(local, turn)));
     slot_ids.push_back(target_id_bits ? write_slot_id(slot) : zero);
     matched.push_back(
@@ -1064,7 +1101,8 @@ void EngineLowering::write_respond_several(ValueId bresp, ValueId bid, WriteFace
   // Responses leave face.through a two-entry stage (beat_stage.hpp): a completion enters while the
   // spare entry is empty, so BREADY reads that register and one B passes per cycle.
   auto bspare = l.state("w.response_spare", 1);
-  const auto [b_fire, load] = take_b(held_b, bspare, any_local, any_match);
+  const auto b_owed = timeout ? l.bind("timeout.b_owed", any_of(l, owed)) : zero;
+  const auto [b_fire, load] = take_b(held_b, bspare, any_local, any_match, b_owed);
   if (!ilv)
     bdone = bpop = l.both(active(bf), in("wrsp", "ready", 1));
   const auto b_slot = first_of(l, matched, std::max(1U, index_bits));
@@ -1230,7 +1268,13 @@ void EngineLowering::write_respond_single(ValueId bresp, ValueId bid, WriteFace 
   auto bready =
       active(l.both(wb, l.both(left, l.both(l.inv(wp), l.both(l.inv(rejecting), l.inv(b_held))))));
   out("axi", "bready", timeout ? l.either(bready, active(failed)) : bready);
-  auto b_fire = l.both(bready, in("axi", "bvalid", 1));
+  const auto bvalid = in("axi", "bvalid", 1);
+  auto b_fire = l.both(bready, bvalid);
+  if (timeout) {
+    b_wait = l.both(bready, l.inv(b_fire));
+    const auto owed = l.both(l.both(wb, left), l.both(l.inv(wp), l.inv(rejecting)));
+    b_blocked = l.both(l.both(owed, bvalid), b_held);
+  }
   if (!ilv)
     bdone = bpop = l.both(active(bf), in("wrsp", "ready", 1));
   const auto bfault =
@@ -1511,6 +1555,23 @@ void EngineLowering::count_block_word(ValueId entering, ValueId last) {
                     block_count));
 }
 
+void EngineLowering::watchdog(ValueId rready, ValueId target_rvalid, ValueId receiving,
+                              ValueId r_owed) {
+  if (!timeout)
+    return;
+  const auto owed = several ? r_owed : l.both(receiving, l.inv(recv_rejecting));
+  const auto aw_wait = l.both(active(aw_shown), l.inv(aw_fire));
+  const auto w_wait = l.both(wvalid, l.inv(w_fire));
+  const auto ar_wait = l.both(active(arvalid), l.inv(ar_fire));
+  const auto r_wait = l.both(rready, l.inv(target_rvalid));
+  const auto r_blocked = l.both(l.both(owed, target_rvalid), l.inv(rready));
+  // A target can share its response path and hold off requests until its offered
+  // response is accepted. A handshake on an open channel ends only its own wait.
+  l.axi_watchdog(failed, timeout, {aw_wait, w_wait, ar_wait, b_wait, r_wait},
+                 l.either(b_blocked, r_blocked));
+  out("status", "timed_out", failed);
+}
+
 // WRAP read alignment sits between the stage's spare and main entries: a beat moving into the
 // main entry (from the spare entry, else as it arrives) that is an aligned read's first beat
 // answers its lanes from the start address up and holds the lanes below, with its result,
@@ -1518,8 +1579,10 @@ void EngineLowering::count_block_word(ValueId entering, ValueId last) {
 // is the held answer, the packet's last word, while the spare entry and the arriving beat wait.
 void EngineLowering::read_receive() {
   local_error_states();
-  // Receive target or local beats while the response stage has room.
-  ValueId receiving{}, target_ready = one;
+  // The receiving entry's beats: R from the target once issued, or local
+  // beats, while the stage's spare entry is free (behind a merge: while its one entry is free or
+  // leaves in this cycle).
+  ValueId receiving{}, target_ready = one, r_owed = zero;
   const auto rid = target_id_bits ? id_from_port(in("axi", "rid", target_id_bits)) : zero;
   std::optional<ValueId> received_id_match;
   if (several) {
@@ -1552,7 +1615,8 @@ void EngineLowering::read_receive() {
     recv_miss = pick(l, misses, rsel);
     recv_rejecting = rlocal;
     receiving = l.either(busy, any_of(l, waiting));
-    target_ready = l.either(busy, any_of(l, from_target));
+    r_owed = any_of(l, from_target);
+    target_ready = l.either(busy, r_owed);
   } else {
     receiving =
         l.both(l.inv(l.b.binary(Op::Equal, count, received)), l.either(l.eq(pending, 0), skip));
@@ -1571,7 +1635,8 @@ void EngineLowering::read_receive() {
       active(l.both(receiving, single_entry ? l.either(l.inv(rf), rpop) : l.inv(held)));
   auto rready = l.both(read_room, l.both(target_ready, l.inv(recv_rejecting)));
   out("axi", "rready", timeout ? l.either(rready, active(failed)) : rready);
-  auto r_fire = l.both(rready, in("axi", "rvalid", 1));
+  const auto rvalid_input = in("axi", "rvalid", 1);
+  auto r_fire = l.both(rready, rvalid_input);
   // With several bursts a silent beat waits for the stage to empty, so that the burst it completes
   // is the queue head and its drop never meets the pop of a staged last beat.
   const auto local_room =
@@ -1584,11 +1649,7 @@ void EngineLowering::read_receive() {
   if (target_id_bits)
     rid_bad = l.inv(received_id_match ? *received_id_match
                                       : l.b.binary(Op::Equal, rid, descriptor_id(recv, 1)));
-  if (timeout) {
-    l.watchdog(failed, timeout, l.either(l.either(w.at("valid"), r.at("valid")), l.inv(pool_empty)),
-               l.either(bf, rf));
-    out("status", "timed_out", failed);
-  }
+  watchdog(rready, rvalid_input, receiving, r_owed);
   // Target mode keeps the response and fault for the EXOKAY decision.
   const auto rresp = in("axi", "rresp", 2);
   const auto rfault = l.either(recv_rejecting, l.either(rid_bad, rlast_bad));
@@ -1887,7 +1948,8 @@ void EngineLowering::read_receive_joined() {
   auto read_room = active(l.both(receiving, l.inv(l.either(rspare, held_back))));
   auto rready = l.both(read_room, l.both(target_ready, l.inv(recv_rejecting)));
   out("axi", "rready", timeout ? l.either(rready, active(failed)) : rready);
-  auto r_fire = l.both(rready, in("axi", "rvalid", 1));
+  const auto rvalid_input = in("axi", "rvalid", 1);
+  auto r_fire = l.both(rready, rvalid_input);
   // With several bursts a silent beat waits until no R waits in the pipe or the joined stage.
   const auto local_room =
       several && report_only
@@ -1902,11 +1964,7 @@ void EngineLowering::read_receive_joined() {
   if (target_id_bits)
     rid_bad = l.inv(received_id_match ? *received_id_match
                                       : l.b.binary(Op::Equal, rid, descriptor_id(recv, 1)));
-  if (timeout) {
-    l.watchdog(failed, timeout, l.either(l.either(w.at("valid"), r.at("valid")), l.inv(pool_empty)),
-               l.either(jfull, l.either(rspare, boffer.full)));
-    out("status", "timed_out", failed);
-  }
+  watchdog(rready, rvalid_input, receiving, target_ready);
   const auto rresp = in("axi", "rresp", 2);
   const auto rfault = l.either(recv_rejecting, l.either(rid_bad, rlast_bad));
   auto rcode = l.bind("r.result", passthrough ? result(l, rresp, rfault, recv.at("lock"))

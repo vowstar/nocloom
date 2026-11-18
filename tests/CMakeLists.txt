@@ -199,7 +199,8 @@ foreach(kind IN ITEMS 1 2 16 long negative)
     LABELS "${watchdog_labels}" RESOURCE_LOCK tilelink
     ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
 endforeach()
-foreach(kind IN ITEMS apb3 apb4 apb5 wb_classic wb_pipelined ahb_lite tl_ul)
+foreach(kind IN ITEMS apb3 apb4 apb5 wb_classic wb_pipelined ahb_lite tl_ul
+                      axi3 axi4 axi3_multi axi4_multi axi4_lite)
   add_test(NAME target_watchdog_${kind}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/target_watchdog.py
       --cli $<TARGET_FILE:nocloom_cli> --kind ${kind}
@@ -823,6 +824,13 @@ foreach(kind IN ITEMS apb4 apb3 axi4_lite ahb_lite axi4)
   set_tests_properties(target_timeout_formal_${kind} PROPERTIES TIMEOUT 5400 LABELS "formal;focused"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 endforeach()
+add_test(NAME target_timeout_formal_axi4_shared
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_timeout_formal.py
+    --fixture $<TARGET_FILE:nocloom_timeout_outlet_fixture>
+    --work ${CMAKE_CURRENT_BINARY_DIR}/target_timeout_formal_axi4_shared --kind axi4
+    --tasks shared,shared_cover --cycles 16 --depth 60)
+set_tests_properties(target_timeout_formal_axi4_shared PROPERTIES TIMEOUT 180 LABELS "formal;release"
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 # APB initiators mixed with AXI sources and supported target protocols.
 foreach(apb_mode IN ITEMS graph tree clocked funnel apb4_tree timeout selective multi narrow narrow_clocked apb5 apb5_clocked apb5_data apb5_data_clocked)
   add_test(NAME apb_initiator_${apb_mode}

@@ -11,6 +11,7 @@
 #include "outlet_base.hpp"
 #include "packet_context.hpp"
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <functional>
 #include <iterator>
@@ -1185,6 +1186,8 @@ struct LiteOutlet {
   OneEntry wrsp;
   // The response faces' valids: a staged response, or one passing an empty stage.
   ValueId wrsp_valid = zero, rrsp_valid = zero;
+  ValueId aw_wait = zero, w_wait = zero, ar_wait = zero, b_wait = zero, r_wait = zero;
+  ValueId b_blocked = zero, r_blocked = zero;
   ValueId wt = zero, wpkt_push = zero, load = zero, bus_done = zero, w_queued = zero;
   ValueId bus_user{};
   ValueId bus_open = zero, aw_done = zero, w_done = zero, bus_address = zero, bus_prot = zero,
@@ -1318,6 +1321,10 @@ void LiteOutlet::write_issue() {
   const auto wvalid = active(l.both(bus_open, l.inv(w_done)));
   const auto aw_hs = l.both(awvalid, in("axil", "awready", 1));
   const auto w_hs = l.both(wvalid, in("axil", "wready", 1));
+  if (timeout) {
+    aw_wait = l.both(awvalid, l.inv(aw_hs));
+    w_wait = l.both(wvalid, l.inv(w_hs));
+  }
   bus_done = l.both(bus_open, l.both(l.either(aw_done, aw_hs), l.either(w_done, w_hs)));
   const auto bus_take = l.either(l.inv(bus_open), bus_done);
   out("axil", "awaddr", bus_address);
@@ -1470,6 +1477,10 @@ void LiteOutlet::write_responses() {
       l.both(l.both(have_head, w_credited),
              l.both(l.either(l.inv(sealed), owed), l.either(l.inv(last_b), wrsp_room)));
   const auto bt = l.bind("w.b_take", l.both(l.both(bvalid, b_open), l.inv(failed)));
+  if (timeout) {
+    b_wait = l.both(b_open, l.inv(bvalid));
+    b_blocked = l.every(std::array{w_credited, bvalid, l.inv(b_open)});
+  }
   // The head packet's exclusive failure: answers OKAY whatever the target answered, and never
   // exclusive_okay; after expiry it answers OKAY whatever its words did.
   const auto fail =
@@ -1654,6 +1665,8 @@ void LiteOutlet::read_issue() {
   if (ar_user)
     out("axil", "aruser", map_attributes(l, p.user, ar_cache, ar_prot, zero, *ar_user));
   const auto ar_hs = l.both(arvalid, arready);
+  if (timeout)
+    ar_wait = l.both(issue_offered, l.inv(arready));
   // A pre-expiry AR handshake credits one R the response side may take; a target that offers R
   // without it violates the protocol and must not move the response cursor.
   r_ar_hs = l.both(ar_hs, l.inv(failed));
@@ -1771,10 +1784,13 @@ void LiteOutlet::read_responses() {
   // An R beat is taken when its word advances; after expiry every late beat
   // is accepted and discarded. The AR credit gates the take so a premature R
   // waits; late R's after expiry are absorbed without it.
-  out("axil", "rready",
-      active(l.either(failed,
-                      l.both(rsp_valid, l.both(l.inv(beat_void), l.both(rrsp_room, r_credited))))));
+  const auto r_open = l.both(rsp_valid, l.both(l.inv(beat_void), l.both(rrsp_room, r_credited)));
+  out("axil", "rready", active(l.either(failed, r_open)));
   const auto r_credit_take = l.both(advance, l.inv(beat_void));
+  if (timeout) {
+    r_wait = l.both(r_open, l.inv(rvalid));
+    r_blocked = l.every(std::array{r_credited, rvalid, l.inv(r_open)});
+  }
   l.b.update(r_ar_done, l.plus(l.minus(r_ar_done, l.fit(r_credit_take, cw + p.packet_len_bits + 1)),
                                l.fit(r_ar_hs, cw + p.packet_len_bits + 1)));
   o.response("rrsp", rface, rrsp_valid, rface.at("address"), rface.at("result"), rface.at("first"),
@@ -1813,11 +1829,11 @@ void LiteOutlet::build() {
 }
 
 Result<NodeHardware> LiteOutlet::finish() {
-  if (timeout)
-    o.watchdog(l.either(l.either(w.at("valid"), r.at("valid")),
-                        l.either(l.either(l.inv(l.eq(wpkt.count[0], 0)), wrsp.full),
-                                 l.inv(l.eq(rpkt.count[0], 0)))),
-               l.either(wrsp_valid, rrsp_valid));
+  if (timeout) {
+    l.axi_watchdog(failed, timeout, {aw_wait, w_wait, ar_wait, b_wait, r_wait},
+                   l.either(b_blocked, r_blocked));
+    l.out("status", "timed_out", failed);
+  }
   return l.finish("nocloom_axi_lite_outlet_" + p.name);
 }
 

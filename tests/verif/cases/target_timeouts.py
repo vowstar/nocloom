@@ -6,8 +6,7 @@ timeout, an AHB target without undefined-length INCR and a 2-bit HRESP, one
 APB4, AXI4-Lite, AHB and AXI4 target whose timeout only reports, and an AXI4
 target with completion (four bursts in flight), one without (two), an
 AXI4-Lite target with completion (four packets) and an AXI4 target with its
-own exclusive monitor (four bursts, completion), each under its one
-watchdog).
+own exclusive monitor (four bursts, completion)).
 
 Each hung target stops at a chosen handshake (a slow word of an APB or AHB
 target, a ready or valid held low, W or R stopped after some beats) and
@@ -52,8 +51,8 @@ TARGETS = {
     'ml': ('axi4_lite', 0x1A000, 0x1000, 1024, True),
     'xe': ('axi4', 0x28000, 0x1000, 1024, True),
 }
-# Targets with several bursts in flight under their one watchdog, used by m0, a
-# source with four bursts in flight (s0 keeps two).
+# Targets with several bursts in flight, used by m0, a source with four bursts
+# in flight (s0 keeps two).
 CAPACITY = {'mx': 4, 'mq': 2, 'ml': 4, 'xe': 4}
 # Exclusive support at the target itself (AxLOCK passed, EXOKAY answered there).
 OWN_MONITOR = {'xe': 'target'}
@@ -770,23 +769,21 @@ def scenario(t, seed, ratio=1, exclusive=False, named=False, swapped=None, ignor
     for n in ("pa", "pb", "ah", "lt", "ax"):
         t.expect_now(n, "sideband", "==", 0, "NO_EXPIRY")
 
-    # Write data that the source sends more slowly than the timeout fails
-    # the target although the target never stalls.
+    # Each target completes the offered beats while the source pauses between beats.
     episode("slow_write_data")
     t.set(s0, "w_gap", 1100)
-    wr(0x20000, 4, resp=2, **late)
-    wr(0x10000, 4, resp=2, **late)
-    wr(0x13000, 4, resp=2, **late)
-    drain("SLOW_WRITE_DATA_EXPIRES", 60000 * ratio)
-    for n in ("ax", "pa", "ah"):
-        t.expect_now(n, "sideband", "==", 1, "SLOW_WRITE_DATA_EXPIRES")
+    wr(0x20000, 4)
+    wr(0x10000, 4)
+    wr(0x13000, 4)
+    wr(0x12000, 4)
+    drain("SLOW_WRITE_DATA_COMPLETES", 60000 * ratio)
+    for n in ("ax", "pa", "ah", "lt"):
+        t.expect_now(n, "sideband", "==", 0, "SLOW_WRITE_DATA_COMPLETES")
     t.set(s0, "w_gap", 0)
 
-    # ---- Several bursts in flight (mx, mq: four AXI4 bursts; ml: four
-    # AXI4-Lite packets) share the target's one watchdog: every response
-    # restarts it, and at expiry every burst still in flight answers SLVERR
-    # (read beats delivered before stay), late B and R are taken and
-    # discarded, and later bursts answer SLVERR without access.
+    # Several bursts can be in flight at mx, mq and ml when a channel expires.
+    # Unanswered work completes with SLVERR. Late B and R are discarded.
+    # Later bursts also answer SLVERR without reaching the target.
     episode("multi_writes_hang")
     b = t.snap("mx", "b")
     t.set("mx", "cap_w", 4)

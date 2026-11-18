@@ -48,7 +48,7 @@ module nlv_apb_slave #(
       FIFO_ADDR = 61, GAP_HI = 40;
   reg [63:0] n_b2b;
   reg [63:0] cyc, n_access, n_write, n_read, base;
-  reg [31:0] waited, lfsr, low_run;
+  reg [31:0] waited, lfsr, low_run, slow_wait;
   reg ready_r, err_r, prev_psel, prev_penable, prev_rst, prev_pready, prev_done;
   reg [ADDR_W+DATA_W+DATA_W/8+3:0] held;
   integer i;
@@ -96,7 +96,11 @@ module nlv_apb_slave #(
     begin
       if (index == BASE) base = n_access;
       if (index == SEED) lfsr = value == 0 ? 32'h1 : value;
-      ctl[index] = value;
+      // The tape can change the wait on the same falling edge that samples it.
+      if (index == SLOW_WAIT)
+        slow_wait <= value;
+      else
+        ctl[index] = value;
     end
   endtask
 
@@ -104,7 +108,7 @@ module nlv_apb_slave #(
     for (i = 0; i < 64; i = i + 1) ctl[i] = 0;
     for (i = 0; i < MEM_BYTES; i = i + 1) mem[i] = nlv_target_byte(i, SALT);
     cyc = 0; n_access = 0; n_write = 0; n_read = 0; base = 0; waited = 0; lfsr = 32'h1;
-    low_run = 0;
+    low_run = 0; slow_wait = 0;
     n_b2b = 0;
     ready_r = 0; err_r = 0; prev_psel = 0; prev_penable = 0; prev_rst = 0; prev_pready = 0;
     prev_done = 0;
@@ -120,7 +124,7 @@ module nlv_apb_slave #(
       ready_r = ctl[READY_MODE] != 0
           ? nlv_ready_pattern(ctl[READY_MODE], ctl[READY_A1], ctl[READY_A2], cyc, waited, lfsr)
           : waited >= (ctl[SLOW_MASK] != 0 && (paddr & ctl[SLOW_MASK]) == ctl[SLOW_MATCH]
-                       ? ctl[SLOW_WAIT] : ctl[WAIT_N]);
+                       ? slow_wait : ctl[WAIT_N]);
       err_r = err_code(n_access - base, paddr);
       la = paddr & ~(NB - 1);
       if (!pwrite)

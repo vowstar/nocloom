@@ -5,11 +5,11 @@ once at the start, the network always accepts responses (a pooled AXI4 outlet
 holds an in-flight entry until its response leaves, so a stuck response
 channel would legitimately block the other direction) and, for the AHB outlet
 only, frames its request packets (first flags follow last flags, a
-read is one beat). A monitor
-recounts the watchdog from the network faces alone: cycles that follow one
-with a request offered or a packet held and offer no response, restarted by a
-response. The
-timer is 1024 cycles (the smallest allowed), so the properties are proved
+read is one beat). The monitor counts consecutive target waits from the bus
+handshakes. AXI response credit comes from the target AW, WLAST, AR, B and R
+handshakes. The AXI target offers only responses it owes. Separate bounded
+tasks exercise both directions of shared response backpressure. At a setting
+of 1024 cycles the properties are checked
 unbounded with PDR rather than by a deep BMC; each outlet is checked with
 completion and report-only answers.
 
@@ -32,8 +32,7 @@ completion and report-only answers.
               the monitor's.
   HELD_*      (AHB) until then the monitor's held packets are the outlet's:
               write contexts and the B buffer, the read issue beat and the
-              reserved beats that close a packet; its recorded condition is
-              the outlet's.
+              reserved beats that close a packet.
   LATE_*      (AHB) after expiry the reads started, the read in the address
               phase and the beats left of the held packet stay within 17.
   POOL_*      (AXI4, two bursts in flight) the in-flight pool, less releases still on their way, counts exactly
@@ -47,11 +46,17 @@ One PDR run over every assertion does not converge reliably, so the
 unbounded proof runs three tasks:
 relate proves RELATED and HELD_*; watch proves EXPIRY, STICKY and HELPER with
 RELATED assumed, which is sound because relate proves it for every reachable
-state under the same environment; after proves the target-side properties
-and LATE_*. HELD_* and LATE_* are the inductive strengthenings PDR otherwise
+state before the outlet expires under the same environment. The watch task
+checks the status even on the first cycle when it could differ from the
+monitor. The after task proves the target-side properties and LATE_*.
+HELD_* and LATE_* are the inductive strengthenings PDR otherwise
 has to find for the AHB outlet's several held packets; for the AXI4 outlet with
-two bursts the after task also carries HELD_*/POOL_* to describe delayed pool release. The bounded mode
-checks every assertion in one task.
+two bursts the after task also carries HELD_*/POOL_* to describe delayed pool release.
+The AXI4 after task lets each timer count vary freely. It uses the outlet status
+for the response credit assumption, which the exact watch task proves equal to
+the monitor. This admits every real counter trace without searching for the
+1024-cycle count in the target-side proof. The bounded mode checks every
+assertion in one task with the actual counters.
 The read bound before expiry (P5 at 16 cycles) is not proved at 1024 cycles:
 PDR does not converge on it within the test time; the RTL benches cover it.
 With the pooled AXI4 outlet (one in-flight entry shared by both directions,
@@ -68,6 +73,7 @@ from pathlib import Path
 
 CYCLES = 1024
 ANSWERS = ('completion', 'report')
+AXI_CHANNELS = ('aw', 'w', 'ar', 'b', 'r')
 # Assertion groups and the sby tasks that check them: check runs every group
 # in one task (bounded mode), the unbounded proof splits them; reach is the
 # separate reachability task.
@@ -76,10 +82,10 @@ DEFINES = {'check': ['CHECK_RELATE', 'CHECK_WATCH', 'CHECK_AFTER'],
            'relate': ['CHECK_RELATE'],
            'watch': ['CHECK_WATCH', 'ASSUME_RELATED'],
            'after': ['CHECK_AFTER'],
-           'reach': ['REACH']}
+           'reach': ['REACH'], 'shared': [], 'shared_cover': []}
 # Outlet state probed for the held-packet helpers.
-PROBES = {'axi4x2': ['pool.count', 'r.count', 'w.busy', 'w.head_pending', 'w.head_beat_in',
-                     'w.slot0.valid',
+PROBES = {'axi4x2': ['pool.count', 'r.count',
+                     'w.busy', 'w.head_pending', 'w.head_beat_in', 'w.slot0.valid',
                      'w.slot1.valid', 'w.response_full', 'w.response_spare', 'r.slot0.valid',
                      'r.slot1.valid', 'r.slot0.received', 'r.slot1.received', 'r.full',
                      'r.response_last', 'r.spare', 'r.spare_last', 'w.remaining',
@@ -99,8 +105,7 @@ def ports(work):
     return result
 
 
-def monitors(kind):
-    n = CYCLES
+def monitors(kind, n):
     kind = 'axi4' if kind == 'axi4x2' else kind
     # Reads that start after expiry: the rest of the packet already held.
     late = '''
@@ -177,12 +182,9 @@ always @(posedge nl_clk) begin
 end
 ''' + late.replace('@START@', 'nl_axil_arvalid && !q_parv'), 6 * n
     return f'''
-reg q_aw = 0, q_w = 0, q_ar = 0, q_pav = 0, q_pwv = 0, q_parv = 0; reg [7:0] q_awc = 0, q_wlc = 0;
+reg q_aw = 0, q_w = 0, q_ar = 0, q_pav = 0, q_pwv = 0, q_parv = 0;
 reg [11:0] q_aa, q_ara; reg [3:0] q_al, q_arl, q_ws, q_ac, q_arc; reg [2:0] q_as, q_ars, q_ap, q_arp;
 reg [1:0] q_ab, q_arb; reg [31:0] q_wd; reg q_wl;
-wire aw_hs = nl_axi_awvalid && nl_axi_awready, w_hs = nl_axi_wvalid && nl_axi_wready;
-wire b_hs = nl_axi_bvalid && nl_axi_bready, ar_hs = nl_axi_arvalid && nl_axi_arready;
-wire r_hs = nl_axi_rvalid && nl_axi_rready;
 always @(posedge nl_clk) if (AFTER && nl_reset_n && started) begin
   if (q_aw) STABLE_AW: assert (nl_axi_awvalid && nl_axi_awaddr == q_aa && nl_axi_awlen == q_al &&
                                nl_axi_awsize == q_as && nl_axi_awburst == q_ab && nl_axi_awprot == q_ap &&
@@ -203,17 +205,70 @@ always @(posedge nl_clk) begin
   q_ar <= nl_reset_n && nl_axi_arvalid && !nl_axi_arready; q_ara <= nl_axi_araddr; q_arl <= nl_axi_arlen;
   q_ars <= nl_axi_arsize; q_arb <= nl_axi_arburst; q_arp <= nl_axi_arprot; q_arc <= nl_axi_arcache;
   q_pav <= nl_axi_awvalid; q_pwv <= nl_axi_wvalid; q_parv <= nl_axi_arvalid;
-  if (!nl_reset_n) begin q_awc <= 0; q_wlc <= 0; end
-  else begin
-    if (aw_hs) q_awc <= q_awc + 1;
-    if (w_hs && nl_axi_wlast) q_wlc <= q_wlc + 1;
-  end
 end
 ''', 2 * n + 8
 
 
-def harness(kind, port_list, answer):
-    extra, bound = monitors(kind)
+def axi_credits(bus):
+    tail = f'&& nl_{bus}_wlast' if bus == 'axi' else ''
+    beats = f'({{1\'b0, nl_{bus}_arlen}} + 5\'d1)' if bus == 'axi' else "1'b1"
+    handshakes = '\n'.join(f'wire q_{c}_take = nl_{bus}_{c}valid && nl_{bus}_{c}ready;'
+                           for c in AXI_CHANNELS)
+    return f'''
+{handshakes}
+reg [7:0] q_aw_credit = 0, q_w_credit = 0, q_r_credit = 0;
+wire q_b_owed = q_aw_credit != 0 && q_w_credit != 0;
+wire q_r_owed = q_r_credit != 0;
+wire q_b_blocked = q_b_owed && nl_{bus}_bvalid && !nl_{bus}_bready;
+wire q_r_blocked = q_r_owed && nl_{bus}_rvalid && !nl_{bus}_rready;
+always @(posedge nl_clk)
+  if (!nl_reset_n) begin q_aw_credit <= 0; q_w_credit <= 0; q_r_credit <= 0; end
+  else begin
+    q_aw_credit <= q_aw_credit + q_aw_take - q_b_take;
+    q_w_credit <= q_w_credit + (q_w_take {tail}) - q_b_take;
+    q_r_credit <= q_r_credit + (q_ar_take ? {beats} : 0) - q_r_take;
+  end
+'''
+
+
+def expiry_monitor(waits, held, cycles):
+    bits = (cycles - 1).bit_length()
+    parts = [held, 'reg q_exp = 0;']
+    reaches = []
+    for channel, waiting in waits.items():
+        suffix = f'_{channel}' if channel else ''
+        reaches.append(f'q_wait{suffix} && q_count{suffix} == {cycles - 1}')
+        parts.append(f'''
+reg [{bits - 1}:0] q_count{suffix} = 0;
+wire q_wait{suffix} = {waiting};
+wire q_related{suffix} = nl_probe_timeout{suffix}_waiting == q_wait{suffix};
+always @(posedge nl_clk)
+  if (!nl_reset_n || !q_wait{suffix} || q_exp) q_count{suffix} <= 0;
+  else q_count{suffix} <= q_count{suffix} + 1;
+always @(posedge nl_clk) if (RELATE && nl_reset_n && started && !nl_status_timed_out)
+  RELATED{suffix}: assert (q_related{suffix});
+`ifdef ASSUME_RELATED
+always @(posedge nl_clk) if (nl_reset_n && started && !nl_status_timed_out) assume (q_related{suffix});
+`endif
+always @(posedge nl_clk) if (WATCH && nl_reset_n && started && !q_exp)
+  HELPER{suffix}: assert (nl_probe_timeout{suffix}_count == q_count{suffix});
+''')
+    parts.append(f'''
+always @(posedge nl_clk)
+  if (!nl_reset_n) q_exp <= 0;
+  else if ({' || '.join(f'({condition})' for condition in reaches)}) q_exp <= 1;
+''')
+    return '\n'.join(parts)
+
+
+def axi_waits(bus):
+    predicates = {c: f'nl_{bus}_{c}valid && !nl_{bus}_{c}ready' for c in ('aw', 'w', 'ar')}
+    predicates.update({c: f'q_{c}_owed && nl_{bus}_{c}ready && !nl_{bus}_{c}valid' for c in ('b', 'r')})
+    return {c: f'({wait}) && !q_b_blocked && !q_r_blocked' for c, wait in predicates.items()}
+
+
+def harness(kind, port_list, answer, n):
+    extra, bound = monitors(kind, n)
     conns = [f'.{name}({name})' for name, _, _ in port_list]
     # The network always accepts responses: a pooled AXI4 outlet holds its
     # in-flight entry until the response leaves, so a stuck response channel
@@ -222,23 +277,11 @@ def harness(kind, port_list, answer):
     inputs = [f'input wire [{w - 1}:0] {n}' for n, w, i in port_list
               if i and n not in tied]
     wires = [f'wire [{w - 1}:0] {n};' for n, w, i in port_list if not i or n in tied]
-    n = CYCLES
     stall = {'apb4': '!nl_apb_pready', 'apb3': '!nl_apb_pready', 'ahb_lite': '!nl_ahb_hreadyout',
-             'axi4_lite': '!nl_axi_bvalid && !nl_axi_rvalid',
+             'axi4_lite': '!nl_axil_bvalid && !nl_axil_rvalid',
              'axi4': '!nl_axi_bvalid && !nl_axi_rvalid',
              'axi4x2': '!nl_axi_bvalid && !nl_axi_rvalid'}[kind]
-    # The watchdog recounted from the network faces: a cycle after one with a
-    # request offered or a packet held counts while no response is offered;
-    # an offered response restarts the count. Before expiry the outlet's counter
-    # equals the recount. The pooled AXI4 outlet holds one burst per direction
-    # from its head until its response leaves (a flag suffices). APB and
-    # AXI4-Lite outlets stage a completed packet's response while the next
-    # packet's head is already accepted, so their held packets are counted,
-    # not flagged: a write from a request beat taken until its response is
-    # taken, a read from a request taken until its last response is taken. An
-    # AHB outlet holds several packets, each answered on its own; there the
-    # network frames its packets (a write beat is first exactly after a last
-    # one, a read is one beat) and the monitor counts them.
+    # The held-packet invariants cover the engines with overlapping packet state.
     if kind == 'ahb_lite':
         held = '''reg q_inw = 0; reg [2:0] q_trw = 0, q_trr = 0;
 always @* if (nl_wreq_valid) assume (nl_wreq_first == !q_inw);
@@ -338,54 +381,24 @@ always @(posedge nl_clk)
     q_trr <= q_trr + (nl_rreq_valid && nl_rreq_ready) -
              (nl_rrsp_valid && nl_rrsp_ready && nl_rrsp_last);
   end'''
-    expiry = f'''
-{held}
-reg q_exp = 0, q_was = 0; reg [11:0] q_cnt = 0;
-wire q_pending = nl_wreq_valid || nl_rreq_valid || q_trw != 0 || q_trr != 0;
-always @(posedge nl_clk) begin
-  if (!nl_reset_n) begin q_exp <= 0; q_was <= 0; q_cnt <= 0; end
-  else begin
-    q_was <= q_pending;
-    if (nl_wrsp_valid || nl_rrsp_valid) q_cnt <= 0;
-    else if (q_was && !q_exp) begin q_cnt <= q_cnt + 1; if (q_cnt == {n - 1}) q_exp <= 1; end
-  end
-end
-// RELATED: until the outlet expires, its counting condition equals the
-// recount's. It ties the outlet's held packets to the network faces and does
-// not depend on the count, so it is proved on its own; the watch group then
-// assumes it, which makes the count helpers inductive.
-wire q_related = nl_probe_timeout_waiting == (q_was && !nl_wrsp_valid && !nl_rrsp_valid);
-always @(posedge nl_clk) if (RELATE && nl_reset_n && started && !nl_status_timed_out)
-  RELATED: assert (q_related);
-`ifdef ASSUME_RELATED
-always @(posedge nl_clk) if (nl_reset_n && started && !nl_status_timed_out) assume (q_related);
+    if kind.startswith('apb'):
+        waits = {'': 'nl_apb_psel && nl_apb_penable && !nl_apb_pready'}
+    elif kind == 'ahb_lite':
+        waits = {'': '(q_dp || (nl_ahb_hsel && nl_ahb_htrans[1])) && !nl_ahb_hreadyout'}
+    else:
+        bus = 'axil' if kind == 'axi4_lite' else 'axi'
+        waits = axi_waits(bus)
+        held += axi_credits(bus) + f'''
+`ifdef ABSTRACT_TIMER_COUNT
+always @* if (nl_reset_n && !nl_status_timed_out) begin
+`else
+always @* if (nl_reset_n && !q_exp) begin
 `endif
-always @(posedge nl_clk) if (WATCH && nl_reset_n && started && !q_exp) begin
-  HELPER: assert (nl_probe_timeout_count == q_cnt);
-  HELPER_WAITING: assert (nl_probe_timeout_waiting == (q_was && !nl_wrsp_valid && !nl_rrsp_valid));
+  if (nl_{bus}_bvalid) assume (q_b_owed);
+  if (nl_{bus}_rvalid) assume (q_r_owed);
 end
 '''
-    if kind in ('apb3', 'apb4', 'ahb_lite'):
-        wait = ('nl_apb_psel && nl_apb_penable && !nl_apb_pready' if kind.startswith('apb')
-                else '(q_dp || (nl_ahb_hsel && nl_ahb_htrans[1])) && !nl_ahb_hreadyout')
-        expiry = f'''
-{held}
-reg q_exp = 0; reg [11:0] q_cnt = 0;
-wire q_wait = {wait};
-wire q_related = nl_probe_timeout_waiting == q_wait;
-always @(posedge nl_clk) begin
-  if (!nl_reset_n) begin q_exp <= 0; q_cnt <= 0; end
-  else if (!q_wait || q_exp) q_cnt <= 0;
-  else begin q_cnt <= q_cnt + 1; if (q_cnt == {n - 1}) q_exp <= 1; end
-end
-always @(posedge nl_clk) if (RELATE && nl_reset_n && started && !q_exp)
-  RELATED: assert (q_related);
-`ifdef ASSUME_RELATED
-always @(posedge nl_clk) if (nl_reset_n && started && !q_exp) assume (q_related);
-`endif
-always @(posedge nl_clk) if (WATCH && nl_reset_n && started && !q_exp)
-  HELPER: assert (nl_probe_timeout_count == q_cnt);
-'''
+    expiry = expiry_monitor(waits, held, n)
     read_bound = ''
     if bound and answer == 'completion':
         # Cycles after expiry since the read burst was accepted or last
@@ -450,12 +463,81 @@ endmodule
 '''
 
 
+def shared_harness(port_list, cycles):
+    """Drive a target that can issue either B or R on its shared response path."""
+    input_values = {
+        'nl_reset_n': 'started',
+        'nl_wreq_valid': 'q_writes < (hold_read ? 1 : 3) && (!hold_read || q_r_owed)',
+        'nl_wreq_write': '1', 'nl_wreq_first': '1', 'nl_wreq_last': '1', 'nl_wreq_be': "4'hf",
+        'nl_rreq_valid': '!q_sent_read && (hold_read || q_writes == 3)',
+        'nl_rreq_length': "hold_read ? 4'd15 : 4'd0",
+        'nl_rreq_first': '1', 'nl_rreq_last': '1', 'nl_rreq_source': '1',
+        'nl_axi_awready': '1', 'nl_axi_wready': '1', 'nl_axi_arready': '1',
+        'nl_axi_bvalid': 'q_b_owed && (hold_read ? !q_r_owed : q_start_response)',
+        'nl_axi_rvalid': 'q_r_owed && (hold_read ? q_start_response : !q_b_owed)',
+        'nl_axi_rlast': 'q_r_credit == 1',
+        'nl_wrsp_ready': 'hold_read || q_release',
+        'nl_rrsp_ready': '!hold_read || q_release',
+    }
+    for direction in ('w', 'r'):
+        input_values[f'nl_{direction}req_size'] = '2'
+        input_values[f'nl_{direction}req_burst'] = '1'
+        for field in ('address', 'start_address'):
+            input_values[f'nl_{direction}req_{field}'] = "32'h1000"
+    wires = '\n'.join(f'wire [{width - 1}:0] {name}'
+                      + (f' = {input_values.get(name, "0")};' if incoming else ';')
+                      for name, width, incoming in port_list if name != 'nl_clk')
+    conns = ', '.join(f'.{name}({name})' for name, _, _ in port_list)
+    return f'''module formal_top(input wire nl_clk);
+(* anyconst *) reg hold_read;
+reg started = 0, q_sent_read = 0, q_release = 0;
+reg q_start_response = 0, q_wait_before_block = 0;
+reg [2:0] q_writes = 0, q_b_received = 0;
+reg [5:0] q_r_received = 0;
+reg [{cycles.bit_length()}:0] q_stall_age = 0;
+{wires}
+nocloom_axi4_outlet_probe dut({conns});
+{axi_credits('axi')}
+wire q_missing_b = q_b_owed && nl_axi_bready && !nl_axi_bvalid;
+wire q_missing_r = q_r_owed && nl_axi_rready && !nl_axi_rvalid;
+wire q_delay_b = q_r_blocked && q_missing_b;
+wire q_delay_r = q_b_blocked && q_missing_r;
+wire q_countable = (hold_read ? q_missing_b : q_missing_r) && !q_b_blocked && !q_r_blocked;
+always @(posedge nl_clk) begin
+  started <= 1;
+  if (started) begin
+    // The target begins the first response after it owes the other one.
+    // The other channel must have counted before backpressure clears it.
+    if (hold_read ? q_b_owed : q_r_owed) q_start_response <= 1;
+    if ((q_delay_b || q_delay_r) && $past(q_countable)) q_wait_before_block <= 1;
+    if (nl_wreq_valid && nl_wreq_ready) q_writes <= q_writes + 1;
+    if (nl_rreq_valid && nl_rreq_ready) q_sent_read <= 1;
+    if (nl_wrsp_valid && nl_wrsp_ready) q_b_received <= q_b_received + 1;
+    if (nl_rrsp_valid && nl_rrsp_ready) q_r_received <= q_r_received + 1;
+    q_stall_age <= (hold_read ? q_delay_b : q_delay_r) ? q_stall_age + 1 : 0;
+    if (q_stall_age == {cycles}) q_release <= 1;
+    SHARED_RESPONSE: assert (!nl_status_timed_out);
+    if (q_delay_b && $past(q_countable)) COUNTED_B: assert (nl_probe_timeout_b_count != 0);
+    if (q_delay_r && $past(q_countable)) COUNTED_R: assert (nl_probe_timeout_r_count != 0);
+    if ($past(q_delay_b)) RESET_B: assert (nl_probe_timeout_b_count == 0);
+    if ($past(q_delay_r)) RESET_R: assert (nl_probe_timeout_r_count == 0);
+    B_BEHIND_R: cover (hold_read && q_wait_before_block && q_release &&
+                       q_b_received == 1 && q_r_received == 16);
+    R_BEHIND_B: cover (!hold_read && q_wait_before_block && q_release &&
+                       q_b_received == 3 && q_r_received == 1);
+  end
+end
+endmodule
+'''
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--fixture', required=True)
     parser.add_argument('--work', required=True)
     parser.add_argument('--kind', required=True, choices=['apb4', 'apb3', 'axi4_lite', 'ahb_lite', 'axi4'])
     parser.add_argument('--depth', type=int, default=48)
+    parser.add_argument('--cycles', type=int, default=CYCLES)
     parser.add_argument('--mode', choices=['prove', 'bmc'], default='prove')
     # The reach task needs a trace to expiry (1030 frames). The solver does not
     # reach that depth on the queue-structured Lite engine within the test
@@ -472,6 +554,9 @@ def main():
     # in the same run.
     if 'watch' in tasks and 'relate' not in tasks:
         parser.error('watch needs relate')
+    shared = any(task.startswith('shared') for task in tasks)
+    if shared and (args.kind != 'axi4' or any(not task.startswith('shared') for task in tasks)):
+        parser.error('shared response tasks run separately on AXI4')
     base = Path(args.work).resolve()
     base.mkdir(parents=True, exist_ok=True)
     capacities = [int(c) for c in args.capacities.split(',')]
@@ -483,17 +568,22 @@ def main():
         # (verif_target_timeouts_negative, targets mx, mq): a PDR trace to it
         # does not finish within the test time.
         run_tasks = [task for task in tasks if capacity == 1 or task != 'reach']
-        kind = 'axi4x2' if capacity == 2 else args.kind
+        kind = 'axi4x4' if shared else 'axi4x2' if capacity == 2 else args.kind
         work = Path(tempfile.mkdtemp(prefix=f'run-{kind}-{answer}-', dir=base))
         (base / f'latest-{kind}-{answer}.txt').write_text(str(work) + '\n')
-        subprocess.run([args.fixture, str(work), kind, str(CYCLES), answer,
+        subprocess.run([args.fixture, str(work), kind, str(args.cycles), answer,
                         *PROBES.get(kind, ())], check=True, timeout=120)
-        (work / 'formal_top.sv').write_text(harness(kind, ports(work), answer))
-        engine = 'abc pdr' if args.mode == 'prove' else 'smtbmc z3'
+        top = (shared_harness(ports(work), args.cycles) if shared else
+               harness(kind, ports(work), answer, args.cycles))
+        (work / 'formal_top.sv').write_text(top)
+        engine = 'abc pdr' if args.mode == 'prove' and not shared else 'smtbmc z3'
         safety = [task for task in run_tasks if task != 'reach']
         sby = '[tasks]\n' + '\n'.join(run_tasks) + '\n\n[options]\n'
         for task in safety:
-            sby += f'{task}: mode {args.mode}\n{task}: depth {args.depth}\n{task}: aigsmt z3\n'
+            mode = {'shared': 'bmc', 'shared_cover': 'cover'}.get(task, args.mode)
+            sby += f'{task}: mode {mode}\n{task}: depth {args.depth}\n'
+            if mode == 'prove':
+                sby += f'{task}: aigsmt z3\n'
         if 'reach' in run_tasks:
             sby += 'reach: mode prove\nreach: vcd off\n'
         sby += '\n[engines]\n'
@@ -503,9 +593,17 @@ def main():
             sby += 'reach: abc pdr\n'
         sby += '\n[script]\nread_verilog -formal outlet.v\n'
         for task in run_tasks:
-            defines = ' '.join(f'-D{name}' for name in DEFINES[task])
+            abstract_count = (task == 'after' and args.mode == 'prove'
+                              and kind in ('axi4', 'axi4x2') and 'watch' in run_tasks)
+            names = DEFINES[task] + (['ABSTRACT_TIMER_COUNT'] if abstract_count else [])
+            defines = ' '.join(f'-D{name}' for name in names)
             sby += f'{task}: read_verilog -formal -sv {defines} formal_top.sv\n'
-        sby += f'''prep -top formal_top
+            if abstract_count:
+                sby += 'after: prep -top formal_top -flatten\n'
+                sby += 'after: cutpoint w:dut.nl_probe_timeout_*_count\nafter: opt_clean\n'
+            else:
+                sby += f'{task}: prep -top formal_top\n'
+        sby += f'''
 
 [files]
 {work / 'outlet.v'}
@@ -513,7 +611,7 @@ def main():
 '''
         (work / 'timeout.sby').write_text(sby)
         started = time.monotonic()
-        proc = subprocess.run(['sby', '-f', 'timeout.sby'], cwd=work, capture_output=True,
+        proc = subprocess.run(['sby', 'timeout.sby'], cwd=work, capture_output=True,
                               text=True, timeout=2400, check=False)
         seconds = round(time.monotonic() - started, 1)
         (work / 'sby.log').write_text(proc.stdout + proc.stderr)
@@ -521,7 +619,7 @@ def main():
         for task in run_tasks:
             path = work / f'timeout_{task}' / 'status'
             status[task] = path.read_text().split()[0] if path.exists() else 'MISSING'
-        results.append({'capacity': capacity, 'answer': answer, 'status': status,
+        results.append({'capacity': 4 if shared else capacity, 'answer': answer, 'status': status,
                         'seconds': seconds})
         (base / 'status.json').write_text(json.dumps({'kind': args.kind, 'mode': args.mode,
                                                       'depth': args.depth,
@@ -529,7 +627,7 @@ def main():
         expected = {task: 'FAIL' if task == 'reach' else 'PASS' for task in run_tasks}
         assert status == expected, \
             (answer, status, proc.stdout[-3000:])
-        print(f'FORMAL_PASS target timeout {kind} {answer} {args.mode} cycles={CYCLES} '
+        print(f'FORMAL_PASS target timeout {kind} {answer} cycles={args.cycles} '
               f'seconds={seconds}')
 
 

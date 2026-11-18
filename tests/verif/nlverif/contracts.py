@@ -40,7 +40,7 @@ CONTRACTS = {
         source="docs/protocols.md#axi4-lite-initiators (AW and W accepted independently, one pending "
                "write); map network.storage acquire and release"),
     "AXI.TIMEOUT.EXACT": dict(
-        text="A target timer fails the target after timeout_cycles without progress of the waiting direction",
+        text="A target timer fails the target after timeout_cycles of consecutive target waits",
         source="docs/timeout-and-progress.md#target-timeouts"),
     "AXI.EXCL.MONITOR": dict(
         text="Exclusive pairs succeed with EXOKAY only when no overlapping write intervened",

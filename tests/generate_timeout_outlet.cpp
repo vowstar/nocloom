@@ -8,9 +8,9 @@
 #include <vector>
 
 // Emits one outlet with a target timer for the formal harness:
-// generate_timeout_outlet <dir> <apb4|apb3|axi4_lite|ahb_lite|axi4|axi4x2> <cycles>
+// generate_timeout_outlet <dir> <apb4|apb3|axi4_lite|ahb_lite|axi4|axi4x2|axi4x4> <cycles>
 //   <completion|report> [binding...]
-// axi4x2 is the AXI4 outlet with two bursts in flight (one source, index 0).
+// axi4x2 and axi4x4 have two or four bursts in flight (one source, index 0).
 int main(int argc, char **argv) {
   if (argc < 5)
     return 2;
@@ -21,7 +21,7 @@ int main(int argc, char **argv) {
   if (answer != "completion" && answer != "report")
     return 2;
   const nocloom::AddressWindow window{0x1000, 0x1000};
-  if (kind != "axi4" && kind != "axi4x2" && kind != "apb4" && kind != "apb3" &&
+  if (kind != "axi4" && kind != "axi4x2" && kind != "axi4x4" && kind != "apb4" && kind != "apb3" &&
       kind != "axi4_lite" && kind != "ahb_lite")
     return 2;
   const auto outlet = [&] {
@@ -29,9 +29,9 @@ int main(int argc, char **argv) {
       Axi4OutletProfile p{"probe", 32, 0, 4, 0, true, {{window.base, window.size}}, 12};
       p.timeout_cycles = cycles;
       p.timeout_completion = answer == "completion";
-      if (kind == "axi4x2") {
+      if (kind == "axi4x2" || kind == "axi4x4") {
         p.source_bits = 1;
-        p.max_outstanding = 2;
+        p.max_outstanding = kind == "axi4x2" ? 2 : 4;
         p.id_sources = {0};
       }
       return lower_axi4_outlet(p);
@@ -56,7 +56,16 @@ int main(int argc, char **argv) {
   // binding named on the command line (nl_probe_ and the name with dots as
   // underscores), for the harness's helper invariants.
   auto h = outlet.value();
-  std::vector<std::string> probes{"timeout.count", "timeout.waiting"};
+  std::vector<std::string> probes;
+  if (kind.starts_with("axi4")) {
+    for (const auto *channel : {"aw", "w", "ar", "b", "r"}) {
+      const auto prefix = std::string("timeout.") + channel;
+      probes.push_back(prefix + ".count");
+      probes.push_back(prefix + ".waiting");
+    }
+  } else {
+    probes = {"timeout.count", "timeout.waiting"};
+  }
   probes.insert(probes.end(), argv + 5, argv + argc);
   for (const auto &name : probes) {
     const auto it = h.bindings.find(name);
