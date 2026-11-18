@@ -3,7 +3,7 @@
 ## Dedicated APB and AXI4-Lite targets
 
 Dedicated targets are APB5, APB4, APB3, APB2, AXI4-Lite, AHB-Lite, AHB5 and
-Wishbone. See [Wishbone classic cycles](wishbone.md) for its bus signals.
+Wishbone. See [Wishbone signal names](wishbone.md#signal-names) for its bus signals.
 AXI4-Lite issues one access per touched target word.
 
 | Write strobes | Target behavior |

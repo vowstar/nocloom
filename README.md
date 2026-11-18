@@ -190,6 +190,7 @@ field path, a message, the file line and column when known, and a [diagnostic co
 | [Address map](docs/address-map.md) | Mappings, address inputs, decode misses and error responses |
 | [Protocols](docs/protocols.md) | Initiator and target protocols, width conversion and packets |
 | [TileLink](docs/tilelink.md) | Shared fields and integration, [TL-UL](docs/tilelink-ul.md), [TL-UH initiators](docs/tilelink-uh-initiators.md) and [TL-UH targets](docs/tilelink-uh-targets.md) |
+| [Wishbone](docs/wishbone.md) | Shared fields and signals, [classic cycles](docs/wishbone-classic.md), [pipelined cycles](docs/wishbone-pipelined.md) and [registered feedback bursts](docs/wishbone-registered-feedback.md) |
 | [Transactions](docs/transactions.md) | Bursts in flight, target IDs, read interleaving, exclusive access and timeouts |
 | [Scheduling](docs/scheduling.md) | Levels, AxQOS maps, bandwidth shapers and bandwidth schedulers |
 | [Output files](docs/outputs.md) | Map, bundle, dependency graph, IP-XACT, address table, CDC constraints and C headers |

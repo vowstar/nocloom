@@ -160,10 +160,10 @@ CONTRACTS = {
         source="docs/dedicated-targets.md#dedicated-apb-and-axi4-lite-targets"),
     "WB.BURST.SEQUENCE": dict(
         text="Registered feedback tags preserve physical word order and terminate with a data word",
-        source="docs/wishbone.md#registered-feedback-bursts"),
+        source="docs/wishbone-registered-feedback.md#registered-feedback-bursts"),
     "WB.BUFFER.CREDIT": dict(
         text="Write banks retain packets until completion storage takes their identity and reads reserve response space",
-        source="docs/wishbone.md#registered-feedback-bursts"),
+        source="docs/wishbone-registered-feedback.md#registered-feedback-bursts"),
     "APB.SUBPAGE.DECODE": dict(
         text="A window below 4 KiB owns its page; beats in the rest of the page answer DECERR "
              "without access",

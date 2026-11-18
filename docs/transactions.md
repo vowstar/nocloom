@@ -15,7 +15,7 @@ Related manuals: [Read response interleaving](read-responses.md),
 An initiator's `max_outstanding` overrides `transport.max_outstanding`.
 Pipelined Wishbone counts each accepted request until its response completes,
 including the request held before network admission. See
-[Wishbone](wishbone.md).
+[pipelined cycles](wishbone-pipelined.md#pipelined-cycles).
 
 For the other initiators, a burst takes one capacity entry when its first
 packet leaves and releases it when its final response packet returns. A burst
