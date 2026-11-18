@@ -5,6 +5,13 @@ set(NLV_RUN ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/nlverif/run.py)
 set(NLV_CASES ${CMAKE_CURRENT_SOURCE_DIR}/cases)
 set(NLV_FIXTURE --fixture $<TARGET_FILE:nocloom_verif_fixture>)
 
+nocloom_verif_case(NAME verif_read_packet_admission LAYER negative TIER focused TIMEOUT 45
+  FEATURES axi4 MEMORY_MB 1024
+  CONTRACTS AXI.OUTSTANDING.REACH
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/read_packet_admission.py
+    --cli $<TARGET_FILE:nocloom_cli> --negative)
+set_property(TEST verif_read_packet_admission APPEND PROPERTY LABELS edit)
+
 nocloom_verif_case(NAME verif_subpage_destinations LAYER negative TIER focused TIMEOUT 300
   FEATURES axi4 decode MEMORY_MB 1024
   CONTRACTS AXI.ERR.UNMAPPED_DECERR

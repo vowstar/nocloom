@@ -835,7 +835,7 @@ struct PacketizerLowering {
   std::vector<ValueId> r_used;
   ValueId up_r_ready{}, busy{}, first_packet{}, r_count{}, rsent{};
   ValueId rcut_now{}, rfold_now{}, rpack_now{}, rsplit_now{}, replay_now{};
-  ValueId serial_now{}, rsplit{}, rcut_eff{}, pack_plan{}, rwrap_now{}, wrap_plan{};
+  ValueId serial_now{}, rserial{}, rsplit{}, rcut_eff{}, pack_plan{}, rwrap_now{}, wrap_plan{};
   ValueId len_now{}, size_now{}, start_now{}, final_now{}, end_now{};
   ValueId rexact_now{}, rsub{}, rsub_size{};
   ValueId rq_valid{}, rq_fire{}, ri_ready{}, rload{}, rr_valid{};
@@ -1186,7 +1186,7 @@ void PacketizerLowering::read_request() {
   // needing one waits for a vacant context.
   r_used = std::vector<ValueId>(contexts, one);
   ValueId vacant = zero, admitted = one;
-  serial_now = one;
+  serial_now = rserial = one;
   for (unsigned k = 0; multi && k < contexts; ++k)
     vacant =
         l.either(vacant, l.inv(r_used[k] = l.state("r.context" + std::to_string(k) + ".used", 1)));
@@ -1196,6 +1196,8 @@ void PacketizerLowering::read_request() {
   }
   ri_ready = multi ? io.active(l.both(l.inv(busy), admitted)) : io.active(l.inv(busy));
   rload = l.bind("r.load", l.both(ri.at("valid"), ri_ready));
+  if (multi)
+    rserial = l.latch("r.req_serial", serial_now, rload);
   // The burst's descriptor; a read request carries no payload.
   d = l.latch_fields("r.descriptor", ri, rload, {"data", "be"});
   rr_valid = io.active(rr.at("valid"));
@@ -1293,8 +1295,12 @@ void PacketizerLowering::read_request() {
   const auto after = l.minus(cur_rem, rpacket.beats);
   final_now = l.inv(rpacket.split); // the packet on the face ends the burst
   auto room = piece_count::room(l, r_count);
-  // The load-cycle offer asks what a registered packet would (a narrow-split piece needs no room).
-  const auto head_room = multi ? l.either(room, rsplit_now) : room;
+  // Only requests that use a reassembly context check the piece count. A narrow-split piece
+  // uses the shared pool instead. A stalled first packet keeps its load-cycle classification.
+  const auto head_room =
+      multi ? l.either(l.inv(serial_now), l.both(vacant, l.either(room, rsplit_now))) : room;
+  if (multi)
+    room = l.either(room, l.inv(rserial));
   // r.group: the group of the packet sent last; a later packet's decodes from the r.start register.
   const auto rgroup = p.serialize ? l.state("r.group", gb) : zero;
   const auto rapart =
@@ -1305,8 +1311,9 @@ void PacketizerLowering::read_request() {
   if (p.serialize)
     room = l.both(room, l.either(l.inv(rapart), l.eq(rsent, 0)));
   // An idle side offers in the load cycle: the terms of the load, off its registers' fanout.
-  rq_valid = io.active(l.pick(busy, l.both(pending, l.either(room, rsplit)),
-                              l.both(ri.at("valid"), l.both(admitted, head_room))));
+  rq_valid =
+      io.active(l.pick(busy, l.both(pending, l.either(room, rsplit)),
+                       l.both(ri.at("valid"), multi ? head_room : l.both(admitted, head_room))));
   rq_fire = l.both(rq_valid, down_r_ready);
   const auto resumed = rp.resumed;
   if (p.serialize)
@@ -1450,8 +1457,7 @@ void PacketizerLowering::read_response() {
   const auto taken = l.both(rr_valid, l.both(up_r_ready, l.inv(hold)));
   up["first"] = l.pick(mine, counted_first, up.at("first"));
   up["last"] = l.pick(mine, counted_last, up.at("last"));
-  const auto req_serial =
-      multi ? l.pick(rload, serial_now, l.latch("r.req_serial", serial_now, rload)) : one;
+  const auto req_serial = multi ? l.pick(rload, serial_now, rserial) : one;
   // A packet leaving in the load cycle takes the new burst's narrow-split mark, not the held one.
   const auto sent_split = multi ? l.pick(rload, rsplit_now, rsplit) : zero;
   piece_count::step(l, r_count, l.both(l.both(rq_fire, req_serial), l.inv(sent_split)),

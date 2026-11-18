@@ -67,13 +67,9 @@ burst that leaves unchanged as one packet is not counted. The packets that
 `merge_modifiable` makes are not counted, although that option also splits
 bursts.
 
-While four counted packets of one direction are in flight, later packets of that
-direction wait until one of the four completes:
-
-| Direction | Waits | Does not wait |
-| --- | --- | --- |
-| Read | Every later read packet, counted or not, to any target | Packets that `merge_modifiable` makes, unless an earlier read of this initiator waits |
-| Write | Every later packet of a counted burst | A write that is not counted, unless an earlier write of this initiator waits |
+When four counted packets are in flight, another counted packet in that
+direction waits until one completes. An uncounted packet can proceed when the
+initiator's request path is free.
 
 Other initiators do not wait. The other direction of the same initiator waits in
 one case. A burst that has sent a packet and waits before a later packet keeps
