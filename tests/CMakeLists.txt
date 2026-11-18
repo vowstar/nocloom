@@ -199,7 +199,7 @@ foreach(kind IN ITEMS 1 2 16 long negative)
     LABELS "${watchdog_labels}" RESOURCE_LOCK tilelink
     ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
 endforeach()
-foreach(kind IN ITEMS apb3 apb4 apb5 wb_classic wb_pipelined)
+foreach(kind IN ITEMS apb3 apb4 apb5 wb_classic wb_pipelined ahb_lite tl_ul)
   add_test(NAME target_watchdog_${kind}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/target_watchdog.py
       --cli $<TARGET_FILE:nocloom_cli> --kind ${kind}

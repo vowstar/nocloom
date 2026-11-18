@@ -8,11 +8,15 @@ import tempfile
 
 import sim_engine
 
+DRIVEN = {"t_pready", "t_ack", "t_stall", "t_hreadyout", "t_a_ready", "t_d_valid", "t_d_opcode",
+          "t_d_size", "t_awready", "t_wready", "t_bvalid", "t_arready", "t_rvalid",
+          "t_rdata", "t_rlast"}
+
 
 def configuration(kind, completion):
     target = dict(name="t", clock_domain="main", protocol=kind, data_width=32,
                   mappings=[dict(base="0x0", size="0x1000")],
-                  timeout=dict(cycles=16, completion=completion))
+                  timeout=dict(cycles=32 if kind == "tl_ul" else 16, completion=completion))
     if kind.startswith("wb_"):
         target.update(protocol="wishbone", cycles=kind[3:], address_unit="byte")
     if kind not in ("apb3", "wb_classic", "wb_pipelined", "tl_ul"):
@@ -34,13 +38,43 @@ def bench(mapping, kind, completion):
         connections.append(f".{name}({alias})")
         incoming = port["direction"] == "input"
         declarations.append(f"{'reg' if incoming else 'wire'} [{width - 1}:0] {alias}"
-                            + ("=0;" if incoming else ";"))
-    family = "apb" if kind.startswith("apb") else kind
+                            + ("=0;" if incoming and alias not in DRIVEN else ";"))
+    if kind.startswith("apb"):
+        kind = "apb"
+    cycles = 32 if kind == "tl_ul" else 16
     body = Path(__file__).with_suffix(".sv").read_text()
-    return (f"`timescale 1ns/1ps\n`define TARGET_{family.upper()}\nmodule tb;\n"
+    return (f"`timescale 1ns/1ps\n`define TARGET_{kind.upper()}\nmodule tb;\n"
             + "\n".join(declarations)
             + f"\nnocloom_target_watchdog dut({','.join(connections)});\n"
-            + f"localparam COMPLETION={int(completion)};\n" + body + "\nendmodule\n")
+            + f"localparam COMPLETION={int(completion)}, CYCLES={cycles};\n" + body + "\nendmodule\n")
+
+
+def faulted(rtl, fixture, config, work):
+    probe = work / "probe"
+    subprocess.run([str(fixture.resolve()), "tilelink_uh_probe", str(probe),
+                    "--param", f"config={config}", "--list-bindings"], check=True, timeout=30)
+    cells = probe / "cells.v"
+    probe_rtl = (probe / "network.v").read_text() + (cells.read_text() if cells.is_file() else "")
+    if probe_rtl != rtl:
+        raise RuntimeError("Probe RTL differs from generated RTL")
+    bindings = json.loads((probe / "bindings.json").read_text())["dut"]
+    key, = (key for key in bindings if key.endswith("/timeout.waiting"))
+    net = f"nl_internal_v{bindings[key]['index']}"
+    rtl, count = re.subn(rf"^assign {net} = (.*);$",
+                         rf"assign {net} = watchdog_fault==1 ? 1'b0 : "
+                         rf"(\1) | (watchdog_fault==2 && partial_write && !nl_i_s_wvalid);",
+                         rtl, flags=re.M)
+    if count != 1:
+        raise RuntimeError(f"Expected one wait expression, found {count}")
+    start = rtl.index("\n", rtl.index(");", rtl.index("module nocloom_target_watchdog")))
+    return (rtl[:start] + """
+integer watchdog_fault;
+reg partial_write;
+initial if (!$value$plusargs("FAULT=%d", watchdog_fault)) watchdog_fault = 0;
+always @(posedge clk or negedge reset_n)
+  if (!reset_n) partial_write <= 0;
+  else if (nl_i_s_wvalid && nl_i_s_wready) partial_write <= !nl_i_s_wlast;
+""" + rtl[start:])
 
 
 def run(args, completion):
@@ -53,20 +87,13 @@ def run(args, completion):
     mapping = json.loads((generated / "nocloom_target_watchdog.map.json").read_text())
     rtl = sim_engine.generated_rtl(generated / "nocloom_target_watchdog.v")
     if args.negative:
-        rtl, count = re.subn(r"^assign nl_t_t_timed_out = (.*);$",
-                             r"assign nl_t_t_timed_out = watchdog_fault ? 1'b0 : \1;", rtl,
-                             flags=re.M)
-        if count != 1:
-            raise RuntimeError(f"Expected one timer output, found {count}")
-        start = rtl.index("\n", rtl.index(");", rtl.index("module nocloom_target_watchdog")))
-        rtl = (rtl[:start] + "\nreg watchdog_fault;\n"
-               "initial watchdog_fault = $test$plusargs(\"FAULT\");\n" + rtl[start:])
+        rtl = faulted(rtl, args.fixture, config, work)
     (work / "tb.sv").write_text(bench(mapping, args.kind, completion))
     (work / "network.v").write_text(rtl)
     simulation = sim_engine.Simulation(work, "network.v", engine=args.sim, config=args.sim_config,
                                        compile_timeout=30, run_timeout=10, success=("WATCHDOG_PASS",))
     scenarios = (0, 1) if args.baseline else (0, 1, 2, 3, 4)
-    if args.kind == "wb_pipelined" and not args.baseline:
+    if args.kind in ("wb_pipelined", "ahb_lite", "tl_ul") and not args.baseline:
         scenarios += (5,)
     for scenario in scenarios:
         result = simulation.run([f"+SCENARIO={scenario}"])
@@ -77,10 +104,11 @@ def run(args, completion):
         elif result.returncode:
             return result.returncode
     if args.negative:
-        result = simulation.run(["+SCENARIO=2", "+FAULT"])
-        print(result.stdout, end="", flush=True)
-        if result.returncode == 0 or "CHECK_FAIL MISSING_EXPIRY" not in result.stdout:
-            return 1
+        for fault, scenario, check in ((1, 2, "MISSING_EXPIRY"), (2, 1, "EARLY_EXPIRY")):
+            result = simulation.run([f"+SCENARIO={scenario}", f"+FAULT={fault}"])
+            print(result.stdout, end="", flush=True)
+            if result.returncode == 0 or f"CHECK_FAIL {check}" not in result.stdout:
+                return 1
     return 0
 
 
@@ -89,12 +117,17 @@ def main():
     parser.add_argument("--cli", type=Path, required=True)
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--kind", required=True)
+    parser.add_argument("--fixture", type=Path)
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--baseline", action="store_true")
     group.add_argument("--negative", action="store_true")
     sim_engine.add_arguments(parser)
     args = parser.parse_args()
+    if args.negative and not args.fixture:
+        parser.error("--negative requires --fixture")
     args.work.mkdir(parents=True, exist_ok=True)
+    if args.kind == "tl_ul":
+        return run(args, False)
     return run(args, True) or (0 if args.baseline or args.negative else run(args, False))
 
 

@@ -1900,6 +1900,7 @@ struct AhbOutlet {
   std::vector<Fields> metadata;
   ValueId ra = zero, rfirst = zero, issue_first = zero;
   ValueId hready = zero, hrdata = zero, hresp = zero;
+  ValueId busy_transfer = zero;
   ValueId rt = zero, last = zero;
   // The address and data phases and the read response room.
   ValueId a_valid = zero, owner = zero, d_valid = zero, d_write = zero;
@@ -2347,6 +2348,8 @@ void AhbOutlet::issue_transfers() {
   choose_w = wcan;
   if (timeout)
     choose_w = l.both(choose_w, l.inv(failed));
+  if (timeout && !p.external_timeout_wait)
+    busy_transfer = l.either(choose_w, rcan);
   // A transfer enters the address phase when HREADY accepts the current one or the bus is quiet. A
   // BUSY changes to the next transfer only with HREADY high.
   const auto quiet =
@@ -2799,11 +2802,19 @@ void AhbOutlet::drive_bus() {
   out("ahb", "hwdata", hwdata);
   out("ahb", "hready", hready);
 
-  fail_now = timeout ? o.watchdog(l.either(l.either(w.at("valid"), r.at("valid")),
-                                           l.either(l.bindings.at("w.busy"),
-                                                    l.either(issuing, l.inv(l.eq(held, 0))))),
-                                  l.either(b_valid, responding))
-                     : zero;
+  if (timeout) {
+    if (p.external_timeout_wait) {
+      fail_now = o.watchdog(l.in("ahb", "target_wait", 1));
+    } else {
+      const auto bus_wait = l.both(l.either(driven, d_valid), l.inv(hready));
+      // A low HREADY in BUSY can keep a new transfer off the bus.
+      const auto busy_wait = l.both(l.both(waiting, busy_transfer), l.inv(hready));
+      o.watchdog(l.either(bus_wait, busy_wait));
+      // Only a phase already on the bus can change a response on the expiry edge.
+      fail_now = l.both(l.both(bus_wait, l.inv(failed)),
+                        l.eq(l.bindings.at("timeout.count"), timeout - 1));
+    }
+  }
   l.b.update(a_valid,
              l.b.select(issue, one, l.b.select(l.either(accept, discard_address), zero, a_valid)));
   l.b.update(owner, l.b.select(issue, choose_w, owner));

@@ -11,6 +11,7 @@ struct OutletFace {
   ValueId data = l.state("tl.data", 32);
   ValueId ready = l.active(
       l.either(l.eq(phase, 0), l.either(l.both(l.eq(phase, 4), l.inv(error)), l.eq(phase, 5))));
+  std::optional<ValueId> a_ready, d_valid;
   Fields bus;
   void build(const NodeHardware &core, unsigned source_bits, unsigned size_bits,
              unsigned sink_bits) {
@@ -31,7 +32,12 @@ struct OutletFace {
           value = data;
         else if (port.signal == "hresp")
           value = l.both(error, l.either(l.eq(phase, 4), l.eq(phase, 5)));
-        else
+        else if (port.signal == "target_wait") {
+          a_ready = l.in("tl", "a_ready", 1);
+          d_valid = l.in("tl", "d_valid", 1);
+          value = l.either(l.both(l.eq(phase, 2), l.inv(*a_ready)),
+                           l.both(l.eq(phase, 3), l.inv(*d_valid)));
+        } else
           throw std::logic_error("Unconnected internal target input " + port.signal);
         imported.replace(ValueId{static_cast<std::size_t>(&v - core.ir.values.data())}, value);
       }
@@ -59,8 +65,10 @@ struct OutletFace {
     const auto word = l.latch("tl.write_data", bus.at("hwdata"), capture_data);
     const auto av = l.active(l.eq(phase, 2));
     const auto dr = l.active(l.either(l.eq(phase, 2), l.eq(phase, 3)));
-    const auto a_fire = l.bind("tl.a_take", l.both(av, l.in("tl", "a_ready", 1)));
-    const auto d_fire = l.bind("tl.d_take", l.both(dr, l.in("tl", "d_valid", 1)));
+    const auto a_fire =
+        l.bind("tl.a_take", l.both(av, a_ready ? *a_ready : l.in("tl", "a_ready", 1)));
+    const auto d_fire =
+        l.bind("tl.d_take", l.both(dr, d_valid ? *d_valid : l.in("tl", "d_valid", 1)));
     const auto denied = l.in("tl", "d_denied", 1);
     const auto corrupt = l.in("tl", "d_corrupt", 1);
     const auto rdata = l.in("tl", "d_data", 32);
@@ -114,6 +122,7 @@ Result<NodeHardware> lower_tilelink_outlet(const BurstOutletProfile &profile, un
                                            unsigned size_bits, unsigned sink_bits) {
   auto kernel_profile = profile;
   kernel_profile.undefined_length_bursts = false;
+  kernel_profile.external_timeout_wait = profile.timeout_cycles != 0;
   const auto kernel = lower_tl_ul_ahb_kernel(kernel_profile);
   if (!kernel)
     return kernel;

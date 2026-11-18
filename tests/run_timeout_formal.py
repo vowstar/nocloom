@@ -86,7 +86,7 @@ PROBES = {'axi4x2': ['pool.count', 'r.count', 'w.busy', 'w.head_pending', 'w.hea
                      'pool.read_release', 'pool.write_release'],
           'ahb_lite': ['w.receiving', 'w.context0.valid', 'w.context1.valid', 'w.context2.valid',
                      'w.response_full', 'r.issuing', 'r.count', 'r.inflight', 'r.metadata0.last',
-                     'r.metadata1.last', 'timeout.pending', 'r.issue_left', 'r.subread.started',
+                     'r.metadata1.last', 'r.issue_left', 'r.subread.started',
                      'timeout.orphan.taken', 'timeout.orphan.issuing', 'timeout.orphan.left',
                      'bus.address_phase', 'bus.write']}
 
@@ -266,7 +266,6 @@ always @(posedge nl_clk) if (RELATE && nl_reset_n && started && !nl_status_timed
   HELD_RN: assert (q_rheld <= 2);
   HELD_R: assert (q_trr == nl_probe_r_issuing + (q_rheld > 0 && nl_probe_r_metadata0_last) +
                            (q_rheld > 1 && nl_probe_r_metadata1_last) - q_shared_tail);
-  HELD_WAS: assert (q_was == nl_probe_timeout_pending);
 end'''
     elif kind == 'axi4x2':
         # Two bursts in flight: a write from its head (the first beat taken
@@ -366,10 +365,13 @@ always @(posedge nl_clk) if (WATCH && nl_reset_n && started && !q_exp) begin
   HELPER_WAITING: assert (nl_probe_timeout_waiting == (q_was && !nl_wrsp_valid && !nl_rrsp_valid));
 end
 '''
-    if kind in ('apb3', 'apb4'):
+    if kind in ('apb3', 'apb4', 'ahb_lite'):
+        wait = ('nl_apb_psel && nl_apb_penable && !nl_apb_pready' if kind.startswith('apb')
+                else '(q_dp || (nl_ahb_hsel && nl_ahb_htrans[1])) && !nl_ahb_hreadyout')
         expiry = f'''
+{held}
 reg q_exp = 0; reg [11:0] q_cnt = 0;
-wire q_wait = nl_apb_psel && nl_apb_penable && !nl_apb_pready;
+wire q_wait = {wait};
 wire q_related = nl_probe_timeout_waiting == q_wait;
 always @(posedge nl_clk) begin
   if (!nl_reset_n) begin q_exp <= 0; q_cnt <= 0; end
