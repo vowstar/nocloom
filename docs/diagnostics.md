@@ -33,6 +33,7 @@ Report these as defects and include the definition.
 | `NCL_NAME_INVALID`, `NCL_NAME_COLLISION` | Invalid or conflicting identifier |
 | `NCL_INPUT_FORMAT`, `NCL_DIFF_MAP` | Unsupported file extension or invalid comparison map |
 | `NCL_UNSUPPORTED_BACKEND` | Unsupported backend or a CDC output request without crossings |
+| `NCL_VALIDATION_OPTION` | A cycle limit outside 1 to 1024 |
 | `NCL_IO_PATH` | Unsafe output directory or artifact path, including symbolic links |
 | `NCL_IO_EXISTS`, `NCL_IO_READ`, `NCL_IO_WRITE` | Output already present, unreadable input or output write failure |
 | `NCL_C_HEADER_NAME` | Two generated C macros or include guards have the same name |
@@ -93,7 +94,7 @@ See [protocols](protocols.md), [transactions](transactions.md),
 | `NCL_SOURCE_PATH`, `NCL_TARGET_PATH` | Invalid flow definitions or mapping flow selections, including unsupported [source flow connectivity within a page](address-map.md#target-mappings) |
 | `NCL_ROUTE_REFERENCE`, `NCL_ROUTE_DUPLICATE`, `NCL_ROUTE_PATH` | Invalid route endpoint, repeated flow pair or invalid path |
 | `NCL_SWITCH_ROUTE_MISSING`, `NCL_SWITCH_ROUTE_AMBIGUOUS` | Inferred route absent or not unique |
-| `NCL_SWITCH_ROUTE_CYCLE`, `NCL_SWITCH_UNUSED_OBJECT` | Route wait cycle or unused node or link |
+| `NCL_SWITCH_ROUTE_CYCLE`, `NCL_SWITCH_UNUSED_OBJECT` | Routes that form a [cycle of waits](network.md#route-cycle-report), or an unused node or link |
 | `NCL_UNSUPPORTED_ARBITRATION` | Unknown arbitration policy |
 | `NCL_ARBITRATION_OUTPUT` | Unknown, repeated or single-candidate output override |
 | `NCL_ARBITRATION_PRIORITY` | Invalid priority permutation or priority on another policy |

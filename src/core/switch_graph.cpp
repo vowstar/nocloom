@@ -184,8 +184,10 @@ plan_routes(SwitchGraphPlan &plan, std::map<std::string, std::vector<std::string
   return std::nullopt;
 }
 // A packet holding one edge waits for the next edge of its route: a cycle of these waits, not a
-// cycle of edges alone, can stall the graph.
-std::optional<Diagnostic> check_route_cycle(const SwitchGraphPlan &plan) {
+// cycle of edges alone, can stall the graph. The report of the cycles is made only when one is
+// present.
+std::vector<Diagnostic> check_route_cycle(const SwitchGraphPlan &plan,
+                                          const ValidationOptions &limits) {
   std::map<std::string, std::set<std::string>> waits;
   for (const auto &edge : plan.graph.edges)
     waits[edge.from + ">" + edge.to];
@@ -197,16 +199,8 @@ std::optional<Diagnostic> check_route_cycle(const SwitchGraphPlan &plan) {
   if (topo_visit(
           std::views::keys(waits),
           [&](const std::string &e) -> const auto & { return waits.at(e); }, order, cycle))
-    return std::nullopt;
-  std::string loop = cycle.front().substr(0, cycle.front().find('>'));
-  auto diagnostic = invalid("NCL_SWITCH_ROUTE_CYCLE", "switches.edges", "");
-  for (std::size_t i = 1; i < cycle.size(); ++i) {
-    loop += " -> " + cycle[i].substr(0, cycle[i].find('>'));
-    diagnostic.notes.push_back(cycle[i - 1] + " waits for " + cycle[i]);
-  }
-  diagnostic.message =
-      "Routes chain the links of the cycle " + loop + "; no deadlock claim is made";
-  return diagnostic;
+    return {};
+  return route_cycle_report(plan, limits);
 }
 // The physical switch outputs: each with its candidate inputs and reachable destinations.
 void plan_outputs(SwitchGraphPlan &plan) {
@@ -232,7 +226,8 @@ void plan_outputs(SwitchGraphPlan &plan) {
 }
 } // namespace
 
-Result<SwitchGraphPlan> plan_switch_graph(const DirectedSwitchGraph &input) {
+Result<SwitchGraphPlan> plan_switch_graph(const DirectedSwitchGraph &input,
+                                          const ValidationOptions &limits) {
   auto fail = [](std::string code, std::string field, std::string message) {
     return Result<SwitchGraphPlan>::failure(
         invalid(std::move(code), std::move(field), std::move(message)));
@@ -326,8 +321,8 @@ Result<SwitchGraphPlan> plan_switch_graph(const DirectedSwitchGraph &input) {
           static_cast<unsigned>(std::distance(exit_paths.begin(), exit_paths.find(route.nodes)));
     }
   }
-  if (auto loop = check_route_cycle(plan))
-    return Result<SwitchGraphPlan>::failure(std::move(*loop));
+  if (auto loops = check_route_cycle(plan, limits); !loops.empty())
+    return Result<SwitchGraphPlan>::failure(std::move(loops));
   plan_outputs(plan);
   return Result<SwitchGraphPlan>::success(std::move(plan));
 }

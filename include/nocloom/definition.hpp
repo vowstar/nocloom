@@ -912,6 +912,15 @@ struct Definition {
   // Field by field, in order: equal definitions generate the same bytes.
   bool operator==(const Definition &) const = default;
 };
+// The limits of the route cycle report (docs/network.md#route-cycle-report). A limit in its range
+// changes the diagnostics of a rejected definition only.
+struct ValidationOptions {
+  // The cycles reported for each direction, 1 to 1024: any other value is rejected. A note tells
+  // when a direction has more.
+  unsigned cycle_limit = 4;
+  // The routes listed for each wait of a cycle. 0 lists every route.
+  unsigned contributor_limit = 8;
+};
 struct GenerationOptions {
   Backend backend = Backend::Verilog2001;
   RegisterReset register_reset = RegisterReset::Asynchronous;
@@ -921,6 +930,7 @@ struct GenerationOptions {
   bool cdc_constraints = false;
   // Adds one address-window C header per initiator and a register header when error logs exist.
   bool c_header = false;
+  ValidationOptions validation = {};
   // Adds JSON and CSV address tables for the initiators.
   bool address_table = false;
   // Adds an IP-XACT component with the default component identifier.

@@ -138,8 +138,8 @@ target_sources(nocloom_core PRIVATE src/core/cross_domain.cpp)
 
 target_sources(nocloom_core PRIVATE src/core/async_fifo.cpp src/core/related_clock.cpp)
 
-target_sources(nocloom_core PRIVATE src/core/switch_graph.cpp src/core/tree_topology.cpp
-  src/core/mesh_topology.cpp)
+target_sources(nocloom_core PRIVATE src/core/switch_graph.cpp src/core/route_cycles.cpp
+  src/core/tree_topology.cpp src/core/mesh_topology.cpp)
 
 target_sources(nocloom_core PRIVATE src/core/exchange_composition.cpp src/core/exchange_clocking.cpp
   src/core/dependency_graph.cpp src/core/network_plan.cpp src/core/network_plan_profiles.cpp src/core/plan_obligations.cpp

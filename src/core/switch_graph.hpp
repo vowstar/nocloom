@@ -77,8 +77,16 @@ struct ExchangePlan {
 // Each flow pair (initiator flow, target flow) of an admitted entry/exit pair takes its fixed route
 // (a path over declared edges between its attachment nodes) or else the pair's one simple directed
 // route, and no cycle of route waits (one edge held while the next is awaited) may form: a route
-// taking an edge twice forms one.
-Result<SwitchGraphPlan> plan_switch_graph(const DirectedSwitchGraph &graph);
+// taking an edge twice forms one. A failure for such cycles is their report.
+Result<SwitchGraphPlan> plan_switch_graph(const DirectedSwitchGraph &graph,
+                                          const ValidationOptions &limits = {});
+// The report of the cycles of route waits in a planned direction that has one
+// (docs/network.md#route-cycle-report): one diagnostic for each cycle, the shortest first and
+// cycles of one length in the order of their names, up to limits.cycle_limit (at least 1). A note
+// for each wait lists its contributors, up to limits.contributor_limit when that is not 0. The
+// last diagnostic has one more note when the direction has more cycles.
+std::vector<Diagnostic> route_cycle_report(const SwitchGraphPlan &plan,
+                                           const ValidationOptions &limits);
 // The return path of a response route: the index of its switches among the distinct switch
 // sequences of the routes into its initiator, in sequence order.
 unsigned return_path(const SwitchGraphPlan &response, const SwitchRoute &route);

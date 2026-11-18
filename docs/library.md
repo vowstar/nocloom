@@ -98,7 +98,7 @@ both. A parent CMake project can use `add_subdirectory` and link
 | --- | --- |
 | `config::parse` | YAML text and optional source label. Returns `ParsedDefinition` |
 | `validate` | Definition, generation options and an optional source location map. Checks the composed hardware, map and requested outputs. Returns status |
-| `make_plan` | Definition and an optional source location map. Returns an immutable normalized `Plan` |
+| `make_plan` | Definition, an optional source location map and optional validation options. Returns an immutable normalized `Plan` |
 | `emit` | Plan and generation options. Returns artifacts |
 | `generate` | Definition and generation options. Validates, plans and emits artifacts |
 | `add_address_table` | Artifact set with one map and bundle. Adds address table files |
@@ -125,6 +125,12 @@ the bundle.
 C headers need no address table output. A macro name conflict produces
 `NCL_C_HEADER_NAME`. Use `add_ipxact` with `IpxactOptions` to set the component
 identifier.
+
+`ValidationOptions` has the members `cycle_limit` and `contributor_limit`.
+They are the limits of the
+[route cycle report](network.md#route-cycle-report). `validate` and `generate`
+read them from `GenerationOptions::validation`. `make_plan` takes them as its
+third argument.
 
 Configuration errors and expected file errors return diagnostics. Allocation
 failures and other exceptional runtime failures can throw exceptions. The core

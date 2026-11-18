@@ -28,14 +28,15 @@ private:
       : data_(std::move(data)), definition_(std::make_shared<const Definition>(definition)) {}
   std::shared_ptr<const detail::NetworkPlan> data_;
   std::shared_ptr<const Definition> definition_;
-  friend Result<Plan> make_plan(const Definition &, const SourceMap *);
+  friend Result<Plan> make_plan(const Definition &, const SourceMap *, const ValidationOptions &);
   friend Result<ArtifactSet> emit(const Plan &, const GenerationOptions &);
   friend Status validate(const Definition &, const GenerationOptions &, const SourceMap *);
 };
 
 std::string_view version() noexcept;
 // Source locations affect diagnostics only. They never enter generated artifacts.
-Result<Plan> make_plan(const Definition &definition, const SourceMap *sources = nullptr);
+Result<Plan> make_plan(const Definition &definition, const SourceMap *sources = nullptr,
+                       const ValidationOptions &validation = {});
 // Checks the definition, composed hardware, map and requested outputs without returning artifacts.
 Status validate(const Definition &definition, const GenerationOptions &options = {},
                 const SourceMap *sources = nullptr);

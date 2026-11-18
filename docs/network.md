@@ -67,12 +67,87 @@ An omitted direction must have one unique route. Each connected flow pair
 requires its own explicit entry or a unique inferred route. An ambiguous
 inferred route is rejected.
 
-A physical graph can contain cycles when its explicit routes and resource waits
-are legal. A route can revisit a node only through another link. NocLoom rejects
-route dependency cycles detected by topology validation. Routes remain fixed
-during operation.
+A physical graph can contain cycles. A route can revisit a node only through
+another link. NocLoom rejects routes that form a cycle of waits. See
+[route cycle report](#route-cycle-report). Routes remain fixed during
+operation.
 
 See [explicit routes](../examples/explicit_routes.yaml).
+
+## Route cycle report
+
+NocLoom rejects a cycle of waits with `NCL_SWITCH_ROUTE_CYCLE`.
+
+| Term | Meaning |
+| --- | --- |
+| Wait | Two successive links of a route. A packet that holds the first link waits for the second link |
+| Cycle | A closed chain of waits. Each wait ends on the link that starts the next wait |
+| Contributor | A route that takes both links of a wait, the second directly after the first |
+
+NocLoom examines the request graph and the response graph separately. Each
+graph has the routes of all connected flow pairs, one route for each flow pair.
+A flow pair without an explicit route in a direction takes its inferred route.
+This is the only route over the declared links between its two attachment
+nodes. See [routes](#routes).
+
+Each reported cycle has one diagnostic at `topology.request.links` or
+`topology.response.links`, with one note per wait in cycle order. Request
+diagnostics come before response diagnostics.
+
+In this one-way ring of four nodes, `n0` to `n3`, all pairs connect.
+Each initiator and target attaches to the node with its number.
+
+```text
+NCL_SWITCH_ROUTE_CYCLE [topology.request.links]: Routes chain the links of the cycle n0 -> n1 -> n2 -> n3 -> n0; no deadlock claim is made
+note: n0 -> n1 waits for n1 -> n2 in 3 request routes: s0 to t2, s0 to t3, s3 to t2
+note: n1 -> n2 waits for n2 -> n3 in 3 request routes: s0 to t3, s1 to t0, s1 to t3
+note: n2 -> n3 waits for n3 -> n0 in 3 request routes: s1 to t0, s2 to t0, s2 to t1
+note: n3 -> n0 waits for n0 -> n1 in 3 request routes: s2 to t1, s3 to t1, s3 to t2
+```
+
+The CLI prints the file, line and column of the links list before the code.
+A cycle of waits alone does not establish a deadlock.
+
+| Part of a note | Meaning |
+| --- | --- |
+| `n0 -> n1 waits for n1 -> n2` | The held link, then the next link |
+| `in 3 request routes` | The number of contributors of the wait. The number is exact when the note lists fewer. The direction is `request` or `response` |
+| `s0 to t2` | A contributor. The initiator is first in both directions. Explicit and inferred routes have the same form |
+| `s0 flow 1 to t2` | A contributor with a flow index. Only an endpoint with more than one flow shows its index |
+| `and 97 more` | The number of contributors that the note does not list |
+
+To break a cycle, remove all contributors of one wait. Use `topology.routes`
+to reroute each flow pair around the wait, or disconnect the pair.
+The smallest contributor count gives the fewest flow pairs to change for this
+cycle. The graph determines which alternative paths are available.
+
+| Item | Order |
+| --- | --- |
+| Cycle name | The node list in the message. It starts with the link that is first in byte order, by `from` and then by `to` |
+| Cycles | The cycle with the fewest links is first. Cycles of equal length follow the byte order of their names |
+| Notes | The order of the waits around the cycle, from the first link of the name |
+| Contributors | The byte order of their names. `t10` is before `t2` |
+
+The report does not depend on the order of the declarations.
+
+Two limits bound the report. Both are members of `ValidationOptions` in C++.
+
+| Member | Default | Values |
+| --- | --- | --- |
+| `cycle_limit` | 4 | The cycles reported for each direction, 1 to 1024. 0 and values above 1024 are rejected with `NCL_VALIDATION_OPTION` |
+| `contributor_limit` | 8 | The contributors listed in each note. 0 lists all contributors |
+
+The report takes at most one extra cycle in report order per direction to check
+for truncation. If it finds one, the last diagnostic for that direction gets a
+note such as `more request cycles are present; the cycle limit is 4`. The note
+gives only the direction and the limit.
+
+A limit in range affects only the report. Validation and generated artifacts
+are independent of that limit.
+
+A route that takes a link twice forms a cycle from its own waits. A link from a
+node to itself is also rejected with `NCL_SWITCH_ROUTE_CYCLE`. Its message
+starts with `The link of the cycle`, and it has no notes.
 
 ## Endpoint flows
 
@@ -151,7 +226,8 @@ endpoint attachments.
 One flow pair can have only one route entry. Request and response paths are
 independent. A route cannot take a link twice. All routes together must avoid
 cycles of waits between successive links. An unused physical cycle is accepted
-when no route continues around it.
+when no route continues around it. See
+[route cycle report](#route-cycle-report).
 
 Without a link override, NocLoom selects the narrower endpoint word that still
 carries the slower endpoint's bandwidth. Endpoint bandwidth is word bytes

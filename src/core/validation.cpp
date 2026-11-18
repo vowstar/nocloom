@@ -340,7 +340,7 @@ template <typename Reject> void check_v10_shape(const Definition &d, Reject &rej
 // back into its own switch. A cycle of links that no route chains is accepted.
 template <typename Reject>
 void check_routes(const Definition &d, const ExchangeGraph &graph, bool response,
-                  const std::string &field, Reject &reject) {
+                  const std::string &field, const ValidationOptions &limits, Reject &reject) {
   detail::DirectedSwitchGraph named;
   std::ranges::transform(graph.nodes, std::back_inserter(named.nodes), &ExchangeNode::name);
   for (const auto &link : graph.links)
@@ -377,17 +377,18 @@ void check_routes(const Definition &d, const ExchangeGraph &graph, bool response
       rows.push_back(i);
     }
   // Other planning faults are reported by planning itself.
-  auto planned = detail::plan_switch_graph(named);
+  auto planned = detail::plan_switch_graph(named, limits);
   if (planned)
     return;
-  const auto &fault = planned.diagnostics().front();
-  if (fault.code == "NCL_SWITCH_ROUTE_CYCLE")
-    reject(fault.code, field + ".links", fault.message);
-  else if (fault.field.starts_with("switches.routes["))
-    reject(fault.code,
-           "topology.routes[" + std::to_string(rows.at(std::stoul(fault.field.substr(16)))) +
-               (response ? "].response" : "].request"),
-           fault.message);
+  // A cycle report has one diagnostic for each cycle, with the waits in its notes.
+  for (const auto &fault : planned.diagnostics())
+    if (fault.code == "NCL_SWITCH_ROUTE_CYCLE")
+      reject(fault.code, field + ".links", fault.message, fault.notes);
+    else if (fault.field.starts_with("switches.routes["))
+      reject(fault.code,
+             "topology.routes[" + std::to_string(rows.at(std::stoul(fault.field.substr(16)))) +
+                 (response ? "].response" : "].request"),
+             fault.message);
 }
 // Each explicit route names a flow pair of a connected pair once and gives a request or a response
 // path.
@@ -443,7 +444,8 @@ void check_endpoint_pipe(const LinkPipeline &pipe, const std::string &field, Rej
 }
 // The switch graphs of an explicit topology and the crossing parameters of a clocked one, checked
 // once the endpoints are valid: switch names and uses, switch domains, CDC value ranges.
-template <typename Reject> void check_graphs(const Definition &d, Reject &reject) {
+template <typename Reject>
+void check_graphs(const Definition &d, const ValidationOptions &limits, Reject &reject) {
   const bool clocked = detail::clocked_graph(d);
   std::set<std::string> domains;
   std::ranges::transform(d.clock_domains, std::inserter(domains, domains.end()),
@@ -501,7 +503,7 @@ template <typename Reject> void check_graphs(const Definition &d, Reject &reject
       }
     if (!faults.empty())
       continue;
-    check_routes(d, *graph, response, field, reject);
+    check_routes(d, *graph, response, field, limits, reject);
     if (!clocked)
       continue;
     const auto identities = detail::switch_identities(d, *graph, response);
@@ -582,8 +584,10 @@ struct Checks {
   unsigned network_bits = 0, source_bits = 0;
   bool clocked = false;
   std::set<std::string> domains;
-  void operator()(std::string code, std::string field, std::string message) {
+  void operator()(std::string code, std::string field, std::string message,
+                  std::vector<std::string> notes = {}) {
     errors.push_back(detail::error(std::move(code), std::move(field), std::move(message)));
+    errors.back().notes = std::move(notes);
   }
   void name(const std::string &value, const std::string &field) {
     if (!detail::valid_name(value))
@@ -1869,7 +1873,7 @@ void check_endpoint_gating(Checks &c) {
 using PlanData = std::shared_ptr<const detail::NetworkPlan>;
 // The definition checks, then the network plan with its capability rules. Diagnostics carry
 // configuration paths; make_plan locates them.
-Result<PlanData> plan_definition(const Definition &d) {
+Result<PlanData> plan_definition(const Definition &d, const ValidationOptions &limits) {
   if (d.schema_version >= 1 && d.schema_version <= 9)
     return Result<PlanData>::failure(detail::error("NCL_SCHEMA_REMOVED", "schema_version",
                                                    "Only schema version 10 is supported"));
@@ -1905,7 +1909,7 @@ Result<PlanData> plan_definition(const Definition &d) {
   if (c.errors.empty() && d.topology)
     check_route_rows(d, c);
   if (c.errors.empty()) {
-    check_graphs(d, c);
+    check_graphs(d, limits, c);
     std::ranges::move(detail::check_capabilities(d, nullptr), std::back_inserter(c.errors));
   }
   if (!c.errors.empty())
@@ -1917,8 +1921,12 @@ Result<PlanData> plan_definition(const Definition &d) {
       std::make_shared<const detail::NetworkPlan>(std::move(built.value())));
 }
 } // namespace
-Result<Plan> make_plan(const Definition &input, const SourceMap *sources) {
-  auto planned = plan_definition(input);
+Result<Plan> make_plan(const Definition &input, const SourceMap *sources,
+                       const ValidationOptions &validation) {
+  if (validation.cycle_limit < 1 || validation.cycle_limit > 1024)
+    return Result<Plan>::failure(detail::error("NCL_VALIDATION_OPTION", "validation.cycle_limit",
+                                               "The cycle limit must be 1 to 1024"));
+  auto planned = plan_definition(input, validation);
   if (planned)
     return Result<Plan>::success(Plan(std::move(planned.value()), input));
   auto diagnostics = planned.diagnostics();
@@ -1962,7 +1970,7 @@ Status validate(const Definition &definition, const GenerationOptions &options,
                 const SourceMap *sources) {
   if (auto status = detail::check_backend(options, sources); !status)
     return status;
-  auto plan = make_plan(definition, sources);
+  auto plan = make_plan(definition, sources, options.validation);
   if (!plan)
     return Status::failure(plan.diagnostics());
   return detail::check_axi4_network(*plan.value().data_, definition, options);

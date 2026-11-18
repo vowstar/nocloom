@@ -375,6 +375,10 @@ set_tests_properties(unit PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DI
 add_test(NAME switch_graph COMMAND nocloom_unit "[switch-graph]")
 set_tests_properties(switch_graph PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
   TIMEOUT 30 LABELS "unit;switch-graph")
+target_sources(nocloom_unit PRIVATE unit/route_cycles.cpp)
+add_test(NAME route_cycle_report COMMAND nocloom_unit "[route-cycles]")
+set_tests_properties(route_cycle_report PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
+  TIMEOUT 120 LABELS "unit;quick;edit" PROCESSORS 1)
 add_test(NAME width_adapter COMMAND nocloom_unit "[width-adapter]")
 set_tests_properties(width_adapter PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
   TIMEOUT 30 LABELS "unit;width-adapter")

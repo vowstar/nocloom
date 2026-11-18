@@ -70,7 +70,7 @@ Result<ArtifactSet> generate(const Definition &definition, const GenerationOptio
                              const SourceMap *sources) {
   if (auto status = detail::check_backend(options, sources); !status)
     return Result<ArtifactSet>::failure(status.diagnostics());
-  auto plan = make_plan(definition, sources);
+  auto plan = make_plan(definition, sources, options.validation);
   if (!plan)
     return Result<ArtifactSet>::failure(plan.diagnostics());
   return emit(plan.value(), options);
