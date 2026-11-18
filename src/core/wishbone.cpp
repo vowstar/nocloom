@@ -253,7 +253,9 @@ Result<NodeHardware> lower_wishbone_target(const BurstOutletProfile &profile, bo
   if (burst_tags)
     return lower_wishbone_burst_target(profile, word, retry);
   if (pipelined) {
-    auto kernel = lower_wishbone_target(profile, word, retry, false);
+    auto kernel_profile = profile;
+    kernel_profile.external_timeout_wait = profile.timeout_cycles != 0;
+    auto kernel = lower_wishbone_target(kernel_profile, word, retry, false);
     if (!kernel)
       return kernel;
     Logic l;
@@ -270,6 +272,8 @@ Result<NodeHardware> lower_wishbone_target(const BurstOutletProfile &profile, bo
                   {"dat_r", l.in("wb", "dat_r", 32)}};
     if (retry)
       inputs["rty"] = l.both(eligible, rty);
+    if (profile.timeout_cycles)
+      inputs["target_wait"] = l.either(l.both(stb, stall), l.both(accepted, l.inv(done)));
     for (const auto &port : kernel.value().ir.ports)
       if (port.input && port.endpoint == "wb" && !inputs.contains(port.signal))
         inputs[port.signal] = l.in("wb", port.signal, port.width);
@@ -297,10 +301,12 @@ Result<NodeHardware> lower_wishbone_target(const BurstOutletProfile &profile, bo
   const auto ack = l.in("wb", "ack", 1), err = l.in("wb", "err", 1);
   const auto rty = retry ? l.in("wb", "rty", 1) : l.bit(0);
   const auto bus_error = l.either(err, rty);
-  const auto out = import_kernel(l, kernel.value(), "apb",
-                                 {{"pready", l.either(ack, bus_error)},
-                                  {"pslverr", bus_error},
-                                  {"prdata", l.in("wb", "dat_r", 32)}});
+  Fields inputs{{"pready", l.either(ack, bus_error)},
+                {"pslverr", bus_error},
+                {"prdata", l.in("wb", "dat_r", 32)}};
+  if (profile.external_timeout_wait)
+    inputs["target_wait"] = l.in("wb", "target_wait", 1);
+  const auto out = import_kernel(l, kernel.value(), "apb", inputs);
   auto address = out.at("paddr");
   address = word ? l.b.slice(address, 2, profile.address_bits - 2)
                  : l.both(address, l.num(profile.address_bits,

@@ -101,7 +101,11 @@ struct OutletBase {
   ValueId isolate(ValueId code) {
     return timeout ? l.b.select(l.both(failed, l.eq(code, 0)), target_error, code) : code;
   }
-  // The timer counts while something is pending and no response is offered.
+  ValueId watchdog(ValueId waiting) {
+    const auto expiry = l.watchdog(failed, timeout, waiting);
+    l.out("status", "timed_out", failed);
+    return expiry;
+  }
   ValueId watchdog(ValueId pending, ValueId responding) {
     const auto expiry = l.watchdog(failed, timeout, pending, responding);
     l.out("status", "timed_out", failed);

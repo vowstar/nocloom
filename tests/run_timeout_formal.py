@@ -366,6 +366,24 @@ always @(posedge nl_clk) if (WATCH && nl_reset_n && started && !q_exp) begin
   HELPER_WAITING: assert (nl_probe_timeout_waiting == (q_was && !nl_wrsp_valid && !nl_rrsp_valid));
 end
 '''
+    if kind in ('apb3', 'apb4'):
+        expiry = f'''
+reg q_exp = 0; reg [11:0] q_cnt = 0;
+wire q_wait = nl_apb_psel && nl_apb_penable && !nl_apb_pready;
+wire q_related = nl_probe_timeout_waiting == q_wait;
+always @(posedge nl_clk) begin
+  if (!nl_reset_n) begin q_exp <= 0; q_cnt <= 0; end
+  else if (!q_wait || q_exp) q_cnt <= 0;
+  else begin q_cnt <= q_cnt + 1; if (q_cnt == {n - 1}) q_exp <= 1; end
+end
+always @(posedge nl_clk) if (RELATE && nl_reset_n && started && !q_exp)
+  RELATED: assert (q_related);
+`ifdef ASSUME_RELATED
+always @(posedge nl_clk) if (nl_reset_n && started && !q_exp) assume (q_related);
+`endif
+always @(posedge nl_clk) if (WATCH && nl_reset_n && started && !q_exp)
+  HELPER: assert (nl_probe_timeout_count == q_cnt);
+'''
     read_bound = ''
     if bound and answer == 'completion':
         # Cycles after expiry since the read burst was accepted or last

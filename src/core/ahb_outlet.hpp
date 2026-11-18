@@ -55,6 +55,8 @@ struct BurstOutletProfile {
   // nl_status_timed_out goes high. APB2 cannot stall.
   unsigned timeout_cycles = 0;
   bool timeout_completion = false;
+  // A bus adapter supplies the wait condition at its external interface.
+  bool external_timeout_wait = false;
   // AHB only. Writes use undefined INCR or SINGLE, so partial strobes cannot terminate a
   // fixed-length burst. Without undefined_length_bursts every write is SINGLE and reads use
   // INCR16, INCR8, INCR4 and SINGLE blocks bounded by the packet end, the 1 KiB boundary and the

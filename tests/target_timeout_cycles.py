@@ -45,11 +45,8 @@ begin : pending_read
   @(negedge nl_clk); nl_rreq_valid = 0;
   while (!(nl_apb_psel && nl_apb_penable)) @(negedge nl_clk);
 
-  // The packet watchdog counts the setup cycle before APB enables the transfer.
-  if (nl_probe_timeout_count !== 1) $fatal(1, "CHECK_FAIL SETUP_COUNT");
-  for (tick = 2; tick <= CYCLES; tick = tick + 1) begin
-    // A bus answer reaches the packet watchdog on the following cycle.
-    if (!hang && tick == CYCLES - 1)
+  for (tick = 1; tick <= CYCLES; tick = tick + 1) begin
+    if (!hang && tick == CYCLES)
       nl_apb_pready = 1;
     @(posedge nl_clk);
     if (nl_status_timed_out || (hang && nl_rrsp_valid))

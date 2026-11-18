@@ -51,11 +51,23 @@ expiry. See [TL-UH targets](tilelink.md#tl-uh-targets) for those rules. The
 rest of this section describes other target protocols. All TileLink targets
 reject `completion: true`.
 
-One watchdog covers both directions and all target packets in flight. It counts
-target clock cycles while work is waiting and no response is offered to the
-network. Every offered B or R beat restarts the count, even when the initiator
-has not accepted it. Slow initiator write data can therefore contribute to
-expiry. A stopped target clock is not detected.
+APB and Wishbone targets count consecutive target clock cycles with a transfer
+waiting for the target. A cycle without a target wait restarts the count.
+
+| Target | Cycles that count |
+| --- | --- |
+| APB3, APB4, APB5 | ACCESS with PSEL and PENABLE high and PREADY low |
+| Classic Wishbone | CYC and STB high without ACK, ERR or an enabled RTY |
+| Pipelined Wishbone | STALL high during a request, or an accepted request without ACK, ERR or an enabled RTY |
+
+APB SETUP, waits for more write data and waits for network response space
+do not count.
+
+On AXI, AHB and TL-UL, one watchdog covers all target packets in flight.
+It counts target clock cycles while work is waiting and no response is
+offered to the network. An offered response restarts the count even when
+the initiator has not accepted it. Slow initiator write data can contribute
+to expiry. A stopped target clock cannot report expiry.
 
 Expiry raises `nl_t_<target>_timed_out` until common reset.
 
@@ -75,10 +87,10 @@ Only common reset clears the failed state.
 
 ## Timeout edge cases
 
-The watchdog starts counting cycles after a request is offered or accepted work
-is still unanswered. An idle target does not count, except the cycle after its
-final response. After expiry, system logic must observe the status output if
-completion is disabled.
+On AXI, AHB and TL-UL, the watchdog starts counting cycles after a request is offered
+or accepted work is still unanswered. An idle target does not count, except
+the cycle after its final response. After expiry, system logic must observe the
+status output if completion is disabled.
 
 With completion enabled, failed reads continue from their current beat with zero
 data. Writes return one B after consuming remaining W. AXI initiators

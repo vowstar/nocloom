@@ -276,9 +276,16 @@ struct Logic {
     b.output("nl_" + face + "_" + field, value, face, field);
   }
   ValueId active(ValueId v) { return both(reset, v); }
-  // A target watchdog (one per outlet), sized for cycles minus one: counts cycles after one with a request
-  // offered, a packet held or a response offered, while no response is offered;
-  // a response restarts it; `cycles` counts set `failed` until common reset.
+  // Consecutive target wait cycles. An edge without a wait starts a new interval.
+  ValueId watchdog(ValueId failed, unsigned cycles, ValueId waiting) {
+    const auto count = state("timeout.count", static_cast<unsigned>(std::bit_width(cycles - 1)));
+    const auto counting = bind("timeout.waiting", both(waiting, inv(failed)));
+    b.update(count, pick(counting, inc(count), num(width(count), 0)));
+    const auto expiry = both(counting, eq(count, cycles - 1));
+    b.update(failed, either(failed, expiry));
+    return expiry;
+  }
+  // Packet context watchdog: the current message supplies the restart condition.
   ValueId watchdog(ValueId failed, unsigned cycles, ValueId pending, ValueId responding) {
     const auto count = state("timeout.count", static_cast<unsigned>(std::bit_width(cycles - 1)));
     const auto was = state("timeout.pending", 1);

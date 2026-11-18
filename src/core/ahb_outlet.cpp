@@ -839,8 +839,9 @@ void ApbOutlet::bus_drive() {
       out("apb", "pstrb", l.b.select(owner, bus_mask, l.b.constant(4, 0)));
   }
   if (timeout) {
-    o.watchdog(l.either(l.either(w.at("valid"), r.at("valid")), l.either(wb, rb)),
-               l.either(bf, rf));
+    const auto target_wait = p.external_timeout_wait ? l.in("apb", "target_wait", 1)
+                                                     : l.both(l.eq(phase, 2), l.inv(ready));
+    o.watchdog(target_wait);
     // A late completion is accepted and discarded.
     wcomplete = l.both(wcomplete, l.inv(failed));
     rcomplete = l.both(rcomplete, l.inv(failed));

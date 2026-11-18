@@ -199,6 +199,15 @@ foreach(kind IN ITEMS 1 2 16 long negative)
     LABELS "${watchdog_labels}" RESOURCE_LOCK tilelink
     ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
 endforeach()
+foreach(kind IN ITEMS apb3 apb4 apb5 wb_classic wb_pipelined)
+  add_test(NAME target_watchdog_${kind}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/target_watchdog.py
+      --cli $<TARGET_FILE:nocloom_cli> --kind ${kind}
+      --work ${CMAKE_CURRENT_BINARY_DIR}/target_watchdog_${kind})
+  set_tests_properties(target_watchdog_${kind} PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 40 PROCESSORS 1
+    LABELS "rtl;focused;precommit" ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+endforeach()
 add_executable(nocloom_unit unit/core.cpp unit/message.cpp unit/wishbone.cpp)
 target_sources(nocloom_unit PRIVATE unit/subpage_source_flows.cpp)
 add_test(NAME subpage_source_flows_structure COMMAND nocloom_unit "[subpage-source-flows]")
