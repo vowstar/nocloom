@@ -541,6 +541,13 @@ nocloom_verif_case(NAME verif_explicit_routes_negative LAYER negative TIER focus
   FEATURES axi4 apb4 routes MEMORY_MB 2048 CONTRACTS AXI.ROUTE.EXPLICIT
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/explicit_routes.py --cli $<TARGET_FILE:nocloom_cli>
     ${NLV_FIXTURE} --negative)
+# Multihop routes around one-way request and response rings that no route cycle closes: every
+# connected pair writes and reads under random back pressure (baseline, then the fault).
+nocloom_verif_case(NAME verif_route_ring_negative LAYER negative TIER focused TIMEOUT 600
+  FEATURES axi4 routes MEMORY_MB 2048 CONTRACTS AXI.ROUTE.LOCAL_OFFSET
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/route_ring.py --cli $<TARGET_FILE:nocloom_cli>
+    --negative)
+set_property(TEST verif_route_ring_negative APPEND PROPERTY LABELS ci)
 # Unequal and wide source widths at native ports: contention and the cut
 # cases on every route (data: four width sets; downsizeN: both sources N bits).
 # Per-mode timeouts cover the baseline and every fault control.
