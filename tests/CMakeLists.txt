@@ -543,12 +543,19 @@ set_tests_properties(address_selector_span PROPERTIES TIMEOUT 30 LABELS "rtl;edi
 # Keep proofs, covers and fault checks for one configuration in the same entry.
 function(nocloom_async_fifo_proof suffix shapes)
   set(name async_fifo_formal${suffix})
+  set(timeout 2400)
+  set(labels "formal;cdc;async-fifo")
+  if(suffix MATCHES "^_product_(64|128)_k1_distinct(_axi3)?$")
+    set(timeout 900)
+    list(APPEND labels focused)
+    list(APPEND ARGN --timeout 360)
+  endif()
   add_test(NAME ${name}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_async_fifo_formal.py
       --fixture $<TARGET_FILE:nocloom_async_fifo_fixture>
       --work ${CMAKE_CURRENT_BINARY_DIR}/${name} --jobs 2 --shapes ${shapes} ${ARGN})
-  set_tests_properties(${name} PROPERTIES TIMEOUT 2400 PROCESSORS 2
-    LABELS "formal;cdc;async-fifo" WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+  set_tests_properties(${name} PROPERTIES TIMEOUT ${timeout} PROCESSORS 2
+    LABELS "${labels}" WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 endfunction()
 nocloom_async_fifo_proof("" fifo --check-driver)
 foreach(shapes IN ITEMS gate levels cells)

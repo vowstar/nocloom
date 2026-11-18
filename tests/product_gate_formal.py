@@ -22,6 +22,9 @@ import subprocess
 
 from async_fifo_formal import cover_locations, finish
 
+DIRECTED_DECODE = {"product_64_k1_distinct", "product_128_k1_distinct",
+                   "product_64_k1_distinct_axi3"}
+
 
 def cover_tasks(text, packet_steps=False, inline_steps=False):
     """Keep every cover, with packet witnesses separate from gate witnesses."""
@@ -64,7 +67,9 @@ def covers_unreached(status, log, labels):
     return bool(expected) and status == "FAIL" and cover_locations(log, False) == expected
 
 
-def configuration(bits, contexts, codes="distinct", write_only=False, protocol="axi4"):
+def configuration(bits, contexts, codes="distinct", write_only=False, protocol="axi4",
+                  routed_miss=False):
+    fallback = " default_target: mem," if routed_miss else ""
     return f"""schema_version: 10
 name: product_gates
 address_width: 32
@@ -75,7 +80,7 @@ clock_domains:
   - {{name: target, clock_port: clk_target, reset_port: reset_n, test_port: test}}
 synchronizer_stages: 2
 initiators:
-  - {{name: cpu, clock_domain: source, protocol: axi4, data_width: 32, id_width: 1,
+  - {{name: cpu, clock_domain: source, protocol: axi4,{fallback} data_width: 32, id_width: 1,
       len_width: 8, max_outstanding: {contexts}, slverr_only: {str(codes == 'uniform').lower()}}}
 targets:
   - {{name: mem, clock_domain: target, protocol: {protocol}, data_width: {bits},
@@ -96,6 +101,136 @@ topology:
     exits: [{{endpoint: cpu, node: p}}]
 output: {{backend: verilog, language: verilog_2001}}
 """
+
+
+def decode_monitor(meta, copy, packet, routed):
+    def signal(port):
+        index = meta["outputs"][port][copy]
+        if index is None:
+            raise AssertionError(f"missing {copy} observation for {port}")
+        return f"nl_internal_v{index}"
+
+    sent = f"{copy}_sent"
+    correct = f"{copy}_correct"
+    received = f"{copy}_received"
+    marked = f"{copy}_marked"
+    declarations = [f"reg {sent} = 0, {correct} = 1;",
+                    f"reg [3:0] {received} = 0;"]
+    checks = [
+        f"  if (nl_i_cpu_arvalid && {signal('nl_i_cpu_arready')}) {sent} <= 1;",
+        f"  if ({signal('nl_t_mem_arvalid')}) {correct} <= 0;",
+        f"  if (reset_n && {signal('nl_i_cpu_rvalid')}) begin",
+        f"    {received} <= {received} + 1'b1;",
+        f"    if (!{sent} || {received} >= 8 || {signal('nl_i_cpu_rresp')} != 3 ||",
+        f"        {signal('nl_i_cpu_rlast')} != ({received} == 7)) {correct} <= 0;",
+        "  end",
+    ]
+    if routed:
+        declarations.append(f"reg {marked} = 0;")
+        checks.append(f"  if (reset_n && {sent} && {packet}) {marked} <= 1;")
+    else:
+        checks.append(f"  if ({packet}) {correct} <= 0;")
+    goal = (f"{correct} && !{signal('nl_t_mem_arvalid')} && {received} == 8 && "
+            + (marked if routed else f"!{packet}"))
+    return declarations, checks, goal
+
+
+def decode_witness(rtl, meta, routed, compare_only=False):
+    """Drive one legal eight-beat INCR read in the page above the mapped window."""
+    # Both clocks advance from reset, and the source holds AR until it is
+    # accepted. The target offers no responses. The implicit miss returns
+    # eight DECERR beats locally. An explicit default target instead sends a
+    # length word across the response crossing in both independent copies.
+    # Neither copy may offer AR on the target port. The routed trace also
+    # requires all product ports to agree from reset to the witness.
+    decl, checks, goal = decode_monitor(meta, "gated", "nl_decode_packet", routed)
+    goals = [goal]
+    if routed:
+        free_decl, free_checks, free_goal = decode_monitor(meta, "ungated", "nl_free_decode_packet", True)
+        decl += free_decl + ["reg equal_so_far = 1;"]
+        checks += free_checks + ["  if (reset_n && !nl_gate_equal) equal_so_far <= 0;"]
+        goals += [free_goal, "equal_so_far", "nl_gate_equal"]
+    label = "COVER_DECODE_PACKET" if routed else "COVER_LOCAL_DECODE"
+    if compare_only:
+        checks.append("  GATE_EQUAL: assert(!reset_n || nl_gate_equal);")
+    else:
+        checks.append(f"  {label}: cover(reset_n && {' && '.join(goals)});")
+    monitor = ["reg nl_f_init = 1;", *decl,
+               "always @* if (nl_f_init) assume(nl_init_equal);",
+               "always @(posedge nl_tick) begin", "  nl_f_init <= 0;", *checks, "end"]
+
+    # Fix the witness inputs structurally so synthesis can discard the
+    # unrelated write, response payload and timing choices before solving.
+    values = {"reset_n": "!nl_f_init", "nl_step0": "1", "nl_step1": "1",
+              "nl_i_cpu_arvalid": "reset_n && !gated_sent", "nl_i_cpu_araddr": "32'h1000",
+              "nl_i_cpu_arlen": "7", "nl_i_cpu_arsize": "2", "nl_i_cpu_arburst": "1",
+              "nl_i_cpu_rready": "1"}
+    text = finish(rtl, monitor)
+    header, separator, body = text.partition(");\n")
+    module, _, ports = header.partition("(")
+    inputs = {}
+    for port in ports.split(","):
+        width, name = re.fullmatch(r"input wire (\[\d+:0\] )?(\w+)", port.strip()).groups()
+        inputs[name] = width or ""
+    if not values.keys() <= inputs.keys() or "nl_tick" not in inputs:
+        raise AssertionError("decode witness inputs changed")
+    declarations = "".join(f"wire {width}{port} = {values.get(port, '0')};\n"
+                           for port, width in inputs.items() if port != "nl_tick")
+    return f"{module}(input wire nl_tick{separator}{declarations}{body}", frozenset({label})
+
+
+def routed_decode_jobs(config, fixture, work, rtl, meta, row, bound, hold_engine, violated):
+    routed = work / "routed"
+    config_path = work / "routed.yaml"
+    config_path.write_text(config)
+    subprocess.run([fixture, str(routed), "product_formal", str(config_path), "none"],
+                   check=True, timeout=120)
+    routed_row = dict(row, configuration_sha256=hashlib.sha256(config_path.read_bytes()).hexdigest(),
+                      product_sha256=hashlib.sha256((routed / "product.v").read_bytes()).hexdigest())
+    yield from product_safety_jobs(routed, (routed / "generated.v").read_text(), routed_row, hold_engine)
+    full = work / "routed_full"
+    subprocess.run([fixture, str(full), "product_formal", str(config_path), "none", "full"],
+                   check=True, timeout=120)
+    full_rtl = (full / "generated.v").read_text()
+    full_meta = json.loads((full / "bindings.json").read_text())
+    assert (full / "product.v").read_bytes() == (routed / "product.v").read_bytes()
+    variants = [("cover_local_decode", rtl, meta, row), ("cover_decode", full_rtl, full_meta, routed_row)]
+    for name, text, bindings, receipt in variants:
+        model, labels = decode_witness(text, bindings, routed=name == "cover_decode")
+        yield (dict(receipt, stage="product_cover", task_variant=name),
+               work / name, model, "cover", "smtbmc z3", bound,
+               lambda status, log, labels=labels: covers_reached(status, log, labels))
+        if name == "cover_decode":
+            yield decode_observer_control(receipt, work, model, labels, bound)
+    delayed = delay_face_wake(full_rtl)
+    counterexample, _ = decode_witness(delayed, full_meta, routed=True, compare_only=True)
+    yield (dict(routed_row, fault="face_delay", stage="product_functional", expected=["GATE_EQUAL"],
+                context_shared=False, traffic="decode miss"),
+           work / "face_delay", counterexample, "bmc", "abc bmc3", bound,
+           lambda status, log: status == "FAIL" and "GATE_EQUAL" in violated(log))
+
+
+def delay_face_wake(rtl):
+    wake = re.search(r"^assign nl_transport_wake = (nl_internal_v\d+);$", rtl, re.M).group(1)
+    delayed, hits = re.subn(rf"^assign {wake} = ([^;]+);$",
+                            rf"""reg delayed_wake = 0;
+always @(posedge nl_tick)
+  if (!reset_n) delayed_wake <= 0;
+  else delayed_wake <= \1;
+assign {wake} = delayed_wake;""", rtl, flags=re.M)
+    assert hits == 1, "transport wake mutation did not bind"
+    return delayed
+
+
+def decode_observer_control(row, work, text, labels, bound):
+    broken, hits = re.subn(r"^assign nl_decode_packet = [^\n]+;",
+                           "assign nl_decode_packet = 1'b0;", text, flags=re.M)
+    assert hits == 1, "decode cover observer mutation did not bind"
+    negative = dict(row, fault="decode_observer_zero", stage="product_cover",
+                    task_variant="cover_decode_zero", expected=sorted(labels))
+    negative.pop("properties", None)
+    return (negative, work / "cover_decode_zero", broken, "cover", "smtbmc z3", bound,
+            lambda status, log: covers_unreached(status, log, labels))
 
 
 def wrap_traffic(rtl, bits):
@@ -208,6 +343,18 @@ def product_model(rtl, contract=True, extra=(True, True), helpers=False, wake_on
     ] + checks + covers + ["end"] + (wrap_traffic(rtl, traffic_bits) if traffic_bits else []))
 
 
+def product_safety_jobs(work, text, row, hold_engine):
+    def passed(status, log):
+        return status == "PASS"
+
+    yield (dict(row, stage="product_contracts"), work / "contracts",
+           product_model(text, wake_only=True), "prove", "abc pdr", 20, passed)
+    yield (dict(row, stage="product_hold", properties=list(hold_properties(text))), work / "hold",
+           product_model(text, hold_only=True), "prove", hold_engine, 20, passed)
+    yield (dict(row, stage="product_prove"), work / "prove",
+           product_model(text, helpers=True, assume_hold=True), "prove", "smtbmc z3", 4, passed)
+
+
 def product_jobs(root, fixture, violated, bound=48, only=""):
     jobs = []
     # K=1 exercises busy-backed tail wake; K=2..4 exercise the joined fallback.
@@ -222,6 +369,11 @@ def product_jobs(root, fixture, violated, bound=48, only=""):
             label += "_" + protocol
         if only and label not in only.split(","):
             continue
+        # Cancel ABC's per-output schedule for these joint hold relations.
+        # The enclosing SBY task still enforces its overall timeout.
+        hold_engine = "abc pdr -l"
+        if contexts == 1 and (codes == "uniform" or (bits == 64 and protocol == "axi4")):
+            hold_engine = "abc pdr -l -r -c -n"
         config = root / f"{label}.yaml"
         config.write_text(configuration(bits, contexts, codes, write_only, protocol))
         faults = ("none", "tail_zero", "face_zero", "tail_narrow", "face_narrow",
@@ -261,19 +413,7 @@ def product_jobs(root, fixture, violated, bound=48, only=""):
                 ["GATE_EQUAL", "TAIL_BUSY", "VALID_FULL", "WAKE_TAIL", "WAKE_FACE"]
                 if fault == "none" else sorted(failures))
             if fault == "none":
-                jobs.append((dict(row, stage="product_contracts"), work / "contracts",
-                             product_model(text, wake_only=True), "prove", "abc pdr", 20, accept))
-                # SBY adds the -l toggle. Cancel its anytime schedule so CTG
-                # generalization has no per-output wall-clock deadline. The
-                # enclosing SBY task still enforces the overall timeout.
-                hold_engine = "abc pdr -l"
-                if contexts == 1 and (codes == "uniform" or (bits == 64 and protocol == "axi4")):
-                    hold_engine = "abc pdr -l -r -c -n"
-                jobs.append((dict(row, stage="product_hold", properties=list(hold_properties(text))), work / "hold",
-                             product_model(text, hold_only=True), "prove", hold_engine, 20, accept))
-                row["stage"] = "product_prove"
-                jobs.append((row, work / "prove", product_model(text, helpers=True, assume_hold=True),
-                             "prove", "smtbmc z3", 4, accept))
+                jobs.extend(product_safety_jobs(work, text, row, hold_engine))
             elif equivalent:
                 row["stage"] = "product_equivalent"
                 row["expected"] = ["equivalent wake"]
@@ -291,18 +431,17 @@ def product_jobs(root, fixture, violated, bound=48, only=""):
                 packet_steps = (bits, contexts, protocol) in (
                     (64, 3, "axi4"), (64, 4, "axi4"), (128, 3, "axi4"), (64, 4, "axi3"))
                 for name, cover_text, labels in cover_tasks(cover, packet_steps, inline_steps=protocol == "axi3"):
+                    if name == "cover_decode" and label in DIRECTED_DECODE:
+                        config_text = configuration(bits, contexts, codes, write_only, protocol,
+                                                    routed_miss=True)
+                        jobs.extend(routed_decode_jobs(config_text, fixture, work, text, meta, row,
+                                                       bound, hold_engine, violated))
+                        continue
                     jobs.append((dict(row, stage="product_cover", task_variant=name),
                                  work / name, cover_text, "cover", "smtbmc z3", bound,
                                  lambda status, log, labels=labels: covers_reached(status, log, labels)))
                     if name == "cover_decode":
-                        broken, hits = re.subn(r"^assign nl_decode_packet = [^\n]+;",
-                                               "assign nl_decode_packet = 1'b0;", cover_text, flags=re.M)
-                        assert hits == 1, "decode cover observer mutation did not bind"
-                        negative = dict(row, fault="decode_observer_zero", stage="product_cover",
-                                        task_variant="cover_decode_zero", expected=sorted(labels))
-                        negative.pop("properties", None)
-                        jobs.append((negative, work / "cover_decode_zero", broken, "cover", "smtbmc z3",
-                                     bound, lambda status, log, labels=labels: covers_unreached(status, log, labels)))
+                        jobs.append(decode_observer_control(row, work, cover_text, labels, bound))
             elif whole_zero and (bits, contexts, codes, write_only, protocol) in (
                     (64, 1, "distinct", False, "axi4"), (128, 1, "distinct", False, "axi4")):
                 # Whole-wake faults must also break port equality on legal read traffic.

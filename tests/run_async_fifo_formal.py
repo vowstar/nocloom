@@ -63,7 +63,7 @@ from async_fifo_bench import inline_synchronizers
 from async_fifo_formal import (CELL_COVERS, CELLS, DATA, ENDPOINT, ENDPOINT_COVERS, ENDPOINT_HELPERS, GATE,
                                GATE_COVERS, HANDSHAKE, PROPERTIES, cell_equivalence, endpoint_model,
                                gate_model, model, oneside_model)
-from product_gate_formal import product_jobs
+from product_gate_formal import DIRECTED_DECODE, product_jobs
 
 # depth, synchronizer stages of every chain, ORDER task ("prove", a bmc bound, or
 # None), SLOT_STABLE task ("prove" or a bmc bound)
@@ -211,10 +211,15 @@ def split_cover_budgets(rows, limit):
             groups.setdefault(row["shape"][0], []).append(row)
     budgets = []
     for shape, members in groups.items():
-        if len(members) != 2:
+        if len(members) == 1 and shape not in DIRECTED_DECODE:
             continue
         seconds = sum(row["seconds"] for row in members)
-        accepted = seconds <= limit and all(row["accepted"] for row in members)
+        expected = {"cover", "cover_decode"}
+        if shape in DIRECTED_DECODE:
+            expected.add("cover_local_decode")
+        variants = {row["task_variant"] for row in members}
+        accepted = (variants == expected and len(members) == len(expected)
+                    and seconds <= limit and all(row["accepted"] for row in members))
         budgets.append(dict(task=shape + "/cover", seconds=seconds, limit=limit,
                             status="PASS" if accepted else "FAIL"))
     return budgets
@@ -236,7 +241,7 @@ def sby(directory, text, mode, engine, depth, timeout, top="nocloom_async_fifo")
     (shim / "python3").symlink_to(sys.executable)
     env["PATH"] = str(shim) + os.pathsep + env.get("PATH", "")
     try:
-        run = subprocess.run(["sby", "-f", "task.sby"], cwd=directory, env=env, capture_output=True,
+        run = subprocess.run(["sby", "task.sby"], cwd=directory, env=env, capture_output=True,
                              text=True, timeout=timeout + 120)
         log, code = run.stdout + run.stderr, run.returncode
     except subprocess.TimeoutExpired:

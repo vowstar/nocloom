@@ -220,6 +220,8 @@ inline int product_gate_miter(const std::filesystem::path &directory,
         probes["nl_" + suffix + "_rest_a"] = either(b.slice(remaining, 1, 1), idle);
       }
       if (copy == 1) {
+        if (!share_context && suffix == "face")
+          probes["nl_transport_wake"] = wake;
         const auto remaining = imported.get(hw.bindings.at(key + ".remaining"));
         probes["nl_" + suffix + "_covered"] =
             implies(imported.get(suffix == "tail" ? tail_term : face_term), wake);
@@ -231,9 +233,10 @@ inline int product_gate_miter(const std::filesystem::path &directory,
                  b.unary(Op::BitNot, suffix == "tail" ? qtail : qvalid, 1));
       }
     }
-    if (copy == 1) {
+    if (copy == 1)
       probes["nl_read_delivered"] = imported.get(hw.bindings.at("source/cpu/read.consume"));
-      probes["nl_decode_packet"] = both(
+    if (copy == 1 || !share_context) {
+      probes[copy == 1 ? "nl_decode_packet" : "nl_free_decode_packet"] = both(
           imported.get(hw.bindings.at("source/cpu/read.return_valid")),
           same(imported.get(hw.bindings.at("source/cpu/read.return_result")), b.constant(2, 3)));
     }
