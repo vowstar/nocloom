@@ -997,6 +997,21 @@ add_test(NAME register_bank_plan COMMAND nocloom_unit "[register-bank]")
 set_tests_properties(register_bank_plan PROPERTIES TIMEOUT 120 LABELS "unit;focused")
 add_test(NAME service_target_plan COMMAND nocloom_unit "[service]")
 set_tests_properties(service_target_plan PROPERTIES TIMEOUT 120 LABELS "unit;focused")
+add_executable(nocloom_log_clock_bindings log_clock_bindings.cpp)
+target_include_directories(nocloom_log_clock_bindings PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(nocloom_log_clock_bindings PRIVATE nocloom_io nlohmann_json::nlohmann_json)
+target_compile_options(nocloom_log_clock_bindings PRIVATE
+  $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>)
+add_test(NAME log_clock_renaming
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/log_clock_bindings.py
+    --fixture $<TARGET_FILE:nocloom_log_clock_bindings>
+    --cli $<TARGET_FILE:nocloom_cli>
+    --clocked-example ${PROJECT_SOURCE_DIR}/examples/axi4_graph_clocked.yaml
+    --mode-example ${PROJECT_SOURCE_DIR}/examples/mode_remap.yaml
+    --work ${CMAKE_CURRENT_BINARY_DIR}/log_clock_renaming)
+set_tests_properties(log_clock_renaming PROPERTIES TIMEOUT 30
+  LABELS "structure;quick;ci" PROCESSORS 1)
+
 add_test(NAME error_log_plan COMMAND nocloom_unit "[error-log]")
 set_tests_properties(error_log_plan PROPERTIES TIMEOUT 120 LABELS "unit;edit")
 
