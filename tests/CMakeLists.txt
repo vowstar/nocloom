@@ -794,7 +794,7 @@ set_tests_properties(graph_cross_installed PROPERTIES TIMEOUT 900 LABELS "rtl;in
 
 # Clock placement derives real graph segments before CDC lowering.
 target_sources(nocloom_unit PRIVATE unit/exchange_clocking.cpp)
-nocloom_unit_shards(exchange_clocking 4 180 "unit;quick;cdc" "[exchange-clocking]")
+nocloom_unit_shards(exchange_clocking 8 180 "unit;quick;cdc" "[exchange-clocking]")
 
 # The clocked graph networks (internal, endpoints, twelve domains, clock
 # ratios) run as verif_graph_clocked_* (tests/verif).
@@ -805,8 +805,7 @@ add_test(NAME graph_clocked_throughput
 set_tests_properties(graph_clocked_throughput PROPERTIES TIMEOUT 1800 LABELS "rtl;cdc;graph")
 
 target_sources(nocloom_unit PRIVATE unit/graph_clocked_example.cpp)
-add_test(NAME graph_clocked_example_structure COMMAND nocloom_unit "[graph-clocked-example]")
-set_tests_properties(graph_clocked_example_structure PROPERTIES TIMEOUT 120 LABELS "unit;quick;cdc")
+nocloom_unit_shards(graph_clocked_example_structure 3 120 "unit;quick;cdc" "[graph-clocked-example]")
 foreach(mode IN ITEMS endpoints twelve)
   add_test(NAME graph_clocked_installed_${mode}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_graph_clocked_example.py

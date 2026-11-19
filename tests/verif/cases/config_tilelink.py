@@ -241,8 +241,14 @@ for target in ("axi4", "apb4", "tl_ul"):
 
 small = []
 large = []
+maximum_capacity = []
 for capacity in range(1, 17):
-    target_capacity = small if capacity <= 8 else large
+    if capacity <= 8:
+        target_capacity = small
+    elif capacity <= 12:
+        target_capacity = large
+    else:
+        target_capacity = maximum_capacity
     for source_width in (None, (capacity-1).bit_length(), 16):
         cfg = deepcopy(BASE)
         cfg["targets"][0].update(protocol="tl_uh", max_outstanding=capacity)
@@ -282,5 +288,6 @@ for capacity in (1, 3):
 # Keep entries that compare against an earlier artifact in the same group.
 CASE_GROUPS = dict(fields=fields, options=options, source_limits=source_limits,
                    target_limits=target_limits, small_capacity=small, large_capacity=large,
+                   maximum_capacity=maximum_capacity,
                    clocked_targets=clocked_targets)
 CASES = [entry for group in CASE_GROUPS.values() for entry in group]

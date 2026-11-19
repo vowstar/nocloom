@@ -1097,7 +1097,7 @@ nocloom_verif_case(NAME verif_tilelink_cdc LAYER rtl TIER focused TIMEOUT 300
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/tilelink.py --cli $<TARGET_FILE:nocloom_cli> --param cdc=1)
 set_tests_properties(verif_tilelink_cdc PROPERTIES RESOURCE_LOCK tilelink LABELS "rtl;focused;tilelink;cdc;ci")
 foreach(group IN ITEMS fields options source_limits target_limits small_capacity large_capacity
-    clocked_targets)
+    maximum_capacity clocked_targets)
   nocloom_verif_case(NAME verif_tilelink_config_${group} LAYER config TIER quick TIMEOUT 120
     FEATURES tilelink MEMORY_MB 512
     COMMAND ${NLV_CONFIG} --case ${NLV_CASES}/config_tilelink.py --group ${group})
