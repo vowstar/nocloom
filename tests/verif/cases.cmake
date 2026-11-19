@@ -141,20 +141,20 @@ if(UNIX)
       --cli $<TARGET_FILE:nocloom_cli> --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_address_selectors_tb.sv)
 endif()
 
-nocloom_verif_case(NAME verif_config LAYER config TIER quick TIMEOUT 1500 FEATURES config
-  TIMEOUT_REASON "checks configuration and deterministic output across the supported endpoints"
-  MEMORY_MB 512
-  COMMAND ${NLV_CONFIG} --case ${NLV_CASES}/config_axi4.py --case ${NLV_CASES}/config_widths.py
-    --case ${NLV_CASES}/config_arbitration.py
-    --case ${NLV_CASES}/config_connectivity.py --case ${NLV_CASES}/config_mixed_widths.py
-    --case ${NLV_CASES}/config_endpoint_widths.py
-    --tool endpoint_data=$<TARGET_FILE:nocloom_verif_api_axi4_endpoint_data>
-    --tool public=$<TARGET_FILE:nocloom_verif_api_axi4_public>
-    --case ${NLV_CASES}/config_dedicated.py --case ${NLV_CASES}/config_outlets.py
-    --case ${NLV_CASES}/config_shorthand.py --case ${NLV_CASES}/config_modes.py
-    --case ${NLV_CASES}/config_routes.py --case ${NLV_CASES}/config_route_cycles.py
-    --case ${NLV_CASES}/config_target_ids.py
-    --tool timeout_public=$<TARGET_FILE:nocloom_verif_api_timeout_public>)
+foreach(case IN ITEMS axi4 widths arbitration connectivity mixed_widths endpoint_widths dedicated
+    outlets shorthand modes routes route_cycles target_ids)
+  set(config_tools)
+  if(case STREQUAL "endpoint_widths")
+    list(APPEND config_tools
+      --tool endpoint_data=$<TARGET_FILE:nocloom_verif_api_axi4_endpoint_data>
+      --tool public=$<TARGET_FILE:nocloom_verif_api_axi4_public>)
+  elseif(case STREQUAL "outlets")
+    list(APPEND config_tools --tool timeout_public=$<TARGET_FILE:nocloom_verif_api_timeout_public>)
+  endif()
+  nocloom_verif_case(NAME verif_config_${case} LAYER config TIER quick TIMEOUT 600
+    FEATURES config MEMORY_MB 512
+    COMMAND ${NLV_CONFIG} --case ${NLV_CASES}/config_${case}.py ${config_tools})
+endforeach()
 # Every shipped example: artifact set, determinism and the AHB HRESP width;
 # the eight feature examples then run their directed protocol traffic.
 nocloom_verif_case(NAME verif_examples LAYER structure TIER focused TIMEOUT 1200

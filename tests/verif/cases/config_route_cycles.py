@@ -8,6 +8,7 @@ The expected notes come from the routes of each fixture: a contributor of a wait
 that takes both links of the wait in turn."""
 
 import copy
+from collections import defaultdict
 import importlib.util
 from pathlib import Path
 
@@ -29,15 +30,18 @@ def ring_trips(size, pairs, response=False):
 
 def report(direction, cycles, trips, contributor_limit=8, more=None):
     """The stderr lines of the cycles (each the switches of its name, the first not repeated)."""
+    contributors = defaultdict(set)
+    for name, nodes in trips:
+        for turn in zip(nodes, nodes[1:], nodes[2:]):
+            contributors[turn].add(name)
+
     lines = []
     for cycle in cycles:
         lines.append(f"NCL_SWITCH_ROUTE_CYCLE [topology.{direction}.links]: Routes chain the links "
                      f"of the cycle {' -> '.join(cycle + cycle[:1])}; no deadlock claim is made")
         for k in range(len(cycle)):
             a, b, c = (cycle[(k + j) % len(cycle)] for j in range(3))
-            names = sorted({name for name, nodes in trips
-                            if any(nodes[j:j + 3] == [a, b, c] for j in range(len(nodes) - 2))},
-                           key=lambda name: name.encode())
+            names = sorted(contributors[a, b, c], key=lambda name: name.encode())
             assert names, (a, b, c)
             listed = names if contributor_limit == 0 else names[:contributor_limit]
             rest = f" and {len(names) - len(listed)} more" if len(listed) < len(names) else ""

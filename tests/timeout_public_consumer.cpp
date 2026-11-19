@@ -1,6 +1,6 @@
 // Core consumer: the target timeout definition of
 // tests/verif/cases/target_timeouts.py (graph mode) built through the public
-// C++ API (verif_config compares its artifacts with the CLI's).
+// C++ API (verif_config_outlets compares its artifacts with the CLI's).
 #include "endpoint_ports.hpp"
 #include <filesystem>
 #include <fstream>
