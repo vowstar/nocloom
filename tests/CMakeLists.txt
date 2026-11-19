@@ -348,8 +348,6 @@ target_sources(nocloom_unit PRIVATE unit/lite_outstanding.cpp)
 add_test(NAME lite_outstanding_structure COMMAND nocloom_unit "[lite-outstanding]")
 set_tests_properties(lite_outstanding_structure PROPERTIES
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit TIMEOUT 120 LABELS "unit;axi4")
-add_test(NAME axi4_config COMMAND nocloom_unit "[axi4-config]")
-set_tests_properties(axi4_config PROPERTIES TIMEOUT 180 LABELS "unit;config")
 target_sources(nocloom_unit PRIVATE unit/axi4_initiator.cpp)
 add_test(NAME axi4_initiator_structure COMMAND nocloom_unit "[axi4-initiator]")
 set_tests_properties(axi4_initiator_structure PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
@@ -386,6 +384,8 @@ function(nocloom_unit_shards name count timeout labels)
       TIMEOUT ${timeout} LABELS "${labels}")
   endforeach()
 endfunction()
+
+nocloom_unit_shards(axi4_config 4 180 "unit;config" "[axi4-config]")
 
 # The unit binary is compute bound: an unoptimized build (Debug, or an empty
 # build type in a parent project) runs it several times slower, so it gets a
