@@ -125,12 +125,12 @@ def output_definition(*, sources=("s",), target="t", widths=(), crossing=False):
     return config
 
 
-def check_output_options(cli, work):
+def output_cases():
     cdc = {"--cdc-constraints": "NCL_UNSUPPORTED_BACKEND"}
     ipxact = {"--ipxact": "NCL_ADDRESS_CONDITION"}
     collision = {"--c-header": "NCL_C_HEADER_NAME"}
     reserved = {"--c-header": "NCL_C_HEADER_RESERVED"}
-    cases = [
+    return [
         ("no_crossing", output_definition(), cdc),
         ("two_bit_selector", output_definition(widths=(2,)), cdc | ipxact),
         ("two_port_selector", output_definition(widths=(1, 1)), cdc | ipxact),
@@ -141,32 +141,43 @@ def check_output_options(cli, work):
         ("crossing_reserved", output_definition(crossing=True, target="t_", widths=(2,)),
          reserved | ipxact),
     ]
-    for name, config, errors in cases:
-        for count in range(len(OUTPUTS) + 1):
-            for flags in combinations(OUTPUTS, count):
-                diagnostic = next((errors[flag] for flag in flags if flag in errors), None)
-                check(cli, work, name + "_" + "_".join(flag[2:] for flag in flags),
-                      config, diagnostic, flags)
+
+
+def check_output_options(cli, work, name, config, errors):
+    for count in range(len(OUTPUTS) + 1):
+        for flags in combinations(OUTPUTS, count):
+            diagnostic = next((errors[flag] for flag in flags if flag in errors), None)
+            check(cli, work, name + "_" + "_".join(flag[2:] for flag in flags),
+                  config, diagnostic, flags)
+
+
+def check_clock_domains(cli, work):
+    check(cli, work, "local", definition())
+    check(cli, work, "separate_log", definition(log_domain="slow", periods=True))
+    check(cli, work, "related_domain", definition("slow", related=True))
+    for domain, name in ((None, "implicit_domain"), ("main", "explicit_domain")):
+        check(cli, work, name, definition("slow", domain), "NCL_EXCHANGE_CLOCK_BINDING")
+    check(cli, work, "bad_bank", definition(bank_offset="0x1000"),
+          "NCL_UNSUPPORTED_TOPOLOGY")
+    check(cli, work, "whole_record_crossing",
+          definition(log_domain="slow", periods=True, whole_record=True),
+          "NCL_UNSUPPORTED_TOPOLOGY")
 
 
 def main():
+    cases = output_cases()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cli", type=Path, required=True)
     parser.add_argument("--work", type=Path, required=True)
+    parser.add_argument("--case", choices=["clock_domains", *(name for name, _, _ in cases)])
     args = parser.parse_args()
     args.work.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(dir=args.work))
-    check(args.cli, work, "local", definition())
-    check(args.cli, work, "separate_log", definition(log_domain="slow", periods=True))
-    check(args.cli, work, "related_domain", definition("slow", related=True))
-    for domain, name in ((None, "implicit_domain"), ("main", "explicit_domain")):
-        check(args.cli, work, name, definition("slow", domain), "NCL_EXCHANGE_CLOCK_BINDING")
-    check(args.cli, work, "bad_bank", definition(bank_offset="0x1000"),
-          "NCL_UNSUPPORTED_TOPOLOGY")
-    check(args.cli, work, "whole_record_crossing",
-          definition(log_domain="slow", periods=True, whole_record=True),
-          "NCL_UNSUPPORTED_TOPOLOGY")
-    check_output_options(args.cli, work)
+    if args.case in (None, "clock_domains"):
+        check_clock_domains(args.cli, work)
+    for name, config, errors in cases:
+        if args.case in (None, name):
+            check_output_options(args.cli, work, name, config, errors)
 
 
 if __name__ == "__main__":
