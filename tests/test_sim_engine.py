@@ -475,27 +475,28 @@ class ProcessContract(unittest.TestCase):
         return result, event
 
     def run_split_output(self, command, env, stream):
-        with ThreadPoolExecutor(max_workers=1) as reader, self.process.Popen(
-                command, cwd=self.work, env=env, stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE) as child:
-            timeout = 60
+        original = self.process.Popen.communicate
+
+        def acknowledge(child, input=None, timeout=None):
+            if input is None:
+                return original(child, timeout=timeout)
             deadline = time.monotonic() + timeout
-            try:
-                pipe = getattr(child, stream)
-                first = reader.submit(os.read, pipe.fileno(), 1).result(timeout=timeout)
-                self.assertTrue(first, "simulator closed the stream before its first write")
-                # The simulator waits for this byte before writing the next part.
-                remaining = max(0, deadline - time.monotonic())
-                stdout, stderr = child.communicate(b"\n", timeout=remaining)
-            except BaseException:
-                child.kill()
-                child.wait()
-                raise
-        if stream == "stdout":
-            stdout = first + stdout
-        else:
-            stderr = first + stderr
-        return subprocess.CompletedProcess(command, child.returncode, stdout, stderr)
+            with ThreadPoolExecutor(max_workers=1) as reader:
+                try:
+                    pipe = getattr(child, stream)
+                    first = reader.submit(os.read, pipe.fileno(), 1).result(timeout=timeout)
+                except BaseException:
+                    child.kill()
+                    raise
+            self.assertTrue(first, "simulator closed the stream before its first write")
+            # The simulator waits for the input byte before writing the next part.
+            remaining = max(0, deadline - time.monotonic())
+            stdout, stderr = original(child, input, timeout=remaining)
+            return (first + stdout, stderr) if stream == "stdout" else (stdout, first + stderr)
+
+        with patch.object(self.process.Popen, "communicate", acknowledge):
+            return self.process.run(command, cwd=self.work, env=env,
+                                    input=b"\n", capture_output=True, timeout=60)
 
     def test_failure_scan_does_not_invent_line_start(self):
         payload = b"a" * 63488 + b"error:" + b"b" * 2042
