@@ -102,6 +102,13 @@ class Contract(unittest.TestCase):
                     return dict(passed=False, failure="FALSE_DATA")
                 return dict(passed=True)
 
+        response = self.work / "diagnostic.json"
+        engine = self.engine("import json; from pathlib import Path; "
+                             "output, code = json.loads(Path('diagnostic.json').read_text()); "
+                             "print(output); raise SystemExit(code)")
+        observed = dict(work=self.work, engine=engine, runs=0,
+                        generated_sha256="synthetic", rtl_sha256="synthetic",
+                        tb_sha256="synthetic")
         for output, code, accepted in (
                 ("", 0, False), ("", 3, False), ("ASYNC_FIFO_PASS", 0, False),
                 ("ASYNC_FIFO_PASS delivered=400 canceled=0 generations=1 "
@@ -116,10 +123,7 @@ class Contract(unittest.TestCase):
                 ("ASSERT_FAIL:ASYNC_FIFO.UNKNOWN", 1, False),
                 ("ASSERT_FAIL:ASYNC_FIFO.CDC_ONE_BIT", 1, False)):
             with self.subTest(output=output, exit=code):
-                engine = self.engine(f"print({output!r}); raise SystemExit({code})")
-                observed = dict(work=self.work, engine=engine, runs=0,
-                                generated_sha256="synthetic", rtl_sha256="synthetic",
-                                tb_sha256="synthetic")
+                response.write_text(json.dumps([output, code]))
                 rows = fifo.case_faults(DiagnosticDesigns(), random.Random(1))
                 diagnostic = [row for row in rows if row.get("expected") == "report"]
                 self.assertEqual(len(diagnostic), 1)
@@ -192,15 +196,17 @@ class Contract(unittest.TestCase):
         self.assertEqual(missing, {}, "unregistered success markers: %r" % (missing,))
 
     def test_nonterminal_markers_do_not_complete_simulations(self):
+        engine = self.engine("import sys; print(sys.argv[1])")
         for marker in NONTERMINAL_MARKERS:
             with self.subTest(marker=marker):
-                result = self.engine("print(" + repr(marker) + ")").run()
+                result = engine.run([marker])
                 self.assertNotEqual(result.returncode, 0)
 
     def test_zero_exit_assertion_is_failure(self):
+        engine = self.engine("import sys; print(sys.argv[1])")
         for marker in ("ASSERT_FAIL:x", "CHECK_FAIL x", "Fatal: x", "Error: x", "%Error: x"):
             with self.subTest(marker=marker):
-                self.assertNotEqual(self.engine("print(" + repr("MATRIX_PASS\n" + marker) + ")").run().returncode, 0)
+                self.assertNotEqual(engine.run(["MATRIX_PASS\n" + marker]).returncode, 0)
 
     def test_no_success_marker_is_failure(self):
         self.assertNotEqual(self.engine("print('finished')").run().returncode, 0)
