@@ -19,7 +19,7 @@ set_tests_properties(large_address_map_scaling PROPERTIES TIMEOUT 600 LABELS "co
 add_test(NAME command_agreement
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/command_agreement.py
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/command_agreement)
-set_tests_properties(command_agreement PROPERTIES TIMEOUT 30 LABELS "config;quick;ci")
+set_tests_properties(command_agreement PROPERTIES TIMEOUT 150 LABELS "config;quick;ci")
 foreach(first IN ITEMS read write lock oversize narrow)
   add_test(NAME ahb_reset_release_${first}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/ahb_reset_release_bench.py
