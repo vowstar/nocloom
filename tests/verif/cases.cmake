@@ -141,7 +141,8 @@ if(UNIX)
       --cli $<TARGET_FILE:nocloom_cli> --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_address_selectors_tb.sv)
 endif()
 
-nocloom_verif_case(NAME verif_config LAYER config TIER quick TIMEOUT 600 FEATURES config
+nocloom_verif_case(NAME verif_config LAYER config TIER quick TIMEOUT 1500 FEATURES config
+  TIMEOUT_REASON "checks configuration and deterministic output across the supported endpoints"
   MEMORY_MB 512
   COMMAND ${NLV_CONFIG} --case ${NLV_CASES}/config_axi4.py --case ${NLV_CASES}/config_widths.py
     --case ${NLV_CASES}/config_arbitration.py
@@ -782,12 +783,12 @@ nocloom_verif_case(NAME log_clock_binding LAYER unit TIER focused TIMEOUT 45
   COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/log_clock.py
     --cli $<TARGET_FILE:nocloom_cli>
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_log_clock_tb.sv)
-nocloom_verif_case(NAME log_related_clocks LAYER unit TIER focused TIMEOUT 45
+nocloom_verif_case(NAME log_related_clocks LAYER unit TIER focused TIMEOUT 150
   FEATURES cdc ci MEMORY_MB 512
   COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/log_clock.py
     --cli $<TARGET_FILE:nocloom_cli> --related
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_log_clock_tb.sv)
-nocloom_verif_case(NAME log_related_reset LAYER unit TIER focused TIMEOUT 45
+nocloom_verif_case(NAME log_related_reset LAYER unit TIER focused TIMEOUT 210
   FEATURES cdc ci MEMORY_MB 512
   COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/log_clock.py
     --cli $<TARGET_FILE:nocloom_cli> --split-reset

@@ -240,9 +240,9 @@ def simulate(cli, work, cfg, names, target, expected, forced='', qualifier='', n
     return mapping
 
 
-def forced_chains(cli, work):
+def forced_chains(cli, work, chains):
     work.mkdir()
-    for ratios in ((2, 3), (2, 3, 2), (1, 2, 2)):
+    for ratios in chains:
         for level, ratio in enumerate(ratios, start=1):
             if ratio == 1:
                 continue
@@ -433,7 +433,7 @@ def mixed_period(cli, work):
     assert 'set_max_delay 20.000 ' in sdc
 
 
-def main(cli, work):
+def directed_constraints(cli, work):
     cfg, names = fixture()
     root, parent, mid, leaf = names
     cfg['clock_domains'][3].update(edge_parent=parent, period_ps=60000)
@@ -483,13 +483,24 @@ def main(cli, work):
     fractional(cli, work)
     partial_period(cli, work)
     mixed_period(cli, work / 'mixed_period')
-    forced_chains(cli, work / 'forced_chains')
+
+
+def main(cli, work, cases):
+    chains = {
+        'all': ((2, 3), (2, 3, 2), (1, 2, 2)),
+        'directed': ((2, 3), (1, 2, 2)),
+        'deep-chain': ((2, 3, 2),),
+    }
+    if cases != 'deep-chain':
+        directed_constraints(cli, work)
+    forced_chains(cli, work / 'forced_chains', chains[cases])
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--cli', type=Path, required=True)
     parser.add_argument('--work', type=Path, required=True)
+    parser.add_argument('--cases', choices=('all', 'directed', 'deep-chain'), default='all')
     args = parser.parse_args()
     args.work.mkdir(parents=True, exist_ok=True)
-    main(args.cli, Path(tempfile.mkdtemp(prefix='edges-', dir=args.work)))
+    main(args.cli, Path(tempfile.mkdtemp(prefix='edges-', dir=args.work)), args.cases)

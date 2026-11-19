@@ -207,7 +207,7 @@ END_TO_END_FAILURES = {
 }
 
 
-def case_ratio_controls(designs):
+def case_ratio_controls(designs, selected):
     # Exercise both ends of the clock ratio range and reset each side with
     # queued words. Match each fault to a passing run with the same stimulus.
     offset = dict(ta=10000, tb=10000, jitter=0, phase=3000, pvalid=60, pready=60)
@@ -223,6 +223,8 @@ def case_ratio_controls(designs):
     ]
     rows = []
     for name, shape, handshake, options, faults in cases:
+        if selected and name not in selected:
+            continue
         args = {"words": 200, "resets": 1, "meta": 1, "seed": 20261001, **options}
         for fault, expected in {"none": "PASS", **faults}.items():
             design = (designs.get(*shape) if fault == "no_handshake"
@@ -242,10 +244,12 @@ def case_ratio_controls(designs):
     return rows
 
 
-def case_faults(designs, rng):
+def case_fifo_faults(designs, seeds, selected=()):
     rows = []
-    for fault, labels, stimulus_ in FAULTS:
-        args = dict(stimulus_, seed=rng.randrange(1, 1 << 30))
+    for (fault, labels, stimulus_), seed in zip(FAULTS, seeds):
+        if selected and fault not in selected:
+            continue
+        args = dict(stimulus_, seed=seed)
         for variant in ("none", fault):
             design = designs.get(6, 2, variant)
             row = designs.run(design, f"{fault}_{'restored' if variant == 'none' else 'fault'}", args)
@@ -268,11 +272,16 @@ def case_faults(designs, rng):
             row["accepted"] = (row["passed"] and row.get("delivered") == quiet["words"]
                                and row.get("lost") == 0) or row.get("failure") in END_TO_END_FAILURES
             rows.append(row)
-    for seed in range(3):
-        args = dict(ONE_SIDE, seed=rng.randrange(1, 1 << 30))
+    return rows
+
+
+def case_reset_faults(designs, trials):
+    rows = []
+    for index, seed in trials:
+        args = dict(ONE_SIDE, seed=seed)
         for variant, fault, handshake in (("handshake", "none", True), ("no_handshake", "none", False),
                                           ("peer_unmasked", "peer_unmasked", True)):
-            row = designs.run(designs.get(6, 2, fault, handshake), f"oneside{seed}_{variant}", args)
+            row = designs.run(designs.get(6, 2, fault, handshake), f"oneside{index}_{variant}", args)
             row["fault"] = variant
             if variant == "handshake":
                 row["expected"] = "PASS"
@@ -282,6 +291,22 @@ def case_faults(designs, rng):
                 row["accepted"] = not row["passed"] and row.get("failure") in ONE_SIDE_LABELS
             rows.append(row)
     return rows
+
+
+def case_faults(designs, rng, group="all"):
+    seeds = [rng.randrange(1, 1 << 30) for _ in FAULTS]
+    resets = [(i, rng.randrange(1, 1 << 30)) for i in range(3)]
+    if group == "capacity":
+        return case_fifo_faults(designs, seeds, ("binary_count", "full_late", "full_early"))
+    if group == "receive":
+        return case_fifo_faults(designs, seeds, ("no_receive_register", "early_nonempty"))
+    if group == "reset":
+        return case_reset_faults(designs, resets[:1])
+    if group == "repeated-resets":
+        return case_reset_faults(designs, resets[1:])
+    if group == "gating":
+        return []
+    return case_fifo_faults(designs, seeds) + case_reset_faults(designs, resets)
 
 
 def report(rows):
@@ -300,6 +325,11 @@ def main():
     p.add_argument("--fixture", required=True)
     p.add_argument("--work", required=True)
     p.add_argument("--case", choices=("ratios", "ratio_controls", "throughput", "faults"), required=True)
+    p.add_argument("--ratio-shape", action="append",
+                   choices=("offset", "fast_sender", "fast_receiver", "oneside"))
+    p.add_argument("--fault-group",
+                   choices=("all", "capacity", "receive", "reset", "repeated-resets", "gating"),
+                   default="all")
     p.add_argument("--seeds", type=int, default=3, help="random ratios per design shape")
     p.add_argument("--rng", type=int, default=20261001)
     args = p.parse_args()
@@ -309,10 +339,11 @@ def main():
     rng = random.Random(f"{args.case}:{args.rng}")
     designs = Designs(args.fixture, root)
     rows = {"ratios": lambda: case_ratios(designs, rng, args.seeds),
-            "ratio_controls": lambda: case_ratio_controls(designs),
+            "ratio_controls": lambda: case_ratio_controls(designs, args.ratio_shape),
             "throughput": lambda: case_throughput(designs, rng),
-            "faults": lambda: case_faults(designs, rng)
-            + clock_gate_bench.case_rows(args.fixture, root, rng)}[args.case]()
+            "faults": lambda: case_faults(designs, rng, args.fault_group)}[args.case]()
+    if args.case == "faults" and args.fault_group in ("all", "gating"):
+        rows += clock_gate_bench.case_rows(args.fixture, root, rng)
     (root / "results.json").write_text(json.dumps(rows, indent=2) + "\n")
     if args.case == "throughput":
         (root / "throughput.md").write_text(report(rows))

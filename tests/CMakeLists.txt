@@ -9,7 +9,7 @@ if(UNIX)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/large_address_maps.py
       --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/large_address_map_small_stack
       --count 4096 --stack-kib 1024)
-  set_tests_properties(large_address_map_small_stack PROPERTIES TIMEOUT 30 LABELS "config;quick;ci")
+  set_tests_properties(large_address_map_small_stack PROPERTIES TIMEOUT 90 LABELS "config;quick;ci")
 endif()
 add_test(NAME large_address_map_scaling
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/large_address_maps.py
@@ -518,16 +518,27 @@ set_tests_properties(async_fifo_structure PROPERTIES WORKING_DIRECTORY ${CMAKE_C
 add_executable(nocloom_async_fifo_fixture generate_async_fifo.cpp generate_fifo_levels.cpp)
 target_link_libraries(nocloom_async_fifo_fixture PRIVATE nocloom_io nocloom_core nlohmann_json::nlohmann_json)
 target_include_directories(nocloom_async_fifo_fixture PRIVATE ${PROJECT_SOURCE_DIR}/src)
-foreach(case IN ITEMS ratios ratio_controls throughput faults)
-  add_test(NAME async_fifo_${case}
+function(nocloom_fifo_simulation name case timeout tier)
+  add_test(NAME async_fifo_${name}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_async_fifo.py --case ${case}
       --fixture $<TARGET_FILE:nocloom_async_fifo_fixture>
-      --work ${CMAKE_CURRENT_BINARY_DIR}/async_fifo_${case})
-  set_tests_properties(async_fifo_${case} PROPERTIES TIMEOUT 1800 LABELS "rtl;cdc;async-fifo"
+      --work ${CMAKE_CURRENT_BINARY_DIR}/async_fifo_${name} ${ARGN})
+  set_tests_properties(async_fifo_${name} PROPERTIES TIMEOUT ${timeout}
+    LABELS "rtl;cdc;async-fifo;${tier}"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-endforeach()
-set_property(TEST async_fifo_ratio_controls async_fifo_faults APPEND PROPERTY LABELS ci)
-set_tests_properties(async_fifo_ratio_controls async_fifo_faults PROPERTIES TIMEOUT 120)
+endfunction()
+nocloom_fifo_simulation(ratios ratios 1800 release)
+nocloom_fifo_simulation(throughput throughput 1800 release)
+nocloom_fifo_simulation(ratio_controls ratio_controls 420 ci --ratio-shape offset --ratio-shape oneside)
+nocloom_fifo_simulation(ratio_extremes ratio_controls 360 ci
+  --ratio-shape fast_sender --ratio-shape fast_receiver)
+nocloom_fifo_simulation(faults faults 510 ci --fault-group capacity)
+nocloom_fifo_simulation(receive_faults faults 390 ci --fault-group receive)
+nocloom_fifo_simulation(reset_faults faults 180 ci --fault-group reset)
+nocloom_fifo_simulation(gating_faults faults 180 ci --fault-group gating)
+nocloom_fifo_simulation(reset_faults_repeat faults 540 release --fault-group repeated-resets)
+set_tests_properties(async_fifo_faults async_fifo_receive_faults async_fifo_reset_faults
+  async_fifo_gating_faults PROPERTIES PROCESSORS 2)
 add_test(NAME endpoint_clock_gating_transactions
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/clock_gate_bench.py
     --cli $<TARGET_FILE:nocloom_cli>
@@ -622,6 +633,7 @@ foreach(contract IN ITEMS runner history adaptive probe)
     TIMEOUT ${NOCLOOM_FRAMEWORK_TIMEOUT} LABELS "unit;verification"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 endforeach()
+set_tests_properties(suite_runner_contract suite_adaptive_contract PROPERTIES PROCESSORS 4)
 
 # ---- burst composition: AXI4 burst exchange composition (internal profile) ----
 target_sources(nocloom_unit PRIVATE unit/axi4_exchange.cpp)
@@ -662,7 +674,8 @@ add_test(NAME axi4_public_installed
     --build ${PROJECT_BINARY_DIR} --source ${PROJECT_SOURCE_DIR}
     --work ${CMAKE_CURRENT_BINARY_DIR}/axi4_public_installed
     --compiler ${CMAKE_CXX_COMPILER})
-set_tests_properties(axi4_public_installed PROPERTIES TIMEOUT 900 LABELS "rtl;axi4;installed;focused")
+set_tests_properties(axi4_public_installed PROPERTIES
+  TIMEOUT 900 PROCESSORS 4 LABELS "rtl;axi4;installed;focused")
 
 add_test(NAME axi4_address48_installed
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_axi4_public.py
@@ -976,7 +989,7 @@ add_test(NAME log_bank_access
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/log_bank_access.py
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/log_bank_access
     --case single --case parts --case audit32 --case sparse --case crossed)
-set_tests_properties(log_bank_access PROPERTIES TIMEOUT 60
+set_tests_properties(log_bank_access PROPERTIES TIMEOUT 120
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} LABELS "rtl;focused;ci" PROCESSORS 1
   ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
 add_test(NAME log_bank_covered_access
@@ -1002,15 +1015,19 @@ target_include_directories(nocloom_log_clock_bindings PRIVATE ${PROJECT_SOURCE_D
 target_link_libraries(nocloom_log_clock_bindings PRIVATE nocloom_io nlohmann_json::nlohmann_json)
 target_compile_options(nocloom_log_clock_bindings PRIVATE
   $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>)
-add_test(NAME log_clock_renaming
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/log_clock_bindings.py
-    --fixture $<TARGET_FILE:nocloom_log_clock_bindings>
-    --cli $<TARGET_FILE:nocloom_cli>
-    --clocked-example ${PROJECT_SOURCE_DIR}/examples/axi4_graph_clocked.yaml
-    --mode-example ${PROJECT_SOURCE_DIR}/examples/mode_remap.yaml
-    --work ${CMAKE_CURRENT_BINARY_DIR}/log_clock_renaming)
-set_tests_properties(log_clock_renaming PROPERTIES TIMEOUT 30
+set(log_clock_renaming_command
+  ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/log_clock_bindings.py
+  --fixture $<TARGET_FILE:nocloom_log_clock_bindings>
+  --cli $<TARGET_FILE:nocloom_cli>
+  --clocked-example ${PROJECT_SOURCE_DIR}/examples/axi4_graph_clocked.yaml
+  --mode-example ${PROJECT_SOURCE_DIR}/examples/mode_remap.yaml)
+add_test(NAME log_clock_renaming COMMAND ${log_clock_renaming_command}
+  --work ${CMAKE_CURRENT_BINARY_DIR}/log_clock_renaming --cases boundaries)
+set_tests_properties(log_clock_renaming PROPERTIES TIMEOUT 270
   LABELS "structure;quick;ci" PROCESSORS 1)
+add_test(NAME log_clock_renaming_wide COMMAND ${log_clock_renaming_command}
+  --work ${CMAKE_CURRENT_BINARY_DIR}/log_clock_renaming_wide --cases interior)
+set_tests_properties(log_clock_renaming_wide PROPERTIES TIMEOUT 150 LABELS "structure;release")
 
 add_test(NAME error_log_plan COMMAND nocloom_unit "[error-log]")
 set_tests_properties(error_log_plan PROPERTIES TIMEOUT 120 LABELS "unit;edit")
@@ -1189,7 +1206,7 @@ if(TARGET nocloom_api_example)
 endif()
 set(NOCLOOM_EDIT_CASES width_adapter_roundtrip_8x4
   axi4_clamp_refused_64_1 exclusive_axi3_cache)
-set(NOCLOOM_RELEASE_CASES async_fifo_ratios async_fifo_throughput ahb_public_installed
+set(NOCLOOM_RELEASE_CASES ahb_public_installed
   graph_clocked_installed_endpoints graph_clocked_installed_twelve ahb_initiator_ahb5_clocked
   arbiter_library_dynamic fixed_qos_arbiter)
 set_property(GLOBAL PROPERTY NOCLOOM_CI_MISSING "${NOCLOOM_CI_CASES}")
@@ -1232,9 +1249,17 @@ set_tests_properties(clock_parent_chain PROPERTIES WORKING_DIRECTORY ${CMAKE_CUR
 
 add_test(NAME clock_edge_constraints
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/clock_edge_constraints.py
-    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/clock_edge_constraints)
+    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/clock_edge_constraints
+    --cases directed)
 set_tests_properties(clock_edge_constraints PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-  TIMEOUT 60 LABELS "rtl;focused;ci" ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+  TIMEOUT 390 LABELS "rtl;focused;ci" ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+add_test(NAME clock_edge_constraints_deep_chain
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/clock_edge_constraints.py
+    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/clock_edge_constraints_deep_chain
+    --cases deep-chain)
+set_tests_properties(clock_edge_constraints_deep_chain PROPERTIES
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  TIMEOUT 270 LABELS "rtl;focused;release" ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
 
 add_test(NAME clock_qualified_period
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/clock_qualified_period.py

@@ -298,16 +298,7 @@ def designs():
     yield "related_ahb", related_ahb, False
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--fixture", type=Path, required=True)
-    parser.add_argument("--cli", type=Path, required=True)
-    parser.add_argument("--clocked-example", type=Path, required=True)
-    parser.add_argument("--mode-example", type=Path, required=True)
-    parser.add_argument("--work", type=Path, required=True)
-    args = parser.parse_args()
-    args.work.mkdir(parents=True, exist_ok=True)
-    directory = Path(tempfile.mkdtemp(prefix="run-", dir=args.work))
+def check_bindings(args, directory):
     endpoints = ("s", "slow_src", "csr", "logged", "ram", "data_src")
     variants = (("z_cfg", "a_spare", "u_win", "y_mem", "a_mem", "w_data"),
                 ("a_cfg", "z_spare", "z_win", "b_mem", "m_mem", "v_data"),
@@ -336,13 +327,33 @@ def main():
     compare_definitions(args.fixture, args.cli, directory, "mode_remap", mode_variants(mode))
     compare_definitions(args.fixture, args.cli, directory, "mode_multi_input",
                         mode_variants(mode.replace("equals: {bank: 2}", "equals: {bank: 2, boot: 1}")))
-    for count in range(17, 33):
+
+
+def check_wide_modes(args, directory, counts):
+    for count in counts:
         selectors = wide_selectors(count)
         flag_names = tuple(flag["name"] for flag in selectors["address_selectors"])
         port_names = tuple(port["name"] for port in selectors["address_inputs"])
         compare(args.fixture, args.cli, directory, f"wide_modes_{count}", json.dumps(selectors),
                 (*flag_names, *port_names, "ram", "regs"),
                 ((*reversed(flag_names), *reversed(port_names), "z_ram", "a_regs"),))
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--fixture", type=Path, required=True)
+    parser.add_argument("--cli", type=Path, required=True)
+    parser.add_argument("--clocked-example", type=Path, required=True)
+    parser.add_argument("--mode-example", type=Path, required=True)
+    parser.add_argument("--work", type=Path, required=True)
+    parser.add_argument("--cases", choices=("all", "boundaries", "interior"), default="all")
+    args = parser.parse_args()
+    args.work.mkdir(parents=True, exist_ok=True)
+    directory = Path(tempfile.mkdtemp(prefix="run-", dir=args.work))
+    if args.cases != "interior":
+        check_bindings(args, directory)
+    counts = {"all": range(17, 33), "boundaries": (17, 32), "interior": range(18, 32)}
+    check_wide_modes(args, directory, counts[args.cases])
 
 
 if __name__ == "__main__":
