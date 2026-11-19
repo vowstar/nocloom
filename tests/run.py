@@ -20,6 +20,7 @@ parser.add_argument("--definition-generator")
 parser.add_argument("--generator", default="Ninja")
 parser.add_argument("--make-program")
 parser.add_argument("--toolchain")
+parser.add_argument("--install-scope", choices=("packaged", "subdirectory"))
 parser.add_argument("--schema")
 parser.add_argument("--xmllint")
 args = parser.parse_args()
@@ -243,7 +244,12 @@ def install():
     assert prefix.resolve().parent == moved.resolve().parent == ROOT.resolve()
     prefix.rename(moved)
     run([moved / "bin/nocloom", "--version"])
-    for mode in ("core", "io", "subdirectory"):
+    modes = {
+        None: ("core", "io", "subdirectory"),
+        "packaged": ("core", "io"),
+        "subdirectory": ("subdirectory",),
+    }[args.install_scope]
+    for mode in modes:
         folder = ROOT / mode
         folder.mkdir()
         lines = ["cmake_minimum_required(VERSION 3.24)", "project(consumer LANGUAGES CXX)"]
@@ -281,7 +287,7 @@ def install():
             destination = folder / example
             run([folder / "build/consumer", example, destination, config])
             cli_output = ROOT / ("cli-" + example)
-            if mode == "core":
+            if mode == modes[0]:
                 run([moved / "bin/nocloom", "generate", config, "--out-dir", cli_output])
             expected = {p.name: p.read_bytes() for p in cli_output.iterdir()}
             actual = {p.name: p.read_bytes() for p in destination.iterdir()}

@@ -172,16 +172,16 @@ nocloom_verif_case(NAME verif_soc_mixed_negative LAYER negative TIER focused TIM
   FEATURES examples axi4 ahb apb cdc width MEMORY_MB 3072
   CONTRACTS AXI.WIDTH.DOWNSIZE.PIECES
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/soc_mixed.py --cli $<TARGET_FILE:nocloom_cli> --negative)
-# The same examples from a CLI built with the other C++ compiler: no byte may
-# differ. Without a second compiler the case reports skipped (77).
+# A release check builds the CLI with a second compiler and compares every
+# generated artifact. Without a second compiler the case reports skipped (77).
 if(CMAKE_TOOLCHAIN_FILE)
   set(nlv_toolchain_define "--define=CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}")
   set(nlv_toolchain_args --toolchain "${CMAKE_TOOLCHAIN_FILE}")
 endif()
 if(NOCLOOM_DETERMINISM_COMPILERS)
-  nocloom_verif_case(NAME verif_determinism_compilers LAYER structure TIER focused TIMEOUT 1800
-    TIMEOUT_REASON "builds the CLI with a second compiler before generating every example"
-    PROCESSORS 6 FEATURES examples determinism ci MEMORY_MB 4096
+  nocloom_verif_case(NAME verif_determinism_compilers LAYER structure TIER release TIMEOUT 1800
+    TIMEOUT_REASON "builds a second CLI and generates all example and TileLink definitions"
+    PROCESSORS 6 FEATURES examples determinism MEMORY_MB 4096
     COMMAND ${NLV_CONFIG} --case ${NLV_CASES}/config_examples.py --case ${NLV_CASES}/config_tilelink.py
       --other-cxx=${nocloom_other_cxx} --source ${PROJECT_SOURCE_DIR} --cmake ${CMAKE_COMMAND}
       "--generator=${CMAKE_GENERATOR}" --jobs 6 ${nlv_toolchain_define}
