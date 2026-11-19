@@ -1079,81 +1079,96 @@ nocloom::Definition named_endpoint(const std::string &name, bool target, bool gr
   }
   return d;
 }
-} // namespace
-
-TEST_CASE("Endpoint path components preserve names in gate clocks and maps",
-          "[exchange-clocking]") {
+void check_named_endpoint_gates(bool target, bool graph) {
   using nocloom::EndpointClockGates;
   const std::array<std::optional<EndpointClockGates>, 4> modes{
       std::nullopt, EndpointClockGates{}, EndpointClockGates{.single_gate = true},
       EndpointClockGates{.protocol = false}};
-  for (bool target : {false, true})
-    for (bool graph : {false, true})
-      for (const auto *name :
-           {"protocol", "transport", "protocol_edge", "transport_edge", "x_protocol", "x_transport",
-            "x_protocol_edge", "x_transport_edge"}) {
-        auto d = named_endpoint(name, target, graph);
-        d.initiators[0].default_target = d.targets[0].name;
-        const auto plain = lowered(d);
-        const auto owner = std::string(target ? "target/" : "source/") + name;
-        const auto stem = "gate/" + owner;
-        for (const auto mode : modes) {
-          CAPTURE(target, graph, name, mode);
-          (target ? d.targets[0].clock_gating : d.initiators[0].clock_gating) = mode;
-          const auto h = lowered(d);
-          const auto x = public_artifacts(d);
-          const auto separate = !mode || *mode == EndpointClockGates{};
-          const auto protocol_gated = !mode || mode->protocol;
-          const auto count = separate ? 2 : 1;
-          const auto total = count + 2 + (graph ? 2 : 0);
-          CHECK(std::ranges::count(h.ir.values, Op::ClockGate, &Value::op) == total);
-          unsigned instances = 0;
-          for (auto at = x.rtl.find("nocloom_clock_gate nl_internal_"); at != std::string::npos;
-               at = x.rtl.find("nocloom_clock_gate nl_internal_", at + 1))
-            ++instances;
-          CHECK(instances == total);
-          const auto &gates = x.map["network"]["clock_gates"];
-          CHECK(gates.size() == total);
-          const auto kind = target ? "target" : "initiator";
-          CHECK(std::ranges::count_if(gates, [&](const auto &g) {
-                  return g.contains(kind) && g[kind] == name;
-                }) == count);
-          CHECK(h.bindings.contains(stem + "/protocol.clock") == separate);
-          for (const auto *zone : {"", "/protocol"}) {
-            const auto before = plain.bindings.at(stem + zone + ".clock");
-            const auto remaining = plain.bindings.at(stem + zone + ".remaining");
-            const auto expected = !protocol_gated && *zone
-                                      ? root_clock(h.ir, h.bindings.at(stem + ".clock"))
-                                      : h.bindings.at(stem + (separate ? zone : "") + ".clock");
-            check_gate_state_clocks(plain, h, before, remaining, expected);
-          }
-          const auto records = x.map["network"].value("endpoint_clock_gating", nlohmann::json{});
-          if (mode) {
-            CHECK(records[kind][name] ==
-                  nlohmann::json{{"protocol", mode->protocol},
-                                 {"transport", mode->transport},
-                                 {"single_gate", mode->single_gate},
-                                 {"gate_count", count},
-                                 {"protocol_clock", protocol_gated ? "gated" : "domain"},
-                                 {"transport_clock", "gated"}});
-          } else
-            CHECK(records.is_null());
-          for (const auto &g : gates)
-            if (g.contains(kind) && g[kind] == name) {
-              const auto zone = g["zone"].template get<std::string>();
-              CHECK((separate ? (zone == "protocol" || zone == "transport")
-                              : zone == (protocol_gated ? "shared" : "transport")));
-              CHECK_FALSE(g.contains("mode"));
-              if (mode) {
-                CHECK(g["zones"] == (!mode->single_gate
-                                         ? nlohmann::json::array({zone})
-                                         : nlohmann::json::array({"protocol", "transport"})));
-              } else {
-                CHECK_FALSE(g.contains("zones"));
-              }
-            }
-        }
+  for (const auto *name : {"protocol", "transport", "protocol_edge", "transport_edge", "x_protocol",
+                           "x_transport", "x_protocol_edge", "x_transport_edge"}) {
+    auto d = named_endpoint(name, target, graph);
+    d.initiators[0].default_target = d.targets[0].name;
+    const auto plain = lowered(d);
+    const auto owner = std::string(target ? "target/" : "source/") + name;
+    const auto stem = "gate/" + owner;
+    for (const auto mode : modes) {
+      CAPTURE(target, graph, name, mode);
+      (target ? d.targets[0].clock_gating : d.initiators[0].clock_gating) = mode;
+      const auto h = lowered(d);
+      const auto x = public_artifacts(d);
+      const auto separate = !mode || *mode == EndpointClockGates{};
+      const auto protocol_gated = !mode || mode->protocol;
+      const auto count = separate ? 2 : 1;
+      const auto total = count + 2 + (graph ? 2 : 0);
+      CHECK(std::ranges::count(h.ir.values, Op::ClockGate, &Value::op) == total);
+      unsigned instances = 0;
+      for (auto at = x.rtl.find("nocloom_clock_gate nl_internal_"); at != std::string::npos;
+           at = x.rtl.find("nocloom_clock_gate nl_internal_", at + 1))
+        ++instances;
+      CHECK(instances == total);
+      const auto &gates = x.map["network"]["clock_gates"];
+      CHECK(gates.size() == total);
+      const auto kind = target ? "target" : "initiator";
+      CHECK(std::ranges::count_if(gates, [&](const auto &g) {
+              return g.contains(kind) && g[kind] == name;
+            }) == count);
+      CHECK(h.bindings.contains(stem + "/protocol.clock") == separate);
+      for (const auto *zone : {"", "/protocol"}) {
+        const auto before = plain.bindings.at(stem + zone + ".clock");
+        const auto remaining = plain.bindings.at(stem + zone + ".remaining");
+        const auto expected = !protocol_gated && *zone
+                                  ? root_clock(h.ir, h.bindings.at(stem + ".clock"))
+                                  : h.bindings.at(stem + (separate ? zone : "") + ".clock");
+        check_gate_state_clocks(plain, h, before, remaining, expected);
       }
+      const auto records = x.map["network"].value("endpoint_clock_gating", nlohmann::json{});
+      if (mode) {
+        CHECK(records[kind][name] ==
+              nlohmann::json{{"protocol", mode->protocol},
+                             {"transport", mode->transport},
+                             {"single_gate", mode->single_gate},
+                             {"gate_count", count},
+                             {"protocol_clock", protocol_gated ? "gated" : "domain"},
+                             {"transport_clock", "gated"}});
+      } else
+        CHECK(records.is_null());
+      for (const auto &g : gates)
+        if (g.contains(kind) && g[kind] == name) {
+          const auto zone = g["zone"].template get<std::string>();
+          CHECK((separate ? (zone == "protocol" || zone == "transport")
+                          : zone == (protocol_gated ? "shared" : "transport")));
+          CHECK_FALSE(g.contains("mode"));
+          if (mode) {
+            CHECK(g["zones"] == (!mode->single_gate
+                                     ? nlohmann::json::array({zone})
+                                     : nlohmann::json::array({"protocol", "transport"})));
+          } else {
+            CHECK_FALSE(g.contains("zones"));
+          }
+        }
+    }
+  }
+}
+} // namespace
+
+TEST_CASE("Direct source gates preserve endpoint names",
+          "[exchange-clocking][endpoint-gate-names]") {
+  check_named_endpoint_gates(false, false);
+}
+
+TEST_CASE("Direct target gates preserve endpoint names",
+          "[exchange-clocking][endpoint-gate-names]") {
+  check_named_endpoint_gates(true, false);
+}
+
+TEST_CASE("Graph source gates preserve endpoint names",
+          "[exchange-clocking][endpoint-gate-names]") {
+  check_named_endpoint_gates(false, true);
+}
+
+TEST_CASE("Graph target gates preserve endpoint names",
+          "[exchange-clocking][endpoint-gate-names]") {
+  check_named_endpoint_gates(true, true);
 }
 
 TEST_CASE("Endpoint pipe ownership uses the complete endpoint name", "[exchange-clocking]") {
