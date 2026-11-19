@@ -25,6 +25,12 @@ RTL_DIGESTS = {
     "scheduler": "cf39ce5a5b37a183d7f13e20e7d1536b72ac6fc030117b8252d70c04dfa2863b",
 }
 
+PATH_GROUPS = {
+    "target_choice": ("local", "mixed", "multiple", "named"),
+    "address_map": ("log", "selector", "subpage"),
+    "protocol_and_qos": ("tl_uh", "shaper", "scheduler"),
+}
+
 
 def configuration(kind):
     source = dict(name="s", clock_domain="main", protocol="apb4", data_width=32,
@@ -77,32 +83,32 @@ def rtl_digest(gen):
                               for p in sorted(gen.glob("*.v"))}).encode()).hexdigest()
 
 
-def check_paths(cli, work):
+def check_paths(cli, work, group=None):
+    kinds = PATH_GROUPS[group] if group is not None else ("local", "mixed", *RTL_DIGESTS)
     key = "unconnected_pair_or_address_outside_routing_windows"
     local_rule = "DECERR_at_the_initiators_listed_in_local_decode_misses_without_a_network_request"
     target_rule = ("DECERR_from_the_reached_target_with_the_smallest_window_by_error_request_"
                    "without_target_handshake")
-    for kind in ("local", "mixed"):
-        _, mapping = generate(cli, work / kind, kind)
-        definition = mapping["definition"]
-        assert definition["local_decode_misses"] == ["s"]
-        rules = definition["contract"]["connectivity"]
-        assert rules[key] == local_rule
-        if kind == "mixed":
-            assert rules["target_fallback"] == target_rule
-            assert definition["default_targets"] == {"named": "t"}
-        else:
-            assert "target_fallback" not in rules
-    for kind, expected in RTL_DIGESTS.items():
+    for kind in kinds:
         gen, mapping = generate(cli, work / kind, kind)
         definition = mapping["definition"]
+        rules = definition["contract"]["connectivity"]
+        if kind in ("local", "mixed"):
+            assert definition["local_decode_misses"] == ["s"]
+            assert rules[key] == local_rule
+            if kind == "mixed":
+                assert rules["target_fallback"] == target_rule
+                assert definition["default_targets"] == {"named": "t"}
+            else:
+                assert "target_fallback" not in rules
+            continue
         local = definition.get("local_decode_misses", [])
         assert local == [], (kind, local)
-        rules = definition["contract"]["connectivity"]
         assert rules[key] == target_rule and "target_fallback" not in rules, (kind, rules)
         if kind == "named":
             assert definition["default_targets"] == {"s": "t"}
         digest = rtl_digest(gen)
+        expected = RTL_DIGESTS[kind]
         assert digest == expected, (kind, digest, expected)
         print(f"{kind}: target response path and matching Verilog")
 
@@ -160,11 +166,14 @@ def main():
     parser.add_argument("--cli", required=True)
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--case", choices=("paths", "zero", "nonzero"), required=True)
+    parser.add_argument("--path-group", choices=PATH_GROUPS)
     args = parser.parse_args()
+    if args.path_group is not None and args.case != "paths":
+        parser.error("--path-group requires --case paths")
     args.work.mkdir(parents=True, exist_ok=True)
     work = Path(mkdtemp(dir=args.work.resolve(), prefix="run-"))
     if args.case == "paths":
-        check_paths(args.cli, work)
+        check_paths(args.cli, work, args.path_group)
     else:
         for kind in ("zero",) if args.case == "zero" else ("shaper", "scheduler"):
             check_rate(args.cli, work / kind, kind)

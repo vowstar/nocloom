@@ -389,10 +389,11 @@ foreach(protocol IN ITEMS axi4 axi3 axi4_lite apb4 logged axi4_folded axi4_compa
 endforeach()
 set(source_miss_fallback ${Python3_EXECUTABLE} ${NLV_CASES}/source_miss_fallback.py
   --cli $<TARGET_FILE:nocloom_cli>)
-nocloom_verif_case(NAME verif_source_miss_fallback_paths LAYER unit TIER quick
-  TIMEOUT 15 FEATURES errors MEMORY_MB 256 CONTRACTS FABRIC.ERR.DECODE_MISS
-  COMMAND ${source_miss_fallback} --case paths)
-set_property(TEST verif_source_miss_fallback_paths APPEND PROPERTY LABELS edit)
+foreach(group IN ITEMS target_choice address_map protocol_and_qos)
+  nocloom_verif_case(NAME verif_source_miss_fallback_paths_${group} LAYER unit TIER quick
+    TIMEOUT 15 FEATURES errors MEMORY_MB 256 CONTRACTS FABRIC.ERR.DECODE_MISS
+    COMMAND ${source_miss_fallback} --case paths --path-group ${group})
+endforeach()
 foreach(rate IN ITEMS zero nonzero)
   nocloom_verif_case(NAME verif_source_miss_rate_${rate} LAYER rtl TIER focused
     TIMEOUT 45 FEATURES apb qos MEMORY_MB 1024 CONTRACTS QOS.SHAPER.DECODE_MISS
