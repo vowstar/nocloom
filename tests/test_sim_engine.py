@@ -478,12 +478,15 @@ class ProcessContract(unittest.TestCase):
         with ThreadPoolExecutor(max_workers=1) as reader, self.process.Popen(
                 command, cwd=self.work, env=env, stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE) as child:
+            timeout = 60
+            deadline = time.monotonic() + timeout
             try:
                 pipe = getattr(child, stream)
-                first = reader.submit(os.read, pipe.fileno(), 1).result(timeout=60)
+                first = reader.submit(os.read, pipe.fileno(), 1).result(timeout=timeout)
                 self.assertTrue(first, "simulator closed the stream before its first write")
                 # The simulator waits for this byte before writing the next part.
-                stdout, stderr = child.communicate(b"\n", timeout=60)
+                remaining = max(0, deadline - time.monotonic())
+                stdout, stderr = child.communicate(b"\n", timeout=remaining)
             except BaseException:
                 child.kill()
                 child.wait()
