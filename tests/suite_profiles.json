@@ -4,7 +4,10 @@
     {
       "purpose": "Model, validation, address/layout boundaries and deterministic structure",
       "tests": [
-        "unit",
+        "unit_0",
+        "unit_1",
+        "unit_2",
+        "unit_3",
         "switch_graph",
         "message_layout",
         "simulation_engine_contract",

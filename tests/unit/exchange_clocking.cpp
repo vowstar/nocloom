@@ -965,17 +965,37 @@ TEST_CASE("Clock audit restricts FIFO levels to their confirmed reduction", "[ex
   }
 }
 
+namespace {
+void check_gate_state_clocks(const ExchangeHardware &plain, const ExchangeHardware &gated,
+                             ValueId previous, ValueId deadline, ValueId expected) {
+  bool found = false;
+  std::vector<std::size_t> wrong_clocks;
+  for (std::size_t i = 0; i < plain.ir.states.size(); ++i) {
+    const auto &state = plain.ir.states[i];
+    if (state.clock.index == previous.index && state.output.index != deadline.index) {
+      found = true;
+      if (gated.ir.states.at(i).clock.index != expected.index)
+        wrong_clocks.push_back(i);
+    }
+  }
+  CAPTURE(previous.index, expected.index, wrong_clocks);
+  CHECK(found);
+  CHECK(wrong_clocks.empty());
+}
+} // namespace
+
 TEST_CASE("Endpoint gates clock the selected zones and preserve domain synchronizers",
           "[exchange-clocking]") {
   using nocloom::EndpointClockGates;
+  auto base = placed();
+  base.reset_ports.push_back({"other_reset_n"});
+  base.clock_domains[1].reset_port = "other_reset_n";
+  const auto plain = lowered(base);
   for (const auto gates :
        {EndpointClockGates{}, EndpointClockGates{.single_gate = true},
         EndpointClockGates{.protocol = false}, EndpointClockGates{.transport = false},
         EndpointClockGates{.protocol = false, .transport = false}}) {
-    auto d = placed();
-    d.reset_ports.push_back({"other_reset_n"});
-    d.clock_domains[1].reset_port = "other_reset_n";
-    const auto plain = lowered(d);
+    auto d = base;
     d.initiators[0].clock_gating = gates;
     d.targets[0].clock_gating = gates;
     // The other endpoints keep their independent default gates.
@@ -993,16 +1013,7 @@ TEST_CASE("Endpoint gates clock the selected zones and preserve domain synchroni
         const auto expected = gated
                                   ? h.bindings.at(gate + (gates.single_gate ? "" : zone) + ".clock")
                                   : h.bindings.at("domain/a.clock");
-        unsigned count = 0;
-        for (std::size_t i = 0; i < plain.ir.states.size(); ++i) {
-          const auto &original = plain.ir.states[i];
-          if (original.clock.index == original_clock.index &&
-              original.output.index != deadline.index) {
-            ++count;
-            CHECK(h.ir.states.at(i).clock.index == expected.index);
-          }
-        }
-        CHECK(count > 0);
+        check_gate_state_clocks(plain, h, original_clock, deadline, expected);
       }
     }
     for (auto q : h.ir.synchronizer_stages) {
@@ -1114,15 +1125,7 @@ TEST_CASE("Endpoint path components preserve names in gate clocks and maps",
             const auto expected = !protocol_gated && *zone
                                       ? root_clock(h.ir, h.bindings.at(stem + ".clock"))
                                       : h.bindings.at(stem + (separate ? zone : "") + ".clock");
-            unsigned states = 0;
-            for (std::size_t i = 0; i < plain.ir.states.size(); ++i) {
-              const auto &state = plain.ir.states[i];
-              if (state.clock.index == before.index && state.output.index != remaining.index) {
-                ++states;
-                CHECK(h.ir.states.at(i).clock.index == expected.index);
-              }
-            }
-            CHECK(states > 0);
+            check_gate_state_clocks(plain, h, before, remaining, expected);
           }
           const auto records = x.map["network"].value("endpoint_clock_gating", nlohmann::json{});
           if (mode) {

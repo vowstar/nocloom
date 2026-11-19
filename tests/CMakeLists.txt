@@ -373,7 +373,20 @@ endforeach()
 target_link_libraries(nocloom_unit PRIVATE nocloom_io Catch2::Catch2WithMain Threads::Threads nlohmann_json::nlohmann_json)
 target_include_directories(nocloom_unit PRIVATE ${PROJECT_SOURCE_DIR}/src)
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit)
-add_test(NAME unit COMMAND nocloom_unit)
+
+function(nocloom_unit_shards name count timeout labels)
+  math(EXPR last "${count} - 1")
+  foreach(index RANGE ${last})
+    set(test ${name}_${index})
+    set(work ${CMAKE_CURRENT_BINARY_DIR}/unit/${test})
+    file(MAKE_DIRECTORY ${work})
+    add_test(NAME ${test} COMMAND nocloom_unit ${ARGN}
+      --order lex --shard-count ${count} --shard-index ${index})
+    set_tests_properties(${test} PROPERTIES WORKING_DIRECTORY ${work}
+      TIMEOUT ${timeout} LABELS "${labels}")
+  endforeach()
+endfunction()
+
 # The unit binary is compute bound: an unoptimized build (Debug, or an empty
 # build type in a parent project) runs it several times slower, so it gets a
 # wider bound there. The top level defaults to Release. It is in the quick set:
@@ -384,8 +397,7 @@ if(CMAKE_BUILD_TYPE MATCHES "^(Debug|)$")
 else()
   set(NOCLOOM_UNIT_TIMEOUT 600)
 endif()
-set_tests_properties(unit PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
-  TIMEOUT ${NOCLOOM_UNIT_TIMEOUT} LABELS "unit;quick")
+nocloom_unit_shards(unit 4 ${NOCLOOM_UNIT_TIMEOUT} "unit;quick")
 add_test(NAME switch_graph COMMAND nocloom_unit "[switch-graph]")
 set_tests_properties(switch_graph PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
   TIMEOUT 30 LABELS "unit;switch-graph")
@@ -773,8 +785,7 @@ set_tests_properties(graph_cross_installed PROPERTIES TIMEOUT 900 LABELS "rtl;in
 
 # Clock placement derives real graph segments before CDC lowering.
 target_sources(nocloom_unit PRIVATE unit/exchange_clocking.cpp)
-add_test(NAME exchange_clocking COMMAND nocloom_unit "[exchange-clocking]")
-set_tests_properties(exchange_clocking PROPERTIES TIMEOUT 180 LABELS "unit;quick;cdc")
+nocloom_unit_shards(exchange_clocking 4 180 "unit;quick;cdc" "[exchange-clocking]")
 
 # The clocked graph networks (internal, endpoints, twelve domains, clock
 # ratios) run as verif_graph_clocked_* (tests/verif).
