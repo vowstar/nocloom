@@ -9,6 +9,7 @@ import argparse
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -822,6 +823,9 @@ def main():
     p.add_argument("--fixture", required=True)
     p.add_argument("--work", required=True)
     a = p.parse_args()
+    root = Path(a.work).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    work = Path(tempfile.mkdtemp(prefix="run-", dir=root))
     test_model()
     test_tape()
     test_checker()
@@ -829,11 +833,11 @@ def main():
     test_reset_propagation()
     test_events()
     test_wrapper()
-    test_bench(a.fixture, a.work)
-    test_idle_function(a.work)
-    test_install_timeout(a.work)
-    test_rule_selection(a.work)
-    test_throughput_selection(a.fixture, a.work)
+    test_bench(a.fixture, work)
+    test_idle_function(work)
+    test_install_timeout(work)
+    test_rule_selection(work)
+    test_throughput_selection(a.fixture, work)
     print("SELFTEST", "FAIL" if FAILS else "PASS", len(FAILS))
     return 1 if FAILS else 0
 
