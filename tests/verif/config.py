@@ -41,6 +41,7 @@ between compilers) and every accepted generate must give the same bytes
 with it; an empty --other-cxx exits 77 (not run, never passed).
 
   python3 tests/verif/config.py --cli CLI --work DIR --case FILE [--case FILE]...
+         [--group NAME]
          [--other-cxx CXX --source DIR [--cmake CMAKE] [--generator G]
           [--define K=V]... [--jobs N]]
 
@@ -239,6 +240,7 @@ def main():
     p.add_argument("--cli", required=True)
     p.add_argument("--work", required=True)
     p.add_argument("--case", action="append", required=True)
+    p.add_argument("--group", help="run one named group from each case file")
     p.add_argument("--tool", action="append", default=[])
     p.add_argument("--other-cxx")
     p.add_argument("--source")
@@ -263,10 +265,13 @@ def main():
             module = load(path)
             outputs = {}
             entries = []
-            names = [e["name"] for e in module.CASES]
+            cases = module.CASES if a.group is None else module.CASE_GROUPS[a.group]
+            if not cases:
+                raise ValueError(f"{path}: no entries selected")
+            names = [e["name"] for e in cases]
             if len(names) != len(set(names)):
                 raise ValueError(f"{path}: duplicate entry names")
-            for entry in module.CASES:
+            for entry in cases:
                 row, error = run_entry(str(Path(a.cli).resolve()), root / Path(path).stem, entry,
                                        outputs, second,
                                        dict(kv.split("=", 1) for kv in a.tool))
