@@ -1,5 +1,6 @@
 """Exercise adapter failure boundaries without an HDL engine or private tools."""
 
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 import json
 import os
@@ -459,21 +460,45 @@ class ProcessContract(unittest.TestCase):
         self.assertEqual(event["raw_exit_code"], 0)
         self.assertTrue(event["failure_marker"])
 
-    def output_case(self, code, patterns=(), **environment):
+    def output_case(self, code, patterns=(), *, split_stream=None, **environment):
         self.cfg["run"] = [sys.executable, "-c", code, "{options}"]
         self.cfg["failure_patterns"] = list(patterns)
         self.config.write_text(json.dumps(self.cfg))
         self.compile()
-        result = self.process.run([self.work / "obj_dir/sim"], cwd=self.work,
-                                  env=dict(self.env, **environment), capture_output=True, timeout=60)
+        command = [self.work / "obj_dir/sim"]
+        env = dict(self.env, **environment)
+        if split_stream is None:
+            result = self.process.run(command, cwd=self.work, env=env, capture_output=True, timeout=60)
+        else:
+            result = self.run_split_output(command, env, split_stream)
         event = json.loads((self.work / "simulation-process.jsonl").read_text().splitlines()[-1])
         return result, event
 
+    def run_split_output(self, command, env, stream):
+        with ThreadPoolExecutor(max_workers=1) as reader, self.process.Popen(
+                command, cwd=self.work, env=env, stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE) as child:
+            try:
+                pipe = getattr(child, stream)
+                first = reader.submit(os.read, pipe.fileno(), 1).result(timeout=60)
+                self.assertTrue(first, "simulator closed the stream before its first write")
+                # The simulator waits for this byte before writing the next part.
+                stdout, stderr = child.communicate(b"\n", timeout=60)
+            except BaseException:
+                child.kill()
+                child.wait()
+                raise
+        if stream == "stdout":
+            stdout = first + stdout
+        else:
+            stderr = first + stderr
+        return subprocess.CompletedProcess(command, child.returncode, stdout, stderr)
+
     def test_failure_scan_does_not_invent_line_start(self):
         payload = b"a" * 63488 + b"error:" + b"b" * 2042
-        code = ("import os,time; os.write(1,b'a'*63488+b'error:'+b'b'*2042); "
-                "time.sleep(.03); os.write(1,b'\\nMATRIX_PASS\\n')")
-        result, event = self.output_case(code)
+        code = ("import os; os.write(1,b'a'*63488+b'error:'+b'b'*2042); "
+                "os.read(0,1); os.write(1,b'\\nMATRIX_PASS\\n')")
+        result, event = self.output_case(code, split_stream="stdout")
         self.assertEqual(result.stdout, payload + b"\nMATRIX_PASS\n")
         self.assertEqual(result.stderr, b"")
         self.assertEqual(result.returncode, 0)
@@ -490,8 +515,9 @@ class ProcessContract(unittest.TestCase):
 
     def test_failure_scan_preserves_split_utf8_and_invalid_bytes(self):
         result, event = self.output_case(
-            "import os,time; os.write(1,b'\\xc3'); time.sleep(.03); "
-            "os.write(1,b'\\xa9\\xff'); os.write(2,b'normal\\xff')", [r"^é\ufffd$"])
+            "import os; os.write(1,b'\\xc3'); os.read(0,1); "
+            "os.write(1,b'\\xa9\\xff'); os.write(2,b'normal\\xff')", [r"^é\ufffd$"],
+            split_stream="stdout")
         self.assertEqual(result.stdout, b"\xc3\xa9\xff")
         self.assertEqual(result.stderr, b"normal\xff")
         self.assertEqual(result.returncode, 1)
@@ -499,12 +525,13 @@ class ProcessContract(unittest.TestCase):
 
     def test_failure_scan_cross_line_regex_and_split_marker(self):
         result, event = self.output_case(
-            "import os,time; os.write(1,b'FIRST\\n'); time.sleep(.03); os.write(1,b'LAST')",
-            [r"(?s)^FIRST.*LAST$"])
+            "import os; os.write(1,b'FIRST\\n'); os.read(0,1); os.write(1,b'LAST')",
+            [r"(?s)^FIRST.*LAST$"], split_stream="stdout")
         self.assertEqual(result.returncode, 1)
         self.assertTrue(event["failure_marker"])
         result, event = self.output_case(
-            "import os,time; os.write(2,b'CHECK_'); time.sleep(.03); os.write(2,b'FAIL: bad')")
+            "import os; os.write(2,b'CHECK_'); os.read(0,1); os.write(2,b'FAIL: bad')",
+            split_stream="stderr")
         self.assertEqual(result.stdout, b"")
         self.assertEqual(result.stderr, b"CHECK_FAIL: bad")
         self.assertEqual(result.returncode, 1)
