@@ -827,8 +827,7 @@ set_tests_properties(apb_write_contract PROPERTIES
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 45 LABELS "rtl;quick;ci")
 
 target_sources(nocloom_unit PRIVATE unit/apb_burst_example.cpp)
-add_test(NAME apb_burst_example_structure COMMAND nocloom_unit "[apb-burst-example]")
-set_tests_properties(apb_burst_example_structure PROPERTIES TIMEOUT 120 LABELS "unit;quick")
+nocloom_unit_shards(apb_burst_example_structure 4 120 "unit;quick" "[apb-burst-example]")
 foreach(mode IN ITEMS funnel graph clocked)
   add_test(NAME apb_burst_installed_${mode}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_apb_public.py
