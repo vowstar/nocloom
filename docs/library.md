@@ -31,7 +31,7 @@ A build with `NOCLOOM_BUILD_TESTS` also needs these tools.
 | C compiler | C11, for generated header checks |
 | Python 3, Make, Icarus Verilog, Yosys, Verilator | No version check |
 | clang-format, cppcheck | No version check. The project uses clang-format 23.1 and cppcheck 2.21. Older versions can report differences |
-| A second C++20 compiler | No version check. `NOCLOOM_DETERMINISM_COMPILERS=OFF` removes this requirement |
+| A second C++20 compiler | Clang when the main compiler is GCC, GCC when it is Clang. No version check. `NOCLOOM_DETERMINISM_COMPILERS=OFF` removes this requirement |
 
 Tests with the `formal` label also need SymbiYosys (`sby`) with the Z3 solver,
 and Lean 4.24.0 with `lake`. CMake does not check these tools. The tests fail
@@ -83,7 +83,7 @@ a complete definition.
 | `NOCLOOM_BUILD_TESTS` | `ON` for a top-level build | Test targets. Also requires `BUILD_TESTING=ON` |
 | `NOCLOOM_TEST_DEPS_REQUIRED` | `ON` | Configuration fails when a test tool is missing |
 | `NOCLOOM_DETERMINISM_COMPILERS` | `ON` | Registers the test that needs a second C++20 compiler |
-| `NOCLOOM_OTHER_CXX` | Empty | Path of that second compiler. Empty searches `PATH` |
+| `NOCLOOM_OTHER_CXX` | Empty | Path of that second compiler. Empty searches `PATH`. A path that fails the configure check stops configuration |
 | `NOCLOOM_IPXACT_SCHEMA_DIR` | Empty | IEEE 1685-2009 schema directory. Registers the IP-XACT schema test, which also needs `xmllint` |
 
 A top-level build defaults to the `Release` build type. A build with tests

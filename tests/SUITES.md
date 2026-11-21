@@ -19,10 +19,10 @@ The `release` label identifies tests reserved for release. Run the full
 inventory without a label filter for each release engine configuration.
 Power, performance and area tests use a separate setup.
 
-The CI selection runs the AHB5 property matrix, the liveness proof driver
-self-test and the comparison of generated files from two C++ compilers.
-It also runs asynchronous FIFO transactions with clock skew, jitter and
-one-sided resets. The release run adds the full FIFO clock ratio matrix.
+The CI selection runs the AHB5 property matrix and the liveness proof driver
+self-test. It also runs asynchronous FIFO transactions with clock skew,
+jitter and one-sided resets. The release run adds the full FIFO clock ratio
+matrix and the comparison of generated files from two C++ compilers.
 
 ## Daily and full verification
 

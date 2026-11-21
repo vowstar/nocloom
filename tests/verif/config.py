@@ -38,12 +38,14 @@ also runs a second time from another working directory into another output
 directory and must give the same names and bytes. With --other-cxx the CLI
 is built again with that compiler (C++ argument evaluation order differs
 between compilers) and every accepted generate must give the same bytes
-with it; an empty --other-cxx exits 77 (not run, never passed).
+with it; an empty --other-cxx exits 77 (not run, never passed). The second
+build seeds its cache from --initial-cache, the tools configure checked. A
+second build that fails is a tool error (exit 2) and prints its log tail.
 
   python3 tests/verif/config.py --cli CLI --work DIR --case FILE [--case FILE]...
          [--group NAME]
-         [--other-cxx CXX --source DIR [--cmake CMAKE] [--generator G]
-          [--define K=V]... [--jobs N]]
+         [--other-cxx CXX --source DIR [--initial-cache FILE] [--cmake CMAKE]
+          [--generator G] [--define K=V]... [--jobs N]]
 
 Exit code: 0 every entry met its expectation, 1 one did not, 2 a case file
 or tool error. results.json lists every entry.
@@ -76,13 +78,20 @@ def digests(directory):
 def other_cli(a, root):
     """The CLI built again with the other compiler."""
     build = root / "other-build"
-    subprocess.run([a.cmake, "-S", a.source, "-B", str(build), "-G", a.generator,
-                    f"-DCMAKE_CXX_COMPILER={a.other_cxx}", "-DCMAKE_BUILD_TYPE=Release",
-                    "-DNOCLOOM_BUILD_TESTS=OFF", "-DNOCLOOM_BUILD_EXAMPLES=OFF"] +
-                   [f"-D{d}" for d in a.define if d.split("=", 1)[1]],
-                   check=True, stdout=subprocess.DEVNULL)
-    subprocess.run([a.cmake, "--build", str(build), "--target", "nocloom_cli", "-j", a.jobs],
-                   check=True, stdout=subprocess.DEVNULL)
+    seed = ["-C", a.initial_cache] if a.initial_cache else []
+    steps = (("configure", [a.cmake, *seed, "-S", a.source, "-B", str(build), "-G", a.generator,
+                            f"-DCMAKE_CXX_COMPILER={a.other_cxx}", "-DCMAKE_BUILD_TYPE=Release",
+                            "-DNOCLOOM_BUILD_TESTS=OFF", "-DNOCLOOM_BUILD_EXAMPLES=OFF"] +
+              [f"-D{d}" for d in a.define if d.split("=", 1)[1]]),
+             ("build", [a.cmake, "--build", str(build), "--target", "nocloom_cli", "-j", a.jobs]))
+    for step, argv in steps:
+        log = root / f"other-{step}.log"
+        with log.open("w") as stream:
+            code = subprocess.run(argv, stdout=stream, stderr=subprocess.STDOUT).returncode
+        if code:
+            tail = "\n".join(log.read_text(errors="replace").splitlines()[-40:])
+            raise RuntimeError(f"the second compiler {a.other_cxx} failed to {step} the CLI "
+                               f"(exit {code}, {log}):\n{tail}")
     clis = [p for p in build.iterdir() if p.name in ("nocloom", "nocloom.exe")]
     if len(clis) != 1:
         raise RuntimeError("the second compiler did not produce the CLI")
@@ -243,6 +252,7 @@ def main():
     p.add_argument("--group", help="run one named group from each case file")
     p.add_argument("--tool", action="append", default=[])
     p.add_argument("--other-cxx")
+    p.add_argument("--initial-cache", help="CMake cache script for the second build's tools")
     p.add_argument("--source")
     p.add_argument("--cmake", default="cmake")
     p.add_argument("--generator", default="Ninja")
@@ -282,8 +292,9 @@ def main():
                 failed = failed or bool(error)
                 entries.append(row)
             results["files"].append(dict(case=Path(path).name, entries=entries))
-    except Exception:
+    except Exception as error:
         results["error"] = traceback.format_exc()
+        print(f"CONFIG ERROR {error}")
         code = 2
     else:
         code = 1 if failed else 0

@@ -183,7 +183,8 @@ if(NOCLOOM_DETERMINISM_COMPILERS)
     TIMEOUT_REASON "builds a second CLI and generates all example and TileLink definitions"
     PROCESSORS 6 FEATURES examples determinism MEMORY_MB 4096
     COMMAND ${NLV_CONFIG} --case ${NLV_CASES}/config_examples.py --case ${NLV_CASES}/config_tilelink.py
-      --other-cxx=${nocloom_other_cxx} --source ${PROJECT_SOURCE_DIR} --cmake ${CMAKE_COMMAND}
+      --other-cxx=${nocloom_other_cxx} --initial-cache=${nocloom_other_cxx_tools}
+      --source ${PROJECT_SOURCE_DIR} --cmake ${CMAKE_COMMAND}
       "--generator=${CMAKE_GENERATOR}" --jobs 6 ${nlv_toolchain_define}
       "--define=CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}" "--define=nlohmann_json_DIR=${nlohmann_json_DIR}"
       "--define=yaml-cpp_DIR=${yaml-cpp_DIR}" "--define=CLI11_DIR=${CLI11_DIR}")

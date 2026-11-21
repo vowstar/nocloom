@@ -162,3 +162,23 @@ Collect summary hashes and required case inputs, logs, events and
 counterexamples before removing owned build artifacts.
 History and audit tools do not delete evidence. Statistical reports do not
 trigger simulation.
+
+## Second compiler
+
+`verif_determinism_compilers` builds the CLI again with a compiler of the
+other family and compares every generated file. Configure checks the
+compiler first with the same generator and toolchain file. It must build a
+static library and a program that runs on this host. It must not be of the
+main compiler's family.
+
+| Situation | Result |
+| --- | --- |
+| `NOCLOOM_OTHER_CXX` set and the check passes | Configure prints the compiler and its version |
+| `NOCLOOM_OTHER_CXX` set and the check fails | Configuration stops with the reason and the log path |
+| Empty, `clang++` or `g++` on `PATH` passes | Configure uses the first one that passes and prints why each earlier one failed |
+| Empty, none passes, `NOCLOOM_TEST_DEPS_REQUIRED=ON` | Configuration stops and lists each candidate with its reason |
+| Empty, none passes, `NOCLOOM_TEST_DEPS_REQUIRED=OFF` | The test reports not run |
+
+The test builds with the archiver, linker and build tool that the check
+found. `PATH` when the test runs does not change them. A second build that
+fails makes the test fail and prints the end of its log.

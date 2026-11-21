@@ -1173,48 +1173,149 @@ set_tests_properties(apb_cadence_structure PROPERTIES TIMEOUT 120 LABELS "unit;q
 # Artifact bytes must not depend on the run or on the compiler: C++ leaves
 # argument evaluation order unspecified and GCC and Clang choose differently
 # (verif_examples and verif_determinism_compilers, tests/verif/cases.cmake).
-# A candidate counts only when it builds and runs a C++20 program for this
-# host: a cross toolchain earlier on PATH must not stand in for a host
-# compiler. An explicit NOCLOOM_OTHER_CXX is probed first. A host without a
-# second compiler opts out with NOCLOOM_DETERMINISM_COMPILERS=OFF: the case is
-# then not registered and configure says so; every other tool stays required.
+# The second compiler must come from the other family. Configure checks it
+# the way the test uses it: a CMake project with the same generator and
+# toolchain file builds a static library and a program that runs on this
+# host. The test then reuses every tool path that check resolved
+# (other_cxx_tools.cmake), so a different PATH when the test runs cannot
+# swap in an archiver or linker that configure did not check. An explicit
+# NOCLOOM_OTHER_CXX that fails is an error and is never replaced by a search
+# of PATH. A host without a second compiler opts out with
+# NOCLOOM_DETERMINISM_COMPILERS=OFF: the case is then not registered and
+# configure says so; every other tool stays required.
 option(NOCLOOM_DETERMINISM_COMPILERS "Register verif_determinism_compilers (needs a second C++20 compiler)" ON)
 set(nocloom_other_cxx "")
+set(nocloom_other_cxx_tools "")
+
+function(nocloom_cxx_family id out)
+  if(id STREQUAL "GNU")
+    set(${out} GNU PARENT_SCOPE)
+  elseif(id MATCHES "Clang")
+    set(${out} Clang PARENT_SCOPE)
+  else()
+    set(${out} "${id}" PARENT_SCOPE)
+  endif()
+endfunction()
+
+# Sets <prefix>_ok, <prefix>_reason, <prefix>_id and <prefix>_dir.
+function(nocloom_probe_other_cxx candidate prefix)
+  set(source ${CMAKE_CURRENT_BINARY_DIR}/other_cxx_probe/source)
+  string(SHA256 key "${candidate}|${CMAKE_GENERATOR}|${CMAKE_MAKE_PROGRAM}|${CMAKE_TOOLCHAIN_FILE}|$ENV{PATH}")
+  string(SUBSTRING ${key} 0 16 key)
+  set(dir ${CMAKE_CURRENT_BINARY_DIR}/other_cxx_probe/${key})
+  set(${prefix}_dir ${dir} PARENT_SCOPE)
+  set(${prefix}_ok FALSE PARENT_SCOPE)
+  set(toolchain "")
+  if(CMAKE_TOOLCHAIN_FILE)
+    set(toolchain -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE})
+  endif()
+  execute_process(COMMAND ${CMAKE_COMMAND} -S ${source} -B ${dir} -G ${CMAKE_GENERATOR}
+      -DCMAKE_CXX_COMPILER=${candidate} -DCMAKE_BUILD_TYPE=Release
+      -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM} ${toolchain}
+    RESULT_VARIABLE status OUTPUT_FILE ${dir}.configure.log ERROR_FILE ${dir}.configure.log)
+  if(NOT status EQUAL 0)
+    set(${prefix}_reason "CMake cannot configure a project with it (${dir}.configure.log)" PARENT_SCOPE)
+    return()
+  endif()
+  execute_process(COMMAND ${CMAKE_COMMAND} --build ${dir}
+    RESULT_VARIABLE status OUTPUT_FILE ${dir}.build.log ERROR_FILE ${dir}.build.log)
+  if(NOT status EQUAL 0)
+    set(${prefix}_reason "it cannot build a static library and a program (${dir}.build.log)" PARENT_SCOPE)
+    return()
+  endif()
+  execute_process(COMMAND ${dir}/probe${CMAKE_EXECUTABLE_SUFFIX} RESULT_VARIABLE status
+    OUTPUT_QUIET ERROR_QUIET)
+  if(NOT status EQUAL 0)
+    set(${prefix}_reason "the program it builds does not run on this host" PARENT_SCOPE)
+    return()
+  endif()
+  file(READ ${dir}/compiler-id.txt id)
+  set(${prefix}_id "${id}" PARENT_SCOPE)
+  string(REGEX REPLACE " .*" "" id "${id}")
+  nocloom_cxx_family("${id}" other)
+  nocloom_cxx_family("${CMAKE_CXX_COMPILER_ID}" main)
+  if(other STREQUAL main)
+    set(${prefix}_reason "it is ${id} like the main compiler, and the check compares two compiler families"
+      PARENT_SCOPE)
+    return()
+  endif()
+  set(${prefix}_ok TRUE PARENT_SCOPE)
+endfunction()
+
 if(NOT NOCLOOM_DETERMINISM_COMPILERS)
   message(STATUS "NOT RUN: verif_determinism_compilers (NOCLOOM_DETERMINISM_COMPILERS=OFF)")
 else()
-  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set(nocloom_other_name clang++)
-  elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    set(nocloom_other_name g++)
+  set(nocloom_probe_source ${CMAKE_CURRENT_BINARY_DIR}/other_cxx_probe/source)
+  file(WRITE ${nocloom_probe_source}/CMakeLists.txt "cmake_minimum_required(VERSION 3.24)\n"
+    "project(nocloom_other_cxx_probe LANGUAGES CXX)\n"
+    "add_library(probe_text STATIC text.cpp)\n"
+    "target_compile_features(probe_text PUBLIC cxx_std_20)\n"
+    "add_executable(probe main.cpp)\n"
+    "target_link_libraries(probe PRIVATE probe_text)\n"
+    "file(WRITE \${CMAKE_BINARY_DIR}/compiler-id.txt \"\${CMAKE_CXX_COMPILER_ID} \${CMAKE_CXX_COMPILER_VERSION}\")\n")
+  file(WRITE ${nocloom_probe_source}/text.cpp "#include <string>\n"
+    "std::string probe_text() { return \"x\"; }\n")
+  file(WRITE ${nocloom_probe_source}/main.cpp "#include <string>\n#include <vector>\n"
+    "std::string probe_text();\n"
+    "int main() { std::vector<std::string> v{probe_text()}; return v.size() == 1 && v[0] == \"x\" ? 0 : 1; }\n")
+  nocloom_cxx_family("${CMAKE_CXX_COMPILER_ID}" nocloom_main_family)
+  if(NOCLOOM_OTHER_CXX)
+    set(nocloom_candidates ${NOCLOOM_OTHER_CXX})
+  else()
+    set(nocloom_candidates "")
+    if(nocloom_main_family STREQUAL "GNU")
+      set(nocloom_other_name clang++)
+    elseif(nocloom_main_family STREQUAL "Clang")
+      set(nocloom_other_name g++)
+    else()
+      set(nocloom_other_name "")
+    endif()
+    if(nocloom_other_name)
+      string(REPLACE ":" ";" nocloom_dirs "$ENV{PATH}")
+      foreach(dir IN LISTS nocloom_dirs)
+        if(dir AND EXISTS ${dir}/${nocloom_other_name} AND NOT IS_DIRECTORY ${dir}/${nocloom_other_name})
+          list(APPEND nocloom_candidates ${dir}/${nocloom_other_name})
+        endif()
+      endforeach()
+    endif()
   endif()
-  set(nocloom_candidates ${NOCLOOM_OTHER_CXX})
-  if(nocloom_other_name)
-    string(REPLACE ":" ";" nocloom_dirs "$ENV{PATH}")
-    foreach(dir IN LISTS nocloom_dirs)
-      if(dir AND EXISTS ${dir}/${nocloom_other_name} AND NOT IS_DIRECTORY ${dir}/${nocloom_other_name})
-        list(APPEND nocloom_candidates ${dir}/${nocloom_other_name})
+  set(nocloom_rejected "")
+  foreach(candidate IN LISTS nocloom_candidates)
+    nocloom_probe_other_cxx(${candidate} nocloom_probe)
+    if(nocloom_probe_ok)
+      set(nocloom_other_cxx ${candidate})
+      break()
+    endif()
+    message(STATUS "verif_determinism_compilers: rejected ${candidate}: ${nocloom_probe_reason}")
+    string(APPEND nocloom_rejected "\n  ${candidate}: ${nocloom_probe_reason}")
+  endforeach()
+  if(nocloom_other_cxx)
+    # The tools the probe configured with, for the test's own build.
+    file(STRINGS ${nocloom_probe_dir}/CMakeCache.txt nocloom_tools REGEX "^CMAKE_[A-Z_]+:FILEPATH=.")
+    set(nocloom_other_cxx_tools ${CMAKE_CURRENT_BINARY_DIR}/other_cxx_tools.cmake)
+    set(nocloom_text "# Tools checked with ${nocloom_other_cxx} at configure time.\n")
+    string(APPEND nocloom_text "set(CMAKE_MAKE_PROGRAM \"${CMAKE_MAKE_PROGRAM}\" CACHE FILEPATH \"\")\n")
+    foreach(entry IN LISTS nocloom_tools)
+      string(REGEX MATCH "^([A-Z_]+):FILEPATH=(.*)$" matched "${entry}")
+      set(nocloom_tool ${CMAKE_MATCH_1})
+      set(nocloom_path ${CMAKE_MATCH_2})
+      if(NOT nocloom_tool STREQUAL "CMAKE_CXX_COMPILER" AND NOT nocloom_path MATCHES "-NOTFOUND$")
+        string(APPEND nocloom_text "set(${nocloom_tool} \"${nocloom_path}\" CACHE FILEPATH \"\")\n")
       endif()
     endforeach()
-  endif()
-  set(nocloom_probe ${CMAKE_CURRENT_BINARY_DIR}/other_cxx_probe)
-  file(WRITE ${nocloom_probe}/probe.cpp "#include <string>\n#include <vector>\n"
-    "int main() { std::vector<std::string> v{\"x\"}; return v.size() == 1 ? 0 : 1; }\n")
-  foreach(candidate IN LISTS nocloom_candidates)
-    execute_process(COMMAND ${candidate} -std=c++20 ${nocloom_probe}/probe.cpp -o ${nocloom_probe}/probe
-      RESULT_VARIABLE built OUTPUT_QUIET ERROR_QUIET)
-    if(built EQUAL 0)
-      execute_process(COMMAND ${nocloom_probe}/probe RESULT_VARIABLE ran OUTPUT_QUIET ERROR_QUIET)
-      if(ran EQUAL 0)
-        set(nocloom_other_cxx ${candidate})
-        break()
-      endif()
+    file(WRITE ${nocloom_other_cxx_tools} "${nocloom_text}")
+    message(STATUS "verif_determinism_compilers: second compiler ${nocloom_other_cxx} (${nocloom_probe_id})")
+  elseif(NOCLOOM_OTHER_CXX)
+    message(FATAL_ERROR "NOCLOOM_OTHER_CXX does not work as the second compiler:${nocloom_rejected}")
+  elseif(NOCLOOM_TEST_DEPS_REQUIRED)
+    if(NOT nocloom_rejected)
+      set(nocloom_rejected "\n  no candidate on PATH")
     endif()
-    message(STATUS "determinism_compilers: ${candidate} cannot build a program for this host")
-  endforeach()
-  if(NOT nocloom_other_cxx AND NOCLOOM_TEST_DEPS_REQUIRED)
-    message(FATAL_ERROR "determinism_compilers requires a second C++ compiler that builds for this host "
-      "(set NOCLOOM_OTHER_CXX, or NOCLOOM_DETERMINISM_COMPILERS=OFF to not register the case)")
+    message(FATAL_ERROR "verif_determinism_compilers requires a second C++20 compiler of the other "
+      "family that builds for this host. Set NOCLOOM_OTHER_CXX, or set "
+      "NOCLOOM_DETERMINISM_COMPILERS=OFF to not register the case.${nocloom_rejected}")
+  else()
+    message(STATUS "NOT RUN: verif_determinism_compilers (no second compiler)")
   endif()
 endif()
 
