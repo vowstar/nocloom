@@ -1,5 +1,6 @@
 #pragma once
 #include "async_fifo.hpp"
+#include "axi5_ports.hpp"
 #include "dependency_graph.hpp"
 #include "error_logger.hpp"
 #include "exclusive.hpp"
@@ -573,6 +574,8 @@ struct NetworkPlan {
   // AHB5 request metadata above the named flags: presence, HPROT, HMASTER.
   bool ahb5 = false;
   unsigned hmaster_bits = 0;
+  // AXI5 request attributes above the AHB5 metadata, the top bits of burst_user_bits.
+  Axi5Attributes axi5_attributes;
   // BurstProfile::record_bits, with an error logger whose lengths vary.
   unsigned burst_record_bits = 0;
   std::vector<std::string> user_flags;
@@ -757,6 +760,8 @@ bool connects(const Definition &d, const std::string &source, unsigned source_pa
 std::set<std::tuple<std::string, std::string, unsigned, unsigned>>
 unconnected_flows(const Definition &d);
 bool apb_initiator(const Initiator &initiator);
+// The AXI5 request ports of an endpoint: the AXI4 ports without AXI5 properties.
+Axi5RequestPorts axi5_request_ports(const std::optional<Axi5Properties> &properties);
 // A full AXI burst port: AXI4, AXI5 or AXI3, which the network carries as AXI4 (absent counts as
 // AXI4).
 bool full_axi(std::optional<Protocol> protocol);

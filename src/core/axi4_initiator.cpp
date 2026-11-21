@@ -1,5 +1,6 @@
 #include "axi4_initiator.hpp"
 #include "attribute_map.hpp"
+#include "axi5_attributes.hpp"
 #include "beat_stage.hpp"
 #include "burst_faces.hpp"
 #include "diagnostic.hpp"
@@ -708,6 +709,22 @@ void initiator_ahb5_errors(const Axi4InitiatorProfile &profile, std::vector<Diag
         initiator_error("NCL_AXI4_INITIATOR_AHB", "ahb5",
                         "AHB5 needs an AHB face and request metadata for HPROT and HMASTER"));
 }
+void initiator_axi5_errors(const Axi4InitiatorProfile &profile, std::vector<Diagnostic> &errors) {
+  const auto &ports = profile.axi5_ports;
+  const bool face = profile.lite || profile.apb || profile.ahb || profile.tilelink;
+  const auto &a = profile.axi5_attributes;
+  if ((face && ports != Axi5RequestPorts{}) || (ports.prot && (ports.priv_inst || ports.pas)) ||
+      (ports.mpam != 0 && ports.mpam != 11 && ports.mpam != 14) || ports.subsystem_id > 8 ||
+      profile.user_bits < profile.ahb5_metadata_bits + a.bits() ||
+      (a.mpam != 0 && a.mpam != 11 && a.mpam != 14) || (a.mpam && a.mpam < ports.mpam) ||
+      (a.nsaid != 0 && a.nsaid != 4) || (a.pbha != 0 && a.pbha != 4) ||
+      (a.subsystem_id && a.subsystem_id < ports.subsystem_id) ||
+      (a.subsystem_id && !ports.subsystem_id &&
+       a.subsystem_id < static_cast<unsigned>(std::bit_width(ports.subsystem_value))))
+    errors.push_back(initiator_error(
+        "NCL_AXI4_INITIATOR_AXI5", "axi5_ports",
+        "AXI5 request ports need a full AXI face and request attributes that hold them"));
+}
 void initiator_capacity_errors(const Axi4InitiatorProfile &profile,
                                std::vector<Diagnostic> &errors) {
   if (!profile.read)
@@ -751,6 +768,7 @@ void initiator_capacity_errors(const Axi4InitiatorProfile &profile,
         "An AHB face needs a read-write full AXI4 engine with one burst per direction and at "
         "least 12 address bits"));
   initiator_ahb5_errors(profile, errors);
+  initiator_axi5_errors(profile, errors);
   if (profile.axi3 && (profile.lite || profile.apb || profile.ahb))
     errors.push_back(initiator_error("NCL_AXI4_INITIATOR_AXI3", "axi3",
                                      "AXI3 ports need a full AXI4 engine without another face"));
@@ -985,8 +1003,19 @@ struct InitiatorLowering {
       f.burst = l.b.select(l.both(f.lock, l.eq(f.burst, 2)), l.b.constant(2, 1), f.burst);
     if (p.axi3)
       f.burst = l.b.select(l.b.slice(lock, 1, 1), l.b.constant(2, 3), f.burst);
-    f.cache = p.lite ? l.b.constant(4, 0) : axi_input(ch + "cache", 4);
-    f.prot = axi_input(ch + "prot", 3);
+    // AXI5 ports may omit AxCACHE (zero) or replace AxPROT by AxPRIV, AxINST and AxPAS (IHI 0022
+    // Issue L, A4.5.1): AxPRIV is protection bit 0, AxPAS[0] bit 1 and AxINST bit 2.
+    const auto &ports = p.axi5_ports;
+    f.cache = p.lite || !ports.cache ? l.b.constant(4, 0) : axi_input(ch + "cache", 4);
+    if (ports.prot)
+      f.prot = axi_input(ch + "prot", 3);
+    else {
+      const auto bit = [&](bool present, const char *signal) {
+        return present ? axi_input(ch + signal, 1) : l.bit(0);
+      };
+      const auto priv = bit(ports.priv_inst, "priv"), inst = bit(ports.priv_inst, "inst");
+      f.prot = l.b.concat(inst, l.b.concat(bit(ports.pas, "pas"), priv));
+    }
     // The AxQOS map's level of the burst (AXI4 A8.1 AxQOS, after AxPROT in port order).
     if (p.level_bits) {
       f.level = l.b.constant(p.level_bits, 0);
@@ -1011,6 +1040,11 @@ struct InitiatorLowering {
         f.user = p.user_flags.empty() ? meta : l.b.concat(meta, f.user);
       }
     }
+    // The AXI5 request ports, and their attributes above the other user bits.
+    if (const auto block = axi5::source_attributes(
+            l, p.axi5_attributes, p.axi5_ports, f.prot,
+            [&](const std::string &signal, unsigned bits) { return axi_input(ch + signal, bits); }))
+      f.user = p.user_bits == p.axi5_attributes.bits() ? *block : l.b.concat(*block, f.user);
     if (p.audit_bits)
       f.audit = map_attributes(l, p.audit_flags, f.cache, f.prot, write_channel, user_port);
     f.valid = axi_input(ch + "valid", 1);

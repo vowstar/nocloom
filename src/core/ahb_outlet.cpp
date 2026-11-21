@@ -138,7 +138,8 @@ std::optional<Diagnostic> profile_window_error(const BurstOutletProfile &p, Prot
 std::optional<Diagnostic> profile_error(const BurstOutletProfile &p, Protocol kind) {
   if ((p.ahb5 && (kind != Protocol::AhbLite || p.hresp_width != 1 || p.ahb5_metadata_bits < 8)) ||
       p.hmaster_bits > 32 || (p.hprot_bits != 4 && p.hprot_bits != 7) ||
-      (!p.ahb5 && (p.hprot_bits != 4 || p.hnonsec)) || p.user_bits < p.ahb5_metadata_bits)
+      (!p.ahb5 && (p.hprot_bits != 4 || p.hnonsec)) ||
+      p.user_bits < p.ahb5_metadata_bits + p.axi5_attribute_bits)
     return error(outlet_profile_code(kind), "ahb5",
                  "AHB5 needs one-bit HRESP and request metadata");
   if (auto bad = profile_bounds_error(p, kind))
@@ -2731,7 +2732,7 @@ void AhbOutlet::drive_ahb5(ValueId &hprot, ValueId cache, ValueId prot) {
   if (!p.ahb5)
     return;
   const auto meta = l.b.select(choose_w, wd_now.at("user"), bus_rd.at("user"));
-  const unsigned offset = p.user_bits - p.ahb5_metadata_bits;
+  const unsigned offset = p.user_bits - p.axi5_attribute_bits - p.ahb5_metadata_bits;
   const auto present = l.b.slice(meta, offset, 1);
   const auto lookup = l.inv(l.eq(l.b.slice(cache, 2, 2), 0));
   const auto allocate = l.b.select(choose_w, l.b.slice(cache, 3, 1), l.b.slice(cache, 2, 1));

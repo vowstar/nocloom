@@ -62,7 +62,7 @@ The codes of the C++ tree helper are in
 | `NCL_WISHBONE_OPTION` | Wishbone-only fields on another protocol, invalid retry, burst tags with pipelined cycles or target timeout, or an unsupported Wishbone endpoint option |
 | `NCL_AHB5_PROPERTIES` | The `ahb5` object requires AHB5. HPROT width must be 4 or 7. HMASTER width must be 0 to 32. A nonzero target width must hold each reaching source. Exclusive and user signals are unsupported. Targets accept only `attributes: amba`, without per-bit overrides |
 | `NCL_AXI5_PROPERTIES` | The `axi5` object requires `axi5`. A field is outside its range, `prot: true` comes with `priv_inst` or `pas_width`, or a constraint property does not hold for a connected pair. See [AXI5 interfaces](axi5.md) |
-| `NCL_AXI5_UNSUPPORTED` | The `axi5` object enables a property that the network does not support. The message names the property. See [AXI5 interfaces](axi5.md#property-table) |
+| `NCL_AXI5_UNSUPPORTED` | The `axi5` object enables a property that the network does not support. The message names the property. See the [AXI5 property table](axi5-properties.md) |
 | `NCL_TARGET_AHB_BURSTS`, `NCL_TARGET_AHB_HRESP` | Burst shaping or `hresp_width` on a target that is not AHB, an invalid value, or two-bit HRESP on AHB5 |
 | `NCL_ENDPOINT_ACCESS` | `access` is not `read_write`, `read_only` or `write_only` |
 | `NCL_APB_INITIATOR`, `NCL_AHB_INITIATOR` | Unsupported options on a dedicated initiator |

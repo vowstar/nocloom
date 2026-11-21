@@ -535,7 +535,7 @@ Result<ErrorLogPlan> plan_error_log(const NetworkPlan &plan, const ErrorLogReque
   }
   const auto class_bits = request.capture_class ? error_class_bits : 0U;
   // A record has room for every user flag either way (without whole_record only a miss fills it).
-  const auto user_bits = plan.burst_user_bits;
+  const auto user_bits = plan.burst_user_bits - plan.axi5_attributes.bits();
   std::vector<std::string> filtered_users;
   if (request.whole_record)
     filtered_users = plan.user_flags;
@@ -1342,6 +1342,8 @@ Axi4InitiatorProfile initiator_profile(const NetworkPlan &plan, unsigned index) 
   profile.user_port_bits = sp.user_bits;
   profile.response_user_port_bits = sp.response_user_bits;
   profile.user_flags = sp.user_flags;
+  profile.axi5_ports = axi5_request_ports(sp.axi5);
+  profile.axi5_attributes = plan.axi5_attributes;
   profile.audit_flags = sp.audit_flags;
   profile.level_bits = plan.burst_level_bits;
   profile.axqos_map = sp.qos.axqos_map;
@@ -1508,6 +1510,7 @@ BurstOutletProfile outlet_profile(const NetworkPlan &plan, unsigned index) {
   profile.hprot_bits = tp.hprot_bits;
   profile.hnonsec = tp.hnonsec;
   profile.ahb5_metadata_bits = plan.ahb5 ? 8 + plan.hmaster_bits : 0;
+  profile.axi5_attribute_bits = plan.axi5_attributes.bits();
   if ((tp.protocol == Protocol::Axi4Lite || tp.external_protocol == Protocol::TlUh) &&
       tp.outstanding > 1)
     profile.max_outstanding = tp.outstanding;
@@ -1567,6 +1570,8 @@ Axi4OutletProfile axi4_outlet_profile(const NetworkPlan &plan, unsigned index) {
                      });
   profile.merger_hints = tp.outstanding > 1 && !tp.write_only && !profile.interleave;
   profile.axi3 = tp.axi3;
+  profile.axi5_ports = axi5_request_ports(tp.axi5);
+  profile.axi5_attributes = plan.axi5_attributes;
   profile.flows = tp.flows;
   profile.align_wrap = aligns_wrap_reads(plan, index);
   profile.id_sources = reaching_sources(plan, tp.name);

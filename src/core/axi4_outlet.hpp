@@ -1,4 +1,5 @@
 #pragma once
+#include "axi5_ports.hpp"
 #include "id_class.hpp"
 
 #include "component.hpp"
@@ -114,6 +115,10 @@ struct Axi4OutletProfile {
   unsigned response_user_bits = 0;
   // AxUSER bit i: a constant or AttributeSource::User naming a flag by index; empty has no port.
   std::vector<AttributeBit> user{};
+  // The AXI5 request ports of an axi5 target, from the AXI5 attributes of the request user field
+  // (axi5_ports.hpp, the top axi5_attributes.bits() of user_bits).
+  Axi5RequestPorts axi5_ports{};
+  Axi5Attributes axi5_attributes{};
   unsigned response_user_port_bits = 0; // BUSER and RUSER inputs; none at zero
   // Weft exclusive fields (message.hpp contract point 11). Without exclusive
   // support AxLOCK stays 0 and exclusive_okay is never set. exclusive_target:

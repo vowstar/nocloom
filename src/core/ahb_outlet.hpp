@@ -69,6 +69,8 @@ struct BurstOutletProfile {
   unsigned hresp_width = 1;
   bool ahb5 = false;
   unsigned hmaster_bits = 0, ahb5_metadata_bits = 0, hprot_bits = 4;
+  // The AXI5 request attributes above the AHB5 metadata in the request user field.
+  unsigned axi5_attribute_bits = 0;
   bool hnonsec = false;
   // Target word: 32 for APB; 32 or 64 for AXI4-Lite; 32, 64, 128, 256, 512 or 1024 for AHB
   // (AHB-Lite 6.2). A burst beat keeps its AxSIZE as HSIZE: a read packet of beats of at least 32

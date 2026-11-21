@@ -66,6 +66,22 @@ bool apb_initiator(const Initiator &initiator) {
   return initiator.protocol == Protocol::Apb5 || initiator.protocol == Protocol::Apb4 ||
          initiator.protocol == Protocol::Apb3;
 }
+Axi5RequestPorts axi5_request_ports(const std::optional<Axi5Properties> &properties) {
+  Axi5RequestPorts ports;
+  if (!properties)
+    return ports;
+  const auto &p = *properties;
+  ports.mpam = p.mpam == Axi5Mpam::PartId12 ? 14U : p.mpam == Axi5Mpam::PartId9 ? 11U : 0U;
+  ports.subsystem_id = p.subsystem_id_width;
+  ports.subsystem_value = p.subsystem_id.value_or(0);
+  ports.nsaid = p.nsaid;
+  ports.pbha = p.pbha;
+  ports.prot = p.prot;
+  ports.priv_inst = p.priv_inst;
+  ports.pas = p.pas_width == 1;
+  ports.cache = p.cache;
+  return ports;
+}
 bool axi4_port(std::optional<Protocol> protocol) {
   return protocol.value_or(Protocol::Axi4) == Protocol::Axi4 || protocol == Protocol::Axi5;
 }
@@ -340,6 +356,27 @@ void plan_ahb5_metadata(NetworkPlan &plan, const Definition &d) {
   if (plan.ahb5)
     plan.burst_user_bits += 8 + plan.hmaster_bits;
 }
+// The AXI5 request attributes above the other request user bits. A field is as wide as its widest
+// source, and a network without a source that drives it, or a target that takes it, omits it.
+void plan_axi5_attributes(NetworkPlan &plan) {
+  Axi5Attributes sources, targets;
+  const auto widest = [](Axi5Attributes &a, const Axi5RequestPorts &p) {
+    a.nsaid = std::max(a.nsaid, p.nsaid ? 4U : 0U);
+    a.pbha = std::max(a.pbha, p.pbha ? 4U : 0U);
+    a.subsystem_id = std::max(
+        {a.subsystem_id, p.subsystem_id, static_cast<unsigned>(std::bit_width(p.subsystem_value))});
+    a.mpam = std::max(a.mpam, p.mpam);
+  };
+  for (const auto &s : plan.sources)
+    widest(sources, axi5_request_ports(s.axi5));
+  for (const auto &t : plan.targets)
+    widest(targets, axi5_request_ports(t.axi5));
+  auto &a = plan.axi5_attributes;
+  for (const auto member : {&Axi5Attributes::nsaid, &Axi5Attributes::pbha,
+                            &Axi5Attributes::subsystem_id, &Axi5Attributes::mpam})
+    a.*member = targets.*member ? sources.*member : 0U;
+  plan.burst_user_bits += a.bits();
+}
 void tilelink_source(SourcePlan &s, const Initiator &initiator) {
   if (initiator.protocol != Protocol::TlUl && initiator.protocol != Protocol::TlUh)
     return;
@@ -607,6 +644,7 @@ void plan_endpoints(NetworkPlan &plan, const Definition &d) {
   for (const auto &t : d.targets)
     plan_target(plan, d, options, layout, t);
   std::ranges::sort(plan.targets, {}, &TargetPlan::name);
+  plan_axi5_attributes(plan);
   plan_routes(plan);
 }
 // The switch graphs: switches numbered per direction in name order (skipping endpoint names),
@@ -1024,7 +1062,8 @@ static Status check_observed_target(const NetworkPlan &plan, const ErrorLogPlan 
     return bad("Only a plain 32-bit APB4 target of one burst, or a plain 32-bit AXI4 target, is "
                "observed");
   // A kept record rests on what a request carries; flags without it only on an AXI4 path.
-  const bool flags_alone = !observer.whole_record && plan.burst_user_bits != 0;
+  const bool flags_alone =
+      !observer.whole_record && plan.burst_user_bits != plan.axi5_attributes.bits();
   if (flags_alone && !axi4)
     return bad("Only AXI4 targets keep a record's fields");
   for (const auto &row : observed.sources) {

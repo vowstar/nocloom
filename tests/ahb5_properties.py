@@ -17,7 +17,8 @@ MEMORY = (0, 1, 2, 6, 14, 7, 15, 18, 22, 30, 23, 31)
 
 
 def definition(clocked, bits=32, protection=7, security=True, target_protection=7,
-               master_width=32, target_master_width=32, target_security=True, target_protocol='ahb5'):
+               master_width=32, target_master_width=32, target_security=True, target_protocol='ahb5',
+               axi5=False):
     d = configuration('clocked' if clocked else 'switch')
     d['name'] = 'ahb5_properties'
     source_domain = 'fast' if clocked else 'main'
@@ -37,6 +38,10 @@ def definition(clocked, bits=32, protection=7, security=True, target_protection=
     else:
         d['targets'][0].pop('ahb5')
     d['connectivity'] = 'all'
+    # AXI5 request attributes sit above the AHB5 metadata in the request user field.
+    if axi5:
+        for endpoint in (d['initiators'][1], d['targets'][1]):
+            endpoint.update(protocol='axi5', axi5=dict(nsaid=True, mpam='partid_9'))
     # Named flags coexist with the protocol metadata without exposing AHB user ports.
     d['transport'] = dict(data_width=32, user_flags=['trace'])
     for i in d['initiators']:
@@ -516,11 +521,12 @@ def fault_bench(tb, port, width, expression):
 
 
 def run_case(cli, work, clocked, bits, protection, security, target_protection,
-             master_width=32, target_master_width=32, target_security=True, target_protocol='ahb5'):
+             master_width=32, target_master_width=32, target_security=True, target_protocol='ahb5',
+             axi5=False):
     work.mkdir()
     config = work / 'input.yaml'
     d = definition(clocked, bits, protection, security, target_protection,
-                   master_width, target_master_width, target_security, target_protocol)
+                   master_width, target_master_width, target_security, target_protocol, axi5)
     if protection == 4 and not security:
         d['initiators'][0]['ahb5'].pop('hprot_width')
         d['initiators'][0]['ahb5'].pop('hnonsec')
@@ -634,6 +640,7 @@ def run(cli, base, clocked, jobs):
         ('target4_no_security', 32, 7, True, 4, 32, 32, False),
         ('target7_no_security', 32, 7, True, 7, 32, 32, False),
         ('lite_target', 32, 7, True, 4, 32, 0, False, 'ahb_lite'),
+        ('axi5_attributes', 32, 7, True, 7, 32, 32, True, 'ahb5', True),
     ]
     with ThreadPoolExecutor(max_workers=jobs) as pool:
         checks = [pool.submit(run_case, cli, work / name, clocked, *shape) for name, *shape in cases]

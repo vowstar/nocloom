@@ -1,4 +1,5 @@
 #pragma once
+#include "axi5_ports.hpp"
 #include "component.hpp"
 #include "id_class.hpp"
 #include "message.hpp"
@@ -182,6 +183,10 @@ struct Axi4InitiatorProfile {
   // drives the field with the entry of the burst's AxQOS; an empty one drives level zero.
   unsigned level_bits = 0;
   std::vector<unsigned> axqos_map{};
+  // The AXI5 request ports of an axi5 face, and the AXI5 attributes of the request user field
+  // (axi5_ports.hpp), the top axi5_attributes.bits() of user_bits. Every source drives them.
+  Axi5RequestPorts axi5_ports{};
+  Axi5Attributes axi5_attributes{};
   // AXI faces use AxUSER and APB5 uses PAUSER, with one driver per network flag.
   unsigned user_port_bits = 0, response_user_port_bits = 0;
   unsigned data_user_port_bits = 0;

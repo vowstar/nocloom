@@ -288,19 +288,22 @@ TEST_CASE("The axi5 object reads every field and refuses other interface classes
 // refuses with a diagnostic that names the property.
 TEST_CASE("Each rejected property of the manual has a diagnostic", "[axi5]") {
   using namespace nocloom;
-  std::ifstream in(std::string(NOCLOOM_SOURCE_DIR) + "/docs/axi5.md");
-  std::stringstream text;
-  text << in.rdbuf();
-  const auto manual = text.str();
+  const auto read = [](const char *page) {
+    std::ifstream in(std::string(NOCLOOM_SOURCE_DIR) + "/docs/" + page);
+    std::stringstream text;
+    text << in.rdbuf();
+    return text.str();
+  };
+  const auto manual = read("axi5.md"), properties = read("axi5-properties.md");
   // The field table: the field and the properties each one declares.
   std::map<std::string, std::string> declared;
   const std::regex field_row(R"(\n\| `([a-z_0-9]+)` \| ([^|]+) \|)");
   const auto fields = manual.substr(0, manual.find("## Constraints"));
   for (std::sregex_iterator it(fields.begin(), fields.end(), field_row), end; it != end; ++it)
     declared[(*it)[1]] = (*it)[2];
-  const auto start = manual.find("## Rejected properties");
+  const auto start = properties.find("## Rejected properties");
   REQUIRE(start != std::string::npos);
-  const auto rejected = manual.substr(start, manual.find("## Interface classes") - start);
+  const auto rejected = properties.substr(start, properties.find("## Interface classes") - start);
   const std::regex rejected_row(R"(\n\| ([A-Za-z_0-9.]+) \| )");
   unsigned rows = 0;
   for (std::sregex_iterator it(rejected.begin(), rejected.end(), rejected_row), end; it != end;
@@ -352,7 +355,7 @@ TEST_CASE("Each rejected property of the manual has a diagnostic", "[axi5]") {
   }
   CHECK(rows > 50);
   // The property table lists each of the 97 properties of the specification once.
-  const auto table = manual.substr(manual.find("## Property table"));
+  const auto &table = properties;
   const std::regex any_row(R"(\n\| ([A-Z][A-Za-z_0-9.]+) \| )");
   std::set<std::string> names;
   unsigned count = 0;
@@ -365,4 +368,64 @@ TEST_CASE("Each rejected property of the manual has a diagnostic", "[axi5]") {
     }
   CHECK(count == 97);
   CHECK(names.size() == 97);
+}
+
+TEST_CASE("AXI5 request attribute ports follow the declared properties", "[axi5]") {
+  using namespace nocloom;
+  auto d = parsed(with("axi5"));
+  auto &cpu = d.initiators[0].axi5.emplace();
+  cpu.mpam = Axi5Mpam::PartId12;
+  cpu.subsystem_id_width = 3;
+  cpu.nsaid = cpu.pbha = true;
+  cpu.prot = cpu.cache = false;
+  cpu.priv_inst = true;
+  cpu.pas_width = 1;
+  d.initiators[1].axi5.emplace().subsystem_id = 9;
+  auto &ram = d.targets[0].axi5.emplace();
+  ram.mpam = Axi5Mpam::PartId12;
+  ram.subsystem_id_width = 4;
+  ram.nsaid = true;
+  ram.prot = false;
+  ram.pas_width = 1;
+  const auto r = generate(d);
+  REQUIRE(r);
+  const auto &rtl = artifact(r.value(), ".v");
+  for (const auto *port :
+       {"[13:0] nl_i_cpu_awmpam,", "[2:0] nl_i_cpu_arsubsysid,", "[3:0] nl_i_cpu_awnsaid,",
+        "[3:0] nl_i_cpu_arpbha,", " nl_i_cpu_awpriv,", " nl_i_cpu_arinst,", " nl_i_cpu_awpas,",
+        "[13:0] nl_t_ram_armpam,", "[3:0] nl_t_ram_awsubsysid,", "[3:0] nl_t_ram_arnsaid,",
+        " nl_t_ram_awpas,", "[3:0] nl_t_ram_arcache,"})
+    CHECK(rtl.find(port) != std::string::npos);
+  for (const auto *absent : {"nl_i_cpu_awprot", "nl_i_cpu_awcache", "nl_t_ram_awprot",
+                             "nl_t_ram_awpriv", "nl_t_ram_awpbha", "nl_i_dma_awmpam"})
+    CHECK(rtl.find(absent) == std::string::npos);
+  // A target port holds the attributes of each initiator that reaches it.
+  auto narrow = d;
+  narrow.targets[0].axi5->subsystem_id_width = 2;
+  CHECK(has(refused(narrow), "NCL_AXI5_PROPERTIES", "targets[0].axi5.subsystem_id_width",
+            "initiator cpu"));
+  narrow.targets[0].axi5->subsystem_id_width = 3;
+  CHECK(has(refused(narrow), "NCL_AXI5_PROPERTIES", "targets[0].axi5.subsystem_id_width",
+            "initiator dma"));
+  auto partid = d;
+  partid.targets[0].axi5->mpam = Axi5Mpam::PartId9;
+  CHECK(has(refused(partid), "NCL_AXI5_PROPERTIES", "targets[0].axi5.mpam", "initiator cpu"));
+  // The constant subsystem ID belongs to an initiator without the port.
+  auto constant = d;
+  constant.initiators[0].axi5->subsystem_id = 1;
+  CHECK(has(refused(constant), "NCL_AXI5_PROPERTIES", "initiators[0].axi5.subsystem_id"));
+  constant = d;
+  constant.targets[0].axi5->subsystem_id = 1;
+  CHECK(has(refused(constant), "NCL_AXI5_PROPERTIES", "targets[0].axi5.subsystem_id"));
+  // A mapping for a signal the target omits would be ignored.
+  auto mapping = d;
+  mapping.targets[0].axi5->cache = false;
+  mapping.targets[0].attributes->read_cache[0] = {AttributeSource::One};
+  CHECK(has(refused(mapping), "NCL_TARGET_ATTRIBUTES", "targets[0].attributes"));
+  mapping = d;
+  mapping.targets[0].axi5->pas_width = 0;
+  mapping.targets[0].attributes->prot[0] = {AttributeSource::One};
+  CHECK(has(refused(mapping), "NCL_TARGET_ATTRIBUTES", "targets[0].attributes"));
+  mapping.targets[0].attributes = TargetAttributes::zero();
+  CHECK(generate(mapping));
 }

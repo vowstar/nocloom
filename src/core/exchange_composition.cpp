@@ -4905,7 +4905,10 @@ private:
       fields["exclusive"] = b.slice(fixed_there, shape.length_bits, 1);
     }
     if (shape.user_bits) {
-      const auto ordered = of_request("user");
+      // A record keeps the user bits below the AXI5 attributes.
+      auto ordered = of_request("user");
+      if (plan.axi5_attributes.bits())
+        ordered = b.slice(ordered, 0, shape.user_bits);
       // Without kept fields a target's error records no flags; a miss's still does.
       fields["user_flags"] =
           observer.whole_record ? ordered : b.select(miss, ordered, b.constant(shape.user_bits, 0));

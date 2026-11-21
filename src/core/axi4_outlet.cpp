@@ -1,5 +1,6 @@
 #include "axi4_outlet.hpp"
 #include "attribute_map.hpp"
+#include "axi5_attributes.hpp"
 #include "beat_stage.hpp"
 #include "burst_faces.hpp"
 #include "decode_packet.hpp"
@@ -108,6 +109,18 @@ struct WriteSlot {
   // Network monitor: the failed exclusive flag and the range fields.
   ValueId excluded, length, burst;
 };
+
+// The AXI5 attributes that a target's ports read (axi5_ports.hpp), in their order: a descriptor
+// keeps them as its axi5 field.
+static Axi5Attributes axi5_target_fields(const Axi4OutletProfile &p) {
+  auto used = p.axi5_attributes;
+  const auto &ports = p.axi5_ports;
+  used.nsaid = ports.nsaid ? used.nsaid : 0;
+  used.pbha = ports.pbha ? used.pbha : 0;
+  used.subsystem_id = ports.subsystem_id ? used.subsystem_id : 0;
+  used.mpam = ports.mpam ? used.mpam : 0;
+  return used;
+}
 
 // The outlet engine for K = max_outstanding bursts in flight, reads and writes sharing one pool of
 // K entries from a burst's head until its last response word leaves. Writes: the main entry (the
@@ -371,18 +384,41 @@ struct EngineLowering {
     return p.mappings.empty() ? address
                               : mapping_decode::local(l, address, address_bits, p.mappings);
   }
+  Axi5Attributes axi5_used() const { return axi5_target_fields(p); }
+  // A request packet's axi5 field: the attributes of its user field that the ports read. A
+  // descriptor keeps it in place of the whole user field.
+  void axi5_field(Fields &f) {
+    const auto &all = p.axi5_attributes;
+    const auto used = axi5_used();
+    if (!used.bits())
+      return;
+    std::optional<ValueId> word;
+    unsigned at = p.user_bits - all.bits();
+    for (const auto &[bits, kept] : {std::pair{all.nsaid, used.nsaid},
+                                     {all.pbha, used.pbha},
+                                     {all.subsystem_id, used.subsystem_id},
+                                     {all.mpam, used.mpam}}) {
+      if (kept) {
+        const auto slice = l.b.slice(f.at("user"), at, bits);
+        word = word ? l.b.concat(slice, *word) : slice;
+      }
+      at += bits;
+    }
+    f["axi5"] = *word;
+  }
   // With a timer, a failed target sees the frozen channel: held reports an
   // address still waiting for its ready from before expiry.
   void address_face(const std::string &prefix, const Fields &d, ValueId valid, ValueId id,
                     std::optional<ValueId> held) {
     out("axi", prefix + "valid", held ? l.b.select(failed, *held, active(valid)) : active(valid));
-    for (const auto &[signal, field] :
-         std::vector<std::pair<std::string, std::string>>{{"addr", "address"},
-                                                          {"len", "length"},
-                                                          {"size", "size"},
-                                                          {"burst", "burst"},
-                                                          {"cache", "cache"},
-                                                          {"prot", "protection"}}) {
+    const auto &ports = p.axi5_ports;
+    std::vector<std::pair<std::string, std::string>> signals{
+        {"addr", "address"}, {"len", "length"}, {"size", "size"}, {"burst", "burst"}};
+    if (ports.cache)
+      signals.emplace_back("cache", "cache");
+    if (ports.prot)
+      signals.emplace_back("prot", "protection");
+    for (const auto &[signal, field] : signals) {
       auto value = d.at(field == "address" && p.start_address ? "start_address" : field);
       if (field == "address" && p.align_wrap && prefix == "ar")
         value = l.b.select(aligning(d), d.at("address"), value);
@@ -409,6 +445,28 @@ struct EngineLowering {
         value = l.fit(value, p.axi_len_bits.value_or(p.packet_len_bits));
       out("axi", prefix + signal, value);
     }
+    const auto freeze = [&](const std::string &signal, ValueId value) {
+      return held ? frozen("timeout." + prefix + signal, value) : value;
+    };
+    // AxPRIV, AxINST and AxPAS of an AXI5 target without AxPROT take the mapped protection bits 0,
+    // 2 and 1 (IHI 0022 Issue L, A4.5.1).
+    if (!ports.prot && (ports.priv_inst || ports.pas)) {
+      const auto map = p.attributes.value_or(TargetAttributes::amba());
+      const auto protection =
+          freeze("protection", map_attributes(l, map.prot, d.at("cache"), d.at("protection"),
+                                              l.b.constant(1, prefix == "aw" ? 1 : 0)));
+      if (ports.priv_inst) {
+        out("axi", prefix + "priv", l.b.slice(protection, 0, 1));
+        out("axi", prefix + "inst", l.b.slice(protection, 2, 1));
+      }
+      if (ports.pas)
+        out("axi", prefix + "pas", l.b.slice(protection, 1, 1));
+    }
+    const auto used = axi5_used();
+    axi5::target_attributes(l, used, ports, 0, used.bits() ? d.at("axi5") : zero,
+                            d.at("protection"), [&](const std::string &signal, ValueId value) {
+                              out("axi", prefix + signal, freeze(signal, value));
+                            });
     const auto lock = passthrough ? d.at("lock") : zero;
     out("axi", prefix + "lock", p.axi3 ? l.b.concat(zero, lock) : lock);
     if (!p.user.empty()) {
@@ -751,6 +809,9 @@ void EngineLowering::write_accept() {
     descriptor.emplace_back("lock");
   if (!p.user.empty() || (owned && several))
     descriptor.emplace_back("user");
+  axi5_field(w);
+  if (axi5_used().bits())
+    descriptor.emplace_back("axi5");
   // One burst keeps its target ID in its entry: no slots compare it, and its sum leaves the head's
   // path to the AW and AR ports. Several compute it per entry from the fields they keep.
   if (target_id_bits && !several) {
@@ -1355,6 +1416,7 @@ void EngineLowering::read_accept() {
   r = request("rreq");
   if (target_id_bits && !several)
     r["target_id"] = descriptor_id(r, 1);
+  axi5_field(r);
   rs.resize(depth);
   for (unsigned k = 0; k < depth; ++k) {
     const auto at = "r.slot" + std::to_string(k) + ".";
@@ -2429,7 +2491,7 @@ std::pair<unsigned, unsigned> axi4_outlet_outstanding_bits(const Axi4OutletProfi
   const unsigned descriptor =
       address * (p.start_address ? 2 : 1) + p.packet_len_bits + 12 + p.id_bits + p.source_bits +
       (p.user.empty() && !(owned && p.max_outstanding > 1) ? 0 : p.user_bits) +
-      (p.max_outstanding > 1 ? 0 : axi4_outlet_id_bits(p));
+      axi5_target_fields(p).bits() + (p.max_outstanding > 1 ? 0 : axi4_outlet_id_bits(p));
   const unsigned staging = 2 + 3 + p.source_bits + p.id_bits + address;
   const unsigned write_slot =
       p.source_bits + p.id_bits + address + 3 + 2 +

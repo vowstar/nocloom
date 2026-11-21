@@ -43,7 +43,7 @@ manager and does not select a scheduling level.
 
 ## AxQOS maps
 
-An AXI4 or AXI3 initiator can set `qos.axqos_map`. Its 2, 4, 8 or 16 entries
+An AXI5, AXI4 or AXI3 initiator can set `qos.axqos_map`. Its 2, 4, 8 or 16 entries
 select initiator AxQOS ports of 1, 2, 3 or 4 bits. Entry q is the level of a
 burst whose AWQOS or ARQOS is q. Entries must be nondecreasing integers from 0
 to 7. The initiator captures the level with the burst address.

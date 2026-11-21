@@ -18,7 +18,7 @@ ADDRESS = 0xABCD5678
 AXID = 0xA35C
 
 
-def definition():
+def definition(axi5=False):
     flags = [f"flag{k}" for k in range(256)]
     audits = [f"audit{k}" for k in range(32)]
     domain = dict(clock_domain="main", data_width=32)
@@ -32,6 +32,11 @@ def definition():
                   address_width=32, attributes="amba", **domain)
     memory["mappings"] = [dict(base=hex(base), size="0x1000")
                           for base in (0x2000, ADDRESS & ~0xfff)]
+    # AXI5 request attributes sit above the user flags in the request user field. A record keeps
+    # the flags alone.
+    if axi5:
+        for endpoint in (data, memory):
+            endpoint.update(protocol="axi5", axi5=dict(nsaid=True, mpam="partid_9"))
     clock = dict(name="main", clock_port="clk", reset_port="reset_n", test_port="test")
     return dict(schema_version=10, name="atomic_log", address_width=32,
                 reset_ports=[dict(name="reset_n")], test_ports=[dict(name="test")],
@@ -137,7 +142,7 @@ def bench(dut, path, crossed):
             .replace("@ADDRESS@", f"32'h{ADDRESS:x}"))
 
 
-def run(args, work, crossed):
+def run(args, work, crossed, axi5=False):
     work.mkdir()
     config = work / "network.yaml"
     if crossed:
@@ -145,7 +150,7 @@ def run(args, work, crossed):
         text, _ = apb_definition("atomic_log", [2], clocks=clocks, log_domain="slow",
                                  parts=("classes",), audits=32)
     else:
-        text = json.dumps(definition())
+        text = json.dumps(definition(axi5))
     config.write_text(text)
     rtl = work / "rtl"
     subprocess.run([args.cli, "generate", str(config), "--out-dir", str(rtl)],
@@ -181,6 +186,7 @@ def main():
     args.work.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="run-", dir=args.work))
     run(args, work / "same_domain", crossed=False)
+    run(args, work / "same_domain_axi5", crossed=False, axi5=True)
     run(args, work / "crossed", crossed=True)
     check_read_wake(args.cli, work / "gated_window")
 

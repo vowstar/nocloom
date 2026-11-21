@@ -1190,6 +1190,10 @@ void check_axi5(Checks &c, std::optional<Protocol> protocol,
          "cache_line_bytes is a power of two from 16 to 2048"}})
     if (bad)
       c("NCL_AXI5_PROPERTIES", at + "." + key, message);
+  // A constant subsystem ID belongs to an initiator without the AxSUBSYSID port.
+  if (p.subsystem_id && (!initiator || p.subsystem_id_width))
+    c("NCL_AXI5_PROPERTIES", at + ".subsystem_id",
+      "subsystem_id is the value of an initiator with subsystem_id_width: 0");
   // IHI 0022 Issue L A4.5.1: AxPROT excludes the AxPRIV, AxINST and AxPAS signals.
   if (p.prot && (p.priv_inst || p.pas_width))
     c("NCL_AXI5_PROPERTIES", at + ".prot",
@@ -1210,20 +1214,11 @@ void check_axi5(Checks &c, std::optional<Protocol> protocol,
               ". The network issues bursts of every shape");
   // Properties that later network functions carry.
   for (const auto &[key, set, property] :
-       {std::tuple{"mpam", p.mpam != Axi5Mpam::None, "MPAM_Support"},
-        {"subsystem_id_width", p.subsystem_id_width != 0, "SUBSYSID_WIDTH"},
-        {"subsystem_id", p.subsystem_id.has_value(), "SUBSYSID_WIDTH"},
-        {"nsaid", p.nsaid, "NSAccess_Identifiers"},
-        {"pbha", p.pbha, "PBHA_Support"},
-        {"trace", p.trace, "Trace_Signals"},
+       {std::tuple{"trace", p.trace, "Trace_Signals"},
         {"poison", p.poison, "Poison"},
         {"unique_id", p.unique_id, "Unique_ID_Support"},
         {"write_loop_width", p.write_loop_width != 0, "Loopback_Signals"},
         {"read_loop_width", p.read_loop_width != 0, "Loopback_Signals"},
-        {"prot", !p.prot, "PROT_Present false"},
-        {"priv_inst", p.priv_inst, "INSTPRIV_Present"},
-        {"pas_width", p.pas_width == 1, "PAS_WIDTH"},
-        {"cache", !p.cache, "CACHE_Present false"},
         {"max_transaction_bytes", !initiator && p.max_transaction_bytes != 4096,
          "Max_Transaction_Bytes below 4096 at a target"}})
     if (set)
@@ -1256,6 +1251,25 @@ void check_axi5_pairs(Checks &c) {
           "Target " + t.name +
               " can return DECERR on part of a cache line. Declare consistent_decerr on an axi5 "
               "target, or set slverr_only: true");
+  }
+  // A target port holds the request attributes of each initiator that reaches it.
+  for (std::size_t k = 0; k < d.targets.size(); ++k) {
+    const auto &t = d.targets[k];
+    if (t.protocol != Protocol::Axi5 || !t.axi5)
+      continue;
+    const auto at = "targets[" + std::to_string(k) + "].axi5.";
+    for (const auto &s : d.initiators) {
+      if (s.protocol != Protocol::Axi5 || !s.axi5 || !connects(d, s.name, t.name))
+        continue;
+      const auto source_bits = std::max<unsigned>(s.axi5->subsystem_id_width,
+                                                  std::bit_width(s.axi5->subsystem_id.value_or(0)));
+      if (t.axi5->subsystem_id_width && t.axi5->subsystem_id_width < source_bits)
+        c("NCL_AXI5_PROPERTIES", at + "subsystem_id_width",
+          "The AxSUBSYSID port must hold the subsystem ID of initiator " + s.name);
+      if (t.axi5->mpam == Axi5Mpam::PartId9 && s.axi5->mpam == Axi5Mpam::PartId12)
+        c("NCL_AXI5_PROPERTIES", at + "mpam",
+          "A 9-bit PARTID port cannot hold the 12-bit PARTID of initiator " + s.name);
+    }
   }
   for (std::size_t k = 0; k < d.targets.size(); ++k) {
     const auto &t = d.targets[k];
@@ -1650,6 +1664,10 @@ void check_target_attributes(Checks &c, const Target &t, const std::string &fiel
     return (*t.attributes).*member != amba.*member && (*t.attributes).*member != zero.*member;
   };
   const bool axi = full_axi(protocol), ahb = detail::ahb_protocol(protocol);
+  // An AXI5 target can omit AxCACHE, and AxPROT with its AxPRIV, AxINST and AxPAS replacements.
+  const auto ports = detail::axi5_request_ports(protocol == Protocol::Axi5 ? t.axi5 : std::nullopt);
+  const bool cache_port = axi && ports.cache;
+  const bool prot_port = !ahb && (ports.prot || ports.priv_inst || ports.pas);
   if (!caps.attributes)
     c("NCL_TARGET_ATTRIBUTES", field + ".attributes",
       protocol == Protocol::Wishbone ? "Wishbone targets have no protection or cache signals"
@@ -1657,9 +1675,10 @@ void check_target_attributes(Checks &c, const Target &t, const std::string &fiel
   else if (!valid(t.attributes->read_cache) || !valid(t.attributes->write_cache) ||
            !valid(t.attributes->prot) || !valid(t.attributes->hprot))
     c("NCL_TARGET_ATTRIBUTES", field + ".attributes", "Unknown attribute source");
-  else if ((!axi &&
+  else if ((!cache_port &&
             (unused(&TargetAttributes::read_cache) || unused(&TargetAttributes::write_cache))) ||
-           (ahb && unused(&TargetAttributes::prot)) || (!ahb && unused(&TargetAttributes::hprot)))
+           (!prot_port && unused(&TargetAttributes::prot)) ||
+           (!ahb && unused(&TargetAttributes::hprot)))
     c("NCL_TARGET_ATTRIBUTES", field + ".attributes",
       "A mapping for a signal this target protocol lacks would be ignored");
 }

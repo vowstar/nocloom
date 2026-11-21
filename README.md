@@ -152,7 +152,7 @@ traffic crosses its boundary.
 | Clock domains | 1 to 64. More than one domain needs a `topology` whose switches name their clock domains. Clock domain crossings connect asynchronous clocks, or related clocks divided from one root |
 | Endpoint clock gating | Separate protocol and transport gates, one shared gate, or a transport gate with the protocol side on the domain clock |
 | Transactions | Several AXI transactions in flight, exclusive access, target timeouts and an error response on a decode miss |
-| Scheduling | Fixed levels from 0 to 7 on AXI4, AXI3, AHB-Lite and AHB5 sources to full AXI4 or AXI3 targets, or on 32-bit APB networks. AXI4 and AXI3 sources also support AxQOS maps. AXI4, AXI3 and 32-bit APB sources support bandwidth limits |
+| Scheduling | Fixed levels from 0 to 7 on AXI4, AXI3, AHB-Lite and AHB5 sources to full AXI4 or AXI3 targets, or on 32-bit APB networks. AXI5, AXI4 and AXI3 sources also support AxQOS maps. AXI4, AXI3 and 32-bit APB sources support bandwidth limits |
 | Routing | NocLoom fixes each route at generation. It rejects routes that form a cycle of waits and [reports](docs/network.md#route-cycle-report) the routes of each wait |
 | Output files | Always: Verilog-2001 RTL and three JSON files, which are the map, the bundle and the dependency graph. Optional: IP-XACT (`--ipxact`), address table (`--address-table`), CDC constraints (`--cdc-constraints`) and C headers (`--c-header`) |
 | C++ library | In-memory generation, tree and mesh topology helpers, and a CMake package. The core library does no file I/O and prints nothing |
@@ -164,7 +164,7 @@ See [Documentation](#documentation) for field definitions and limits.
 | Not supported | Detail |
 | --- | --- |
 | Wishbone options | No LOCK or user tags. Burst tags require classic cycles. A tagged target cannot use timeout. Pipelined targets accept one request at a time. See [Wishbone](docs/wishbone.md) |
-| Other protocols | For example ACE, ACE5-Lite, AXI5-Lite and APB2 initiators. AXI5 atomic transactions and the other rejected properties of the [AXI5 property table](docs/axi5.md#property-table) |
+| Other protocols | For example ACE, ACE5-Lite, AXI5-Lite and APB2 initiators. AXI5 atomic transactions and the other rejected properties of the [AXI5 property table](docs/axi5-properties.md) |
 | TileLink | TL-UL targets support one message in flight and one flow. TL-UH targets support 1 to 16 packet contexts and one flow. Coherent channels are unsupported. TL-UH initiators deny atomic operations, so they do not conform to TL-UH. See [TileLink](docs/tilelink.md#errors-and-progress) for progress rules |
 | AHB5 optional signals | HEXCL, HEXOKAY and HAUSER, HWUSER, HRUSER and HBUSER are unsupported. See [AHB5 properties](docs/ahb.md#ahb5-basic-properties) |
 | AHB arbitration and responses | No multi-manager arbitration or HSPLIT. RETRY and SPLIT on two-bit `ahb_lite` targets fail the packet |
@@ -173,8 +173,8 @@ See [Documentation](#documentation) for field definitions and limits.
 | Source flow admission | Within one 4 KiB page, each flow of an initiator that reaches a sub-page routing window must reach all such windows of the initiator. The flow need not reach windows of the initiator's default target. This rule applies to AXI4 and AXI3 initiators with `max_outstanding` above 1. See [Address map](docs/address-map.md#target-mappings) |
 | Scheduling | Nonzero levels exclude AHB targets, other mixed protocol networks, exclusive access, target timeouts and targets wider than the network. AXI graphs also exclude one-direction endpoints. AHB sources have no AxQOS map, shaper or scheduler |
 | APB5 optional signals | PWAKEUP, parity check signals and RME PNSE are unsupported. PAUSER, PBUSER and per-byte PWUSER and PRUSER groups of 1 to 4 bits are supported |
-| AxREGION | AXI endpoints have no AxREGION ports |
 | AXI3 locked writes and write data interleaving | An AXI3 target receives neither |
+| AxREGION | AXI endpoints have no AxREGION ports |
 | Unchanged non-modifiable narrow bursts | With the default `narrow_bursts: merge`, an AXI target that is wider than the beats of a burst merges them regardless of AxCACHE. This can change non-modifiable transactions beyond the transformations that AXI A4.3 permits. See [width transformation details](docs/width-conversion.md#width-transformation-details) |
 
 The CLI rejects an invalid definition before it writes files. It reports a
