@@ -23,6 +23,90 @@ explicit pipe replaces the entire default. Use `{}` for direct wiring on
 that link. A link can inherit each pipe from only one node. Each node default
 must serve a link.
 
+## Stage lists
+
+A stage list is an ordered list of pipes at one position of a switch link.
+Put the stage lists of a link in its `stages`. The pipes follow data flow
+order.
+
+| Field | Values |
+| --- | --- |
+| `side` | `sender` or `receiver`. Required |
+| `word_bytes` | 4, 8, 16 or 32. The word width at the position. Omitted means the word width of the sending switch for `sender` and of the receiving switch for `receiver` |
+| `clock_domain` | Optional check. If set, it must equal the domain of the position |
+| `pipes` | 1 to 64 pipe objects. Each sets `slice` and can set `bypass_port` and `ungated` |
+
+Each side has a position where its chain of width adapters begins and after
+each adapter. Positions on the sender side use the clock and the
+[clock gate](clocks-and-resets.md#clock-gates) of the sending switch.
+Positions on the receiver side use those of the receiving switch. The table
+shows the order of elements on a link.
+
+| Order | Element | Side |
+| --- | --- | --- |
+| 1 | `sender_pipeline` | Sender |
+| 2 | Stage list at the word width of the sending switch | Sender |
+| 3 | Each sender adapter, then the stage list at its output width | Sender |
+| 4 | Clock crossing, if the switches are in different domains | Receiver |
+| 5 | Stage list at the crossing word width | Receiver |
+| 6 | Each receiver adapter, then the stage list at its output width | Receiver |
+| 7 | `pipeline` | Receiver |
+
+Take a request link from a 32-byte switch to a 16-byte switch with a 4-byte
+link word. Its sender positions are at 32, 16, 8 and 4 bytes. Its receiver
+positions are at 4, 8 and 16 bytes. A response link widens in one step, so
+the same response link has receiver positions at 4 and 16 bytes. A pipe at a
+narrow position stores fewer bits.
+
+This example puts two pipes at the 4-byte sender position and one pipe at the
+16-byte receiver position.
+
+```yaml
+links:
+  - from: hub
+    to: mem
+    transport_word_bytes: 4
+    stages:
+      - {side: sender, word_bytes: 4, pipes: [{slice: backward}, {slice: forward}]}
+      - {side: receiver, pipes: [{slice: full}]}
+```
+
+In C++, set `ExchangeLink::stages` to `LinkStages` values. A `LinkSide`
+selects the side.
+
+```cpp
+link.stages = {{.side = nocloom::LinkSide::Sender,
+                .word_bytes = 4,
+                .pipes = {{nocloom::PipeSlice::Backward}, {nocloom::PipeSlice::Forward}}}};
+```
+
+| Condition | Diagnostic |
+| --- | --- |
+| `side` in YAML other than `sender` or `receiver` | `NCL_SCHEMA_TYPE` |
+| A `LinkSide` value other than `Sender` or `Receiver`, or `word_bytes` other than 4, 8, 16 or 32 | `NCL_LINK_STAGE_POSITION` |
+| No position of the side at `word_bytes`, or two lists at one position | `NCL_LINK_STAGE_POSITION` |
+| `clock_domain` that is not the domain of the position | `NCL_LINK_STAGE_CLOCK` |
+| No pipes, more than 64 pipes, or a pipe without `slice` | `NCL_LINK_STAGE_LIST` |
+
+For a position that does not exist, the message lists the word widths of the
+positions of that side. Node defaults and `response: mirror` do not copy
+stage lists. A mirror `link_overrides` entry can set `stages`.
+
+The map lists each link with stage lists in `network.link_stages`. The record
+has `link`, the switch names `from` and `to`, and the word widths of the
+positions of each side in `sender_words` and `receiver_words`. Its `stages`
+list every element in data flow order.
+
+| Field | Element | Meaning |
+| --- | --- | --- |
+| `name`, `kind` | All | Resource name. `kind` is `pipe`, `serializer`, `deserializer` or `crossing` |
+| `side`, `clock_domain` | All | Side of the link and clock domain |
+| `wide_bytes`, `narrow_bytes` | Adapter | Word widths of the adapter |
+| `word_bytes`, `slice`, `slots` | Pipe | Word width, pipe mode and slot count |
+| `bypass_port`, `ungated` | Pipe | Present when set |
+| `origin` | Pipe | `sender_pipeline`, `pipeline` or `stages` |
+| `list`, `index` | Listed pipe | Place of the stage list in `stages` and of the pipe in its list |
+
 ## Endpoint pipes
 
 | Initiator field | Position | Values | Default |

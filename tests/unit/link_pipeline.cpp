@@ -1,8 +1,10 @@
 #include "core/link_pipeline.hpp"
 #include "../public_artifacts.hpp"
+#include "core/cone_walk.hpp"
 #include "core/exchange_composition.hpp"
 #include "core/ir_cone.hpp"
 #include <catch2/catch_test_macros.hpp>
+#include <nocloom/config.hpp>
 #include <nocloom/generation.hpp>
 using namespace nocloom;
 TEST_CASE("Pressure follows connected positions and samples each register boundary",
@@ -372,4 +374,351 @@ TEST_CASE("Minimal keeps link pipe fields unreset and resets the flags", "[link-
       CHECK(pipes == 2);
     }
   }
+}
+
+namespace {
+// The profile with a in main at 16 bytes and b in far at 8 bytes. The request link a>b passes a
+// 4-byte link word: its sender positions pass 16, 8 and 4 bytes, its receiver positions 4 and 8.
+// The response link b>a keeps an 8-byte word: sender 8, receiver 8 and 16.
+Definition crossed() {
+  auto d = profile({});
+  d.clock_domains.push_back({"far", "clk_far", "reset_n", "test"});
+  for (auto *graph : {&d.topology->request, &d.topology->response})
+    for (auto &node : graph->nodes) {
+      node.clock_domain = node.name == "a" ? "main" : "far";
+      node.transport_word_bytes = node.name == "a" ? 16U : 8U;
+    }
+  auto &request = d.topology->request.links[0];
+  request.transport_word_bytes = 4;
+  request.sender_pipeline = {PipeSlice::Forward};
+  request.pipeline = {PipeSlice::Backward};
+  request.stages = {
+      {.side = LinkSide::Receiver, .pipes = {{PipeSlice::Half}}},
+      {.side = LinkSide::Sender,
+       .word_bytes = 8,
+       .clock_domain = "main",
+       .pipes = {{PipeSlice::Full}}},
+      {.side = LinkSide::Sender, .pipes = {{PipeSlice::Forward}, {PipeSlice::Backward}}},
+      {.side = LinkSide::Receiver,
+       .word_bytes = 4,
+       .clock_domain = "far",
+       .pipes = {{.slice = PipeSlice::Forward, .ungated = true}}}};
+  d.topology->response.links[0].stages = {
+      {.side = LinkSide::Sender, .pipes = {{PipeSlice::Full}, {PipeSlice::Full}}},
+      {.side = LinkSide::Receiver, .word_bytes = 8, .pipes = {{PipeSlice::Forward}}},
+      {.side = LinkSide::Receiver,
+       .pipes = {{.slice = PipeSlice::Forward, .bypass_port = "stage_bypass"}}}};
+  return d;
+}
+// The diagnostics of a failed generation with code at field.
+std::vector<Diagnostic> found(const Result<ArtifactSet> &r, const std::string &code,
+                              const std::string &field) {
+  std::vector<Diagnostic> out;
+  if (!r)
+    std::ranges::copy_if(r.diagnostics(), std::back_inserter(out),
+                         [&](const auto &x) { return x.code == code && x.field == field; });
+  return out;
+}
+} // namespace
+TEST_CASE("Stage lists place ordered pipes at link positions on both sides of a crossing",
+          "[link-pipeline]") {
+  const auto x = public_artifacts(crossed());
+  const auto &records = x.map["network"]["link_stages"];
+  REQUIRE(records.size() == 2);
+  const auto &request = records[0];
+  CHECK(request["link"] == "req/req_node0>req_node1");
+  CHECK(request["from"] == "a");
+  CHECK(request["to"] == "b");
+  CHECK(request["sender_words"] == nlohmann::json{16, 8, 4});
+  CHECK(request["receiver_words"] == nlohmann::json{4, 8});
+  const std::string stem = "req/req_node0>req_node1";
+  // name, kind, side, domain, word (pipes) and origin.
+  using Row = std::tuple<std::string, std::string, std::string, std::string, unsigned, std::string>;
+  const std::vector<Row> order{
+      {"pipeline/" + stem + "/out", "pipe", "sender", "main", 16, "sender_pipeline"},
+      {"pipeline/" + stem + "/sender/16/0", "pipe", "sender", "main", 16, "stages"},
+      {"pipeline/" + stem + "/sender/16/1", "pipe", "sender", "main", 16, "stages"},
+      {"adapter/" + stem + "/link-in/0", "serializer", "sender", "main", 0, ""},
+      {"pipeline/" + stem + "/sender/8/0", "pipe", "sender", "main", 8, "stages"},
+      {"adapter/" + stem + "/link-in/1", "serializer", "sender", "main", 0, ""},
+      {"cut/" + stem, "crossing", "receiver", "far", 0, ""},
+      {"pipeline/" + stem + "/receiver/4/0", "pipe", "receiver", "far", 4, "stages"},
+      {"adapter/" + stem + "/link-out/0", "deserializer", "receiver", "far", 0, ""},
+      {"pipeline/" + stem + "/receiver/8/0", "pipe", "receiver", "far", 8, "stages"},
+      {"pipeline/" + stem, "pipe", "receiver", "far", 8, "pipeline"}};
+  std::vector<Row> listed;
+  std::ranges::transform(request["stages"], std::back_inserter(listed), [](const auto &s) {
+    return Row{s["name"].template get<std::string>(),
+               s["kind"].template get<std::string>(),
+               s["side"].template get<std::string>(),
+               s["clock_domain"].template get<std::string>(),
+               s.value("word_bytes", 0U),
+               s.value("origin", std::string())};
+  });
+  CHECK(listed == order);
+  // The lists keep their order and their pipes their place, slots and options.
+  const auto &rows = request["stages"];
+  CHECK(rows[1]["list"] == 2);
+  CHECK(rows[1]["index"] == 0);
+  CHECK(rows[1]["slice"] == "forward");
+  CHECK(rows[2]["index"] == 1);
+  CHECK(rows[2]["slice"] == "backward");
+  CHECK(rows[4]["slots"] == 2);
+  CHECK(rows[7]["ungated"] == true);
+  CHECK(rows[9]["slice"] == "half");
+  CHECK(rows[9]["slots"] == 1);
+  // Every listed pipe stores its slots of fragments at its word on its side's clock; a pipe
+  // at the 4-byte link word stores fewer payload bits than one at 16 bytes.
+  std::map<unsigned, unsigned> per_slot;
+  for (const auto &s : rows) {
+    if (s["kind"] != "pipe")
+      continue;
+    const auto name = s["name"].get<std::string>();
+    const auto slots = s["slots"].get<unsigned>();
+    CHECK(x.storage_bits(name, "control") == slots);
+    CHECK((*x.storage(name))["clock"] == (s["side"] == "sender" ? "clk_main" : "clk_far"));
+    const auto payload = x.storage_bits(name, "payload");
+    CHECK(payload % slots == 0);
+    per_slot[s["word_bytes"].get<unsigned>()] = payload / slots;
+    CHECK(x.resource(name)->at("payload_bits") == payload / slots);
+  }
+  CHECK(per_slot.at(4) < per_slot.at(8));
+  CHECK(per_slot.at(8) < per_slot.at(16));
+
+  const auto &response = records[1];
+  CHECK(response["sender_words"] == nlohmann::json{8});
+  CHECK(response["receiver_words"] == nlohmann::json{8, 16});
+  std::vector<std::string> names;
+  std::ranges::transform(response["stages"], std::back_inserter(names),
+                         [](const auto &s) { return s["name"].template get<std::string>(); });
+  const std::string back = "rsp/rsp_node1>rsp_node0";
+  CHECK(names == std::vector<std::string>{
+                     "pipeline/" + back + "/sender/8/0", "pipeline/" + back + "/sender/8/1",
+                     "cut/" + back, "pipeline/" + back + "/receiver/8/0",
+                     "adapter/" + back + "/link-out/0", "pipeline/" + back + "/receiver/16/0"});
+  CHECK(x.has_port("stage_bypass"));
+  // The definition record keeps the lists as written.
+  const auto &written = x.map["definition"]["topology"]["request"]["links"][0]["stages"];
+  REQUIRE(written.size() == 4);
+  CHECK(written[0] == nlohmann::json{{"side", "receiver"}, {"pipes", {{{"slice", "half"}}}}});
+  CHECK(written[3]["clock_domain"] == "far");
+  CHECK(written[3]["pipes"][0]["ungated"] == true);
+}
+TEST_CASE("YAML and C++ stage lists generate the same artifacts", "[link-pipeline]") {
+  const auto d = crossed();
+  const auto yaml = R"(schema_version: 10
+name: pipe_public
+address_width: 32
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains:
+  - {name: main, clock_port: clk_main, reset_port: reset_n, test_port: test}
+  - {name: far, clock_port: clk_far, reset_port: reset_n, test_port: test}
+initiators: [{name: s, clock_domain: main, protocol: axi4, data_width: 32}]
+targets:
+  - {name: t, clock_domain: main, protocol: axi4, data_width: 32, attributes: amba,
+     mappings: [{base: '0x0', size: '0x1000'}]}
+connectivity: all
+output: {backend: verilog, language: verilog_2001}
+topology:
+  request:
+    nodes:
+      - {name: a, clock_domain: main, transport_word_bytes: 16}
+      - {name: b, clock_domain: far, transport_word_bytes: 8}
+    links:
+      - from: a
+        to: b
+        transport_word_bytes: 4
+        sender_pipeline: {slice: forward}
+        pipeline: {slice: backward}
+        stages:
+          - {side: receiver, pipes: [{slice: half}]}
+          - {side: sender, word_bytes: 8, clock_domain: main, pipes: [{slice: full}]}
+          - {side: sender, pipes: [{slice: forward}, {slice: backward}]}
+          - {side: receiver, word_bytes: 4, clock_domain: far,
+             pipes: [{slice: forward, ungated: true}]}
+    entries: [{endpoint: s, node: a}]
+    exits: [{endpoint: t, node: b}]
+  response:
+    nodes:
+      - {name: a, clock_domain: main, transport_word_bytes: 16}
+      - {name: b, clock_domain: far, transport_word_bytes: 8}
+    links:
+      - from: b
+        to: a
+        stages:
+          - {side: sender, pipes: [{slice: full}, {slice: full}]}
+          - {side: receiver, word_bytes: 8, pipes: [{slice: forward}]}
+          - {side: receiver, pipes: [{slice: forward, bypass_port: stage_bypass}]}
+    entries: [{endpoint: t, node: b}]
+    exits: [{endpoint: s, node: a}]
+)";
+  const auto parsed = config::parse(yaml, "stages.yaml");
+  REQUIRE(parsed);
+  CHECK(parsed.value().definition.topology == d.topology);
+  const auto from_yaml = generate(parsed.value().definition);
+  const auto from_cpp = generate(d);
+  REQUIRE(from_yaml);
+  REQUIRE(from_cpp);
+  CHECK(from_yaml.value() == from_cpp.value());
+  // An empty list of stage lists changes nothing.
+  auto bare = d;
+  for (auto *graph : {&bare.topology->request, &bare.topology->response})
+    graph->links[0].stages.clear();
+  const auto x = public_artifacts(bare);
+  CHECK_FALSE(x.map["network"].contains("link_stages"));
+  CHECK_FALSE(x.map["definition"]["topology"]["request"]["links"][0].contains("stages"));
+}
+TEST_CASE("Stage list positions, clocks and options give field diagnostics", "[link-pipeline]") {
+  const std::string at = "topology.request.links[0].stages";
+  auto unknown = crossed();
+  unknown.topology->request.links[0].stages[0].word_bytes = 16;
+  auto r = generate(unknown);
+  auto hits = found(r, "NCL_LINK_STAGE_POSITION", at + "[0].word_bytes");
+  REQUIRE(hits.size() == 1);
+  CHECK(hits[0].message == "The receiver side of this link has no position of 16-byte words. Its "
+                           "positions pass 4, 8 bytes");
+  // The switch end and its explicit word are one position.
+  auto twice = crossed();
+  twice.topology->request.links[0].stages.push_back(
+      {.side = LinkSide::Sender, .word_bytes = 16, .pipes = {{PipeSlice::Forward}}});
+  CHECK(found(generate(twice), "NCL_LINK_STAGE_POSITION", at + "[4]").size() == 1);
+  auto clock = crossed();
+  clock.topology->request.links[0].stages[3].clock_domain = "main";
+  hits = found(generate(clock), "NCL_LINK_STAGE_CLOCK", at + "[3].clock_domain");
+  REQUIRE(hits.size() == 1);
+  CHECK(hits[0].message == "The position is in clock domain far, not main");
+  for (const auto *name : {"nowhere", ""}) {
+    auto undeclared = crossed();
+    undeclared.topology->request.links[0].stages[1].clock_domain = name;
+    CHECK(found(generate(undeclared), "NCL_LINK_STAGE_CLOCK", at + "[1].clock_domain").size() == 1);
+  }
+  auto ladder = crossed();
+  ladder.topology->request.links[0].stages[1].word_bytes = 2;
+  CHECK(found(generate(ladder), "NCL_LINK_STAGE_POSITION", at + "[1].word_bytes").size() == 1);
+  auto side = crossed();
+  side.topology->request.links[0].stages[1].side = static_cast<LinkSide>(2);
+  CHECK(found(generate(side), "NCL_LINK_STAGE_POSITION", at + "[1].side").size() == 1);
+  auto empty = crossed();
+  empty.topology->request.links[0].stages[1].pipes.clear();
+  CHECK(found(generate(empty), "NCL_LINK_STAGE_LIST", at + "[1].pipes").size() == 1);
+  auto many = crossed();
+  many.topology->request.links[0].stages[1].pipes.assign(65, {PipeSlice::Forward});
+  CHECK(found(generate(many), "NCL_LINK_STAGE_LIST", at + "[1].pipes").size() == 1);
+  many.topology->request.links[0].stages[1].pipes.resize(64);
+  CHECK(generate(many));
+  auto none = crossed();
+  none.topology->request.links[0].stages[2].pipes[1] = {};
+  CHECK(found(generate(none), "NCL_LINK_STAGE_LIST", at + "[2].pipes[1].slice").size() == 1);
+  auto bypass = crossed();
+  bypass.topology->request.links[0].stages[2].pipes[1].bypass_port = "stage_bypass";
+  CHECK(found(generate(bypass), "NCL_AXI4_TOPOLOGY", at + "[2].pipes[1].bypass_port").size() == 1);
+  auto collision = crossed();
+  collision.topology->request.links[0].stages[2].pipes[0].bypass_port = "clk_far";
+  CHECK(rejected_with(generate(collision), "NCL_NAME_COLLISION"));
+}
+TEST_CASE("YAML stage lists are strict and mirrors set them only by override", "[link-pipeline]") {
+  const auto base = R"(schema_version: 10
+name: mirrored
+address_width: 32
+reset_ports: [{name: reset_n}]
+clock_domains: [{name: main, clock_port: clk, reset_port: reset_n, gated: false}]
+initiators: [{name: s, clock_domain: main, protocol: axi4, data_width: 32}]
+targets:
+  - {name: t, clock_domain: main, protocol: axi4, data_width: 32, attributes: amba,
+     mappings: [{base: '0x0', size: '0x1000'}]}
+connectivity: all
+output: {backend: verilog, language: verilog_2001}
+topology:
+  request:
+    nodes: [{name: a}, {name: b}]
+    links:
+      - {from: a, to: b, stages: [@LIST@]}
+    entries: [{endpoint: s, node: a}]
+    exits: [{endpoint: t, node: b}]
+  response: @RESPONSE@
+)";
+  const auto text = [&](const std::string &list, const std::string &response) {
+    std::string out = base;
+    out.replace(out.find("@LIST@"), 6, list);
+    out.replace(out.find("@RESPONSE@"), 10, response);
+    return out;
+  };
+  const std::string good = "{side: sender, pipes: [{slice: forward}]}";
+  const auto mirrored = config::parse(text(good, "mirror"));
+  REQUIRE(mirrored);
+  CHECK(mirrored.value().definition.topology->response.links[0].stages.empty());
+  const auto overridden = config::parse(
+      text(good, "{mirror: {link_overrides: [{from: b, to: a, stages: [{side: receiver, pipes: "
+                 "[{slice: full}]}]}]}}"));
+  REQUIRE(overridden);
+  CHECK(overridden.value().definition.topology->response.links[0].stages ==
+        std::vector<LinkStages>{{.side = LinkSide::Receiver, .pipes = {{PipeSlice::Full}}}});
+  for (const auto &[list, code, field] :
+       std::vector<std::tuple<std::string, std::string, std::string>>{
+           {"{side: middle, pipes: [{slice: forward}]}", "NCL_SCHEMA_TYPE", "[0].side"},
+           {"{pipes: [{slice: forward}]}", "NCL_SCHEMA_MISSING_FIELD", "[0].side"},
+           {"{side: sender}", "NCL_SCHEMA_MISSING_FIELD", "[0].pipes"},
+           {"{side: sender, pipes: {slice: forward}}", "NCL_SCHEMA_TYPE", "[0].pipes"},
+           {"{side: sender, word_bytes: '4', pipes: [{slice: forward}]}", "NCL_SCHEMA_TYPE",
+            "[0].word_bytes"},
+           {"{side: sender, pipes: [{slice: forward, depth: 2}]}", "NCL_SCHEMA_UNKNOWN_FIELD",
+            "[0].pipes[0].depth"},
+           {"{side: sender, order: 1, pipes: [{slice: forward}]}", "NCL_SCHEMA_UNKNOWN_FIELD",
+            "[0].order"},
+           {"{side: sender, pipes: [{slice: none}]}", "NCL_AXI4_TOPOLOGY", "[0].pipes[0].slice"}}) {
+    const auto r = config::parse(text(list, "mirror"));
+    REQUIRE_FALSE(r);
+    CHECK(r.diagnostics().front().code == code);
+    CHECK(r.diagnostics().front().field == "topology.request.links[0].stages" + field);
+  }
+  // A plan diagnostic points at its YAML field.
+  const auto wrong =
+      config::parse(text("{side: sender, word_bytes: 8, pipes: [{slice: full}]}", "mirror"));
+  REQUIRE(wrong);
+  const auto r = generate(wrong.value().definition, {}, &wrong.value().sources);
+  const auto hits =
+      found(r, "NCL_LINK_STAGE_POSITION", "topology.request.links[0].stages[0].word_bytes");
+  REQUIRE(hits.size() == 1);
+  REQUIRE(hits[0].location);
+  CHECK(hits[0].location->line == 16);
+}
+TEST_CASE("Each listed pipe cuts the combinational paths of its slice", "[link-pipeline]") {
+  const auto d = crossed();
+  const auto h = lowered_pipe(d);
+  // Whether value `to` reaches `from` without passing a register.
+  const auto through = [&](const std::string &to, const std::string &from) {
+    const auto target = h.bindings.at(from).index;
+    bool reached = false;
+    detail::walk_cone(
+        h.ir, h.bindings.at(to), [](detail::ValueId) {}, [](detail::ValueId) {},
+        [&](detail::ValueId v) {
+          reached = reached || v.index == target;
+          return reached;
+        });
+    return reached;
+  };
+  const auto plan = detail::build_network_plan(d);
+  REQUIRE(plan);
+  unsigned checked = 0;
+  for (const auto &link : plan.value().links)
+    for (const auto &stage : link.stages) {
+      if (!stage.listed)
+        continue;
+      ++checked;
+      const auto &id = stage.name;
+      const auto slice = stage.pipe.slice;
+      // A static bypass input may restore the forward path; the check covers the others.
+      const bool forward = slice != PipeSlice::Backward && stage.pipe.bypass_port.empty();
+      const bool backward = slice != PipeSlice::Forward;
+      CHECK(through(id + ".output.valid", id + ".input.valid") == !forward);
+      CHECK(through(id + ".output.field0", id + ".input.field0") == !forward);
+      CHECK(through(id + ".input.ready", id + ".output.ready") == !backward);
+    }
+  CHECK(checked == 9);
+  // A list whose pipes register both directions cuts both paths from end to end: the sender list
+  // at 16 bytes is forward then backward.
+  const std::string stem = "pipeline/req/req_node0>req_node1/sender/16/";
+  CHECK_FALSE(through(stem + "1.output.valid", stem + "0.input.valid"));
+  CHECK_FALSE(through(stem + "0.input.ready", stem + "1.output.ready"));
 }

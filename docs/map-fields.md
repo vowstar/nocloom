@@ -28,6 +28,7 @@ formats. Profile-specific JSON records appear only for that profile.
 | `network.admission` | Per-source read and write route matches, with target and address plane signals when present |
 | `network.resources` | Resource name, role and payload width, with capacity, domain and pipe settings where recorded |
 | `network.storage` | Resource, payload and control signals, acquire and release signals, and clock where recorded |
+| `network.link_stages` | Each link with stage lists. It has `link`, the switch names `from` and `to`, and the position word widths `sender_words` and `receiver_words` in bytes. Its `stages` are in data flow order. See [stage lists](pipes.md#stage-lists) |
 | `network.adapters` | Width conversion stages with `name`, `segment`, `direction`, `kind`, `wide_bytes`, `narrow_bytes` and optional `clock_domain`. A `serializer` splits a word and a `deserializer` joins words |
 | `network.formal` | Observation signal bindings for sources, targets and scheduling |
 | `network.interleaved_targets` | Targets that can return interleaved read responses |

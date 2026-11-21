@@ -437,6 +437,32 @@ void check_link_pipe(const LinkPipeline &pipe, const std::string &field, Reject 
   if (pipe.ungated && pipe.slice == PipeSlice::None)
     reject("NCL_AXI4_TOPOLOGY", field + ".ungated", "ungated requires a slice");
 }
+// The shape of a link's stage lists; their positions and domains are checked on the plan
+// (capability.cpp).
+template <typename Reject>
+void check_stage_lists(const std::vector<LinkStages> &lists, const std::string &field,
+                       Reject &reject) {
+  for (std::size_t i = 0; i < lists.size(); ++i) {
+    const auto &list = lists[i];
+    const auto at = field + "[" + std::to_string(i) + "]";
+    if (list.side != LinkSide::Sender && list.side != LinkSide::Receiver)
+      reject("NCL_LINK_STAGE_POSITION", at + ".side", "Expected sender or receiver");
+    if (const auto word = list.word_bytes;
+        word && *word != 4 && *word != 8 && *word != 16 && *word != 32)
+      reject("NCL_LINK_STAGE_POSITION", at + ".word_bytes",
+             "A link position passes a word of 4, 8, 16 or 32 bytes");
+    if (list.pipes.empty() || list.pipes.size() > detail::link_stage_pipes_max)
+      reject("NCL_LINK_STAGE_LIST", at + ".pipes",
+             "A stage list has 1 to " + std::to_string(detail::link_stage_pipes_max) + " pipes");
+    for (std::size_t k = 0; k < list.pipes.size(); ++k) {
+      const auto pipe = at + ".pipes[" + std::to_string(k) + "]";
+      if (list.pipes[k].slice == PipeSlice::None)
+        reject("NCL_LINK_STAGE_LIST", pipe + ".slice", "Every listed pipe sets a slice");
+      else
+        check_link_pipe(list.pipes[k], pipe, reject);
+    }
+  }
+}
 template <typename Reject>
 void check_endpoint_pipe(const LinkPipeline &pipe, const std::string &field, Reject &reject) {
   if (pipe.slice < PipeSlice::None || pipe.slice > PipeSlice::Full || !pipe.bypass_port.empty() ||
@@ -493,6 +519,7 @@ void check_graphs(const Definition &d, const ValidationOptions &limits, Reject &
         fault("Link references an absent node");
       check_link_pipe(link.pipeline, at + ".pipeline", reject);
       check_link_pipe(link.sender_pipeline, at + ".sender_pipeline", reject);
+      check_stage_lists(link.stages, at + ".stages", reject);
     }
     for (const auto *attachments : {&graph->entries, &graph->exits})
       for (std::size_t i = 0; i < attachments->size(); ++i) {
@@ -798,6 +825,11 @@ void check_ports(Checks &c) {
         const auto at = stem + ".links[" + std::to_string(i) + "]";
         bypass(graph.links[i].pipeline, at + ".pipeline.bypass_port");
         bypass(graph.links[i].sender_pipeline, at + ".sender_pipeline.bypass_port");
+        const auto &lists = graph.links[i].stages;
+        for (std::size_t j = 0; j < lists.size(); ++j)
+          for (std::size_t k = 0; k < lists[j].pipes.size(); ++k)
+            bypass(lists[j].pipes[k], at + ".stages[" + std::to_string(j) + "].pipes[" +
+                                          std::to_string(k) + "].bypass_port");
       }
       for (const auto *attachments : {&graph.entries, &graph.exits})
         for (std::size_t i = 0; i < attachments->size(); ++i)

@@ -7,6 +7,7 @@
 #include "diagnostic.hpp"
 #include "network_plan_profiles.hpp"
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <functional>
 #include <iterator>
@@ -1751,6 +1752,9 @@ private:
                                      {"direction", adapter.response ? "response" : "request"},
                                      {"wide_bytes", adapter.wide_bytes},
                                      {"narrow_bytes", adapter.narrow_bytes}});
+    for (const auto &link : h.plan.links)
+      if (!link.lists.empty())
+        network["link_stages"].push_back(stage_record(link));
     network["interleaved_targets"] = Json::array();
     for (const auto &target : h.plan.targets)
       if (interleaved_target(h.plan, target))
@@ -1819,6 +1823,46 @@ private:
                                     {"acquire", value_ref(store.acquire)},
                                     {"release", value_ref(store.release)}});
     return map;
+  }
+  // A link with stage lists: the words at its positions and every stage in data flow order, each
+  // with its side and clock domain; a pipe with its word, slots and origin.
+  static Json stage_record(const LinkPlan &link) {
+    static constexpr std::array slices{"", "forward", "backward", "full", "half"};
+    Json stages = Json::array();
+    for (const auto &stage : link.stages) {
+      Json row{{"name", stage.name},
+               {"side", stage.receiver ? "receiver" : "sender"},
+               {"clock_domain", stage.domain}};
+      if (stage.kind == StageKind::Crossing)
+        row["kind"] = "crossing";
+      else if (stage.kind == StageKind::Adapter) {
+        row["kind"] = stage.serializer ? "serializer" : "deserializer";
+        row["wide_bytes"] = stage.wide_bytes;
+        row["narrow_bytes"] = stage.narrow_bytes;
+      } else {
+        row["kind"] = "pipe";
+        row["word_bytes"] = stage.wide_bytes;
+        row["slice"] = slices.at(static_cast<std::size_t>(stage.pipe.slice));
+        row["slots"] = stage.pipe.slot_count();
+        if (!stage.pipe.bypass_port.empty())
+          row["bypass_port"] = stage.pipe.bypass_port;
+        if (stage.pipe.ungated)
+          row["ungated"] = true;
+        if (stage.listed) {
+          row["origin"] = "stages";
+          row["list"] = stage.listed->first;
+          row["index"] = stage.listed->second;
+        } else
+          row["origin"] = stage.receiver ? "pipeline" : "sender_pipeline";
+      }
+      stages.push_back(std::move(row));
+    }
+    return {{"link", link.name},
+            {"from", link.from_name},
+            {"to", link.to_name},
+            {"sender_words", link.sender_words},
+            {"receiver_words", link.receiver_words},
+            {"stages", std::move(stages)}};
   }
   void scheduling_anchors(Json &network) const {
     for (const auto &[key, value] : h.bindings) {

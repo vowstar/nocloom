@@ -37,7 +37,7 @@ Each of `topology.request` and `topology.response` contains:
 | List | Entry fields | Meaning |
 | --- | --- | --- |
 | `nodes` | `name`, optional `clock_domain`, `transport_word_bytes`, `arbitration` | 1 to 128 switches |
-| `links` | `from`, `to`, optional `transport_word_bytes`, `pipeline`, `sender_pipeline` | Directed switch links |
+| `links` | `from`, `to`, optional `transport_word_bytes`, `pipeline`, `sender_pipeline`, `stages` | Directed switch links |
 | `entries` | `endpoint`, `node`, optional `pipeline` | Endpoints that send packets into this graph |
 | `exits` | `endpoint`, `node`, optional `pipeline` | Endpoints that receive packets from this graph |
 
@@ -189,12 +189,12 @@ values. See [target identifiers](transactions.md#target-identifiers).
 
 `response: mirror` reverses request links and swaps their sender and receiver
 pipes. It retains node names, widths, clocks and order, and exchanges entries
-with exits. It does not copy node arbitration.
+with exits. It does not copy node arbitration or stage lists.
 
 The object form `response: {mirror: ...}` accepts `rename_suffix` and
 `link_overrides`. `rename_suffix` has `from` and `to`, and every request node
 must have that suffix. An override selects one mirrored link by response node
-names. It can replace width, `pipeline` or `sender_pipeline`. Unknown,
+names. It can replace width, `pipeline`, `sender_pipeline` or `stages`. Unknown,
 duplicate, empty and redundant overrides are rejected.
 
 See the [short topology example](../examples/scale_axi_12_short.yaml).
@@ -244,6 +244,6 @@ beats per transfer word. See
 
 ## Related topics
 
-See [Link pipes](pipes.md#link-pipes).
+See [Link pipes](pipes.md#link-pipes) and [stage lists](pipes.md#stage-lists).
 
 See [Arbitration](arbitration.md#arbitration).

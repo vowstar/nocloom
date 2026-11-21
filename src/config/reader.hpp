@@ -147,6 +147,9 @@ void target_fields(const Reader &r, const YAML::Node &node, const std::string &p
 // An optional link pipe; endpoint pipes accept only their documented subset.
 void pipeline(Reader &r, const YAML::Node &item, const std::string &field, const char *name,
               LinkPipeline &out);
+// The optional stage lists of a switch link: side, word_bytes, clock_domain and pipes per entry.
+void stage_lists(Reader &r, const YAML::Node &item, const std::string &field,
+                 std::vector<LinkStages> &out);
 // Replaces each entry's `use` by the fields of the templates it names.
 void expand_templates(Reader &r, const YAML::Node &root);
 // The connectivity matrix, with initiator and target groups, all and all_except expanded.

@@ -119,12 +119,9 @@ void target_fields(const Reader &r, const YAML::Node &node, const std::string &p
   r.object(node, path, target_keys);
 }
 
-void pipeline(Reader &r, const YAML::Node &item, const std::string &field, const char *name,
-              LinkPipeline &out) {
-  if (!item[name])
-    return;
-  const auto at = field + "." + name;
-  const auto pipe = r.field(item, name, at);
+namespace {
+// One pipe object at path at.
+void pipe_object(Reader &r, const YAML::Node &pipe, const std::string &at, LinkPipeline &out) {
   r.object(pipe, at, {"slice", "bypass_port", "ungated"});
   if (const auto value = pipe["slice"]) {
     const auto kind = r.string(r.field(pipe, "slice", at + ".slice"), at + ".slice");
@@ -148,6 +145,49 @@ void pipeline(Reader &r, const YAML::Node &item, const std::string &field, const
     out.bypass_port = r.string(port, port_path);
     if (out.bypass_port.empty())
       r.fail("NCL_NAME_INVALID", port_path, "A bypass port name must not be empty", port.Mark());
+  }
+}
+} // namespace
+
+void pipeline(Reader &r, const YAML::Node &item, const std::string &field, const char *name,
+              LinkPipeline &out) {
+  if (!item[name])
+    return;
+  const auto at = field + "." + name;
+  pipe_object(r, r.field(item, name, at), at, out);
+}
+void stage_lists(Reader &r, const YAML::Node &item, const std::string &field,
+                 std::vector<LinkStages> &out) {
+  if (!item["stages"])
+    return;
+  const auto at = field + ".stages";
+  const auto lists = r.field(item, "stages", at);
+  r.sequence(lists, at);
+  for (std::size_t i = 0; i < lists.size(); ++i) {
+    const auto place = at + "[" + std::to_string(i) + "]";
+    const auto &entry = lists[i];
+    r.object(entry, place, {"side", "word_bytes", "clock_domain", "pipes"});
+    auto &list = out.emplace_back();
+    const auto side = r.field(entry, "side", place + ".side");
+    if (const auto name = r.string(side, place + ".side"); name == "sender")
+      list.side = LinkSide::Sender;
+    else if (name == "receiver")
+      list.side = LinkSide::Receiver;
+    else
+      r.fail("NCL_SCHEMA_TYPE", place + ".side", "Expected sender or receiver", side.Mark());
+    if (entry["word_bytes"])
+      list.word_bytes =
+          r.integer(r.field(entry, "word_bytes", place + ".word_bytes"), place + ".word_bytes");
+    if (entry["clock_domain"])
+      list.clock_domain = r.string(r.field(entry, "clock_domain", place + ".clock_domain"),
+                                   place + ".clock_domain");
+    const auto pipes = r.field(entry, "pipes", place + ".pipes");
+    r.sequence(pipes, place + ".pipes");
+    for (std::size_t k = 0; k < pipes.size(); ++k) {
+      const auto pipe = place + ".pipes[" + std::to_string(k) + "]";
+      r.note(pipe, pipes[k].Mark());
+      pipe_object(r, pipes[k], pipe, list.pipes.emplace_back());
+    }
   }
 }
 
@@ -549,7 +589,8 @@ ExchangeGraph mirror(Reader &r, const ExchangeGraph &request, const YAML::Node &
   for (std::size_t i = 0; overrides && i < overrides.size(); ++i) {
     const auto at = item(options + ".link_overrides", i);
     const auto entry = overrides[i];
-    r.object(entry, at, {"from", "to", "transport_word_bytes", "pipeline", "sender_pipeline"});
+    r.object(entry, at,
+             {"from", "to", "transport_word_bytes", "pipeline", "sender_pipeline", "stages"});
     const auto from = r.string(r.field(entry, "from", at + ".from"), at + ".from");
     const auto to = r.string(r.field(entry, "to", at + ".to"), at + ".to");
     const auto found = std::find_if(g.links.begin(), g.links.end(), [&](const ExchangeLink &l) {
@@ -561,9 +602,11 @@ ExchangeGraph mirror(Reader &r, const ExchangeGraph &request, const YAML::Node &
     if (!touched.insert(static_cast<std::size_t>(found - g.links.begin())).second)
       r.fail("NCL_MIRROR_OVERRIDE", at, "Link " + from + " -> " + to + " is overridden twice",
              entry.Mark());
-    if (!entry["transport_word_bytes"] && !entry["pipeline"] && !entry["sender_pipeline"])
+    if (!entry["transport_word_bytes"] && !entry["pipeline"] && !entry["sender_pipeline"] &&
+        !entry["stages"])
       r.fail("NCL_MIRROR_OVERRIDE", at,
-             "An override sets transport_word_bytes, pipeline or sender_pipeline", entry.Mark());
+             "An override sets transport_word_bytes, pipeline, sender_pipeline or stages",
+             entry.Mark());
     auto link = *found;
     if (entry["transport_word_bytes"])
       link.transport_word_bytes =
@@ -577,6 +620,7 @@ ExchangeGraph mirror(Reader &r, const ExchangeGraph &request, const YAML::Node &
       link.sender_pipeline = {};
       pipeline(r, entry, at, "sender_pipeline", link.sender_pipeline);
     }
+    stage_lists(r, entry, at, link.stages);
     if (link == *found)
       r.fail("NCL_MIRROR_OVERRIDE", at, "The override repeats the mirrored link", entry.Mark());
     *found = link;

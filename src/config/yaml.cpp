@@ -692,7 +692,7 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
           const auto field = path + ".links[" + std::to_string(i) + "]";
           const auto item = links[i];
           r.object(item, field,
-                   {"from", "to", "transport_word_bytes", "pipeline", "sender_pipeline"});
+                   {"from", "to", "transport_word_bytes", "pipeline", "sender_pipeline", "stages"});
           ExchangeLink link{r.string(r.field(item, "from", field + ".from"), field + ".from"),
                             r.string(r.field(item, "to", field + ".to"), field + ".to")};
           if (item["transport_word_bytes"])
@@ -700,6 +700,7 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
                 r.integer(item["transport_word_bytes"], field + ".transport_word_bytes");
           pipeline(item, field, "pipeline", link.pipeline);
           pipeline(item, field, "sender_pipeline", link.sender_pipeline);
+          detail::stage_lists(r, item, field, link.stages);
           link_set.push_back(
               {item["pipeline"].IsDefined(), item["sender_pipeline"].IsDefined(), item.Mark()});
           result.links.push_back(std::move(link));

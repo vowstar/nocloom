@@ -777,6 +777,21 @@ struct ExchangeNode {
   std::vector<OutputArbitration> arbitration = {};
   bool operator==(const ExchangeNode &) const = default;
 };
+// The side of a link's clock crossing: the sending switch's chain of width adapters, in its domain
+// and gate region, or the receiving switch's chain.
+enum class LinkSide { Sender, Receiver };
+// An ordered list of pipes at one position of a link (docs/pipes.md#stage-lists). A side has a
+// position at its start word and after each of its width adapters; word_bytes names the word that
+// passes the position, absent the switch end of the side. At the switch end a sender list follows
+// sender_pipeline and a receiver list precedes pipeline. clock_domain, when given, must name the
+// domain of the position. Every pipe has a slice; pipes are in data flow order.
+struct LinkStages {
+  LinkSide side = LinkSide::Receiver;
+  std::optional<unsigned> word_bytes = std::nullopt;
+  std::optional<std::string> clock_domain = std::nullopt;
+  std::vector<LinkPipeline> pipes = {};
+  bool operator==(const LinkStages &) const = default;
+};
 // transport_word_bytes absent takes the narrower end word that still carries
 // the slower end's bandwidth (word times 1 / period_ps); ends without both
 // periods count as equally fast.
@@ -787,6 +802,8 @@ struct ExchangeLink {
   // clock crossing; sender_pipeline: at the sending switch, before both.
   LinkPipeline pipeline{};
   LinkPipeline sender_pipeline{};
+  // Stage lists, at most one per position.
+  std::vector<LinkStages> stages = {};
   bool operator==(const ExchangeLink &) const = default;
 };
 struct ExchangeAttachment {

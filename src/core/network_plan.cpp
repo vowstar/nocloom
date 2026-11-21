@@ -676,17 +676,22 @@ void plan_graphs(NetworkPlan &plan, const Definition &d) {
         plan.output_arbitration[scope + id + ">" + key(o.output)] = std::move(r);
       }
     }
+    // The record of a pipe with a slice.
+    auto pipe_record = [](const LinkPipeline &mode) {
+      static constexpr std::array names{"", "forward", "backward", "full", "half"};
+      nlohmann::json row = {{"slice", names[static_cast<unsigned>(mode.slice)]}};
+      if (!mode.bypass_port.empty())
+        row["bypass_port"] = mode.bypass_port;
+      if (mode.ungated)
+        row["ungated"] = true;
+      return row;
+    };
     // A configured pipe: kept on the link draft and recorded under key.
-    auto pipe = [](const LinkPipeline &mode, LinkPipeline &planned, nlohmann::json &record,
-                   const char *key) {
+    auto pipe = [&](const LinkPipeline &mode, LinkPipeline &planned, nlohmann::json &record,
+                    const char *key) {
       if (mode.slice != PipeSlice::None) {
         planned = mode;
-        static constexpr std::array names{"", "forward", "backward", "full", "half"};
-        record[key] = {{"slice", names[static_cast<unsigned>(mode.slice)]}};
-        if (!mode.bypass_port.empty())
-          record[key]["bypass_port"] = mode.bypass_port;
-        if (mode.ungated)
-          record[key]["ungated"] = true;
+        record[key] = pipe_record(mode);
       }
     };
     for (const auto &edge : graph.links) {
@@ -699,6 +704,20 @@ void plan_graphs(NetworkPlan &plan, const Definition &d) {
         link["transport_word_bytes"] = *edge.transport_word_bytes;
       pipe(edge.pipeline, planned.in_pipe, link, "pipeline");
       pipe(edge.sender_pipeline, planned.out_pipe, link, "sender_pipeline");
+      planned.lists = edge.stages;
+      planned.from_name = edge.from;
+      planned.to_name = edge.to;
+      // The stage lists as written, each pipe in the form of a link pipe.
+      for (const auto &list : edge.stages) {
+        nlohmann::json row = {{"side", list.side == LinkSide::Sender ? "sender" : "receiver"},
+                              {"pipes", nlohmann::json::array()}};
+        if (list.word_bytes)
+          row["word_bytes"] = *list.word_bytes;
+        if (list.clock_domain)
+          row["clock_domain"] = *list.clock_domain;
+        std::ranges::transform(list.pipes, std::back_inserter(row["pipes"]), pipe_record);
+        link["stages"].push_back(std::move(row));
+      }
       record["links"].push_back(std::move(link));
     }
     // An attachment's pipe is at its switch: the receiver of an entry, the sender of an exit.

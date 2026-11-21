@@ -329,22 +329,30 @@ struct NodePlan {
 // adapter of the serialization ladder (width_adapter.hpp) or the link's clock adapter (the
 // ClockCut of that name).
 enum class StageKind : std::uint8_t { Pipe, Adapter, Crossing };
+// The pipes of one stage list (LinkStages::pipes).
+inline constexpr std::size_t link_stage_pipes_max = 64;
 struct StagePlan {
   StageKind kind = StageKind::Adapter;
-  // Binding stem: pipeline/<link>, adapter/<segment>/<hop> or cut/<link>. An adapter's segment is
-  // the link, or <link>/link-in and <link>/link-out around an explicit link word; the receiver
-  // side of a link without one is <link>/link-out too.
+  // Binding stem: pipeline/<link>, pipeline/<link>/out, pipeline/<link>/<side>/<word>/<index> for
+  // a pipe of a stage list, adapter/<segment>/<hop> or cut/<link>. An adapter's segment is the
+  // link, or <link>/link-in and <link>/link-out around an explicit link word; the receiver side
+  // of a link without one is <link>/link-out too.
   std::string name, domain, segment;
   bool response = false, serializer = false; // serializer: wide -> narrow
   unsigned wide_bytes = 0, narrow_bytes = 0; // a pipe holds words of wide_bytes
   LinkPipeline pipe{};
+  // The receiver's side: the crossing, the receiver's adapters and the pipes among and after them.
+  bool receiver = false;
+  // A pipe of a stage list: the list (LinkPlan::lists) and the pipe's place in it.
+  std::optional<std::pair<unsigned, unsigned>> listed = std::nullopt;
   bool operator==(const StagePlan &) const = default;
 };
 // One link of one direction, "<req|rsp>/<from>><to>", between two placed objects (source/<name>,
 // target/<name>, req/<node>, rsp/<node>): an endpoint attachment or a switch edge. Its stages are
 // the sender pipe and adapters in the sender domain, the crossing, then the receiver adapters and
-// pipe in the receiver domain (link_stages). A switch edge takes links[].sender_pipeline and
-// links[].pipeline; an attachment takes its pipeline at the switch end.
+// pipe in the receiver domain (link_stages), with the pipes of the stage lists at their positions.
+// A switch edge takes links[].sender_pipeline, links[].pipeline and links[].stages; an attachment
+// takes its pipeline at the switch end.
 struct LinkPlan {
   std::string name, from, to, from_domain, to_domain;
   bool response = false;
@@ -354,6 +362,12 @@ struct LinkPlan {
   // The word without an explicit one (edge_word), placed the same way.
   unsigned edge_bytes = 0;
   LinkPipeline out_pipe{}, in_pipe{};
+  // The stage lists of a switch edge and the configured names of its switches.
+  std::vector<LinkStages> lists;
+  std::string from_name, to_name;
+  // The words that pass the positions of each side, in data flow order: the side's start word,
+  // then the output word of each of its adapters.
+  std::vector<unsigned> sender_words, receiver_words;
   std::vector<StagePlan> stages;
   unsigned crossing_bytes() const { return word.value_or(edge_bytes); }
   bool operator==(const LinkPlan &) const = default;

@@ -39,38 +39,81 @@ namespace {
 // crossing word (explicit, else edge_word) in the sender domain, the crossing FIFO between two
 // domains, then the chain from the crossing word and the receiver pipe in the receiver domain.
 // Equal widths derive no adapter; a word off the ladder is a capability violation and derives
-// none either.
+// none either. Each side has a position at its start word and after each of its adapters; the
+// first stage list of a side and word takes that position (capability.cpp rejects later ones).
 void link_stages(LinkPlan &link) {
   auto &stages = link.stages;
+  bool receiver = false;
   auto pipe = [&](LinkPipeline mode, const std::string &name, const std::string &domain,
-                  unsigned bytes) {
+                  unsigned bytes,
+                  std::optional<std::pair<unsigned, unsigned>> listed = std::nullopt) {
     if (mode.slice != PipeSlice::None)
-      stages.push_back(
-          {StageKind::Pipe, name, domain, {}, link.response, false, bytes, bytes, mode});
+      stages.push_back({StageKind::Pipe,
+                        name,
+                        domain,
+                        {},
+                        link.response,
+                        false,
+                        bytes,
+                        bytes,
+                        mode,
+                        receiver,
+                        listed});
+  };
+  auto position = [&](const std::string &domain, unsigned word) {
+    (receiver ? link.receiver_words : link.sender_words).push_back(word);
+    const auto side = receiver ? LinkSide::Receiver : LinkSide::Sender;
+    const auto end = receiver ? link.to_bytes : link.from_bytes;
+    for (unsigned i = 0; i < link.lists.size(); ++i)
+      if (const auto &list = link.lists[i];
+          list.side == side && list.word_bytes.value_or(end) == word) {
+        const auto stem = "pipeline/" + link.name + (receiver ? "/receiver/" : "/sender/") +
+                          std::to_string(word) + "/";
+        for (unsigned k = 0; k < list.pipes.size(); ++k)
+          pipe(list.pipes[k], stem + std::to_string(k), domain, word, std::pair{i, k});
+        return;
+      }
+  };
+  auto adapter = [&](const std::string &name, const std::string &domain, const std::string &segment,
+                     bool response, bool shrink, unsigned wide, unsigned narrow) {
+    stages.push_back(
+        {StageKind::Adapter, name, domain, segment, response, shrink, wide, narrow, {}, receiver});
+    position(domain, shrink ? narrow : wide);
   };
   auto chain = [&](const std::string &segment, const std::string &domain, unsigned width,
                    unsigned to) {
+    position(domain, width);
     // A response word widens in one step (response assembler, message.hpp point 18).
     if (link.response && width < to && std::has_single_bit(width) && std::has_single_bit(to)) {
-      stages.push_back({StageKind::Adapter, "adapter/" + segment + "/0", domain, segment, true,
-                        false, to, width});
+      adapter("adapter/" + segment + "/0", domain, segment, true, false, to, width);
       return;
     }
     for (unsigned hop = 0; std::has_single_bit(width) && std::has_single_bit(to) && width != to;) {
       const bool shrink = width > to;
       const unsigned next = shrink ? width / 2 : width * 2;
-      stages.push_back({StageKind::Adapter, "adapter/" + segment + "/" + std::to_string(hop++),
-                        domain, segment, link.response, shrink, std::max(width, next),
-                        std::min(width, next)});
+      adapter("adapter/" + segment + "/" + std::to_string(hop++), domain, segment, link.response,
+              shrink, std::max(width, next), std::min(width, next));
       width = next;
     }
   };
   stages.clear();
+  link.sender_words.clear();
+  link.receiver_words.clear();
   pipe(link.out_pipe, "pipeline/" + link.name + "/out", link.from_domain, link.from_bytes);
   chain(link.name + (link.word ? "/link-in" : ""), link.from_domain, link.from_bytes,
         link.crossing_bytes());
+  receiver = true;
   if (link.from_domain != link.to_domain)
-    stages.push_back({StageKind::Crossing, "cut/" + link.name, link.to_domain, {}});
+    stages.push_back({StageKind::Crossing,
+                      "cut/" + link.name,
+                      link.to_domain,
+                      {},
+                      false,
+                      false,
+                      0,
+                      0,
+                      {},
+                      true});
   chain(link.name + "/link-out", link.to_domain, link.crossing_bytes(), link.to_bytes);
   pipe(link.in_pipe, "pipeline/" + link.name, link.to_domain, link.to_bytes);
 }
@@ -1453,16 +1496,12 @@ public:
   // receiver's from the crossing on and for the receiver chain and pipe; a pipe holds a word
   // while a slot is full. An ungated pipe stays outside that region and wakes it at its output.
   Channel lower_link(const LinkPlan &link, Channel current) {
-    bool received = false;
     for (const auto &stage : link.stages) {
       if (stage.kind == StageKind::Crossing) {
         current = cross_fragment(stage.name, link.crossing_bytes(), current, {link.from, link.to});
-        received = true;
         continue;
       }
-      received =
-          received || stage.segment.ends_with("/link-out") || stage.name == "pipeline/" + link.name;
-      const auto &owner = received ? link.to : link.from;
+      const auto &owner = stage.receiver ? link.to : link.from;
       auto *r = region(owner);
       const auto first = b.ir.states.size();
       const bool ungated = stage.kind == StageKind::Pipe && stage.pipe.ungated;

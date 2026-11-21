@@ -30,6 +30,53 @@ constexpr ProtocolCaps caps[] = {
 std::optional<Finding> when(bool violated, std::string field, std::string message) {
   return violated ? std::optional<Finding>{{std::move(field), std::move(message)}} : std::nullopt;
 }
+// The definition path of the stage lists of a switch edge.
+std::string stages_field(const Definition &def, const LinkPlan &link) {
+  const auto &links = link.response ? def.topology->response.links : def.topology->request.links;
+  const auto at = std::ranges::find_if(links,
+                                       [&](const ExchangeLink &l) {
+                                         return l.from == link.from_name && l.to == link.to_name;
+                                       }) -
+                  links.begin();
+  return std::string("topology.") + (link.response ? "response" : "request") + ".links[" +
+         std::to_string(at) + "].stages";
+}
+// The first stage list of a link the stages did not place (link_stages): one at a word the side
+// does not pass, or a second list at a position.
+std::optional<Finding> unplaced_stages(const Definition &def, const LinkPlan &link) {
+  for (unsigned i = 0; i < link.lists.size(); ++i) {
+    if (std::ranges::any_of(link.stages,
+                            [&](const StagePlan &s) { return s.listed && s.listed->first == i; }))
+      continue;
+    const auto &list = link.lists[i];
+    const bool sender = list.side == LinkSide::Sender;
+    const auto &words = sender ? link.sender_words : link.receiver_words;
+    const auto word = list.word_bytes.value_or(sender ? link.from_bytes : link.to_bytes);
+    const auto side = std::string(sender ? "sender" : "receiver");
+    const auto at = stages_field(def, link) + "[" + std::to_string(i) + "]";
+    if (std::ranges::find(words, word) != words.end())
+      return Finding{at, "Another stage list of this link takes the " + side + " position of " +
+                             std::to_string(word) + "-byte words"};
+    std::string legal;
+    for (const auto w : words)
+      legal += (legal.empty() ? "" : ", ") + std::to_string(w);
+    return Finding{at + ".word_bytes", "The " + side + " side of this link has no position of " +
+                                           std::to_string(word) +
+                                           "-byte words. Its positions pass " + legal + " bytes"};
+  }
+  return std::nullopt;
+}
+// The first placed stage list of a link whose clock_domain differs from its position's domain.
+std::optional<Finding> misclocked_stages(const Definition &def, const LinkPlan &link) {
+  for (unsigned i = 0; i < link.lists.size(); ++i) {
+    const auto &list = link.lists[i];
+    const auto domain = list.side == LinkSide::Sender ? link.from_domain : link.to_domain;
+    if (list.clock_domain && *list.clock_domain != domain)
+      return Finding{stages_field(def, link) + "[" + std::to_string(i) + "].clock_domain",
+                     "The position is in clock domain " + domain + ", not " + *list.clock_domain};
+  }
+  return std::nullopt;
+}
 // Whether a crossing FIFO leaves domain from (any when empty) for domain to (any when empty).
 bool crosses(const NetworkPlan &plan, const std::string &from, const std::string &to) {
   return std::ranges::any_of(plan.cuts, [&](const ClockCut &cut) {
@@ -298,6 +345,10 @@ constexpr CapabilityRule rules[] = {
        return when(word && !ladder(*word), "exchange",
                    "Invalid internal link word width or identity");
      }},
+    {"link.stage_position", "NCL_LINK_STAGE_POSITION", Scope::Link, Stage::Plan,
+     [](const RuleView &v) { return unplaced_stages(v.def, v.plan.links[v.at]); }},
+    {"link.stage_clock", "NCL_LINK_STAGE_CLOCK", Scope::Link, Stage::Plan,
+     [](const RuleView &v) { return misclocked_stages(v.def, v.plan.links[v.at]); }},
     {"target.whole_id", "NCL_AXI4_EXCHANGE_ID_WIDTH", Scope::Target, Stage::Plan,
      [](const RuleView &v) {
        const auto &p = v.plan;
