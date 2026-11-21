@@ -2,11 +2,14 @@
 
 import argparse
 import json
+import mmap
+import os
 from pathlib import Path
 import re
 import resource
 import subprocess
 import tempfile
+import threading
 
 from sim_engine import Simulation, add_arguments, generated_rtl
 
@@ -72,20 +75,68 @@ def covered_definition(conditional):
     return config
 
 
-def memory_limit():
-    cap = 512 * 1024 * 1024
-    resource.setrlimit(resource.RLIMIT_AS, (cap, cap))
+# One budgeted generation gets 15 seconds and 512 MiB. The bound applies to
+# the address space and to the peak resident set. A sanitizer runtime
+# reserves terabytes of address space for its shadow memory before main, so
+# an instrumented CLI keeps only the resident bound.
+SECONDS = 15
+MEMORY = 512 * 1024 * 1024
+SANITIZER_RUNTIME = re.compile(rb"__(?:asan|hwasan|msan|tsan)_init\b")
+_sanitized = {}
+
+
+def sanitized(cli):
+    """Whether the CLI carries a sanitizer runtime."""
+    key = Path(cli).resolve()
+    if key not in _sanitized:
+        with key.open("rb") as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as data:
+            _sanitized[key] = SANITIZER_RUNTIME.search(data) is not None
+        print("MEMORY_BUDGET", "resident" if _sanitized[key] else "address_space resident")
+    return _sanitized[key]
+
+
+def address_space_limit():
+    resource.setrlimit(resource.RLIMIT_AS, (MEMORY, MEMORY))
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+
+
+def measured(argv, cwd, limit_address_space):
+    """Run argv and return its result and peak resident set in bytes."""
+    out, err = cwd / "generation.stdout", cwd / "generation.stderr"
+    with out.open("w") as stdout, err.open("w") as stderr:
+        child = subprocess.Popen(argv, cwd=cwd, stdout=stdout, stderr=stderr,
+                                 preexec_fn=address_space_limit if limit_address_space else None)
+        expired = threading.Event()
+
+        def expire():
+            expired.set()
+            child.kill()
+
+        timer = threading.Timer(SECONDS, expire)
+        timer.start()
+        try:
+            _, status, usage = os.wait4(child.pid, 0)
+        finally:
+            timer.cancel()
+        child.returncode = os.waitstatus_to_exitcode(status)
+    if expired.is_set():
+        raise subprocess.TimeoutExpired(argv, SECONDS)
+    run = subprocess.CompletedProcess(argv, child.returncode, out.read_text(), err.read_text())
+    return run, usage.ru_maxrss * 1024
 
 
 def generate(cli, root, config, *, budget=False):
     root.mkdir()
     (root / "network.yaml").write_text(json.dumps(config))
-    run = subprocess.run([str(cli), "generate", "network.yaml", "--out-dir", "gen",
-                          "--address-table", "--c-header", "--ipxact"],
-                         cwd=root, capture_output=True, text=True, timeout=15,
-                         preexec_fn=memory_limit if budget else None)
+    argv = [str(cli), "generate", "network.yaml", "--out-dir", "gen",
+            "--address-table", "--c-header", "--ipxact"]
+    if budget:
+        run, peak = measured(argv, root, not sanitized(cli))
+    else:
+        run = subprocess.run(argv, cwd=root, capture_output=True, text=True, timeout=SECONDS)
     (root / "generation.log").write_text(run.stdout + run.stderr)
+    if budget:
+        assert peak <= MEMORY, f"{root.name}: peak resident set {peak >> 20} MiB above {MEMORY >> 20} MiB"
     return run
 
 
