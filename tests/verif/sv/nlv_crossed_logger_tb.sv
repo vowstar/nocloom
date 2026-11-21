@@ -1,15 +1,16 @@
 `timescale 1ns/1ps
 // A logger and its bank in a clock domain of their own, behind crossings of the serial path and of
 // the record, reached by two APB4 sources. Two free-running clocks; +SLOW_NS sets the bank's period.
-// The bank's offsets and bit places arrive as macros from the map.
+// The bench can stop the bank's clock low. The bank's offsets and bit places arrive as macros from
+// the map.
 module tb;
-  reg clk = 0, clk_slow = 0;
+  reg clk = 0, clk_slow = 0, slow_run = 1;
   real slow_ns = 33.0;
   initial begin
     if ($value$plusargs("SLOW_NS=%f", slow_ns)) begin end
     fork
       forever #5 clk = ~clk;
-      forever #(slow_ns / 2) clk_slow = ~clk_slow;
+      forever #(slow_ns / 2) if (slow_run || clk_slow) clk_slow = ~clk_slow;
     join_none
   end
   reg rst_n = 0;
@@ -201,6 +202,101 @@ module tb;
       if (arrived_tied) check(!alarm_fell, "crossed_arrival_alarm");
     end
   endtask
+  // What the first target's sender did: errors it dropped, and an error it took in the cycle its
+  // kept record left.
+  integer drops = 0;
+  reg took_at_leave = 0, probe_clear_tie = 0;
+  always @(posedge clk)
+    if (rst_n) begin
+      if (`SENDER_DROPPED) drops = drops + 1;
+      if (`SENDER_ACCEPTED && `SENDER_DONE) took_at_leave = 1;
+    end
+  always @(posedge clk_slow)
+    if (rst_n && `SENDER_PROBE_LOST && `LOG_OVERFLOW_CLEAR) probe_clear_tie = 1;
+  // The records the logger takes, one at a time behind wait_when_full: each poll's overflow bit
+  // belongs to the record that poll finds. keep names the rw bits each clear keeps. A target
+  // error's record keeps the low byte of its address.
+  localparam [31:0] LOW = 32'hff;
+  integer got = 0, idle = 0, issued = 0;
+  reg [31:0] got_addr[0:31];
+  reg got_flag[0:31];
+  task drain(input [31:0] keep);
+    begin
+      got = 0; idle = 0;
+      while (idle < 2 && got < 32) begin
+        csr_a(0, STATE, 0, v, e);
+        if (v[`RECORD_HELD_lsb]) begin
+          csr_a(0, ADDRESS, 0, w, e);
+          got_addr[got] = w;
+          got_flag[got] = v[`RECORD_OVERFLOW_lsb];
+          got = got + 1;
+          idle = 0;
+          csr_a(1, STATE, HELD | OVERFLOW | keep, v, e);
+        end else begin
+          check(!v[`RECORD_OVERFLOW_lsb], "probe_drop_alone");
+          idle = idle + 1;
+        end
+        settle;
+      end
+    end
+  endtask
+  // From an empty logger that waits while full: errors at base, base + 4, ... until the sender
+  // keeps one it cannot send. The logger holds the first and the path holds those between.
+  task fill(input [31:0] base);
+    integer start_drops;
+    begin
+      csr_a(1, STATE, HELD | OVERFLOW | ALARM | WAIT, v, e);
+      settle;
+      start_drops = drops;
+      issued = 0;
+      while (!`SENDER_VALID && issued < 16) begin
+        data(0, base + 4 * issued);
+        issued = issued + 1;
+        settle;
+      end
+      check(`SENDER_VALID && drops == start_drops && issued >= 2, "probe_fill");
+    end
+  endtask
+  // A clear of record_held and an error a distance apart, in periods of the sources' clock, with
+  // the sender keeping the last record of a full path. The clear lets the path move. Before the
+  // kept record leaves the sender, the sender drops the error and marks the kept record. From the
+  // cycle it leaves, the sender takes the error. No error goes without a trace and no record is
+  // marked without a drop.
+  reg race_taken;
+  integer race_before;
+  task race(input integer distance);
+    integer n;
+    reg marked;
+    begin
+      fill(32'h400);
+      race_before = drops;
+      took_at_leave = 0;
+      align;
+      fork
+        begin
+          repeat (distance < 0 ? -distance : 0) @(negedge clk);
+          csr_b(1, STATE, HELD | ALARM | WAIT, w, f);
+        end
+        begin
+          repeat (distance > 0 ? distance : 0) @(negedge clk);
+          data(0, 32'h4f0);
+        end
+      join
+      settle;
+      drain(ALARM | WAIT);
+      // The clear let the first record go unread: the rest come in order.
+      race_taken = got == issued && got_addr[got - 1] == (32'h4f0 & LOW);
+      marked = 0;
+      for (n = 0; n < got; n = n + 1) begin
+        marked = marked | got_flag[n];
+        if (n < issued - 1) check(got_addr[n] == ((32'h404 + 4 * n) & LOW), "probe_race_order");
+      end
+      check(race_taken ? !marked && drops == race_before
+                       : got == issued - 1 && got_flag[got - 1] && drops == race_before + 1,
+            "probe_race_trace");
+      for (n = 0; n + 1 < got; n = n + 1) check(!got_flag[n], "probe_race_trace");
+    end
+  endtask
   initial begin
     repeat (5) @(negedge clk_slow);
     repeat (5) @(negedge clk);
@@ -275,6 +371,7 @@ module tb;
     settle;
     csr_a(0, STATE, 0, v, e);
     check(v[`RECORD_HELD_lsb], "released");
+    check(!v[`RECORD_OVERFLOW_lsb], "probe_drop_late");
     csr_a(0, ADDRESS, 0, v, e);
     check(v == 32'h44, "released_address");
     // The record behind it waited on its probe and comes next, whole.
@@ -295,8 +392,11 @@ module tb;
       csr_a(0, ADDRESS, 0, v, e);
       check(v == 32'h50, "fifth_record");
     end
+    // The sender kept that last record while the later errors came, and dropped them. The record
+    // carries the drops to the logger.
     csr_a(0, STATE, 0, v, e);
-    check(!v[`RECORD_OVERFLOW_lsb], "wait_no_overflow");
+    check(v[`RECORD_OVERFLOW_lsb], "probe_drop_reported");
+    csr_a(1, STATE, OVERFLOW | ALARM, v, e);
     csr_a(1, STATE, ALARM, v, e);
     csr_a(1, STATE, HELD | ALARM, v, e);
     settle;
@@ -320,6 +420,84 @@ module tb;
       else hi = mid;
     end
     if (slow_ns >= 10.0) check(found, "crossed_arrival_overlap");
+    // The sender drops errors while the bank's clock stops, and the logger waits while full. The
+    // records that found room in the crossing come in order. The record the sender kept comes last
+    // and carries the drops.
+    csr_a(1, STATE, HELD | OVERFLOW | ALARM | WAIT, v, e);
+    settle;
+    k = drops;
+    @(negedge clk_slow);
+    slow_run = 0;
+    for (lo = 0; lo < 12; lo = lo + 1) data(0, 32'h100 + 4 * lo);
+    repeat (20) @(negedge clk);
+    slow_run = 1;
+    settle;
+    drain(ALARM | WAIT);
+    check(got >= 2 && got < 12 && drops - k == 12 - got, "stop_records");
+    for (lo = 0; lo < got; lo = lo + 1)
+      check(got_addr[lo] == ((32'h100 + 4 * lo) & LOW), "stop_order");
+    for (lo = 0; lo + 1 < got; lo = lo + 1) check(!got_flag[lo], "probe_drop_late");
+    check(got_flag[got - 1], "probe_drop_reported");
+    // The mark left with its record: the next record carries none.
+    data(0, 32'h2a0);
+    settle;
+    drain(ALARM | WAIT);
+    check(got == 1 && got_addr[0] == (32'h2a0 & LOW) && !got_flag[0], "probe_drop_once");
+    // An error near the clear that lets the kept record leave. The distance is halved until the
+    // error comes in the cycle the kept record leaves the sender.
+    lo = -16; hi = 256;
+    race(lo);
+    check(!race_taken, "probe_race_span");
+    race(hi);
+    check(race_taken, "probe_race_span");
+    while (hi - lo > 1) begin
+      mid = lo + (hi - lo) / 2;
+      race(mid);
+      if (race_taken) hi = mid;
+      else lo = mid;
+    end
+    race(hi);
+    check(race_taken && took_at_leave, "probe_race_meet");
+    // A marked record waits at the logger behind the held one. One write turns wait_when_full off
+    // in byte 1 and clears both status bits in byte 0, a cycle later. The marked record finds room
+    // in the cycle of the clear, and its drop outlives the clear of record_overflow. Under a bank's
+    // clock faster than the sources' the two bytes land cycles apart, and no cycle has both.
+    if (slow_ns >= 10.0) begin
+      fill(32'h600);
+      data(0, 32'h6f0);
+      settle;
+      for (lo = 1; lo + 1 < issued; lo = lo + 1) begin
+        csr_a(1, STATE, HELD | OVERFLOW | ALARM | WAIT, v, e);
+        settle;
+      end
+      csr_a(0, ADDRESS, 0, w, e);
+      check(w == ((32'h600 + 4 * (issued - 2)) & LOW), "probe_clear_setup");
+      probe_clear_tie = 0;
+      csr_a(1, STATE, HELD | OVERFLOW | ALARM, v, e);
+      settle;
+      csr_a(0, STATE, 0, v, e);
+      csr_a(0, ADDRESS, 0, w, e);
+      check(probe_clear_tie, "probe_clear_tied");
+      check(v[`RECORD_HELD_lsb] && v[`RECORD_OVERFLOW_lsb], "probe_clear_race");
+      check(w == ((32'h600 + 4 * (issued - 1)) & LOW), "probe_clear_record");
+    end
+    // A reset while the sender keeps a marked record: nothing of the record or its mark is left.
+    fill(32'h700);
+    data(0, 32'h7f0);
+    settle;
+    rst_n = 0;
+    repeat (6) @(negedge clk_slow);
+    repeat (6) @(negedge clk);
+    rst_n = 1;
+    repeat (6) @(negedge clk_slow);
+    repeat (6) @(negedge clk);
+    csr_a(0, STATE, 0, v, e);
+    check(v == 0, "probe_reset_clean");
+    csr_a(1, STATE, WAIT, v, e);
+    data(0, 32'h7f4);
+    settle;
+    drain(WAIT);
+    check(got == 1 && got_addr[0] == (32'h7f4 & LOW) && !got_flag[0], "probe_reset_fresh");
     if (failures == 0) $display("CHECK_PASS checks=%0d", checks);
     $finish;
   end

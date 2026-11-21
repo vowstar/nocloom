@@ -1028,6 +1028,38 @@ TEST_CASE("A record's words carry the whole record", "[error-log]") {
   CHECK(bits * logged.serial_words >= shape.route_bits + 2 + shape.address_bits);
 }
 
+TEST_CASE("A crossed record carries its probe's drop flag in its last word", "[error-log]") {
+  // Mapping sizes that make the stored fields fill whole words at some width: the flag then needs
+  // a word of its own.
+  unsigned extra_words = 0;
+  for (const unsigned width : {8U, 16U, 32U})
+    for (const std::uint64_t size : {0x400ULL, 0x800ULL, 0x1000ULL, 0x4000000ULL}) {
+      auto d = two_domains();
+      std::ranges::find(d.targets, "ram", &Target::name)->mappings[0].size = size;
+      auto internal = crossed_logger();
+      internal.error_logs[0].serial_word_bits = width;
+      const auto plan = build_network_plan(d, internal);
+      REQUIRE(plan);
+      const auto &logged = plan.value().error_logs[0].logger;
+      REQUIRE(logged.crossed);
+      const auto layout = error_record_layout(logged);
+      CHECK(layout.fields.back() == RecordLayout::Field{"probe_overflow", 1, layout.bits - 1});
+      CHECK((layout.bits - 1) / width == logged.serial_words - 1);
+      CHECK(logged.serial_words == layout.words(width));
+      auto same_domain = logged;
+      same_domain.crossed = false;
+      const auto stored = error_record_layout(same_domain);
+      CHECK(stored.bits + 1 == layout.bits);
+      CHECK(std::ranges::none_of(
+          stored.fields, [](const RecordLayout::Field &f) { return f.name == "probe_overflow"; }));
+      extra_words += stored.words(width) != layout.words(width);
+      REQUIRE(lower_error_sender(logged, 0));
+      REQUIRE(lower_error_logger(logged));
+      REQUIRE(emit_axi4_network(plan.value()));
+    }
+  CHECK(extra_words > 0);
+}
+
 TEST_CASE("Serial crossings keep to plain clocks of one reset", "[error-log]") {
   const auto refused = [](const Definition &d, const InternalNetwork &internal) {
     return rejection(build_network_plan(d, internal));
@@ -1298,7 +1330,7 @@ TEST_CASE("Record words cover exact field boundaries", "[error-log]") {
     for (const unsigned bits : {width - 1, width, width + 1}) {
       ErrorLoggerPlan plan;
       plan.name = "boundary";
-      plan.shape = {1, bits - 4, 0, 0, 2, 0};
+      plan.shape = {1, bits - 5, 0, 0, 2, 0};
       plan.fixed_length = 3;
       plan.crossed = true;
       plan.serial_word_bits = width;
@@ -1308,8 +1340,9 @@ TEST_CASE("Record words cover exact field boundaries", "[error-log]") {
       CHECK(layout.fields == std::vector<RecordLayout::Field>{{"write", 1, 0},
                                                               {"wrap", 1, 1},
                                                               {"address_partial", 1, 2},
-                                                              {"address", bits - 4, 3},
-                                                              {"route", 1, bits - 1}});
+                                                              {"address", bits - 5, 3},
+                                                              {"route", 1, bits - 2},
+                                                              {"probe_overflow", 1, bits - 1}});
       REQUIRE(lower_error_sender(plan, 0));
       REQUIRE(lower_error_logger(plan));
       CHECK(error_record_word_bits(plan) == width);

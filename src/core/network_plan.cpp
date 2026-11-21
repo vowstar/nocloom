@@ -1456,6 +1456,8 @@ Result<NetworkPlan> build_network_plan(const Definition &d, const InternalNetwor
             continue;
           logged.crossed = true;
         }
+        // A crossed record carries its probe's drop flag, which can add a serial word.
+        logged.serial_words = error_record_layout(logged).words(logged.serial_word_bits);
       }
       for (std::size_t n = 0; n < request.chain.size(); ++n)
         banks.push_back(ServiceBank{

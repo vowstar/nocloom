@@ -196,9 +196,9 @@ Each watched target holds one waiting record. The table shows new overflows.
 
 | Case | Record | `record_overflow` |
 | --- | --- | --- |
-| One or more failures arrive at a related-clock probe with a waiting record and no take | The probe drops the later failures | Set at the first logger when the chain takes the waiting record, even if that logger rejects it |
-| A related-clock probe takes a record as a new failure arrives | The new failure replaces it in the probe | No new overflow |
-| A probe on any other clock path receives another failure while its record waits | The later failure is lost | No new overflow |
+| A probe in another clock domain than its log holds a waiting record, and more failures arrive before the record leaves | The probe drops the later failures | Set at the first logger when the chain takes the waiting record, even if that logger rejects it |
+| The waiting record of such a probe leaves as a new failure arrives | The probe holds the new failure | No new overflow |
+| A probe in the log's clock domain receives another failure while its record waits | The later failure is lost | No new overflow |
 | A full logger has `wait_when_full` set | The record waits. A later failure can still be dropped at the probe | No overflow from the logger |
 | A logger accepts a record in the cycle software clears its held bit | The new record is held | No overflow from the logger |
 | A logger rejects a record that does not wait | The record passes to the next logger if one follows | No overflow from the logger |

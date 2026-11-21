@@ -8,6 +8,7 @@
 #include <iterator>
 #include <map>
 #include <numeric>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -31,6 +32,12 @@ RecordLayout error_record_layout(const ErrorLoggerPlan &p) {
       layout.fields.push_back({name, width, layout.bits});
       layout.bits += width;
     }
+  // A crossed record says whether its probe dropped a failure while the record waited. The flag
+  // is the top bit, so it travels in the last word, which leaves the sender with the record.
+  if (p.crossed) {
+    layout.fields.push_back({"probe_overflow", 1, layout.bits});
+    layout.bits += 1;
+  }
   return layout;
 }
 namespace {
@@ -122,7 +129,22 @@ public:
     store(face, sample, l.either(sample, new_fault));
   }
   void update_related(const std::string &face, ValueId done, ValueId released, ValueId open) {
-    const auto moved = l.both(l.in(face, "moved", 1), target_live);
+    take_or_drop(face, l.both(l.in(face, "moved", 1), target_live), done, released, open);
+  }
+  // A sender's probe: every first failure of a packet is taken or dropped, as at a related probe
+  // whose log is always open. A drop rides on the waiting record to the first logger.
+  void update_sender(const std::string &face, ValueId done) {
+    take_or_drop(face, l.in(face, "moved", 1), done, std::nullopt, std::nullopt);
+  }
+
+private:
+  logic::Logic &l;
+  const ErrorLoggerPlan &p;
+  ValueId target_live{};
+  // A failure waits while the probe keeps a record that is released and not leaving. A related
+  // probe also needs an open log edge to take one.
+  void take_or_drop(const std::string &face, ValueId moved, ValueId done,
+                    std::optional<ValueId> released, std::optional<ValueId> open) {
     const auto head = l.in(face, "head", 1), tail = l.in(face, "tail", 1);
     const auto failed = l.in(face, "failed", 1);
     const auto event =
@@ -133,8 +155,9 @@ public:
                l.pick(moved,
                       l.every(std::array{l.either(head, tracking), l.inv(failed), l.inv(tail)}),
                       tracking));
-    const auto waiting = l.every(std::array{wanting, released, l.inv(done)});
-    const auto allowed = l.both(event, open);
+    const auto waiting = released ? l.every(std::array{wanting, *released, l.inv(done)})
+                                  : l.both(wanting, l.inv(done));
+    const auto allowed = open ? l.both(event, *open) : event;
     const auto accepted = l.bind(face + ".accepted", l.both(allowed, l.inv(waiting)));
     const auto dropped = l.bind(face + ".dropped", l.both(allowed, waiting));
     l.b.update(wanting, l.either(accepted, waiting));
@@ -142,11 +165,6 @@ public:
     l.b.update(overflow, l.either(dropped, l.both(waiting, overflow)));
     store(face, accepted, accepted);
   }
-
-private:
-  logic::Logic &l;
-  const ErrorLoggerPlan &p;
-  ValueId target_live{};
   void store(const std::string &face, ValueId sample, ValueId sample_class) {
     const auto &shape = p.shape;
     Builder &b = l.b;
@@ -234,6 +252,8 @@ private:
   Record selected{};
 
   bool chained() const { return !p.chain.empty(); }
+  // The records carry their probe's drop flag: related probes and senders across a crossing.
+  bool probe_drops() const { return p.crossed || !related_probes.empty(); }
 
   void control(Slot &s) {
     const auto face = "control" + s.suffix;
@@ -320,7 +340,8 @@ private:
                     named("last_offset", l.num(shape.length_bits, p.fixed_length)),
                     named("exclusive", l.bit(0)), by_name.at("address_partial"),
                     by_name.at("address"), named("class", ValueId{}),
-                    named("user_flags", ValueId{}), named("audit_flags", ValueId{})});
+                    named("user_flags", ValueId{}), named("audit_flags", ValueId{}),
+                    by_name.at("probe_overflow")});
   }
   // The word on the path goes to the gather registers; the path's ready goes to the face of the
   // target it serves.
@@ -393,7 +414,7 @@ private:
                   with_class ? zero(selected.error_class) : ValueId{},
                   with_user ? zero(selected.user) : ValueId{},
                   with_audit ? zero(selected.audit) : ValueId{}};
-    if (!related_probes.empty())
+    if (probe_drops())
       joined.probe_overflow = l.bit(0);
     treadle::Spec spec;
     spec.policy = treadle::Policy::RotatingPriority;
@@ -418,7 +439,7 @@ private:
                                     add(joined.user, held[k].user);
                                   if (with_audit)
                                     add(joined.audit, held[k].audit);
-                                  if (!related_probes.empty())
+                                  if (probe_drops())
                                     add(joined.probe_overflow, held[k].probe_overflow);
                                 },
                                 [&](ValueId any_valid) {
@@ -463,8 +484,8 @@ private:
     // A record that passed the filter of a logger that holds one is lost there.
     const auto overflow = l.state(s.scope() + "overflow", 1);
     auto lost = l.both(s.offered, l.inv(room(s)));
-    if (s.suffix.empty() && !related_probes.empty())
-      lost = l.either(lost, l.both(taken, selected.probe_overflow));
+    if (s.suffix.empty() && probe_drops())
+      lost = l.either(lost, l.bind("logger.probe_lost", l.both(taken, selected.probe_overflow)));
     l.bind(s.scope() + "lost", lost);
     b.update(overflow, l.either(lost, l.both(overflow, l.inv(s.clear_overflow))));
     l.out("field" + s.suffix, "record_held", s.valid);
@@ -523,7 +544,7 @@ Result<NodeHardware> lower_error_sender(const ErrorLoggerPlan &p, unsigned targe
   logic::Logic l;
   auto &b = l.b;
   Probe probe(l, p);
-  probe.declare("probe.", l.clock, l.reset, l.reset);
+  probe.declare("probe.", l.clock, l.reset, l.reset, true);
   l.bindings.erase("probe.pending");
   const auto words = p.serial_words;
   const auto ready = l.in("word", "ready", 1);
@@ -548,7 +569,8 @@ Result<NodeHardware> lower_error_sender(const ErrorLoggerPlan &p, unsigned targe
            : name == "address"         ? r.address
            : name == "class"           ? r.error_class
            : name == "user_flags"      ? r.user
-                                       : r.audit;
+           : name == "audit_flags"     ? r.audit
+                                       : r.probe_overflow;
   };
   const auto fields = error_record_layout(p).fields;
   auto whole = l.fit(value_of(fields.front().name), fields.front().width);
@@ -567,7 +589,7 @@ Result<NodeHardware> lower_error_sender(const ErrorLoggerPlan &p, unsigned targe
   l.out("word", "valid", l.bind("sender.valid", probe.wanting));
   l.out("word", "data", l.bind("sender.word", word));
   l.out("word", "last", last);
-  probe.update("event", l.bind("sender.done", l.both(moved, last)));
+  probe.update_sender("event", l.bind("sender.done", l.both(moved, last)));
   return l.finish("nocloom_error_sender_" + p.name + "_" + std::to_string(target));
 }
 

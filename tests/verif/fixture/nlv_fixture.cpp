@@ -1452,6 +1452,19 @@ std::vector<Component> service_network(const Params &p) {
                                {"clear", "burst_service/csr/bank/field.record_held_clear"},
                                {"overflow_clear",
                                 "burst_service/csr/bank/field.record_overflow_clear"}})}});
+  // The first target's sender of a crossed log: its probe's take, drop and drop flag, and the
+  // record it offers to the crossing.
+  if (h.bindings.contains("observe/errors/sender0/probe.overflow")) {
+    const std::string sender = "observe/errors/sender0/";
+    probes.push_back({{"name", "sender"},
+                      {"kind", "record"},
+                      {"nets", Json::array({{"accepted", sender + "event.accepted"},
+                                            {"dropped", sender + "event.dropped"},
+                                            {"flag", sender + "probe.overflow"},
+                                            {"valid", sender + "sender.valid"},
+                                            {"done", sender + "sender.done"},
+                                            {"probe_lost", "observe/errors/logger.probe_lost"}})}});
+  }
   // The second logger of a chain.
   if (h.bindings.contains("observe/errors/logger1.valid"))
     probes.push_back({{"name", "record1"},

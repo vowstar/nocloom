@@ -437,6 +437,28 @@ CONFIGS.append(dict(
              **replace("logger.lost", op="BitAnd", args=[
                  {"select": {"binding": KEY + "logger.offered"}},
                  {"select": {"binding": KEY + "logger.valid"}}])),
+        # The sender's drops: never marked, marked but not counted at the logger, a mark that
+        # stays after its record, a drop in the cycle the kept record leaves, a mark one cycle
+        # late on the word, and a clear of record_overflow that wins over a marked record.
+        dict(id="probe_drop_unmarked", expect=("probe_drop_reported",),
+             **replace("sender0/probe.overflow", const=0)),
+        dict(id="probe_drop_ignored", expect=("probe_drop_reported",),
+             **replace("logger.probe_lost", const=0)),
+        dict(id="probe_drop_stays", expect=("probe_drop_once",), component="network",
+             op="set_next", at={"binding": KEY + "sender0/probe.overflow"},
+             **{"with": dict(op="BitOr", args=[
+                 {"self": True}, {"select": {"binding": KEY + "sender0/event.dropped"}}])}),
+        dict(id="probe_drop_on_leave", expect=("probe_race_trace",),
+             **replace("sender0/event.dropped", op="BitAnd", args=[
+                 {"select": {"binding": KEY + "sender0/event.event"}},
+                 {"select": {"binding": KEY + "sender0/sender.valid"}}])),
+        dict(id="probe_mark_late", expect=("probe_race_trace",),
+             **replace("sender0/probe.overflow", delay={"self": True})),
+        dict(id="probe_clear_wins", expect=("probe_clear_race",),
+             **replace("logger.probe_lost", op="BitAnd", args=[
+                 {"self": True},
+                 {"op": "BitNot", "args": [
+                     {"select": {"binding": BANK + "field.record_overflow_clear"}}]}])),
     ]))
 crossed_config = CONFIGS[-1]
 for width in (8, 16):
@@ -535,8 +557,9 @@ def run(work, args):
         plain = root / "plain"
         plain.mkdir()
         def observation(path, hierarchy):
-            # The nets of the first logger as LOG_<NET>, of the next in a chain as LOG1_<NET>.
-            prefix = dict(record="LOG_", record1="LOG1_")
+            # The nets of the first logger as LOG_<NET>, of the next in a chain as LOG1_<NET>,
+            # of a crossed log's first sender as SENDER_<NET>.
+            prefix = dict(record="LOG_", record1="LOG1_", sender="SENDER_")
             groups = json.loads(path.read_text())["network"]["groups"]
             return "".join(f"`define {prefix[group['name']]}{name.upper()} {hierarchy}.{net}\n"
                            for group in groups if group["name"] in prefix
