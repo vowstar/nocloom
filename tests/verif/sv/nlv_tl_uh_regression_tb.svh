@@ -4,7 +4,7 @@
   integer b_write=0, b_read=0, write_address=0, write_id=0;
   integer write_len=0, write_size=0, write_beat=0;
   integer r_write=0, r_read=0, read_beat=0;
-  integer b_ids[0:2047], r_ids[0:63], r_addresses[0:63], r_lengths[0:63];
+  integer b_ids[0:2047], r_ids[0:63], r_addresses[0:63], r_lengths[0:63], r_sizes[0:63];
   integer d_count[0:15], d_cycle[0:15], left[0:15];
   integer opcode[0:15], size[0:15], denied[0:15];
   reg busy[0:15];
@@ -12,7 +12,9 @@
   reg writing=0, hold_r=0, hold_w=0, hold_ar=0, hold_b=0;
   integer b_count=0, fail_b=-1;
   integer b_errors[0:2047];
-  reg [31:0] expected_word[0:15];
+  reg [31:0] expected_word[0:15], expected_lanes[0:15];
+  // The ARSIZE each AR must carry. Byte and halfword Gets expect 0 and 1.
+  integer read_size=2;
   reg [3:0] seen_strobe[0:2047];
   reg [31:0] read_word;
   integer address, lane;
@@ -30,7 +32,8 @@
           s_d_size!=size[s_d_source] || s_d_denied!=denied[s_d_source] ||
           s_d_param!=0 || s_d_corrupt!=(denied[s_d_source] && s_d_opcode==1))
         $fatal(1,"ASSERT_FAIL:UH.REGRESSION.D_IDENTITY source=%0d",s_d_source);
-      if(s_d_opcode==1 && s_d_data!=(s_d_denied ? 32'b0:expected_word[s_d_source]))
+      if(s_d_opcode==1 && (s_d_denied ? s_d_data!=0 :
+          ((s_d_data ^ expected_word[s_d_source]) & expected_lanes[s_d_source])!=0))
         $fatal(1,"ASSERT_FAIL:UH.REGRESSION.D_DATA");
       left[s_d_source]=left[s_d_source]-1;
       d_count[s_d_source]=d_count[s_d_source]+1;
@@ -70,8 +73,8 @@
         t_bvalid<=1; t_bid<=b_ids[b_read]; t_bresp<=b_errors[b_read]; b_read=b_read+1;
       end
       if(t_arvalid && t_arready) begin
-        if(t_arburst!=1 || t_arsize!=2) $fatal(1,"ASSERT_FAIL:UH.REGRESSION.AR");
-        r_ids[r_write]=t_arid; r_addresses[r_write]=t_araddr;
+        if(t_arburst!=1 || t_arsize!=read_size) $fatal(1,"ASSERT_FAIL:UH.REGRESSION.AR");
+        r_ids[r_write]=t_arid; r_addresses[r_write]=t_araddr; r_sizes[r_write]=t_arsize;
         r_lengths[r_write]=t_arlen; r_write=r_write+1; ar_count=ar_count+1;
       end
       if(t_rvalid && t_rready) begin
@@ -80,7 +83,7 @@
         else read_beat=read_beat+1;
       end
       if(!t_rvalid && r_read<r_write && !hold_r) begin
-        address=r_addresses[r_read]+4*read_beat; read_word=0;
+        address=(r_addresses[r_read] & ~3)+4*read_beat; read_word=0;
         for(lane=0;lane<4;lane=lane+1) read_word[lane*8+:8]=memory[address+lane];
         t_rvalid<=1; t_rid<=r_ids[r_read]; t_rdata<=read_word;
         t_rresp<=0; t_rlast<=read_beat==r_lengths[r_read];
@@ -91,6 +94,7 @@
     if(busy[source]) $fatal(1,"ASSERT_FAIL:UH.REGRESSION.SOURCE");
     busy[source]=1; opcode[source]=op; size[source]=sz;
     left[source]=beats; denied[source]=error; expected_word[source]=32'h11111111;
+    expected_lanes[source]=32'hffffffff;
   endtask
   task send_a(input integer op, sz, source, addr, mask, data);
     integer wait_cycles;

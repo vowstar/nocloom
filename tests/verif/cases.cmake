@@ -1205,6 +1205,15 @@ nocloom_verif_case(NAME verif_tilelink_uh_fairness_wrap LAYER rtl TIER focused T
     --extra ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_fairness_wrap.svh)
 set_tests_properties(verif_tilelink_uh_fairness_wrap PROPERTIES RESOURCE_LOCK tilelink)
 
+nocloom_verif_case(NAME verif_tilelink_uh_narrow LAYER rtl TIER focused TIMEOUT 300
+  FEATURES tilelink ci MEMORY_MB 1024 CONTRACTS TL.ACCESS
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh.py
+    --case ${NLV_CASES}/tilelink_uh.py --cli $<TARGET_FILE:nocloom_cli>
+    --maximum 4096 --slots 8
+    --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_regression_tb.svh
+    --extra ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_narrow.svh)
+set_tests_properties(verif_tilelink_uh_narrow PROPERTIES RESOURCE_LOCK tilelink)
+
 nocloom_verif_case(NAME verif_tilelink_uh_admission LAYER rtl TIER focused TIMEOUT 300
   FEATURES tilelink ci MEMORY_MB 1024 CONTRACTS TL.ACCESS
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh.py
