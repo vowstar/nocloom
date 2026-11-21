@@ -21,7 +21,7 @@ shared names in `transport.user_flags`, drive them in each initiator's
 `user_flags` and place them on each target with `user`.
 
 `transport.user_flags` declares named request bits. A driver selects an AMBA
-attribute, user port bit or constant, optionally inverted. AXI4, AXI3,
+attribute, user port bit or constant, optionally inverted. [Full AXI](protocols.md),
 AXI4-Lite and APB5 targets map flags into `user`.
 
 On AXI endpoints, `user_width` enables initiator AWUSER and ARUSER ports. A

@@ -129,7 +129,7 @@ limit.
 | `base`, `size` | Global byte interval, hexadecimal and padded to the address width |
 | `local_base` | Local target address corresponding to the global base |
 | `access` | Read/write intersection, or `none` for opposite one-direction endpoints |
-| `exclusive` | Network, target or no exclusive support for an AXI4 or AXI3 initiator. Other initiators have none |
+| `exclusive` | Network, target or no exclusive support for a [full AXI](protocols.md) initiator. Other initiators have none |
 | `default_target` | True for the selected default target's windows |
 | `when` | Selection condition, with `&` between selectors and `!` for false |
 | `flow` | Target flow, when the network has target flows |
@@ -178,14 +178,19 @@ Endpoint clocks and resets map to protocol clock and active-low reset signals.
 
 The component refers to Arm's public AMBA bus and matching RTL abstraction
 definitions, which the integrator must obtain separately. Bus definitions use
-`amba.com`: AXI4 and AXI4-Lite AMBA4, AXI3 and APB3 AMBA3, APB4 AMBA4, APB2
-AMBA2 and AHB-Lite AMBA3.
+the vendor `amba.com`. An abstraction has the bus name with the suffix `_rtl`.
 
-| Protocol | Bus definition version |
-| --- | --- |
-| AXI4, AXI4-Lite, APB4 | `r0p0_0` |
-| AXI3, APB3, AHB-Lite | `r2p0_0` |
-| APB2 | `r2p0_4` |
+| Protocol | Library | Bus name | Version |
+| --- | --- | --- | --- |
+| AXI5 | `AMBA5` | `AXI5` | `r0p0_0` |
+| APB5 | `AMBA5` | `APB5` | `r0p0_0` |
+| AXI4 | `AMBA4` | `AXI4` | `r0p0_0` |
+| AXI4-Lite | `AMBA4` | `AXI4-Lite` | `r0p0_0` |
+| APB4 | `AMBA4` | `APB4` | `r0p0_0` |
+| AXI3 | `AMBA3` | `AXI` | `r2p0_0` |
+| APB3 | `AMBA3` | `APB` | `r2p0_0` |
+| AHB-Lite, AHB5 | `AMBA3` | `AHBLite` | `r2p0_0` |
+| APB2 | `AMBA2` | `APB` | `r2p0_4` |
 
 Ports absent from an AMBA abstraction stay plain model ports. These include
 target HSEL and the target `hready` output, two-bit HRESP, timeout status, test,

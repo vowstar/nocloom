@@ -1,9 +1,10 @@
 # Protocols
 
-Byte lanes use little-endian ordering. The manuals use full AXI for AXI4 and
-AXI3, and Lite for AXI4-Lite.
+Byte lanes use little-endian ordering. The manuals use full AXI for AXI5, AXI4
+and AXI3, and Lite for AXI4-Lite. An `axi5` endpoint follows the `axi4` rules of
+these manuals. [AXI5 interfaces](axi5.md) gives its properties.
 
-Related manuals: [Wishbone](wishbone.md), [TileLink](tilelink.md),
+Related manuals: [AXI5](axi5.md), [Wishbone](wishbone.md), [TileLink](tilelink.md),
 [AHB-Lite and AHB5](ahb.md),
 [APB and AXI4-Lite targets](dedicated-targets.md),
 [Widths and AXI target interfaces](width-conversion.md),
@@ -15,6 +16,7 @@ Related manuals: [Wishbone](wishbone.md), [TileLink](tilelink.md),
 | --- | --- | --- |
 | `tl_ul` | Initiator or target | 32 |
 | `tl_uh` | Initiator or target | 32 |
+| `axi5` | Initiator or target with the properties of its `axi5` object | 32, 64, 128, 256, 512, 1024 |
 | `axi4` | Initiator or target | 32, 64, 128, 256, 512, 1024 |
 | `axi3` | Initiator or target | 32, 64, 128, 256, 512, 1024 |
 | `axi4_lite` | Initiator or target | 32, 64 |

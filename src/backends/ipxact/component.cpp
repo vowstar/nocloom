@@ -49,6 +49,21 @@ const BusType &bus_type(Protocol protocol, bool initiator) {
                {"ARLEN", 4},   {"ARSIZE", 3}, {"ARBURST", 2}, {"ARLOCK", 2},  {"ARCACHE", 4},
                {"RID", 0},     {"RLAST", 1},  {"AWUSER", 0},  {"WUSER", 0},   {"BUSER", 0},
                {"ARUSER", 0},  {"RUSER", 0}});
+  // AMBA 5 AXI5: the AXI4 signals and the AXI5 signals of the public abstraction definition.
+  L axi5 = axi;
+  axi5.insert(axi5.end(), {{"AWTRACE", 1},
+                           {"AWLOOP", 0},
+                           {"AWNSAID", 4},
+                           {"WPOISON", 0},
+                           {"WTRACE", 1},
+                           {"BTRACE", 1},
+                           {"BLOOP", 0},
+                           {"ARTRACE", 1},
+                           {"ARLOOP", 0},
+                           {"ARNSAID", 4},
+                           {"RPOISON", 0},
+                           {"RTRACE", 1},
+                           {"RLOOP", 0}});
   const L apb2 = {{"PADDR", 0},  {"PSELx", 1},  {"PENABLE", 1},
                   {"PWRITE", 1}, {"PRDATA", 0}, {"PWDATA", 0}};
   L apb3 = apb2;
@@ -64,6 +79,7 @@ const BusType &bus_type(Protocol protocol, bool initiator) {
   static const std::map<Protocol, BusType> types = {
       {Protocol::Axi4, {"AMBA4", "AXI4", "r0p0_0", "AXI4_rtl", "ACLK", "ARESETn", axi}},
       {Protocol::Axi3, {"AMBA3", "AXI", "r2p0_0", "AXI_rtl", "ACLK", "ARESETn", axi3}},
+      {Protocol::Axi5, {"AMBA5", "AXI5", "r0p0_0", "AXI5_rtl", "ACLK", "ARESETn", axi5}},
       {Protocol::Axi4Lite,
        {"AMBA4", "AXI4-Lite", "r0p0_0", "AXI4-Lite_rtl", "ACLK", "ARESETn", axi_lite}},
       {Protocol::Apb5, {"AMBA5", "APB5", "r0p0_0", "APB5_rtl", "PCLK", "PRESETn", apb5}},
@@ -150,7 +166,8 @@ struct Endpoint {
 // flow in AxID on its one set).
 bool port_sets(const Target &t) {
   const auto protocol = t.protocol.value_or(Protocol::Axi4);
-  return t.flows > 1 && protocol != Protocol::Axi4 && protocol != Protocol::Axi3;
+  return t.flows > 1 && protocol != Protocol::Axi4 && protocol != Protocol::Axi3 &&
+         protocol != Protocol::Axi5;
 }
 
 // The ports, windows and connected pairs the map records, in its order.

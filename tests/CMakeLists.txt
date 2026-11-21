@@ -331,6 +331,10 @@ foreach(case IN ITEMS import lean)
 endforeach()
 target_sources(nocloom_unit PRIVATE unit/width_adapter.cpp)
 target_sources(nocloom_unit PRIVATE unit/axi4_config.cpp unit/axi3.cpp)
+target_sources(nocloom_unit PRIVATE unit/axi5.cpp)
+add_test(NAME axi5_structure COMMAND nocloom_unit "[axi5]")
+set_tests_properties(axi5_structure PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
+  TIMEOUT 120 LABELS "unit;config;axi5;ci")
 # The shorthand pairs read tests/shorthand and examples from the source tree.
 target_sources(nocloom_unit PRIVATE unit/shorthand.cpp ${PROJECT_SOURCE_DIR}/cli/diff.cpp)
 target_include_directories(nocloom_unit PRIVATE ${PROJECT_SOURCE_DIR}/cli)

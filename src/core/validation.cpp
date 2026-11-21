@@ -66,6 +66,8 @@ bool valid_name(std::string_view name) {
 namespace nocloom {
 namespace {
 using detail::apb_initiator;
+using detail::axi4_port;
+using detail::axi_response_protocol;
 using detail::connects;
 using detail::exclusive_keys;
 using detail::full_axi;
@@ -1057,6 +1059,185 @@ void check_ahb5(Checks &c, std::optional<Protocol> protocol,
       "AHB5 requires hprot_width 4 or 7 and hmaster_width 0..32, without exclusive or user "
       "signals");
 }
+// A property of the axi5 object that the network refuses when enabled: its field, the property
+// names of IHI 0022 Issue L table B2.4 it declares, and whether a value enables it.
+struct Axi5Refusal {
+  const char *field, *properties;
+  bool (*enabled)(const Axi5Properties &);
+};
+constexpr Axi5Refusal axi5_refusals[] = {
+    {"wakeup", "Wakeup_Signals", [](const Axi5Properties &p) { return p.wakeup; }},
+    {"qos_accept", "QoS_Accept", [](const Axi5Properties &p) { return p.qos_accept; }},
+    {"busy", "Busy_Support", [](const Axi5Properties &p) { return p.busy; }},
+    {"read_chunking", "Read_Data_Chunking, RCHUNKNUM_WIDTH and RCHUNKSTRB_WIDTH",
+     [](const Axi5Properties &p) { return p.read_chunking; }},
+    {"mte", "MTE_Support", [](const Axi5Properties &p) { return p.mte != Axi5Tagging::None; }},
+    {"interface_check", "Check_Type",
+     [](const Axi5Properties &p) { return p.interface_check != Axi5InterfaceCheck::None; }},
+    {"atomic", "Atomic_Transactions", [](const Axi5Properties &p) { return p.atomic; }},
+    {"untranslated",
+     "Untranslated_Transactions, SID_WIDTH, SSID_WIDTH, SECSID_WIDTH, MMUFLOW_Present and "
+     "UnstashTranslation_Transaction",
+     [](const Axi5Properties &p) { return p.untranslated != Axi5Untranslated::None; }},
+    {"rme", "RME_Support", [](const Axi5Properties &p) { return p.rme; }},
+    {"gdi", "GDI_Support", [](const Axi5Properties &p) { return p.gdi; }},
+    {"mec", "MEC_Support and MECID_WIDTH", [](const Axi5Properties &p) { return p.mec; }},
+    {"cache_stash", "Cache_Stash_Transactions, STASHNID_Present and STASHLPID_Present",
+     [](const Axi5Properties &p) { return p.cache_stash != Axi5CacheStash::None; }},
+    {"cmo_on_read", "CMO_On_Read", [](const Axi5Properties &p) { return p.cmo_on_read; }},
+    {"cmo_on_write", "CMO_On_Write and AWCMO_WIDTH",
+     [](const Axi5Properties &p) { return p.cmo_on_write; }},
+    {"write_plus_cmo", "Write_Plus_CMO", [](const Axi5Properties &p) { return p.write_plus_cmo; }},
+    {"persist_cmo", "Persist_CMO", [](const Axi5Properties &p) { return p.persist_cmo; }},
+    {"storage_cmo", "Storage_CMO", [](const Axi5Properties &p) { return p.storage_cmo; }},
+    {"prefetch", "Prefetch_Transaction", [](const Axi5Properties &p) { return p.prefetch; }},
+    {"write_zero", "WriteZero_Transaction", [](const Axi5Properties &p) { return p.write_zero; }},
+    {"write_deferrable", "WriteDeferrable_Transaction",
+     [](const Axi5Properties &p) { return p.write_deferrable; }},
+    {"write_no_snoop_full", "WriteNoSnoopFull_Transaction",
+     [](const Axi5Properties &p) { return p.write_no_snoop_full; }},
+    {"invalidate_hint", "InvalidateHint_Transaction",
+     [](const Axi5Properties &p) { return p.invalidate_hint; }},
+    {"deallocation", "DeAllocation_Transactions",
+     [](const Axi5Properties &p) { return p.deallocation; }},
+    {"shareable_cache", "Shareable_Cache_Support",
+     [](const Axi5Properties &p) { return p.shareable_cache; }},
+    {"dvm", "DVM_Message_Support, DVM_v8, DVM_v8.1, DVM_v8.4 and DVM_v9.2",
+     [](const Axi5Properties &p) { return p.dvm != Axi5Dvm::None; }},
+    {"coherency_connection", "Coherency_Connection_Signals",
+     [](const Axi5Properties &p) { return p.coherency_connection; }},
+    {"flow_control",
+     "AXI_Transport, Credit_Control, Num_RP_AR, Num_RP_AWW, Shared_Credits_AR, Shared_Credits_AW "
+     "and Shared_Credits_W",
+     [](const Axi5Properties &p) { return p.flow_control != Axi5FlowControl::Ready; }},
+    {"act", "ACT_Support, ACT_R_WIDTH and ACT_W_WIDTH",
+     [](const Axi5Properties &p) { return p.act; }},
+    {"shareable", "Shareable_Transactions",
+     [](const Axi5Properties &p) { return p.shareable.value_or(false); }},
+    {"write_snoop_width", "AWSNOOP_WIDTH",
+     [](const Axi5Properties &p) { return p.write_snoop_width.value_or(0) != 0; }},
+    {"read_snoop_width", "ARSNOOP_WIDTH",
+     [](const Axi5Properties &p) { return p.read_snoop_width.value_or(0) != 0; }},
+    {"cache_line_bytes", "Cache_Line_Size other than 64 bytes",
+     [](const Axi5Properties &p) { return p.cache_line_bytes != 64; }},
+    {"pas_width", "PAS_WIDTH above 1, which needs RME_Support or GDI_Support",
+     [](const Axi5Properties &p) { return p.pas_width > 1; }}};
+// The axi5 object of an endpoint (docs/axi5.md). Field checks that span connected pairs are in
+// check_axi5_pairs.
+void check_axi5(Checks &c, std::optional<Protocol> protocol,
+                const std::optional<Axi5Properties> &properties, const std::string &field,
+                bool initiator) {
+  if (!properties)
+    return;
+  const auto at = field + ".axi5";
+  if (protocol != Protocol::Axi5) {
+    c("NCL_AXI5_PROPERTIES", at, "The axi5 object requires protocol: axi5");
+    return;
+  }
+  const auto &p = *properties;
+  const auto pow2 = [](unsigned value, unsigned low, unsigned high) {
+    return std::has_single_bit(value) && value >= low && value <= high;
+  };
+  for (const auto &[key, bad, message] :
+       {std::tuple{"subsystem_id_width", p.subsystem_id_width > 8,
+                   "subsystem_id_width is 0 to 8 bits"},
+        {"subsystem_id", p.subsystem_id > 255U, "subsystem_id is 0 to 255"},
+        {"write_loop_width", p.write_loop_width > 8, "write_loop_width is 0 to 8 bits"},
+        {"read_loop_width", p.read_loop_width > 8, "read_loop_width is 0 to 8 bits"},
+        {"pas_width", p.pas_width > 3, "pas_width is 0 to 3 bits"},
+        {"write_snoop_width",
+         p.write_snoop_width && *p.write_snoop_width != 0 && *p.write_snoop_width != 4 &&
+             *p.write_snoop_width != 5,
+         "write_snoop_width is 0, 4 or 5 bits"},
+        {"read_snoop_width",
+         p.read_snoop_width && *p.read_snoop_width != 0 && *p.read_snoop_width != 4,
+         "read_snoop_width is 0 or 4 bits"},
+        {"max_transaction_bytes", !pow2(p.max_transaction_bytes, 64, 4096),
+         "max_transaction_bytes is a power of two from 64 to 4096"},
+        {"cache_line_bytes", !pow2(p.cache_line_bytes, 16, 2048),
+         "cache_line_bytes is a power of two from 16 to 2048"}})
+    if (bad)
+      c("NCL_AXI5_PROPERTIES", at + "." + key, message);
+  // IHI 0022 Issue L A4.5.1: AxPROT excludes the AxPRIV, AxINST and AxPAS signals.
+  if (p.prot && (p.priv_inst || p.pas_width))
+    c("NCL_AXI5_PROPERTIES", at + ".prot",
+      "prot: true excludes priv_inst and pas_width. Set prot: false to use them");
+  for (const auto &refusal : axi5_refusals)
+    if (refusal.enabled(p) && !(refusal.field == std::string_view("pas_width") && p.pas_width > 3))
+      c("NCL_AXI5_UNSUPPORTED", at + "." + refusal.field,
+        std::string("The network does not support ") + refusal.properties);
+  // A target port issues the bursts that the network forms from packet splitting and merging.
+  if (!initiator)
+    for (const auto &[key, set, property] :
+         {std::tuple{"regular_only", p.regular_only, "Regular_Transactions_Only"},
+          {"wrap_line_only", p.wrap_line_only, "Wrap_CLS_Modifiable"},
+          {"no_fixed_bursts", p.no_fixed_bursts, "Fixed_Burst_Disable"}})
+      if (set)
+        c("NCL_AXI5_UNSUPPORTED", at + "." + key,
+          std::string("A target port does not support ") + property +
+              ". The network issues bursts of every shape");
+  // Properties that later network functions carry.
+  for (const auto &[key, set, property] :
+       {std::tuple{"mpam", p.mpam != Axi5Mpam::None, "MPAM_Support"},
+        {"subsystem_id_width", p.subsystem_id_width != 0, "SUBSYSID_WIDTH"},
+        {"subsystem_id", p.subsystem_id.has_value(), "SUBSYSID_WIDTH"},
+        {"nsaid", p.nsaid, "NSAccess_Identifiers"},
+        {"pbha", p.pbha, "PBHA_Support"},
+        {"trace", p.trace, "Trace_Signals"},
+        {"poison", p.poison, "Poison"},
+        {"unique_id", p.unique_id, "Unique_ID_Support"},
+        {"write_loop_width", p.write_loop_width != 0, "Loopback_Signals"},
+        {"read_loop_width", p.read_loop_width != 0, "Loopback_Signals"},
+        {"prot", !p.prot, "PROT_Present false"},
+        {"priv_inst", p.priv_inst, "INSTPRIV_Present"},
+        {"pas_width", p.pas_width == 1, "PAS_WIDTH"},
+        {"cache", !p.cache, "CACHE_Present false"},
+        {"max_transaction_bytes", !initiator && p.max_transaction_bytes != 4096,
+         "Max_Transaction_Bytes below 4096 at a target"}})
+    if (set)
+      c("NCL_AXI5_UNSUPPORTED", at + "." + key,
+        std::string("The network does not support ") + property);
+}
+// The pair rules of the axi5 constraint properties (docs/axi5.md#constraints).
+void check_axi5_pairs(Checks &c) {
+  const auto &d = c.d;
+  const auto declared = [](const auto &endpoint, bool Axi5Properties::*member) {
+    return endpoint.protocol == Protocol::Axi5 && endpoint.axi5 && (*endpoint.axi5).*member;
+  };
+  // A mapping below one 64-byte cache line leaves a decode miss inside a line.
+  const auto small = std::ranges::find_if(d.targets, [](const Target &t) {
+    return std::ranges::any_of(t.mappings, [](const AddressMapping &m) { return m.size < 64; });
+  });
+  for (std::size_t i = 0; i < d.initiators.size(); ++i) {
+    const auto &s = d.initiators[i];
+    if (!declared(s, &Axi5Properties::consistent_decerr) || s.slverr_only.value_or(false))
+      continue;
+    const auto at = "initiators[" + std::to_string(i) + "].axi5.consistent_decerr";
+    if (small != d.targets.end())
+      c("NCL_AXI5_PROPERTIES", at,
+        "Consistent_DECERR needs mappings of at least 64 bytes. Target " + small->name +
+            " has a smaller one. slverr_only: true also meets the property");
+    for (const auto &t : d.targets)
+      if (connects(d, s.name, t.name) && axi_response_protocol(t.protocol) &&
+          !declared(t, &Axi5Properties::consistent_decerr))
+        c("NCL_AXI5_PROPERTIES", at,
+          "Target " + t.name +
+              " can return DECERR on part of a cache line. Declare consistent_decerr on an axi5 "
+              "target, or set slverr_only: true");
+  }
+  for (std::size_t k = 0; k < d.targets.size(); ++k) {
+    const auto &t = d.targets[k];
+    if (!declared(t, &Axi5Properties::device_normal_independence))
+      continue;
+    for (const auto &s : d.initiators)
+      if (connects(d, s.name, t.name) && !declared(s, &Axi5Properties::device_normal_independence))
+        c("NCL_AXI5_PROPERTIES",
+          "targets[" + std::to_string(k) + "].axi5.device_normal_independence",
+          "Device_Normal_Independence at a target needs the same declaration at each initiator "
+          "that reaches it. Initiator " +
+              s.name + " does not declare it");
+  }
+}
 template <class Endpoint>
 void check_wishbone(Checks &c, const Endpoint &e, const std::string &field, bool source) {
   const bool wb = e.protocol == Protocol::Wishbone;
@@ -1110,6 +1291,7 @@ void check_initiator_face(Checks &c, const Initiator &initiator, const std::stri
   check_wishbone(c, initiator, field, true);
   check_wishbone_source(c, initiator, field);
   check_ahb5(c, initiator.protocol, initiator.ahb5, field);
+  check_axi5(c, initiator.protocol, initiator.axi5, field, true);
   if (initiator.protocol) {
     if (*initiator.protocol == Protocol::Apb2)
       c("NCL_UNSUPPORTED_PROTOCOL", field + ".protocol",
@@ -1396,9 +1578,16 @@ void check_target_face(Checks &c, const Target &t, const std::string &field) {
   });
   const bool axi = full_axi(protocol);
   const bool bad_id = !axi ? t.id_width.has_value() : t.id_width > 31U;
+  // The text names the protocol of the rejected port.
+  const std::string name = protocol == Protocol::Axi5   ? "AXI5"
+                           : protocol == Protocol::Axi3 ? "AXI3"
+                                                        : "AXI4";
   if (bad_id || (!axi ? t.len_width.has_value() : t.len_width.value_or(4) - 4 > 4))
     c("NCL_ENDPOINT_TRANSACTION_WIDTH", field + (bad_id ? ".id_width" : ".len_width"),
-      "Only AXI4 targets have ID ports, 0 to 31 bits, and length ports, 4 to 8 bits");
+      !axi     ? "Only full AXI targets have ID ports, 0 to 31 bits, and length ports, 4 to 8 bits"
+      : bad_id ? name + " target ID ports have 0 to 31 bits"
+      : protocol == Protocol::Axi3 ? "AXI3 targets have 4-bit length ports"
+                                   : name + " target length ports have 4 to 8 bits");
   // An AXI3 AxLEN has four bits.
   else if (protocol == Protocol::Axi3 && t.len_width.value_or(4) != 4)
     c("NCL_ENDPOINT_TRANSACTION_WIDTH", field + ".len_width",
@@ -1453,6 +1642,7 @@ void check_target_options(Checks &c, const Target &t, const std::string &field) 
   if (t.protocol == Protocol::Wishbone && t.flows != 1)
     c("NCL_WISHBONE_OPTION", field + ".flows", "Wishbone targets require one flow");
   check_ahb5(c, t.protocol, t.ahb5, field);
+  check_axi5(c, t.protocol, t.axi5, field, false);
   if (t.protocol == Protocol::Ahb5 && t.hresp_width.value_or(1) != 1)
     c("NCL_TARGET_AHB_HRESP", field + ".hresp_width", "AHB5 requires one-bit HRESP");
   const auto &caps = detail::protocol_caps(t.protocol.value_or(Protocol::Axi4));
@@ -1521,7 +1711,7 @@ void check_target_exclusive(Checks &c, const Target &t, const std::string &field
   else if (mode == ExclusiveAccess::Target &&
            !detail::protocol_caps(t.protocol.value_or(Protocol::Axi4)).lock)
     c("NCL_TARGET_EXCLUSIVE", at,
-      "Only full AXI4 or AXI3 targets have AxLOCK. APB, AHB, AXI4-Lite and Wishbone targets use "
+      "Only AXI5, AXI4 and AXI3 targets have AxLOCK. APB, AHB, AXI4-Lite and Wishbone targets use "
       "exclusive: network");
   else if (t.access == Access::ReadOnly)
     c("NCL_TARGET_EXCLUSIVE", at, "A read-only target supports no exclusive access (AXI A10.2.2)");
@@ -1531,8 +1721,8 @@ void check_target_exclusive(Checks &c, const Target &t, const std::string &field
       "read (AXI A7.2)");
   else if (keys == 0)
     c("NCL_TARGET_EXCLUSIVE", at,
-      "No read-write AXI4 or AXI3 initiator reaches this target, so no exclusive access can "
-      "arrive");
+      "No read-write AXI5, AXI4 or AXI3 initiator reaches this target, so no exclusive access "
+      "can arrive");
   else if (mode == ExclusiveAccess::Target && t.exclusive_owner_flags.empty())
     c("NCL_TARGET_EXCLUSIVE", field + ".exclusive_owner_flags",
       "exclusive: target requires exclusive_owner_flags to identify the owner");
@@ -1586,7 +1776,7 @@ void check_mapping(Checks &c, const Target &t, const AddressMapping &m, const st
   // A wide word decodes as one beat, and an AXI4 packet never crosses a mapping edge: the
   // mapping holds one word.
   else if ((detail::ahb_protocol(t.protocol) || t.protocol == Protocol::Axi4Lite ||
-            t.protocol == Protocol::Axi4) &&
+            axi4_port(t.protocol)) &&
            m.size < t.data_width.value_or(c.network_bits) / 8)
     c("NCL_ADDRESS_RANGE", field,
       "An AHB, AXI4-Lite or AXI4 target mapping must hold at least one target data word");
@@ -1631,7 +1821,7 @@ bool interleave_size_network(const Definition &d, const Target &t) {
 bool interleave_size_source(const Definition &d, const Initiator &i, const Target &t,
                             unsigned width) {
   const auto &first = d.initiators.front();
-  return connects(d, i.name, t.name) && i.protocol == Protocol::Axi4 &&
+  return connects(d, i.name, t.name) && i.protocol && axi4_port(i.protocol) &&
          (width == 32 || width == 64) && i.data_width == first.data_width && i.len_width == 8U &&
          i.id_width.value_or(0) <= 4 && i.max_outstanding.value_or(1) <= 4 &&
          i.max_outstanding == first.max_outstanding && !i.access && !i.narrow_bursts &&
@@ -1647,8 +1837,8 @@ void check_read_interleave(Checks &c, const Target &t, const std::string &field)
   const auto reject = [&](const std::string &message) {
     c("NCL_TARGET_READ_INTERLEAVE", field + option, message);
   };
-  if (t.protocol.value_or(Protocol::Axi4) != Protocol::Axi4)
-    return reject("Only AXI4 targets set read_interleaving_disabled or read_block_words");
+  if (!axi4_port(t.protocol))
+    return reject("Only AXI4 and AXI5 targets set read_interleaving_disabled or read_block_words");
   const auto word = t.data_width.value_or(c.network_bits) / 8;
   if (word != 4 && word != 8)
     return reject("A read interleaving option needs a 32- or 64-bit target");
@@ -1796,7 +1986,7 @@ void check_user_flags(Checks &c) {
         "Duplicate user flag name");
   }
   const auto axi = [](std::optional<Protocol> p) {
-    return p.value_or(Protocol::Axi4) == Protocol::Axi4 || p == Protocol::Axi4Lite;
+    return axi4_port(p) || p == Protocol::Axi4Lite;
   };
   for (std::size_t i = 0; i < c.d.initiators.size(); ++i) {
     const auto &s = c.d.initiators[i];
@@ -1902,6 +2092,7 @@ Result<PlanData> plan_definition(const Definition &d, const ValidationOptions &l
   check_initiators(c);
   check_modes(c);
   check_targets(c);
+  check_axi5_pairs(c);
   check_user_flags(c);
   if (c.errors.empty())
     check_connected_mappings(d, c);

@@ -66,6 +66,119 @@ Ahb5Properties ahb5_properties(Reader &r, const YAML::Node &node, const std::str
       *value = r.integer(node[key], path + "." + key);
   return out;
 }
+// One enumerated field of the axi5 object: its key, member and value names in enum order.
+template <class Enum> struct Axi5Choice {
+  const char *key = nullptr;
+  Enum Axi5Properties::*member = nullptr;
+  std::vector<const char *> names;
+};
+template <class Enum>
+void axi5_choice(Reader &r, const YAML::Node &node, const std::string &path,
+                 const Axi5Choice<Enum> &choice, Axi5Properties &out) {
+  if (!node[choice.key])
+    return;
+  const auto at = path + "." + choice.key;
+  const auto value = r.field(node, choice.key, at);
+  const auto name = r.string(value, at);
+  const auto found = std::ranges::find(choice.names, name);
+  if (found == choice.names.end()) {
+    std::string list;
+    for (std::size_t k = 0; k < choice.names.size(); ++k)
+      list += std::string(k == 0                         ? ""
+                          : k + 1 == choice.names.size() ? " or "
+                                                         : ", ") +
+              choice.names[k];
+    r.fail("NCL_AXI5_PROPERTIES", at, "Expected " + list, value.Mark());
+  }
+  out.*choice.member = static_cast<Enum>(found - choice.names.begin());
+}
+Axi5Properties axi5_properties(Reader &r, const YAML::Node &node, const std::string &path) {
+  using P = Axi5Properties;
+  static const std::vector<std::pair<const char *, bool P::*>> flags{
+      {"nsaid", &P::nsaid},
+      {"pbha", &P::pbha},
+      {"trace", &P::trace},
+      {"poison", &P::poison},
+      {"unique_id", &P::unique_id},
+      {"prot", &P::prot},
+      {"priv_inst", &P::priv_inst},
+      {"cache", &P::cache},
+      {"consistent_decerr", &P::consistent_decerr},
+      {"regular_only", &P::regular_only},
+      {"wrap_line_only", &P::wrap_line_only},
+      {"no_fixed_bursts", &P::no_fixed_bursts},
+      {"device_normal_independence", &P::device_normal_independence},
+      {"wakeup", &P::wakeup},
+      {"qos_accept", &P::qos_accept},
+      {"busy", &P::busy},
+      {"read_chunking", &P::read_chunking},
+      {"atomic", &P::atomic},
+      {"rme", &P::rme},
+      {"gdi", &P::gdi},
+      {"mec", &P::mec},
+      {"cmo_on_read", &P::cmo_on_read},
+      {"cmo_on_write", &P::cmo_on_write},
+      {"write_plus_cmo", &P::write_plus_cmo},
+      {"persist_cmo", &P::persist_cmo},
+      {"storage_cmo", &P::storage_cmo},
+      {"prefetch", &P::prefetch},
+      {"write_zero", &P::write_zero},
+      {"write_deferrable", &P::write_deferrable},
+      {"write_no_snoop_full", &P::write_no_snoop_full},
+      {"invalidate_hint", &P::invalidate_hint},
+      {"deallocation", &P::deallocation},
+      {"shareable_cache", &P::shareable_cache},
+      {"coherency_connection", &P::coherency_connection},
+      {"act", &P::act}};
+  static const std::vector<std::pair<const char *, unsigned P::*>> numbers{
+      {"subsystem_id_width", &P::subsystem_id_width},
+      {"write_loop_width", &P::write_loop_width},
+      {"read_loop_width", &P::read_loop_width},
+      {"pas_width", &P::pas_width},
+      {"cache_line_bytes", &P::cache_line_bytes},
+      {"max_transaction_bytes", &P::max_transaction_bytes}};
+  static const std::vector<std::pair<const char *, std::optional<unsigned> P::*>> optional_numbers{
+      {"subsystem_id", &P::subsystem_id},
+      {"write_snoop_width", &P::write_snoop_width},
+      {"read_snoop_width", &P::read_snoop_width}};
+  static const std::vector<std::string_view> keys = [] {
+    std::vector<std::string_view> all{"mpam",        "mte", "interface_check", "untranslated",
+                                      "cache_stash", "dvm", "flow_control",    "shareable"};
+    for (const auto &[key, member] : flags)
+      all.emplace_back(key);
+    for (const auto &[key, member] : numbers)
+      all.emplace_back(key);
+    for (const auto &[key, member] : optional_numbers)
+      all.emplace_back(key);
+    return all;
+  }();
+  r.object(node, path, std::span<const std::string_view>(keys));
+  Axi5Properties out;
+  for (const auto &[key, member] : flags)
+    if (node[key])
+      out.*member = r.boolean(node[key], path + "." + key);
+  for (const auto &[key, member] : numbers)
+    if (node[key])
+      out.*member = r.integer(node[key], path + "." + key);
+  for (const auto &[key, member] : optional_numbers)
+    if (node[key])
+      out.*member = r.integer(node[key], path + "." + key);
+  if (node["shareable"])
+    out.shareable = r.boolean(node["shareable"], path + ".shareable");
+  axi5_choice<Axi5Mpam>(r, node, path, {"mpam", &P::mpam, {"none", "partid_9", "partid_12"}}, out);
+  axi5_choice<Axi5Tagging>(r, node, path,
+                           {"mte", &P::mte, {"none", "basic", "simplified", "standard"}}, out);
+  axi5_choice<Axi5InterfaceCheck>(
+      r, node, path, {"interface_check", &P::interface_check, {"none", "data", "all"}}, out);
+  axi5_choice<Axi5Untranslated>(
+      r, node, path, {"untranslated", &P::untranslated, {"none", "v1", "v2", "v3", "v4"}}, out);
+  axi5_choice<Axi5CacheStash>(r, node, path,
+                              {"cache_stash", &P::cache_stash, {"none", "basic", "full"}}, out);
+  axi5_choice<Axi5Dvm>(r, node, path, {"dvm", &P::dvm, {"none", "receiver"}}, out);
+  axi5_choice<Axi5FlowControl>(r, node, path,
+                               {"flow_control", &P::flow_control, {"ready", "credited"}}, out);
+  return out;
+}
 std::optional<EndpointClockGates> endpoint_gating(Reader &r, const YAML::Node &node,
                                                   const std::string &path) {
   if (!node["clock_gating"])
@@ -102,7 +215,8 @@ TargetAttributes target_attributes(Reader &r, const YAML::Node &node, const std:
   r.object(node, path, {"preset", "read_cache", "write_cache", "prot", "hprot"});
   auto result = node["preset"] ? preset(r.field(node, "preset", path + ".preset"), path + ".preset")
                                : TargetAttributes::zero();
-  const bool axi = protocol == Protocol::Axi4 || protocol == Protocol::Axi3;
+  const bool axi =
+      protocol == Protocol::Axi4 || protocol == Protocol::Axi3 || protocol == Protocol::Axi5;
   const bool prot = axi || protocol == Protocol::Axi4Lite ||
                     (protocol == Protocol::Apb4 || protocol == Protocol::Apb5);
   auto bits = [&](const char *key, bool allowed, auto &array) {
@@ -314,6 +428,14 @@ Protocol endpoint_protocol(Reader &r, const YAML::Node &node, const std::string 
   const auto &names = nocloom::detail::protocol_names;
   const auto *found = std::find_if(std::begin(names), std::end(names),
                                    [&](const auto &p) { return name == p.name; });
+  // Other AXI5 interface classes of IHI 0022 Issue L, B2.1.
+  static const std::map<std::string, std::string> classes{{"axi5_lite", "AXI5-Lite"},
+                                                          {"ace5_lite", "ACE5-Lite"},
+                                                          {"ace5_lite_dvm", "ACE5-LiteDVM"},
+                                                          {"ace5_lite_acp", "ACE5-LiteACP"}};
+  if (const auto it = classes.find(name); found == std::end(names) && it != classes.end())
+    r.fail("NCL_UNSUPPORTED_PROTOCOL", path,
+           "The " + it->second + " interface class is not supported. Use axi5", value.Mark());
   if (found == std::end(names))
     r.fail("NCL_UNSUPPORTED_PROTOCOL", path,
            (initiator ? "Initiators support " : "Targets support ") +
@@ -979,6 +1101,8 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
       wishbone_fields(r, node, path, d.initiators.back());
       if (node["ahb5"])
         d.initiators.back().ahb5 = ahb5_properties(r, node["ahb5"], path + ".ahb5");
+      if (node["axi5"])
+        d.initiators.back().axi5 = axi5_properties(r, node["axi5"], path + ".axi5");
       if (node["address_width"])
         d.initiators.back().address_width = r.integer(
             r.field(node, "address_width", path + ".address_width"), path + ".address_width");
@@ -1135,6 +1259,8 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
       wishbone_fields(r, node, path, d.targets.back());
       if (node["ahb5"])
         d.targets.back().ahb5 = ahb5_properties(r, node["ahb5"], path + ".ahb5");
+      if (node["axi5"])
+        d.targets.back().axi5 = axi5_properties(r, node["axi5"], path + ".axi5");
       if (node["address_width"])
         d.targets.back().address_width = r.integer(
             r.field(node, "address_width", path + ".address_width"), path + ".address_width");

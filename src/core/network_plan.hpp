@@ -80,6 +80,8 @@ struct SourcePlan {
   Protocol protocol = Protocol::Axi4;
   std::optional<Protocol> apb;
   bool ahb = false, axi3 = false, ahb5 = false;
+  // The properties of an AXI5 initiator, an AXI4 source behind AXI5 ports.
+  std::optional<Axi5Properties> axi5;
   unsigned hmaster_bits = 0, hprot_bits = 4;
   bool hnonsec = false;
   unsigned apb_bits = 32, address_bits = 32, engine_bits = 32;
@@ -152,6 +154,8 @@ struct TargetPlan {
   bool wishbone_burst_tags = false;
   Protocol protocol = Protocol::Axi4;
   bool axi3 = false, ahb5 = false;
+  // The properties of an AXI5 target, an AXI4 target behind AXI5 ports.
+  std::optional<Axi5Properties> axi5;
   unsigned hmaster_bits = 0, hprot_bits = 4;
   bool hnonsec = false;
   std::vector<MappingPlan> mappings; // in base order
@@ -739,8 +743,12 @@ bool connects(const Definition &d, const std::string &source, unsigned source_pa
 std::set<std::tuple<std::string, std::string, unsigned, unsigned>>
 unconnected_flows(const Definition &d);
 bool apb_initiator(const Initiator &initiator);
-// A full AXI burst port: AXI4, or AXI3, which the network carries as AXI4 (absent counts as AXI4).
+// A full AXI burst port: AXI4, AXI5 or AXI3, which the network carries as AXI4 (absent counts as
+// AXI4).
 bool full_axi(std::optional<Protocol> protocol);
+// An AXI4 or AXI5 port: AXI4 bursts and signals without the AXI3 differences (absent counts as
+// AXI4).
+bool axi4_port(std::optional<Protocol> protocol);
 bool axi_response_protocol(std::optional<Protocol> protocol);
 unsigned source_engine_width(const Initiator &initiator, unsigned fallback);
 // The network data width (transport.data_width, else the narrowest endpoint engine width, at most

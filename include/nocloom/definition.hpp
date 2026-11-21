@@ -17,6 +17,8 @@ namespace nocloom {
 // network); Apb2 is never a valid initiator protocol. Axi4 is the full AXI4 burst profile. AhbLite
 // is AMBA 3 AHB-Lite: a target outlet, or an initiator's subordinate port. Axi3 is an AMBA 3 AXI
 // port of an initiator or a target: AXI4 bursts of at most 16 beats with WID and a two-bit AxLOCK.
+// Axi5 is an AMBA AXI5 port (IHI 0022 Issue L) with AXI4 bursts and the properties of its
+// Axi5Properties object.
 enum class Protocol {
   Apb4,
   Axi4Lite,
@@ -29,7 +31,8 @@ enum class Protocol {
   Apb5,
   Wishbone,
   TlUl,
-  TlUh
+  TlUh,
+  Axi5
 };
 namespace detail {
 // Internal. The name of each protocol in a definition file, in the order of the manual. Every
@@ -40,12 +43,13 @@ struct ProtocolName {
   bool initiator;
 };
 inline constexpr ProtocolName protocol_names[] = {
-    {Protocol::Axi4, "axi4", true},          {Protocol::Axi3, "axi3", true},
-    {Protocol::Axi4Lite, "axi4_lite", true}, {Protocol::Apb5, "apb5", true},
-    {Protocol::Apb4, "apb4", true},          {Protocol::Apb3, "apb3", true},
-    {Protocol::Apb2, "apb2", false},         {Protocol::AhbLite, "ahb_lite", true},
-    {Protocol::Ahb5, "ahb5", true},          {Protocol::Wishbone, "wishbone", true},
-    {Protocol::TlUl, "tl_ul", true},         {Protocol::TlUh, "tl_uh", true}};
+    {Protocol::Axi5, "axi5", true},         {Protocol::Axi4, "axi4", true},
+    {Protocol::Axi3, "axi3", true},         {Protocol::Axi4Lite, "axi4_lite", true},
+    {Protocol::Apb5, "apb5", true},         {Protocol::Apb4, "apb4", true},
+    {Protocol::Apb3, "apb3", true},         {Protocol::Apb2, "apb2", false},
+    {Protocol::AhbLite, "ahb_lite", true},  {Protocol::Ahb5, "ahb5", true},
+    {Protocol::Wishbone, "wishbone", true}, {Protocol::TlUl, "tl_ul", true},
+    {Protocol::TlUh, "tl_uh", true}};
 // The protocol names that an initiator, or a target, accepts, as in "axi4, axi3 or apb4".
 inline std::string supported_protocols(bool initiator) {
   std::string list;
@@ -434,6 +438,53 @@ struct Ahb5Properties {
   unsigned hauser_width = 0, hwuser_width = 0, hruser_width = 0, hbuser_width = 0;
   bool operator==(const Ahb5Properties &) const = default;
 };
+// AXI5 interface properties of an axi5 endpoint (IHI 0022 Issue L, table B2.4). The defaults add
+// no port, and an axi5 endpoint without the object takes them. docs/axi5.md maps each field to its
+// property name and states which values the network accepts.
+enum class Axi5Mpam { None, PartId9, PartId12 };
+enum class Axi5Tagging { None, Basic, Simplified, Standard };
+enum class Axi5InterfaceCheck { None, Data, All };
+enum class Axi5Untranslated { None, V1, V2, V3, V4 };
+enum class Axi5CacheStash { None, Basic, Full };
+enum class Axi5Dvm { None, Receiver };
+enum class Axi5FlowControl { Ready, Credited };
+struct Axi5Properties {
+  // Request attributes that go with each packet to the target.
+  Axi5Mpam mpam = Axi5Mpam::None;
+  unsigned subsystem_id_width = 0; // 0..8
+  // The AxSUBSYSID value of an initiator without the port (subsystem_id_width 0), 0..255.
+  std::optional<unsigned> subsystem_id = std::nullopt;
+  bool nsaid = false, pbha = false, trace = false, poison = false;
+  // Values that an initiator stores and returns with the response.
+  bool unique_id = false;
+  unsigned write_loop_width = 0, read_loop_width = 0; // 0..8
+  // Protection and memory attribute ports.
+  bool prot = true, priv_inst = false, cache = true;
+  unsigned pas_width = 0; // 0..3
+  // Shareable transactions. Absent takes the value of the protocol: false and 0 on axi5.
+  std::optional<bool> shareable = std::nullopt;
+  std::optional<unsigned> write_snoop_width = std::nullopt, read_snoop_width = std::nullopt;
+  unsigned cache_line_bytes = 64;
+  // Constraints that the validator checks.
+  bool consistent_decerr = false, regular_only = false, wrap_line_only = false;
+  bool no_fixed_bursts = false, device_normal_independence = false;
+  unsigned max_transaction_bytes = 4096;
+  // Properties that the network supports only at the default value.
+  bool wakeup = false, qos_accept = false, busy = false, read_chunking = false, atomic = false;
+  Axi5Tagging mte = Axi5Tagging::None;
+  Axi5InterfaceCheck interface_check = Axi5InterfaceCheck::None;
+  Axi5Untranslated untranslated = Axi5Untranslated::None;
+  bool rme = false, gdi = false, mec = false;
+  Axi5CacheStash cache_stash = Axi5CacheStash::None;
+  bool cmo_on_read = false, cmo_on_write = false, write_plus_cmo = false;
+  bool persist_cmo = false, storage_cmo = false;
+  bool prefetch = false, write_zero = false, write_deferrable = false;
+  bool write_no_snoop_full = false, invalidate_hint = false, deallocation = false;
+  bool shareable_cache = false, coherency_connection = false, act = false;
+  Axi5Dvm dvm = Axi5Dvm::None;
+  Axi5FlowControl flow_control = Axi5FlowControl::Ready;
+  bool operator==(const Axi5Properties &) const = default;
+};
 struct Initiator {
   std::string name;
   std::string clock_domain;
@@ -524,6 +575,8 @@ struct Initiator {
   std::optional<std::string> default_class = std::nullopt;
   std::vector<IdRange> id_ranges = {};
   std::optional<Ahb5Properties> ahb5 = std::nullopt;
+  // Axi5 only. Absent takes the defaults.
+  std::optional<Axi5Properties> axi5 = std::nullopt;
   // By default, the zones have separate gates. An override requires a gated domain.
   std::optional<EndpointClockGates> clock_gating = std::nullopt;
   // Wishbone requires an explicit address unit. Only targets accept retry: error.
@@ -674,6 +727,8 @@ struct Target {
   // its own. A configuration writes it as error_logging.registers; protocol stays apb4 here.
   bool log_registers = false;
   std::optional<Ahb5Properties> ahb5 = std::nullopt;
+  // Axi5 only. Absent takes the defaults.
+  std::optional<Axi5Properties> axi5 = std::nullopt;
   // By default, the zones have separate gates. An override requires a gated domain.
   std::optional<EndpointClockGates> clock_gating = std::nullopt;
   // Wishbone requires an explicit address unit. Only targets accept retry: error.

@@ -6,8 +6,8 @@
 
 An open-source on-chip interconnect generator.
 
-NocLoom is a command-line tool (CLI) and a C++20 library. Define AXI4, AXI3,
-AXI4-Lite, APB, AHB-Lite, AHB5, Wishbone and TileLink networks in YAML or C++.
+NocLoom is a command-line tool (CLI) and a C++20 library. Define AXI5, AXI4,
+AXI3, AXI4-Lite, APB, AHB, Wishbone and TileLink networks in YAML or C++.
 NocLoom generates synthesizable Verilog-2001 with switches, protocol adapters,
 width converters and clock domain crossings (CDC).
 
@@ -73,7 +73,7 @@ requests to APB for `uart`.
 | `test_ports` | `test` is an input that opens the clock gates during testing. Domains have clock gates by default |
 | `id_width` | The example does not set it. The AXI ID ports then have the default width of 4 bits |
 | `len_width` | The width of the AxLEN ports. The default is 4 bits. A standard AXI4 port has 8 bits |
-| `attributes` | `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `ahb_lite` and `ahb5` targets must set it. With `amba`, the CACHE, PROT or HPROT outputs of the target follow the Arm® AMBA® attributes of the request. AHB5 requires `amba`. Other targets can use `zero` for constant outputs |
+| `attributes` | `axi5`, `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `ahb_lite` and `ahb5` targets must set it. With `amba`, the CACHE, PROT or HPROT outputs of the target follow the Arm® AMBA® attributes of the request. AHB5 requires `amba`. Other targets can use `zero` for constant outputs |
 
 Validate the definition. Then generate the output files into a new directory.
 
@@ -139,16 +139,16 @@ traffic crosses its boundary.
 
 | Area | Supported |
 | --- | --- |
-| Initiator protocols | `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `apb3`, `ahb_lite` (AHB-Lite), `ahb5`, `wishbone`, `tl_ul` and `tl_uh` |
-| Target protocols | `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `apb3`, `apb2`, `ahb_lite` (AHB-Lite), `ahb5`, `wishbone`, `tl_ul` and `tl_uh` |
+| Initiator protocols | `axi5`, `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `apb3`, `ahb_lite` (AHB-Lite), `ahb5`, `wishbone`, `tl_ul` and `tl_uh` |
+| Target protocols | `axi5`, `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `apb3`, `apb2`, `ahb_lite` (AHB-Lite), `ahb5`, `wishbone`, `tl_ul` and `tl_uh` |
 | [Wishbone cycles](docs/wishbone.md) | 32-bit classic and pipelined reads and writes, byte SEL, ERR, optional target RTY as error, explicit byte or word addresses. Classic targets can send registered feedback bursts with CTI and BTE. Classic initiators accept these ports and ignore their values |
 | [TileLink](docs/tilelink.md) | TL-UL initiators and targets: 32-bit single-beat Get, PutFullData and PutPartialData, with AccessAck and AccessAckData. TL-UL initiators can keep multiple sources in flight. TL-UH initiators and targets: multibeat Get and Put of up to 4096 bytes. Initiators complete Intent locally. Targets share 1 to 16 packet contexts between reads and writes |
-| AHB5 properties | HPROT is 4 bits by default or 7 bits. HNONSEC is optional and defaults to absent. HMASTER is 0 to 32 bits |
+| AXI5 and AHB5 properties | An `axi5` port has the AXI4 signals, and its `axi5` object declares its [AXI5 properties](docs/axi5.md). AHB5 HPROT is 4 bits by default or 7 bits. HNONSEC is optional and defaults to absent. HMASTER is 0 to 32 bits |
 | Endpoint count | 1 to 256 initiators, 1 to 256 targets |
 | Topology | One generated request switch and one generated response switch, or declared request and response graphs of 1 to 128 switches each |
-| Endpoint data width | AXI4, AXI3, AHB-Lite and AHB5: 32, 64, 128, 256, 512 or 1024 bits. AXI4-Lite: 32 or 64 bits. APB: 8, 16 or 32 bits. Wishbone and TileLink: 32 bits |
+| Endpoint data width | AXI5, AXI4, AXI3, AHB-Lite and AHB5: 32, 64, 128, 256, 512 or 1024 bits. AXI4-Lite: 32 or 64 bits. APB: 8, 16 or 32 bits. Wishbone and TileLink: 32 bits |
 | Network data width | 32 or 64 bits (`transport.data_width`). The default is the narrowest endpoint data width, where APB counts as 32 bits and the maximum is 64 bits. A 64-bit network accepts only 64-bit initiators, and no APB, Wishbone or TileLink endpoint or AHB target. Other definitions need a 32-bit network. Therefore, an initiator wider than 64 bits needs `transport.data_width: 32`, unless a 32-bit or APB endpoint already makes 32 bits the default |
-| Address width | 2 to 48 bits. AXI4, AXI3, AHB and Wishbone initiators need at least 12 bits. TL-UH initiators need at least `log2(max_transfer_bytes)` bits. APB initiators use at most 32 bits. APB, AHB, Wishbone, TileLink and AXI4-Lite targets use at most 32 bits |
+| Address width | 2 to 48 bits. AXI5, AXI4, AXI3, AHB and Wishbone initiators need at least 12 bits. TL-UH initiators need at least `log2(max_transfer_bytes)` bits. APB initiators use at most 32 bits. APB, AHB, Wishbone, TileLink and AXI4-Lite targets use at most 32 bits |
 | Clock domains | 1 to 64. More than one domain needs a `topology` whose switches name their clock domains. Clock domain crossings connect asynchronous clocks, or related clocks divided from one root |
 | Endpoint clock gating | Separate protocol and transport gates, one shared gate, or a transport gate with the protocol side on the domain clock |
 | Transactions | Several AXI transactions in flight, exclusive access, target timeouts and an error response on a decode miss |
@@ -164,7 +164,7 @@ See [Documentation](#documentation) for field definitions and limits.
 | Not supported | Detail |
 | --- | --- |
 | Wishbone options | No LOCK or user tags. Burst tags require classic cycles. A tagged target cannot use timeout. Pipelined targets accept one request at a time. See [Wishbone](docs/wishbone.md) |
-| Other protocols | For example AXI5, ACE and APB2 initiators |
+| Other protocols | For example ACE, ACE5-Lite, AXI5-Lite and APB2 initiators. AXI5 atomic transactions and the other rejected properties of the [AXI5 property table](docs/axi5.md#property-table) |
 | TileLink | TL-UL targets support one message in flight and one flow. TL-UH targets support 1 to 16 packet contexts and one flow. Coherent channels are unsupported. TL-UH initiators deny atomic operations, so they do not conform to TL-UH. See [TileLink](docs/tilelink.md#errors-and-progress) for progress rules |
 | AHB5 optional signals | HEXCL, HEXOKAY and HAUSER, HWUSER, HRUSER and HBUSER are unsupported. See [AHB5 properties](docs/ahb.md#ahb5-basic-properties) |
 | AHB arbitration and responses | No multi-manager arbitration or HSPLIT. RETRY and SPLIT on two-bit `ahb_lite` targets fail the packet |

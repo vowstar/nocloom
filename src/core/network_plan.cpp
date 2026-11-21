@@ -66,8 +66,11 @@ bool apb_initiator(const Initiator &initiator) {
   return initiator.protocol == Protocol::Apb5 || initiator.protocol == Protocol::Apb4 ||
          initiator.protocol == Protocol::Apb3;
 }
+bool axi4_port(std::optional<Protocol> protocol) {
+  return protocol.value_or(Protocol::Axi4) == Protocol::Axi4 || protocol == Protocol::Axi5;
+}
 bool full_axi(std::optional<Protocol> protocol) {
-  return protocol.value_or(Protocol::Axi4) == Protocol::Axi4 || protocol == Protocol::Axi3;
+  return axi4_port(protocol) || protocol == Protocol::Axi3;
 }
 bool axi_response_protocol(std::optional<Protocol> protocol) {
   return full_axi(protocol) || protocol == Protocol::Axi4Lite;
@@ -387,7 +390,9 @@ void source_engine(SourcePlan &s, const Initiator &initiator) {
     s.axi_len_bits = 4;
   }
   s.axi3 = initiator.protocol == Protocol::Axi3;
-  if (s.axi3)
+  if (initiator.protocol == Protocol::Axi5)
+    s.axi5 = initiator.axi5.value_or(Axi5Properties{});
+  if (s.axi3 || s.axi5)
     s.protocol = Protocol::Axi4;
   wishbone_engine(s);
 }
@@ -481,7 +486,9 @@ void target_engine(TargetPlan &x, const Target &t) {
     x.tl_max_transfer_bytes = t.max_transfer_bytes.value_or(64);
   }
   x.axi3 = t.protocol == Protocol::Axi3;
-  x.protocol = x.axi3 ? Protocol::Axi4 : t.protocol.value_or(Protocol::Axi4);
+  if (t.protocol == Protocol::Axi5)
+    x.axi5 = t.axi5.value_or(Axi5Properties{});
+  x.protocol = full_axi(t.protocol) ? Protocol::Axi4 : t.protocol.value_or(Protocol::Axi4);
   x.protocol = target_engine_protocol(x.protocol);
   x.ahb5 = t.protocol == Protocol::Ahb5;
   x.hmaster_bits = t.ahb5.value_or(Ahb5Properties{}).hmaster_width;
@@ -956,7 +963,7 @@ static Status plan_audit_flags(NetworkPlan &plan, const InternalNetwork &interna
     if (of == request.drivers.end() || of->second.size() != flags.size())
       return bad(source.name, "Every source drives every audit flag");
     const bool apb4 = source.external_protocol == Protocol::Apb4;
-    const bool axi4 = source.external_protocol == Protocol::Axi4;
+    const bool axi4 = axi4_port(source.external_protocol);
     if (!apb4 && !axi4)
       return bad(source.name, "Only APB4 and AXI4 sources drive audit flags");
     if (source.clamp)
@@ -991,7 +998,7 @@ static Status check_observed_target(const NetworkPlan &plan, const ErrorLogPlan 
     return Status::failure(error("NCL_UNSUPPORTED_TOPOLOGY", "error_logging." + t.name, message));
   };
   const bool apb4 = t.external_protocol == Protocol::Apb4 && t.apb_bits == 32 && !t.back_to_back;
-  const bool axi4 = t.external_protocol == Protocol::Axi4 && t.data_bits == 32;
+  const bool axi4 = axi4_port(t.external_protocol) && t.data_bits == 32;
   if ((!apb4 && !axi4) || (apb4 && t.outstanding != 1) || t.flows != 1 || t.read_only ||
       t.write_only || t.timeout || !t.pipes.empty() || t.exclusive.mode != ExclusiveAccess::None ||
       t.upsize)
@@ -1004,7 +1011,7 @@ static Status check_observed_target(const NetworkPlan &plan, const ErrorLogPlan 
   for (const auto &row : observed.sources) {
     const auto &source = plan.sources[row.source];
     const bool plain_apb = source.external_protocol == Protocol::Apb4 && source.apb_bits == 32;
-    const bool plain_axi = source.external_protocol == Protocol::Axi4 && source.engine_bits == 32;
+    const bool plain_axi = axi4_port(source.external_protocol) && source.engine_bits == 32;
     if ((!plain_apb && !plain_axi) || source.flows.size() > 1 || source.default_target)
       return bad("Only plain 32-bit APB4 and AXI4 sources reach an observed target");
     if (flags_alone && !plain_axi)

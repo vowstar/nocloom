@@ -3,8 +3,9 @@
 ## Bounded packets
 
 Packet limits depend on both endpoints and the target window.
-`transport.packet_limits` can narrow them for selected connected AXI pairs. Each
-entry needs an AXI4 or AXI3 initiator and has `source`, `target`, and at least
+`transport.packet_limits` can narrow them for selected connected pairs.
+Each entry needs a [full AXI](protocols.md) initiator and a connected target.
+It has `source`, `target`, and at least
 one of `max_bytes` or `boundary_bytes`. Values must be powers of two from the
 pair's alignment word through its default. A pair can appear only once.
 
@@ -16,7 +17,7 @@ to that target.
 
 | Target | Baseline packet bytes | Boundary |
 | --- | --- | --- |
-| AXI4, AXI3 | `min(2^len_width * data_width / 8, 4096)` | At most 4 KiB and local address space |
+| Full AXI | `min(2^len_width * data_width / 8, 4096)` | At most 4 KiB and local address space |
 | AHB, TL-UL | Smaller of 16 target words and 1 KiB | At most 1 KiB and local address space |
 | APB, AXI4-Lite, Wishbone | 128 | Local address space |
 | TL-UH | `max_transfer_bytes` | Local address space |
@@ -72,7 +73,7 @@ one.
 
 | Initiator | Longest burst |
 | --- | --- |
-| AXI4, AXI3 | `2^len_width` words |
+| Full AXI | `2^len_width` words |
 | AHB, Wishbone, TL-UL | 16 words |
 | TL-UH | `max_transfer_bytes / 4` words, at least 16 and at most 256 |
 | APB, AXI4-Lite | 1 word |

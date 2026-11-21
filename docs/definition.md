@@ -8,7 +8,7 @@ Use YAML or C++ `nocloom::Definition`. Both use the same validator.
 | --- | --- |
 | Schema | `schema_version: 10` is required |
 | Names | Names start with a letter and contain only letters, digits and underscores, with at most 128 characters. Names cannot start with `nl_` or `nocloom_` and cannot be a Verilog-2001 keyword. Names within one kind are unique |
-| Required endpoint fields | `name`, `clock_domain`, `protocol`, `data_width`. Targets also need `mappings`. `axi4`, `axi3`, `axi4_lite`, `apb5`, `apb4`, `ahb_lite` and `ahb5` targets also need `attributes` |
+| Required endpoint fields | `name`, `clock_domain`, `protocol`, `data_width`. Targets also need `mappings`. [Full AXI](protocols.md), AXI4-Lite, APB5, APB4, AHB-Lite and AHB5 targets also need `attributes` |
 | Unknown fields | The YAML parser rejects unknown fields with `NCL_SCHEMA_UNKNOWN_FIELD` |
 | Duplicate YAML keys | The YAML parser rejects duplicate keys |
 | Integers | Unquoted decimal integers without leading zeros, such as `64`. Other forms produce `NCL_SCHEMA_TYPE` |
@@ -98,7 +98,7 @@ zero. The C++ fields have the same names, defaults and limits.
 ## Initiator error responses
 
 `initiators[].slverr_only` accepts `true` or `false` and defaults to `false`.
-It applies to AXI4, AXI3 and AXI4-Lite initiators.
+It applies to full AXI and AXI4-Lite initiators.
 The C++ field is `Initiator::slverr_only`. See
 [error responses](address-map.md#error-responses).
 
@@ -126,6 +126,13 @@ See [TL-UL fields](tilelink-ul.md),
 [TL-UH initiators](tilelink-uh-initiators.md#tl-uh-initiators) and
 [TL-UH targets](tilelink-uh-targets.md#tl-uh-targets) for ranges, defaults
 and limits.
+
+## AXI5 endpoint fields
+
+`protocol: axi5` takes the fields of `axi4`. The optional `axi5` object declares
+the AXI5 properties of the port. Other protocols reject the object. C++
+endpoints use `Protocol::Axi5` and optional `Axi5Properties axi5`. See
+[AXI5 interfaces](axi5.md) for each field, its values and its property name.
 
 ## AHB5 endpoint fields
 
