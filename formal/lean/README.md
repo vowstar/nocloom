@@ -166,6 +166,7 @@ lake env lean OUT.lean
 | `format_version` | JSON integer `1`. The importer rejects booleans and floats |
 | `orientation` | `blocker_to_blocked` |
 | `result.status` | `no_cycle` |
+| `completion` | `applies`, `theorems` `["completes", "delivered"]` and `unmet` rows of `clause`, `subject` and `reason` |
 | `nodes` | Nodes with a `rank` checked by Lean |
 | `edges` | Four columns: `[source, destination, rule, group]` |
 | Edge `group` | Nonnegative integer. Only `0`, an ordinary edge, is supported |

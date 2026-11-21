@@ -4,6 +4,7 @@
 #include <iostream>
 #include <iterator>
 #include <nocloom/config.hpp>
+#include <string_view>
 
 using namespace nocloom::detail;
 
@@ -22,8 +23,10 @@ bool write_graph(const std::filesystem::path &out, const std::string &name, Depe
 }
 } // namespace
 
+// Usage: INPUT OUT [ordinary]. With "ordinary" only the product graph is written, so INPUT need
+// not name the endpoints s0 and t0 that the other graphs edit.
 int main(int argc, char **argv) {
-  if (argc != 3)
+  if (argc != 3 && (argc != 4 || std::string_view(argv[3]) != "ordinary"))
     return 2;
   std::ifstream file(argv[1]);
   const std::string text{std::istreambuf_iterator<char>(file), {}};
@@ -39,6 +42,8 @@ int main(int argc, char **argv) {
   const auto ordinary = build_dependency_graph(plan.value(), facts);
   if (ordinary.edges.empty() || !write_graph(out, "ordinary", ordinary, false))
     return 1;
+  if (argc == 4)
+    return 0;
   const auto &edge = ordinary.edges.front();
   const auto &blocked = ordinary.nodes[edge.to], &blocker = ordinary.nodes[edge.from];
   facts.escapes.push_back(

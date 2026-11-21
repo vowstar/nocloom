@@ -61,10 +61,27 @@ CASES = [
     ("RealTwoTargets", "graph_real_two_targets", None, "ok"),
     ("RealFlows", "graph_real_flows", None, "ok"),
     ("RealBound", "graph_real_bound", None, "ok"),
+    # The generator names a clause of `Fair` its logic breaks: no completion theorem.
+    ("Withdrawn", "graph_withdrawn", "model_per_word", "ok"),
+    ("ScopeMissing", "graph_scope_missing", None, ("gen", "no completion scope")),
+    ("ScopeForged", "graph_scope_forged", None, ("gen", "applies with unmet premises")),
 ]
 
-# Theorems every instance with a model has to end up with.
+# Theorems every instance with a model has to end up with, and those of an instance
+# whose completion scope withdraws the completion theorems.
 MODEL_THEOREMS = ("certificate", "acyclic", "structural_ok", "completes", "delivered")
+WITHDRAWN_THEOREMS = ("certificate", "acyclic", "structural_ok", "completion_withdrawn")
+COMPLETION = ("completes", "delivered")
+
+
+def expected_theorems(source, graph_only=False):
+    """The theorems a generated file must list, and those it must not."""
+    text = pathlib.Path(source).read_text(encoding="utf-8")
+    if graph_only or "def config : Config" not in text:
+        return ("certificate", "acyclic"), COMPLETION
+    if "theorem completion_withdrawn" in text:
+        return WITHDRAWN_THEOREMS, COMPLETION
+    return MODEL_THEOREMS, ()
 
 
 def copy_sources(work):
@@ -197,10 +214,13 @@ def main(argv):
         result = run(["lake", "env", "lean", str(out)])
         if expected == "ok":
             names = listed(result.stdout)
-            has_model = "def config : Config" in out.read_text(encoding="utf-8")
-            want = {"Generated.%s.%s" % (name, t)
-                    for t in (MODEL_THEOREMS if has_model else ("certificate", "acyclic"))}
-            good = result.returncode == 0 and "sorry" not in result.stdout and not want - names
+            theorems, absent = expected_theorems(out)
+            want = {"Generated.%s.%s" % (name, t) for t in theorems}
+            unwanted = {"Generated.%s.%s" % (name, t) for t in absent}
+            good = (result.returncode == 0 and "sorry" not in result.stdout and not want - names
+                    and not unwanted & names)
+            if name == "Withdrawn":
+                good = good and theorems == WITHDRAWN_THEOREMS
             failures += check_axioms(name, result.stdout, () if name.startswith("Kernel") else NATIVE)
         else:
             line = first_error_line(out, result.stdout)

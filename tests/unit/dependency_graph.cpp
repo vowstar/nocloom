@@ -6,6 +6,7 @@
 #include "core/network_plan.hpp"
 #include "core/network_plan_profiles.hpp"
 #include <algorithm>
+#include <array>
 #include <catch2/catch_message.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
@@ -882,4 +883,101 @@ TEST_CASE("Replay descriptors retain pool entries and share the return stage", "
   CHECK_FALSE(reaches_any(g, {stored}, {named("target.head", "t0/s0")}));
   // With grants held across reads, the stored word's wait closes a cycle like any queued word.
   CHECK_FALSE(checked(plan, held(plan)).findings.empty());
+}
+
+namespace {
+// The completion scope of a shape after one text replacement, which must apply.
+std::vector<DependencyPremise> unmet_after(std::string text, const std::string &from,
+                                           const std::string &to) {
+  const auto at = text.find(from);
+  REQUIRE(at != std::string::npos);
+  text.replace(at, from.size(), to);
+  const auto plan = plan_of(text);
+  const auto graph = build_dependency_graph(plan, dependency_facts(plan));
+  REQUIRE(graph.model.present);
+  return graph.unmet;
+}
+using Premises = std::vector<std::array<std::string, 3>>;
+Premises rows(const std::vector<DependencyPremise> &unmet) {
+  Premises out;
+  std::ranges::transform(unmet, std::back_inserter(out), [](const DependencyPremise &u) {
+    return std::array<std::string, 3>{u.clause, u.subject, u.reason};
+  });
+  return out;
+}
+const std::string uh_target =
+    "{schema_version: 10, name: shape, address_width: 32, clock_gating: false,"
+    " reset_ports: [{name: reset_n}], test_ports: [{name: test}],"
+    " clock_domains: [{name: main, clock_port: clk, reset_port: reset_n, test_port: test}],"
+    " initiators: [{name: cpu, clock_domain: main, protocol: axi4, data_width: 128, id_width: 4,"
+    " len_width: 8, max_outstanding: 4}],"
+    " targets: [{name: memory, clock_domain: main, protocol: tl_uh, data_width: 32,"
+    " size_width: 4, max_transfer_bytes: 4096, max_outstanding: 3, read_side_effects: true,"
+    " mappings: [{base: '0x0', size: '0x10000'}]}],"
+    " connectivity: all, output: {backend: verilog, language: verilog_2001}}";
+} // namespace
+
+TEST_CASE("The completion scope names each clause of Fair the generated logic breaks",
+          "[dependency]") {
+  const auto plain = shape_text({32, 2, 4, 2});
+  const auto hops = shape_text({32, 2, 4, 2, false, true});
+  const std::string s0 = "{name: s0, ", t0 = "{name: t0, ", q = "nodes: [{name: q}]";
+  // Bounded policies, no level and answering targets: every clause holds.
+  CHECK(unmet_after(plain, s0, s0).empty());
+  for (const auto *policy : {"round_robin", "fifo", "rotating_priority"})
+    CHECK(
+        unmet_after(hops, q,
+                    std::string("nodes: [{name: q, arbitration: [{output: endpoint/t0, policy: ") +
+                        policy + "}]}]")
+            .empty());
+  CHECK(rows(unmet_after(hops, q,
+                         "nodes: [{name: q, arbitration: [{output: endpoint/t0, policy: "
+                         "fixed_priority, priority: [endpoint/s1, endpoint/s0]}]}]")) ==
+        Premises{{"arb_fair", "request/q>endpoint/t0", "fixed_priority_has_no_wait_bound"}});
+  // Level zero everywhere leaves the policy alone; any higher level starves the lower ones.
+  CHECK(unmet_after(plain, s0, s0 + "qos: {levels: {read: 0, write: 0}}, ").empty());
+  CHECK(rows(unmet_after(plain, s0, s0 + "qos: {levels: {read: 1, write: 0}}, ")) ==
+        Premises{{"arb_fair", "source/s0", "scheduling_levels_let_lower_levels_wait_forever"}});
+  // A shaper with any positive rate drains, whatever its burst. At rate zero it holds every
+  // transfer after its burst forever. With a scheduler it picks levels and holds nothing.
+  const auto qos = [&](const std::string &fields) {
+    return rows(unmet_after(plain, s0, s0 + "qos: {" + fields + "}, "));
+  };
+  const Premises held{{"arb_fair", "source/s0", "shaper_without_rate_holds_later_transfers"}};
+  CHECK(qos("shaper: {bytes_per_1024_cycles: 1, burst_bytes: 0}").empty());
+  CHECK(qos("shaper: {bytes_per_32768_cycles: 1, burst_bytes: 0}").empty());
+  CHECK(qos("shaper: {bytes_per_1024_cycles: 0, burst_bytes: 0}") == held);
+  CHECK(qos("shaper: {bytes_per_32768_cycles: 0, burst_bytes: 65535}") == held);
+  CHECK(qos("shaper: {bytes_per_1024_cycles: 0, burst_bytes: 0}, scheduler: {under_level: 1,"
+            " over_level: 0, threshold_percent: 50}") ==
+        Premises{{"arb_fair", "source/s0", "scheduling_levels_let_lower_levels_wait_forever"}});
+  // The library's default shaper sets no rate field: a rate of zero.
+  auto unrated = plan_of(plain);
+  unrated.sources.at(0).qos.shaper = QosShaper{};
+  CHECK(rows(build_dependency_graph(unrated, dependency_facts(unrated)).unmet) == held);
+  // A timeout answers with completion. Without it the target never answers after expiry, except
+  // a TL-UH target, which keeps taking normal completions.
+  CHECK(unmet_after(plain, t0, t0 + "timeout: {cycles: 1024, completion: true}, ").empty());
+  CHECK(rows(unmet_after(plain, t0, t0 + "timeout: {cycles: 1024}, ")) ==
+        Premises{{"answer", "target/t0", "timeout_without_completion_never_answers"},
+                 {"pool_fair", "target/t0", "timeout_without_completion_never_answers"}});
+  CHECK(unmet_after(uh_target, "{name: memory, ", "{name: memory, ").empty());
+  CHECK(unmet_after(uh_target, "{name: memory, ", "{name: memory, timeout: {cycles: 1024}, ")
+            .empty());
+  // The artifact applies the theorems only with a model and nothing unmet.
+  const auto plan = plan_of(plain);
+  auto graph = build_dependency_graph(plan, dependency_facts(plan));
+  const auto report = check_dependency_graph(graph);
+  const auto applies = "\"completion\": {\n  \"theorems\": [\"completes\", \"delivered\"],\n"
+                       "  \"applies\": true,\n  \"unmet\": []\n }";
+  CHECK(dependency_graph_json(graph, report, "m", "", "", "").find(applies) != std::string::npos);
+  graph.unmet.push_back({"answer", "target/t0", "timeout_without_completion_never_answers"});
+  const auto text = dependency_graph_json(graph, report, "m", "", "", "");
+  CHECK(text.find("\"applies\": false") != std::string::npos);
+  CHECK(text.find("{\"clause\": \"answer\", \"subject\": \"target/t0\", \"reason\": "
+                  "\"timeout_without_completion_never_answers\"}") != std::string::npos);
+  graph.unmet.clear();
+  graph.model = {};
+  CHECK(dependency_graph_json(graph, report, "m", "", "", "").find("\"applies\": false") !=
+        std::string::npos);
 }

@@ -9,6 +9,11 @@ rule lemmas are checked against come from its `model` field, or from MODEL.json.
 With neither, or with --graph-only, the file proves only the certificate: the
 graph has no cycle.
 
+The artifact's `completion` scope decides whether the file states `completes`
+and `delivered`.  Where the generator lists unmet clauses of `Fair`, the file
+states `completion_withdrawn` with those rows instead.  A scope that is
+missing, malformed, or that applies with unmet clauses fails conversion.
+
 Output is deterministic: edges are sorted and de-duplicated, and the file holds
 no time or path.  Small tables use the kernel (`decide +kernel`).  Large tables
 use `native_decide`, which adds the compiler to the trusted base; the file's
@@ -95,6 +100,31 @@ def read_graph(graph):
         ranks.append(node["rank"])
     edges = sorted({(e[0], e[1]) for e in graph["edges"]})
     return len(nodes), edges, ranks
+
+
+def read_completion(graph):
+    """The artifact's completion scope: whether `completes` and `delivered` may be
+    stated, and otherwise the clauses of `Fair` the generated logic breaks."""
+    scope = graph.get("completion")
+    if not isinstance(scope, dict):
+        fail("NCL_CERTIFICATE_SCOPE: the artifact has no completion scope")
+    applies, unmet = scope.get("applies"), scope.get("unmet")
+    if (type(applies) is not bool or scope.get("theorems") != ["completes", "delivered"]
+            or not isinstance(unmet, list)):
+        fail("NCL_CERTIFICATE_SCOPE: the completion scope needs applies, theorems "
+             "[completes, delivered] and unmet")
+    rows = []
+    for row in unmet:
+        if (not isinstance(row, dict) or set(row) != {"clause", "subject", "reason"}
+                or not all(isinstance(row[k], str) and row[k] and '"' not in row[k]
+                           and "\\" not in row[k] for k in row)):
+            fail("NCL_CERTIFICATE_SCOPE: an unmet premise needs clause, subject and reason text")
+        rows.append((row["clause"], row["subject"], row["reason"]))
+    if applies and rows:
+        fail("NCL_CERTIFICATE_SCOPE: the completion scope applies with unmet premises")
+    if not applies and not rows and graph.get("model") is not None:
+        fail("NCL_CERTIFICATE_SCOPE: the completion scope withdraws the theorems without a reason")
+    return applies, sorted(rows)
 
 
 def graph_hints(model, edges, heads):
@@ -223,6 +253,7 @@ def main(argv):
     if args.graph_only:
         model = None
     size, edges, ranks = read_graph(graph)
+    applies, unmet = read_completion(graph)
     digest = hashlib.sha256(
         json.dumps([size, edges, ranks], separators=(",", ":")).encode()
     ).hexdigest()
@@ -354,6 +385,18 @@ def main(argv):
         out.append("theorem structural_ok (env : (Nat → St) → Prop) :\n"
                    "    GenericNoC.StructuralInstanceLemmas (noc config table node env certificate) :=\n"
                    "  structural wf_ok certificate (checkCoverageFast_covered covered_ok) heads_ok\n\n")
+        theorems.append("structural_ok")
+        if not applies:
+            if unmet:
+                out.append("/-- `completes` and `delivered` are not stated for this network.  Each row\n"
+                           "    is a clause of `Fair` that the generated logic does not provide: clause,\n"
+                           "    object, reason.  The theorems hold for the model, not for this network. -/\n")
+                out.append("def unmet : List (String × String × String) := [\n%s]\n\n" % ",\n".join(
+                    '  ("%s", "%s", "%s")' % row for row in unmet))
+                out.append("theorem completion_withdrawn : unmet ≠ [] := List.cons_ne_nil _ _\n\n")
+                theorems.append("completion_withdrawn")
+            model = None
+    if model is not None:
         out.append("theorem completes {s : Nat → St} (h0 : s 0 = St.empty)\n"
                    "    (hs : ∀ n, Step config (s n) (s (n + 1))) (F : Fair config s) (τ k : Nat) :\n"
                    "    ∃ u, τ ≤ u ∧ (s u).live k = false :=\n"
@@ -367,7 +410,7 @@ def main(argv):
                    "  checked_transaction_delivered (t := table) (node := node) wf_ok\n"
                    "    (fun _ => by show 0 < %d; decide) hops_ok certificate\n"
                    "    (checkCoverageFast_covered covered_ok) heads_ok h0 hs F τ k hused\n\n" % model["cap"])
-        theorems += ["structural_ok", "completes", "delivered"]
+        theorems += ["completes", "delivered"]
     for theorem in theorems:
         out.append("#print axioms %s\n" % theorem)
     out.append("\nend Generated.%s\n" % args.name)

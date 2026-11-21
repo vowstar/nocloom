@@ -1,4 +1,12 @@
 {
+ "completion": {
+  "applies": true,
+  "theorems": [
+   "completes",
+   "delivered"
+  ],
+  "unmet": []
+ },
  "edges": [
   [
    4,

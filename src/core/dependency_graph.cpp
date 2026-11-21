@@ -2,6 +2,7 @@
 #include "diagnostic.hpp"
 #include "network_plan.hpp"
 #include "network_plan_profiles.hpp"
+#include "treadle.hpp"
 #include <algorithm>
 #include <array>
 #include <deque>
@@ -66,6 +67,41 @@ std::string_view assumption_of(std::string_view kind) {
   const auto it = std::ranges::find(assumptions, kind, [](const auto &a) { return a.first; });
   return it == assumptions.end() ? std::string_view{} : it->second;
 }
+// The clauses of `Fair` that the generated logic itself breaks. Arbitration: a waiting head must be
+// granted (arb_fair), which only the bounded policies guarantee (treadle::service); scheduling
+// levels serve the highest pressing level first, so a lower one can wait forever behind any
+// policy; each source that sets a level is named. Answers: a target that times out without
+// completion never answers its open or later work, so a context it holds never frees (pool_fair)
+// and a transaction waiting on it never gets its words (answer); a TL-UH target keeps taking normal
+// completions after expiry.
+std::vector<DependencyPremise> unmet_premises(const NetworkPlan &plan) {
+  std::vector<DependencyPremise> out;
+  for (const auto &[key, a] : plan.arbiters)
+    if (!treadle::service(a.spec.policy, static_cast<unsigned>(a.candidates.size())).structural)
+      out.push_back({"arb_fair",
+                     std::string(a.response ? "response/" : "request/") +
+                         plan.label("node/" + a.node).substr(5) + ">" + plan.label(a.output),
+                     std::string(treadle::policy_name(a.spec.policy)) + "_has_no_wait_bound"});
+  // As the map's arbitration contract: with levels there is no global wait bound, arbiter or not.
+  for (const auto &s : plan.sources)
+    if (s.qos.levels.write || s.qos.levels.read || s.qos.picks() || !s.qos.axqos_map.empty())
+      out.push_back(
+          {"arb_fair", "source/" + s.name, "scheduling_levels_let_lower_levels_wait_forever"});
+  // A shaper that holds transfers back drains its rate every cycle and admits a packet whenever
+  // its count is at most burst_bytes, whatever the packet's size: a positive rate bounds the wait.
+  // At rate zero the count never falls: once it passes burst_bytes, no later transfer starts.
+  for (const auto &s : plan.sources)
+    if (s.qos.holds() && !s.qos.shaper->bytes_per_1024_cycles.value_or(0) &&
+        !s.qos.shaper->bytes_per_32768_cycles.value_or(0))
+      out.push_back({"arb_fair", "source/" + s.name, "shaper_without_rate_holds_later_transfers"});
+  for (const auto &t : plan.targets)
+    if (t.timeout && !t.timeout->completion && t.protocol != Protocol::TlUh)
+      for (const char *clause : {"answer", "pool_fair"})
+        out.push_back({clause, "target/" + t.name, "timeout_without_completion_never_answers"});
+  std::ranges::sort(
+      out, {}, [](const DependencyPremise &p) { return std::tie(p.clause, p.subject, p.reason); });
+  return out;
+}
 struct NodeHash {
   std::size_t operator()(const std::pair<std::string, std::string> &k) const {
     return std::hash<std::string>{}(k.first) ^ (std::hash<std::string>{}(k.second) * 31);
@@ -103,7 +139,9 @@ public:
     exclusions();
     model_tables();
     apply_facts();
-    return finish();
+    auto g = finish();
+    g.unmet = unmet_premises(plan);
+    return g;
   }
 
 private:
@@ -1332,6 +1370,19 @@ void emit_model(std::string &o, const DependencyModel &m) {
   o.erase(o.size() - 2);
   o += "\n },\n";
 }
+// Whether the model's completion theorems describe this network: only with a model and with every
+// clause of `Fair` provided by the generated logic. Otherwise the clauses it breaks.
+void emit_completion(std::string &o, const DependencyGraph &g) {
+  o += " \"completion\": {\n  \"theorems\": [\"completes\", \"delivered\"],\n  \"applies\": ";
+  o += g.model.present && g.unmet.empty() ? "true" : "false";
+  o += ",\n  \"unmet\": [";
+  for (std::size_t i = 0; i < g.unmet.size(); ++i) {
+    const auto &u = g.unmet[i];
+    o += std::string(i ? ",\n" : "\n") + "   {\"clause\": " + quoted(u.clause) +
+         ", \"subject\": " + quoted(u.subject) + ", \"reason\": " + quoted(u.reason) + "}";
+  }
+  o += g.unmet.empty() ? "]\n },\n" : "\n  ]\n },\n";
+}
 void emit_result(std::string &o, const DependencyGraph &g, const DependencyReport &r) {
   o += " \"result\": {\n  \"status\": ";
   o += quoted(r.findings.empty() ? "no_cycle" : "cycle");
@@ -1369,6 +1420,7 @@ std::string dependency_graph_json(const DependencyGraph &graph, const Dependency
   emit_excluded(o, graph);
   emit_environment(o, graph);
   emit_model(o, graph.model);
+  emit_completion(o, graph);
   emit_result(o, graph, report);
   o += "}\n";
   return o;

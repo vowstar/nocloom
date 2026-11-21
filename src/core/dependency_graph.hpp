@@ -77,11 +77,19 @@ struct DependencyModel {
   unsigned pool_cap = 1;
   bool operator==(const DependencyModel &) const = default;
 };
+// A clause of the model's run condition `Fair` (formal/lean/GenericNoC/WormholeLive.lean) that the
+// generated logic does not provide, the object that breaks it and why. The model's completion
+// theorems assume every clause, so one such entry withdraws them for the network.
+struct DependencyPremise {
+  std::string clause, subject, reason;
+  bool operator==(const DependencyPremise &) const = default;
+};
 struct DependencyGraph {
   std::vector<DependencyNode> nodes; // sorted by kind, then key
   std::vector<DependencyEdge> edges; // sorted by from, to, rule
   std::vector<DependencyExclusion> excluded;
   DependencyModel model;
+  std::vector<DependencyPremise> unmet; // in clause, then subject order
   bool operator==(const DependencyGraph &) const = default;
 };
 // One cycle: its nodes in order, each blocking the next and the last the first, and the rule of

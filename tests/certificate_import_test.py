@@ -102,6 +102,56 @@ def check_imports(source, work, graphs):
                     f'format_version {version!r} is not supported', existing=existing)
 
 
+def check_scope(source, work, graphs):
+    """The completion scope decides whether the Lean file states completion."""
+    ordinary, withdrawn = graphs['ordinary'], graphs['withdrawn']
+    require(ordinary['completion'] == {'applies': True, 'theorems': ['completes', 'delivered'],
+                                       'unmet': []}, 'axi4_exchange must keep its completion')
+    unmet = withdrawn['completion']['unmet']
+    require(withdrawn['completion']['applies'] is False and unmet and
+            {(u['clause'], u['reason']) for u in unmet} ==
+            {('answer', 'timeout_without_completion_never_answers'),
+             ('pool_fair', 'timeout_without_completion_never_answers')},
+            f'axi4_target_timeout must withdraw completion: {withdrawn["completion"]}')
+    for name, graph, theorem in (('ScopeApplies', ordinary, 'theorem completes'),
+                                 ('ScopeWithdrawn', withdrawn, 'theorem completion_withdrawn')):
+        result, out = convert(source, work, name, graph)
+        text = out.read_text(encoding='utf-8') if result.returncode == 0 else ''
+        require(theorem in text, f'{name}: {theorem} missing: {result.stderr}')
+        if name == 'ScopeWithdrawn':
+            require('theorem completes' not in text and 'theorem delivered' not in text,
+                    f'{name}: completion stated for a withdrawn scope')
+        print(f'PASS {name}: the Lean file follows the completion scope')
+    forged = copy.deepcopy(withdrawn)
+    forged['completion']['applies'] = True
+    rejects(source, work, 'ScopeForged', forged, 'applies with unmet premises')
+    silent = copy.deepcopy(withdrawn)
+    silent['completion']['unmet'] = []
+    rejects(source, work, 'ScopeSilent', silent, 'withdraws the theorems without a reason')
+    missing = copy.deepcopy(ordinary)
+    del missing['completion']
+    rejects(source, work, 'ScopeMissing', missing, 'no completion scope')
+    for name, change in (('ScopeTheorems', ('theorems', ['completes'])),
+                         ('ScopeApplyText', ('applies', 'true')),
+                         ('ScopeRow', ('unmet', [{'clause': 'answer', 'subject': 'target/t0'}])),
+                         ('ScopeQuote', ('unmet', [{'clause': 'answer', 'subject': 't"0',
+                                                    'reason': 'x'}]))):
+        graph = copy.deepcopy(withdrawn)
+        graph['completion'][change[0]] = change[1]
+        rejects(source, work, name, graph, 'NCL_CERTIFICATE_SCOPE')
+    shaped = graphs['shaped']['completion']
+    require(shaped == {'applies': False, 'theorems': ['completes', 'delivered'],
+                       'unmet': [{'clause': 'arb_fair', 'subject': 'source/s0',
+                                  'reason': 'shaper_without_rate_holds_later_transfers'}]},
+            f'a shaper of rate zero must withdraw completion: {shaped}')
+    result, out = convert(source, work, 'ScopeShaped', graphs['shaped'])
+    text = out.read_text(encoding='utf-8') if result.returncode == 0 else ''
+    require('theorem completion_withdrawn' in text and 'theorem completes' not in text
+            and '("arb_fair", "source/s0", "shaper_without_rate_holds_later_transfers")' in text,
+            f'ScopeShaped: completion not withdrawn: {result.stderr}')
+    print('PASS ScopeShaped: a shaper of rate zero withdraws completion')
+
+
 def check_proofs(source, work, graphs):
     for tool in ('lean', 'lake'):
         require(shutil.which(tool) is not None, f'{tool} is required for certificate verification')
@@ -124,17 +174,22 @@ def check_proofs(source, work, graphs):
     for i, node in enumerate(forged['nodes']):
         node['rank'] = i
     cases += [('CorruptedRank', corrupted, (), False),
-              ('ForgedCycleRank', forged, (), False)]
+              ('ForgedCycleRank', forged, (), False),
+              ('Withdrawn', graphs['withdrawn'], (), True),
+              ('Shaped', graphs['shaped'], (), True)]
     for name, graph, options, valid in cases:
         converted, out = convert(source, work, name, graph, options)
         require(converted.returncode == 0, f'{name}: conversion failed: {converted.stderr}')
         result = run(['lake', 'env', 'lean', str(out)], package, work / (name + '-lean.log'))
         text = result.stdout + result.stderr
         if valid:
-            theorems = ('certificate', 'acyclic') if '--graph-only' in options else checks.MODEL_THEOREMS
+            theorems, absent = checks.expected_theorems(out, '--graph-only' in options)
+            require((theorems == checks.WITHDRAWN_THEOREMS) == (name in ('Withdrawn', 'Shaped')),
+                    f'{name}: wrong completion scope')
             wanted = {f'Generated.{name}.{t}' for t in theorems}
+            unwanted = {f'Generated.{name}.{t}' for t in absent}
             require(result.returncode == 0 and 'sorry' not in text
-                    and not wanted - checks.listed(text)
+                    and not wanted - checks.listed(text) and not unwanted & checks.listed(text)
                     and not checks.check_axioms(name, text), f'{name}: proof check failed: {text}')
         else:
             line = checks.first_error_line(out, text)
@@ -161,6 +216,23 @@ def main():
     require(produced.returncode == 0, f'graph generation failed: {produced.stdout}{produced.stderr}')
     graphs = {name: json.loads((work / (name + '.json')).read_text())
               for name in ('ordinary', 'grouped_dag', 'cycle', 'cycle_escape')}
+    # Report-only target timeouts: a network whose completion scope is withdrawn.
+    produced = run([str(args.fixture.resolve()), str(source / 'examples/axi4_target_timeout.yaml'),
+                    str(work / 'withdrawn'), 'ordinary'], work, work / 'fixture-withdrawn.log')
+    require(produced.returncode == 0, f'graph generation failed: {produced.stdout}{produced.stderr}')
+    withdrawn = json.loads((work / 'withdrawn' / 'ordinary.json').read_text())
+    # axi4_exchange with a shaper of rate zero on s0: after its burst, s0 never sends again.
+    exchange = (source / 'examples/axi4_exchange.yaml').read_text(encoding='utf-8')
+    s0 = '{name: s0, clock_domain: main, data_width: 32, protocol: axi4, len_width: 8'
+    require(exchange.count(s0 + '}') == 1, 'axi4_exchange: s0 line changed')
+    shaped_yaml = work / 'shaped.yaml'
+    shaped_yaml.write_text(exchange.replace(
+        s0 + '}', s0 + ', qos: {shaper: {bytes_per_1024_cycles: 0, burst_bytes: 0}}}'),
+        encoding='utf-8')
+    produced = run([str(args.fixture.resolve()), str(shaped_yaml), str(work / 'shaped'),
+                    'ordinary'], work, work / 'fixture-shaped.log')
+    require(produced.returncode == 0, f'graph generation failed: {produced.stdout}{produced.stderr}')
+    shaped = json.loads((work / 'shaped' / 'ordinary.json').read_text())
     for name, graph in graphs.items():
         require(graph['edges'] and all(len(e) == 4 for e in graph['edges']), f'{name}: edge format')
         require(not graph.get('groups'), f'{name}: must exercise per-edge group column')
@@ -169,8 +241,11 @@ def main():
         require(raw_acyclic(graph) == (name in ('ordinary', 'grouped_dag')), f'{name}: raw cycle')
         require(graph['result']['status'] == ('cycle' if name == 'cycle' else 'no_cycle'),
                 f'{name}: cycle status')
+    graphs['withdrawn'] = withdrawn
+    graphs['shaped'] = shaped
     if args.case == 'import':
         check_imports(source, work, graphs)
+        check_scope(source, work, graphs)
     else:
         check_proofs(source, work, graphs)
     print(f'PASS certificate {args.case}')

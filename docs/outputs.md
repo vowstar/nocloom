@@ -88,6 +88,23 @@ and diagnostics.
 The dependency JSON lists resource waits, ranks and exclusions. Cycles appear in
 the file and CLI output without failing generation.
 
+`completion.applies` is true when the file has a transport model and the
+generator finds none of the exclusions below. `unmet` lists each recorded
+exclusion, with its `subject` and `reason`. Without a model, `applies` is
+false and `unmet` can be empty.
+
+The completion theorems of the [Lean transport model](../formal/lean/README.md)
+still assume its `Fair` condition. The generator checks the conditions below.
+The remaining clauses of `Fair` are premises of the theorems.
+
+| Clause | Configuration that excludes the theorem |
+| --- | --- |
+| `arb_fair` | An output with `fixed_priority`. A source that sets a scheduling level |
+| `answer`, `pool_fair` | A target timeout without `completion`, except on a TL-UH target |
+
+A source with a `qos.shaper` of rate zero and no `qos.scheduler` breaks
+`arb_fair`. Past `burst_bytes`, the source starts no further transfer.
+
 The file does not describe external dependencies inside your endpoints. See the
 [endpoint requirements](timeout-and-progress.md#shared-request-and-response-paths).
 
