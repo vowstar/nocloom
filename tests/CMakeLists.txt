@@ -879,10 +879,15 @@ set_tests_properties(target_timeout_formal_axi4_shared PROPERTIES TIMEOUT 180 LA
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 # APB initiators mixed with AXI sources and supported target protocols.
 foreach(apb_mode IN ITEMS graph tree clocked funnel apb4_tree timeout selective multi narrow narrow_clocked apb5 apb5_clocked apb5_data apb5_data_clocked)
+  # The APB5 cases simulate two at a time on their two processors.
+  set(apb_jobs)
+  if(apb_mode MATCHES "^apb5")
+    set(apb_jobs --jobs 2)
+  endif()
   add_test(NAME apb_initiator_${apb_mode}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_apb_initiator.py
       --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/apb_initiator_${apb_mode}
-      --mode ${apb_mode})
+      --mode ${apb_mode} ${apb_jobs})
   set_tests_properties(apb_initiator_${apb_mode} PROPERTIES TIMEOUT 1200 LABELS "rtl;axi4;apb;focused"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 endforeach()

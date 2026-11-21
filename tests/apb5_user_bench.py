@@ -1,4 +1,5 @@
 """APB5 request and response user transactions through the public CLI."""
+from concurrent.futures import ThreadPoolExecutor
 import json
 import copy
 from pathlib import Path
@@ -583,11 +584,27 @@ endmodule
 '''
 
 
-def timeout_cases(cli, work, clocked):
+def each_case(jobs, check, cases):
+    """Run check(number, case) for every case on up to jobs threads.
+
+    Every case has its own directory. Results keep the case order. The first
+    failure in case order is raised after the cases already running finish."""
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        futures = [pool.submit(check, number, case) for number, case in enumerate(cases)]
+        try:
+            return [future.result() for future in futures]
+        except BaseException:
+            for future in futures:
+                future.cancel()
+            raise
+
+
+def timeout_cases(cli, work, clocked, jobs=1):
     cases = [(16, 16, 16, False, False), (16, 16, 16, True, False),
              (32, 9, 16, True, False), (9, 16, 3, False, False),
              (16, 16, 16, False, True), (16, 16, 16, True, True)]
-    for number, (source_width, target_width, transport, continuous, default) in enumerate(cases):
+    def check(number, shape):
+        source_width, target_width, transport, continuous, default = shape
         cfg = configuration('axi4', 'apb5', clocked, 0, target_width, transport, continuous)
         cfg['initiators'][0]['response_user_width'] = source_width
         cfg['targets'][0]['timeout'] = {'cycles': 1024, 'completion': True}
@@ -607,6 +624,7 @@ def timeout_cases(cli, work, clocked):
         rc = simulate(case, work / 'compiled')
         log = (case / 'simulation.log').read_text()
         assert rc == 0 and 'NOCLOOM_PASS apb5 timeout user' in log, log[-3000:]
+    each_case(jobs, check, cases)
     print(f'NOCLOOM_PASS apb5 timeout cases={len(cases)} clocked={clocked}')
 
 
@@ -663,7 +681,7 @@ def rejected_configurations(cli, work):
             assert 'AxUSER' not in proc.stderr, proc.stderr
 
 
-def run(cli, base, clocked):
+def run(cli, base, clocked, jobs=1):
     base = Path(base).resolve()
     base.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix='run-', dir=base))
@@ -673,7 +691,7 @@ def run(cli, base, clocked):
     assert '| Partial at APB5 or APB4 |' in manual
     assert 'user-signals.md#apb5-user-ports' in manual
     rejected_configurations(cli, work)
-    timeout_cases(cli, work, clocked)
+    timeout_cases(cli, work, clocked, jobs)
     pairs = [('apb5', 'apb5'), ('apb5', 'axi4'), ('axi4', 'apb5')]
     pairs += [('apb5', 'axi3'), ('axi3', 'apb5'), ('apb4', 'apb5'), ('apb5', 'apb4')]
     configurations = []
@@ -711,7 +729,7 @@ def run(cli, base, clocked):
     configurations.append(cfg)
     if not clocked:
         configurations.append(configuration('apb5', 'apb5', False, 7, 16, 16))
-    for number, cfg in enumerate(configurations):
+    def check(number, cfg):
         req = len(cfg['transport']['user_flags'])
         resp = cfg['targets'][0].get('response_user_width', 0)
         case = work / f'case_{number}'
@@ -745,6 +763,7 @@ def run(cli, base, clocked):
         rc = simulate(case, work / 'compiled')
         log = (case / 'simulation.log').read_text()
         assert rc == 0 and 'NOCLOOM_PASS apb5 user' in log, log[-3000:]
+    each_case(jobs, check, configurations)
     print(f'NOCLOOM_PASS apb5 user cases={len(configurations)} clocked={clocked}')
 
 
@@ -980,7 +999,7 @@ endmodule
 '''
 
 
-def run_data_user(cli, base, clocked):
+def run_data_user(cli, base, clocked, jobs=1):
     base = Path(base).resolve()
     base.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix='run-', dir=base))
@@ -1010,8 +1029,8 @@ def run_data_user(cli, base, clocked):
             graph['links'] = [{'from': 'q', 'to': 'z', 'pipeline': pipe,
                                'sender_pipeline': {'slice': 'forward'}, 'transport_word_bytes': 8}]
         configurations.append(cfg)
-    results = []
-    for number, cfg in enumerate(configurations):
+    def check(number, cfg):
+        results = []
         case = work / f'data_{number}'
         case.mkdir()
         path = case / 'input.yaml'
@@ -1039,7 +1058,10 @@ def run_data_user(cli, base, clocked):
             data_user_controls(case, work, results)
         if number == 6:
             failed_read_control(case, work, results)
-        (work / 'data-results.json').write_text(json.dumps(results, indent=2) + '\n')
+        (case / 'results.json').write_text(json.dumps(results, indent=2) + '\n')
+        return results
+    results = [row for rows in each_case(jobs, check, configurations) for row in rows]
+    (work / 'data-results.json').write_text(json.dumps(results, indent=2) + '\n')
     print(f'NOCLOOM_PASS apb5 data cases={len(configurations)} clocked={clocked}')
 
 
