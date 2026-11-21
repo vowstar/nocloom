@@ -57,6 +57,76 @@ words. This option changes non-modifiable
 transaction shapes beyond AXI A4.3 permissions. Use it only with targets that
 accept those transformations.
 
+## Packet length width
+
+The network counts the beats of each packet in a length field. The generated
+map JSON reports the field width as `definition.transport.len_bits`. NocLoom
+derives it. It is not the `len_width` field of an endpoint. The width is the
+smallest number of bits, at least 4, that can hold each of these counts minus
+one.
+
+| Count | Value |
+| --- | --- |
+| Initiator burst | The longest burst of each initiator, in initiator words |
+| Pair packet | The longest packet of each connected pair, in words of the narrower endpoint |
+
+| Initiator | Longest burst |
+| --- | --- |
+| AXI4, AXI3 | `2^len_width` words |
+| AHB, Wishbone, TL-UL | 16 words |
+| TL-UH | `max_transfer_bytes / 4` words, at least 16 and at most 256 |
+| APB, AXI4-Lite | 1 word |
+
+A pair's longest packet is the initiator's longest burst in bytes, limited by
+the pair's packet byte limit, including a `transport.packet_limits` entry. For
+an initiator other than APB and AXI4-Lite, a target that sets `exclusive` to
+`network` or `target` can raise the pair packet. The pair packet is then at
+least the smallest of 128 bytes, 16 initiator words and the initiator's longest
+burst.
+
+## Miss packet limit
+
+A named default cuts each miss into packets no larger than its miss packet
+limit. Two word sizes set the limit.
+
+| Word | Size |
+| --- | --- |
+| Target word | The default target's data width in bytes. APB targets count as 4 bytes |
+| Alignment word | The larger of the target word and the initiator data width in bytes |
+
+The limit is the smallest value in the next table, but not less than the
+alignment word.
+
+| Limit | Size |
+| --- | --- |
+| Packet length | 256 target words, or `2^L` target words when L is above 8. L is the [packet length width](#packet-length-width) |
+| Boundary | The named default's [boundary](address-map.md#default-target-behavior) |
+| Initiator burst | The initiator's [longest burst](#packet-length-width) in bytes. The cap is 4 KiB, or 1 KiB for an AHB initiator. The floor is one target word |
+
+Miss packets also do not cross a block of that boundary, capped at 4 KiB and at
+least the alignment word.
+
+A `transport.packet_limits` entry for the initiator and its named default does
+not cap misses directly. Any `packet_limits` entry can still lower L, and with
+it the packet length limit. A miss sent to the same target as an automatic
+default uses the limits of that target's mapping instead, so its packets can
+differ.
+
+The table shows two networks. In each, a 64-bit AXI4 initiator with an 8-bit
+`len_width` names `ram` as its default target. `ram` is a 32-bit AXI4 target
+with one mapping from 0 to 64 KiB. The initiator's longest burst is 256 words of
+8 bytes, 2048 bytes. In the first network, L is 8.
+
+The second network adds `dma`, a 32-bit TL-UH target from 64 KiB to 128 KiB with
+`max_transfer_bytes` 4096 and `size_width` 4. Its pair packet with the
+initiator is 2048 bytes, the initiator's longest burst. That is 512 words of 4
+bytes, so L is 9.
+
+| Targets | L | Packet length | Boundary | Initiator burst | Miss packet limit |
+| --- | --- | --- | --- | --- | --- |
+| `ram` | 8 | 256 words, 1024 bytes | 4096 bytes | 2048 bytes | 1024 bytes |
+| `ram` and `dma` | 9 | 512 words, 2048 bytes | 4096 bytes | 2048 bytes | 2048 bytes |
+
 ## Split-packet limit
 
 Each initiator that sends bursts can have four counted packets in flight for

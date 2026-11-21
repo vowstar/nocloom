@@ -9,6 +9,8 @@
 #include "core/width_adapter.hpp"
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
+#include <nlohmann/json.hpp>
+#include <nocloom/generation.hpp>
 
 using namespace nocloom;
 using namespace nocloom::detail;
@@ -105,6 +107,79 @@ TEST_CASE("Network profiles propagate packet widths without widening AXI", "[pac
     REQUIRE(hardware);
     CHECK(verify_network_decode(hardware.value()));
     CHECK(verify_axi4_exchange_composition(hardware.value()));
+  }
+}
+
+namespace {
+// One 64-bit AXI4 initiator whose misses go to a 32-bit AXI4 target at 0 to 64 KiB.
+Definition miss_definition() {
+  Definition d;
+  d.name = "misses";
+  d.reset_ports = {{"reset_n"}};
+  d.test_ports = {{"test"}};
+  d.clock_domains = {{"main", "clk", "reset_n", "test"}};
+  d.initiators = {{"cpu", "main"}};
+  d.targets = {{"ram", "main", {{0, 0x10000}}}};
+  d.initiators[0].protocol = d.targets[0].protocol = Protocol::Axi4;
+  d.initiators[0].data_width = 64;
+  d.initiators[0].default_target = "ram";
+  d.targets[0].data_width = 32;
+  d.connectivity = Connectivity{.all = true};
+  endpoint_ports(d, 4, 8);
+  return d;
+}
+// The packet length width the map reports and the miss window limits the planner selects.
+std::tuple<unsigned, std::uint64_t, std::uint64_t> miss_limits(const Definition &d) {
+  const auto generated = generate(d);
+  for (const auto &diagnostic : generated.diagnostics())
+    UNSCOPED_INFO(diagnostic.code << ": " << diagnostic.field << ": " << diagnostic.message);
+  REQUIRE(generated);
+  const auto map = std::ranges::find_if(
+      generated.value(), [](const Artifact &a) { return a.path.ends_with(".map.json"); });
+  REQUIRE(map != generated.value().end());
+  const auto len_bits =
+      nlohmann::json::parse(map->text)["definition"]["transport"]["len_bits"].get<unsigned>();
+  const auto plan = build_network_plan(d);
+  REQUIRE(plan);
+  CHECK(plan.value().packet_len_bits == len_bits);
+  const auto packets = packet_profile(plan.value(), 0);
+  REQUIRE(packets.fallback);
+  return {len_bits, packets.fallback->max_bytes, packets.fallback->boundary_bytes};
+}
+} // namespace
+
+// The examples in docs/packets.md#miss-packet-limit.
+TEST_CASE("Named default miss limits follow the packet length width", "[packet-lengths]") {
+  auto d = miss_definition();
+  CHECK(miss_limits(d) == std::tuple{8U, 1024U, 4096U});
+  d.targets.push_back({"dma", "main", {{0x10000, 0x10000}}});
+  set_protocol(d.targets[1], Protocol::TlUh);
+  d.targets[1].attributes.reset();
+  d.targets[1].data_width = 32;
+  d.targets[1].max_transfer_bytes = 4096;
+  d.targets[1].size_width = 4;
+  CHECK(miss_limits(d) == std::tuple{9U, 2048U, 4096U});
+  // A packet limit of another pair lowers the width and with it the miss limit.
+  d.transport = TransportOptions{};
+  d.transport->packet_limits = {{"cpu", "dma", 1024, std::nullopt}};
+  CHECK(miss_limits(d) == std::tuple{8U, 1024U, 4096U});
+}
+
+TEST_CASE("Named default miss limits take the burst limit and alignment floor",
+          "[packet-lengths]") {
+  auto d = miss_definition();
+  SECTION("16-word initiator bursts") {
+    d.initiators[0].len_width = 4;
+    CHECK(miss_limits(d) == std::tuple{5U, 128U, 4096U});
+  }
+  SECTION("a 4-byte mapping boundary below an 8-byte target word") {
+    d.initiators[0].data_width = 32;
+    d.targets[0].data_width = 64;
+    d.targets.push_back(d.targets[0]);
+    d.targets[1].data_width = 32;
+    d.targets[1].name = "csr";
+    d.targets[1].mappings = {{0x10004, 4}};
+    CHECK(miss_limits(d) == std::tuple{8U, 8U, 8U});
   }
 }
 

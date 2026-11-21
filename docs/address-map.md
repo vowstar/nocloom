@@ -69,7 +69,8 @@ Keep address inputs stable during affected traffic. See
 ## Decode misses
 
 A decode miss makes no target bus access. Set `default_target` to send misses
-to a connected target's response path.
+to a connected target's response path. See the
+[miss packet limit](packets.md#miss-packet-limit).
 
 Local completion requires one outstanding transaction per direction and no
 `default_target`. All reachable routing windows must start and end on 4 KiB
@@ -180,12 +181,6 @@ at another mapping's end do not narrow it. Conditional mappings do not narrow it
 
 The protocol boundary is 4 KiB for AXI, 1 KiB for AHB, or the local address
 space if smaller. APB and AXI4-Lite use the local address space.
-
-A named default's miss packet limit is at most 256 target words, its boundary
-and the initiator's longest burst. The longest burst is capped at 4 KiB, or 1
-KiB for AHB, and at least one target word. The resulting limit is at least the
-pair alignment word. Pair packet overrides do not reduce this miss limit.
-Selecting the same target explicitly can therefore change miss packet cuts.
 
 A default target accepts a miss only while empty and blocks other packets until
 that miss response leaves. APB, AHB, AXI4-Lite and AXI write misses wait at
