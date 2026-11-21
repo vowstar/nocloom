@@ -800,6 +800,11 @@ nocloom_verif_case(NAME log_related_overflow LAYER unit TIER focused TIMEOUT 20
   COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/log_clock.py
     --cli $<TARGET_FILE:nocloom_cli> --wait-overflow
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_log_clock_tb.sv)
+nocloom_verif_case(NAME log_probe_drops LAYER unit TIER focused TIMEOUT 60
+  FEATURES cdc ci MEMORY_MB 512
+  COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/log_probe_drops.py
+    --cli $<TARGET_FILE:nocloom_cli>
+    --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_probe_drops_tb.sv)
 
 nocloom_verif_case(NAME log_bank_atomic LAYER unit TIER focused TIMEOUT 30 FEATURES verif ci
   MEMORY_MB 512
