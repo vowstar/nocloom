@@ -1,5 +1,6 @@
 """Transaction, stall and common-reset checks for related-clock adapters."""
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import json
 import shutil
 import subprocess
@@ -243,18 +244,31 @@ def main():
     parser.add_argument("--fixture", required=True, type=Path)
     parser.add_argument("--work", required=True, type=Path)
     parser.add_argument("--nocloom", required=True, type=Path)
+    parser.add_argument("--jobs", type=int, default=1, help="cases simulated at once")
     args = parser.parse_args()
+    if args.jobs < 1:
+        parser.error("--jobs must be positive")
     args.work.mkdir(parents=True, exist_ok=True)
-    rows = []
+    cases = []
     for depth, fast, ratios in [(2,0,(2,3)),(2,0,(3,2)),(3,0,(2,3)),(4,0,(3,2)),
                                 (2,1,(2,3)),(2,1,(3,2))]:
-        rows.append(run_case(args.fixture,args.work,"sync",[depth,fast],ratios))
-    rows.append(run_case(args.fixture,args.work,"sync",[3,0],(2,3),"full_early"))
+        cases.append(("sync",[depth,fast],ratios))
+    cases.append(("sync",[3,0],(2,3),"full_early"))
     for slow,pipe,ratios in [(1,1,(2,1)),(1,0,(2,1)),(0,1,(1,2)),(0,0,(1,2)),
                              (1,0,(1,1)),(0,0,(1,1))]:
-        rows.append(run_case(args.fixture,args.work,"edge_aligned",[slow,pipe],ratios))
-    rows.append(run_case(args.fixture,args.work,"edge_aligned",[1,0],(2,1),"missing_admission_open"))
-    rows.append(run_case(args.fixture,args.work,"edge_aligned",[0,0],(1,2),"missing_admission_open"))
+        cases.append(("edge_aligned",[slow,pipe],ratios))
+    cases.append(("edge_aligned",[1,0],(2,1),"missing_admission_open"))
+    cases.append(("edge_aligned",[0,0],(1,2),"missing_admission_open"))
+    # Every case has its own directory. The rows keep the case order. An
+    # error cancels the cases not yet started.
+    with ThreadPoolExecutor(max_workers=args.jobs) as pool:
+        futures = [pool.submit(run_case, args.fixture, args.work, *case) for case in cases]
+        try:
+            rows = [future.result() for future in futures]
+        except BaseException:
+            for future in futures:
+                future.cancel()
+            raise
     rows += related_reset_bench.case_rows(args.nocloom, args.work)
     (args.work / "results.json").write_text(json.dumps(rows,indent=2)+"\n")
     if not all(row["passed"] for row in rows):

@@ -631,7 +631,7 @@ target_link_libraries(nocloom_related_clock_fixture PRIVATE nocloom_core nlohman
 add_test(NAME related_clock_transactions
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_related_clock.py
     --fixture $<TARGET_FILE:nocloom_related_clock_fixture>
-    --nocloom $<TARGET_FILE:nocloom_cli>
+    --nocloom $<TARGET_FILE:nocloom_cli> --jobs 4
     --work ${CMAKE_CURRENT_BINARY_DIR}/related_clock_transactions)
 set_tests_properties(related_clock_transactions PROPERTIES TIMEOUT 900 PROCESSORS 4
   LABELS "rtl;focused;cdc" WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
