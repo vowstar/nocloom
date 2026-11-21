@@ -1134,6 +1134,12 @@ add_test(NAME link_pipeline_static_bypass
     --work ${CMAKE_CURRENT_BINARY_DIR}/link_pipeline_static_bypass)
 set_tests_properties(link_pipeline_static_bypass PROPERTIES
   TIMEOUT 300 LABELS "rtl;axi4;focused;ci" PROCESSORS 2 RESOURCE_LOCK link_pipeline)
+add_test(NAME link_pipeline_stage_lists
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_link_pipeline.py
+    --cli $<TARGET_FILE:nocloom_cli> --stage-lists
+    --work ${CMAKE_CURRENT_BINARY_DIR}/link_pipeline_stage_lists)
+set_tests_properties(link_pipeline_stage_lists PROPERTIES
+  TIMEOUT 600 LABELS "rtl;axi4;focused" PROCESSORS 2 RESOURCE_LOCK link_pipeline)
 add_test(NAME link_pipeline_config
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_link_pipeline.py
     --cli $<TARGET_FILE:nocloom_cli> --configuration-only

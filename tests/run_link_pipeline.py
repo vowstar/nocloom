@@ -294,6 +294,109 @@ def network(cli, work):
     assert caught, log[-3000:]
 
 
+# Stage lists per link, by graph and link: (side, word_bytes or None, slices). Nodes a, b and c
+# pass 16, 4 and 8 bytes: req a>b has sender positions 16, 8 and 4 and receiver 4, req b>c sender
+# 4 and receiver 4 and 8, rsp c>b sender 8 and 4 and receiver 4, rsp b>a sender 4 and receiver 4
+# and 16. Every slice kind takes several places, next to adapters and at both switch ends.
+STAGE_LISTS = {
+    ('request', 0): [('sender', None, ['forward', 'backward']), ('sender', 8, ['full', 'half']),
+                     ('receiver', None, ['backward', 'forward'])],
+    ('request', 1): [('sender', None, ['half']), ('receiver', 4, ['full', 'full']),
+                     ('receiver', None, [dict(slice='forward', bypass_port='stage_bypass'),
+                                         dict(slice='full', ungated=True)])],
+    ('response', 0): [('sender', 8, ['backward', 'backward', 'forward']),
+                      ('sender', 4, ['half']), ('receiver', None, ['full'])],
+    ('response', 1): [('sender', None, ['forward']), ('receiver', 4, ['backward', 'full']),
+                      ('receiver', 16, ['half', 'forward'])],
+}
+
+
+def staged_configuration(far):
+    """The bounded32 graph with STAGE_LISTS. With far, switches b and c run on clk_far: req a>b
+    and rsp b>a cross, and so do the attachments of c."""
+    cfg = pipeline_configuration('bounded32')
+    for (graph, index), lists in STAGE_LISTS.items():
+        link = cfg['topology'][graph]['links'][index]
+        link['stages'] = []
+        for side, word, pipes in lists:
+            entry = dict(side=side, pipes=[p if isinstance(p, dict) else dict(slice=p) for p in pipes])
+            if word:
+                entry['word_bytes'] = word
+            link['stages'].append(entry)
+    if far:
+        cfg['clock_domains'].append(dict(name='far', clock_port='clk_far', reset_port='reset_n',
+                                         test_port='test'))
+        for graph in cfg['topology'].values():
+            for node in graph['nodes']:
+                node['clock_domain'] = 'main' if node['name'] == 'a' else 'far'
+    return cfg
+
+
+def stage_lists(cli, work):
+    rows = []
+    # The last case carries scheduling levels, whose pressure crosses every listed pipe.
+    for name, far, levels in (('stages_one_domain', False, False), ('stages_crossing', True, False),
+                              ('stages_levels', True, True)):
+        cfg = staged_configuration(far)
+        if levels:
+            cfg['initiators'][0]['qos'] = dict(levels=dict(read=2, write=3))
+        case = work / name
+        mapping = execute(cli, cfg, case)
+        records = mapping['network']['link_stages']
+        listed = [s for r in records for s in r['stages'] if s.get('origin') == 'stages']
+        assert len(records) == 4 and len(listed) == 21, (len(records), len(listed))
+        if far:
+            sides = {(s['side'], s['clock_domain']) for r in records for s in r['stages']
+                     if r['link'] == 'req/req_node0>req_node1' and s['kind'] == 'pipe'}
+            assert sides == {('sender', 'main'), ('receiver', 'far')}, sides
+        (case / 'network.v').write_text(generated_rtl(case / 'gen/nocloom_stress.v'))
+        stimulus = bench('bounded32', mapping, False)
+        # Every third segment resets the network while its bursts are in the stages.
+        draw = 'reset_at = (rnd(3) == 0) ? 20 + rnd(1500) : -1;'
+        assert stimulus.count(draw) == 1
+        stimulus = stimulus.replace(draw, 'reset_at = (seg % 3 == 1) ? 20 + rnd(200) : -1;')
+        if far:
+            # A second clock unrelated to clk_main, never stopped by idle_inputs.
+            assert stimulus.count('  clk_far = 0;') == 1
+            stimulus = stimulus.replace('  clk_far = 0;', '').replace(
+                'always #5 clk_main=~clk_main;',
+                'always #5 clk_main=~clk_main;\ninitial clk_far=0;\nalways #7 clk_far=~clk_far;')
+        (case / 'tb.sv').write_text(stimulus)
+        rc = simulate(case, case / 'compiled', ('+seed=29', '+segs=8'))
+        log = (case / 'simulation.log').read_text()
+        match = re.search(r'STRESS_PASS segs=(\d+) resets=(\d+) w=(\d+) r=(\d+)', log)
+        passed = (rc == 0 and match is not None and 'unexpected_err=0' in log
+                  and int(match[2]) == 3 and int(match[3]) > 0 and int(match[4]) > 0)
+        rows.append(dict(case=name, status='PASS' if passed else 'FAIL', returncode=rc,
+                         resets=int(match[2]) if match else None,
+                         rtl_sha256=hashlib.sha256((case / 'network.v').read_bytes()).hexdigest()))
+        (work / 'results.json').write_text(json.dumps(rows, indent=1) + '\n')
+        assert passed, log[-3000:]
+    # A listed pipe whose widest payload register never loads must fail the scoreboard.
+    clean = work / 'stages_one_domain'
+    mapping = json.loads((clean / 'gen/nocloom_stress.map.json').read_text())
+    victim = 'pipeline/req/req_node0>req_node1/sender/8/0'
+    storage = next(s for s in mapping['network']['storage'] if s['resource'] == victim)
+    rtl = (clean / 'network.v').read_text()
+    widths = {m[2]: int(m[1]) + 1 for m in re.finditer(r'^reg \[(\d+):0\] (nl_internal_v\d+);', rtl, re.M)}
+    net = max((v.replace('value/', 'nl_internal_v') for v in storage['payload']),
+              key=lambda n: widths.get(n, 1))
+    update = re.compile(r'^(\s+' + net + r' <= )(nl_internal_v\d+);$', re.M)
+    assert len(update.findall(rtl)) == 1, net
+    case = work / 'stages_frozen_payload'
+    case.mkdir()
+    (case / 'network.v').write_text(update.sub(lambda m: m[1] + net + ';', rtl))
+    (case / 'tb.sv').write_bytes((clean / 'tb.sv').read_bytes())
+    rc = simulate(case, case / 'compiled', ('+seed=29', '+segs=8'))
+    log = (case / 'simulation.log').read_text()
+    caught = rc != 0 and 'ASSERT_FAIL:STRESS.' in log and 'STRESS_PASS' not in log
+    rows.append(dict(case='stages_frozen_payload', status='CAUGHT' if caught else 'FAIL',
+                     returncode=rc, register=net,
+                     failures=sorted(set(re.findall(r'ASSERT_FAIL:STRESS\.(\w+)', log)))))
+    (work / 'results.json').write_text(json.dumps(rows, indent=1) + '\n')
+    assert caught, log[-3000:]
+
+
 def configuration_checks(cli, work):
     import copy
     cfg = pipeline_configuration('bounded32')
@@ -391,11 +494,13 @@ def configuration_checks(cli, work):
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--cli');p.add_argument('--fixture');p.add_argument('--work',required=True);p.add_argument('--configuration-only',action='store_true');p.add_argument('--static-bypass',action='store_true')
+    p=argparse.ArgumentParser();p.add_argument('--cli');p.add_argument('--fixture');p.add_argument('--work',required=True);p.add_argument('--configuration-only',action='store_true');p.add_argument('--static-bypass',action='store_true');p.add_argument('--stage-lists',action='store_true')
     args=p.parse_args();base=Path(args.work).resolve();base.mkdir(parents=True,exist_ok=True)
     work=Path(tempfile.mkdtemp(prefix="run-",dir=base));(base/"latest.txt").write_text(str(work)+"\n")
     if args.static_bypass:
         static_bypass(args.cli, work)
+    elif args.stage_lists:
+        stage_lists(args.cli, work)
     elif args.configuration_only:
         configuration_checks(args.cli,work)
     elif args.fixture:
