@@ -56,11 +56,13 @@ the pool and held-state properties across expiry with the counters free.
 HELD_* and LATE_* are the inductive strengthenings PDR otherwise
 has to find for the AHB outlet's several held packets; for the AXI4 outlet with
 two bursts the after task also carries HELD_*/POOL_* to describe delayed pool release.
-The AXI4 after task lets each timer count vary freely. It uses the outlet status
-for the response credit assumption, which the exact watch task proves equal to
-the monitor. This admits every real counter trace without searching for the
-1024-cycle count in the target-side proof. The bounded mode checks every
-assertion in one task with the actual counters.
+The after task lets each timer count of the outlet vary freely, so the status
+can rise in any cycle in which the outlet waits. This admits every real counter
+trace and more, without searching for the 1024-cycle count in the target-side
+proof. The exact watch task proves when the status really rises. The AXI4 after
+task uses the outlet status for the response credit assumption, which the watch
+task proves equal to the monitor. The bounded mode checks every assertion in
+one task with the actual counters.
 The read bound before expiry (P5 at 16 cycles) is not proved at 1024 cycles:
 PDR does not converge on it within the test time; the RTL benches cover it.
 READ_AFTER_EXPIRY bounds cycles without an offered read response or a ready
@@ -772,7 +774,9 @@ def main():
             (work / 'reach.sv').write_text(axi_reach_harness(kind, port_list, args.cycles, top))
         if 'backpressure' in run_tasks:
             (work / 'backpressure.v').write_text(remove_w_backpressure((work / 'outlet.v').read_text()))
-        engine = 'abc pdr' if args.mode == 'prove' and not shared else 'smtbmc z3'
+        # The bounded mode uses ABC's BMC to the same depth: on the AXI4-Lite
+        # outlet it takes seconds where smtbmc takes minutes.
+        engine = ('smtbmc z3' if shared else 'abc pdr' if args.mode == 'prove' else 'abc bmc3')
         safety = [task for task in run_tasks if task != 'reach']
         sby = '[tasks]\n' + '\n'.join(run_tasks) + '\n\n[options]\n'
         prefix = kind == 'axi4x2' and args.mode == 'prove'
@@ -785,7 +789,8 @@ def main():
             if task in ('overlap', 'backpressure'):
                 depth = 12
             sby += f'{task}: mode {mode}\n{task}: depth {depth}\n'
-            if task == 'backpressure' or (mode == 'prove' and not (exact_axi_watch and task == 'watch')):
+            if (task == 'backpressure' or (mode == 'bmc' and not shared)
+                    or (mode == 'prove' and not (exact_axi_watch and task == 'watch'))):
                 sby += f'{task}: aigsmt z3\n'
         if 'reach' in run_tasks:
             sby += 'reach: vcd off\n'
@@ -814,8 +819,7 @@ def main():
         sby += '\n[script]\n'
         for task in run_tasks:
             before_expiry = (task == 'relate' and prefix) or (task == 'backpressure' and capacity == 2)
-            abstract_count = (task == 'after' and args.mode == 'prove'
-                              and kind in ('axi4', 'axi4x2') and 'watch' in run_tasks)
+            abstract_count = task == 'after' and args.mode == 'prove' and 'watch' in run_tasks
             names = DEFINES[task] + (['ABSTRACT_TIMER_COUNT'] if abstract_count or before_expiry else [])
             if before_expiry:
                 names += ['CHECK_PREFIX_RELATION']
@@ -829,8 +833,14 @@ def main():
                         f"{task}: connect -set nl_status_timed_out 1'b0\n{task}: cd ..\n"
                         f'{task}: opt -full\n')
             elif abstract_count:
+                # Every timer count of the outlet: one per AXI channel, one
+                # for the APB and AHB outlets. A count left uncut would still
+                # pass, only slower, so the selection must name all of them.
+                counts = 'w:dut.nl_probe_timeout_count w:dut.nl_probe_timeout_*_count'
+                expected = len(AXI_CHANNELS) if kind.startswith('axi4') else 1
                 sby += 'after: prep -top formal_top -flatten\n'
-                sby += 'after: cutpoint w:dut.nl_probe_timeout_*_count\nafter: opt_clean\n'
+                sby += (f'after: select -assert-count {expected} {counts}\n'
+                        f'after: cutpoint {counts}\nafter: opt_clean\n')
             else:
                 sby += f'{task}: prep -top formal_top\n'
         sby += f'''
