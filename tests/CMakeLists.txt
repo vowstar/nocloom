@@ -285,7 +285,10 @@ add_test(NAME dependency_declarations
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/dependency_declarations)
 set_tests_properties(dependency_declarations PROPERTIES TIMEOUT 300 LABELS "formal;focused")
 # Bounded liveness of small networks (run_liveness_formal.py), with the controls of each assumption.
-foreach(part IN ITEMS "prove_a;^L[123]_prove$" "prove_b;^L[45678].*_prove$" "hangs;_hang" "needed;_needed$" "covers;cover")
+# The slowest proofs and the hang controls run one network per entry.
+foreach(part IN ITEMS "prove_l1;^L1_prove$" "prove_l2;^L2_prove$" "prove_l3;^L3_prove$"
+    "prove_b;^L[45678].*_prove$" "prove_l9;^L9_prove$" "hang_l2;^L2_hang$" "hang_l6;^L6_hang$"
+    "hang_l6_multi_hop;^L6_multi_hop_hang$" "hang_l9;^L9_hang$" "needed;_needed$" "covers;cover")
   list(GET part 0 part_name)
   list(GET part 1 part_regex)
   add_test(NAME liveness_formal_${part_name}
