@@ -1,5 +1,6 @@
 """Packet capacity and source lifetime at the generated TileLink target."""
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import subprocess
 import tempfile
@@ -316,6 +317,14 @@ initial begin #250000; nlv_fail_report("PROGRESS","timeout",0); end
 """.replace("OTHER_SOURCE", str(other_source)).replace("OTHER_ID", str(other_id))
 
 def run(args, capacity, source_bits, basic=False, segments=False, body=None):
+    """Simulate one network, print its output and return the exit code."""
+    code, text = simulate(args, capacity, source_bits, basic, segments, body)
+    print(text, flush=True)
+    return code
+
+
+def simulate(args, capacity, source_bits, basic=False, segments=False, body=None):
+    """Simulate one network; return the exit code and the output to print."""
     work = Path(tempfile.mkdtemp(prefix="contexts-", dir=args.work)).resolve()
     subprocess.run([str(args.fixture.resolve()), str(work), "contexts", "64",
                     str(capacity), str(source_bits)], check=True, timeout=60)
@@ -336,8 +345,7 @@ def run(args, capacity, source_bits, basic=False, segments=False, body=None):
     result = sim_engine.Simulation(work, "network.v", engine=args.sim, config=args.sim_config,
                                    compile_timeout=180, run_timeout=60,
                                    success=("UH_CONTEXTS_PASS",)).run()
-    print(result.stdout, work, flush=True)
-    return result.returncode
+    return result.returncode, f"{result.stdout} {work}"
 
 
 def main():
@@ -345,17 +353,24 @@ def main():
     parser.add_argument("--fixture", type=Path, required=True)
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--capacity", type=int)
+    parser.add_argument("--jobs", type=int, default=1, help="networks simulated at once")
     sim_engine.add_arguments(parser)
     args = parser.parse_args()
+    if args.jobs < 1:
+        parser.error("--jobs must be positive")
     args.work.mkdir(parents=True, exist_ok=True)
     capacities = [args.capacity] if args.capacity else range(1, 17)
-    for capacity in capacities:
-        result = run(args, capacity, (capacity-1).bit_length())
-        if result:
-            return result
-    result = run(args, 3, 16)
-    result = result or run(args, 3, 2, basic=True)
-    return result or run(args, 3, 2, segments=True)
+    runs = [dict(capacity=capacity, source_bits=(capacity-1).bit_length()) for capacity in capacities]
+    runs += [dict(capacity=3, source_bits=16), dict(capacity=3, source_bits=2, basic=True),
+             dict(capacity=3, source_bits=2, segments=True)]
+    with ThreadPoolExecutor(max_workers=args.jobs) as pool:
+        outcomes = list(pool.map(lambda options: simulate(args, **options), runs))
+    # Reported in the listed order; the first failure gives the exit code.
+    for code, text in outcomes:
+        print(text, flush=True)
+        if code:
+            return code
+    return 0
 
 
 if __name__ == "__main__":

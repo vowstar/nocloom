@@ -135,12 +135,13 @@ add_test(NAME tilelink_uh_target_large_contexts_formal
 set_tests_properties(tilelink_uh_target_large_contexts_formal PROPERTIES
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 1800 PROCESSORS 1
   LABELS "formal;focused" RESOURCE_LOCK tilelink_formal)
+# The nineteen networks simulate four at a time on the processors the entry reserves.
 add_test(NAME tilelink_uh_target_contexts
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_contexts.py
     --fixture $<TARGET_FILE:nocloom_tilelink_uh_target_fixture>
-    --work ${CMAKE_CURRENT_BINARY_DIR}/tilelink_uh_target_contexts)
+    --work ${CMAKE_CURRENT_BINARY_DIR}/tilelink_uh_target_contexts --jobs 4)
 set_tests_properties(tilelink_uh_target_contexts PROPERTIES
-  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 600 PROCESSORS 1
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 600 PROCESSORS 4
   LABELS "rtl;focused;ci" RESOURCE_LOCK tilelink
   ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
 add_test(NAME tilelink_uh_target_ownership
