@@ -50,7 +50,7 @@ const char *register_access_name(RegisterAccess access) {
 }
 
 Status check_register_bank(const RegisterBankPlan &plan) {
-  if (!valid_name(plan.name))
+  if (!derived_name(plan.name))
     return bad("name", "Expected a valid name");
   if (plan.key >> key_bits != 0)
     return bad("key", "A key has 5 bits");

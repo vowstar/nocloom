@@ -3,6 +3,7 @@
 #include "backends/optional_outputs.hpp"
 #include "capability.hpp"
 #include "diagnostic.hpp"
+#include "hardware.hpp"
 #include "message.hpp"
 #include "nocloom/generation.hpp"
 #include "switch_graph.hpp"
@@ -28,39 +29,53 @@ std::vector<Diagnostic> locate(std::vector<Diagnostic> diagnostics, const Source
   return diagnostics;
 }
 
-bool valid_name(std::string_view name) {
-  const auto letter = [](char c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); };
-  if (name.empty() || name.size() > 128 || !letter(name.front()) || name.starts_with("nl_") ||
-      name.starts_with("nocloom_"))
-    return false;
-  for (char c : name)
-    if (!letter(c) && !(c >= '0' && c <= '9') && c != '_')
-      return false;
-  // The Verilog-2001 keywords.
-  static const auto keywords = [] {
-    std::set<std::string_view> set;
-    constexpr std::string_view all =
-        "always and assign automatic begin buf bufif0 bufif1 case casex casez cell cmos "
-        "config deassign default defparam design disable edge else end endcase endconfig "
-        "endfunction endgenerate endmodule endprimitive endspecify endtable endtask event "
-        "for force forever fork function generate genvar highz0 highz1 if ifnone incdir "
-        "include initial inout input instance integer join large liblist library "
-        "localparam macromodule medium module nand negedge nmos nor noshowcancelled not "
-        "notif0 notif1 or output parameter pmos posedge primitive pull0 pull1 pulldown "
-        "pullup pulsestyle_onevent pulsestyle_ondetect rcmos real realtime reg release "
-        "repeat rnmos rpmos rtran rtranif0 rtranif1 scalared showcancelled signed small "
-        "specify specparam strong0 strong1 supply0 supply1 table task time tran tranif0 "
-        "tranif1 tri tri0 tri1 triand trior trireg unsigned use vectored wait wand weak0 "
-        "weak1 while wire wor xnor xor";
-    for (std::size_t at = 0; at < all.size();) {
-      const auto end = std::min(all.find(' ', at), all.size());
-      set.insert(all.substr(at, end - at));
-      at = end + 1;
-    }
-    return set;
-  }();
-  return !keywords.contains(name);
+namespace {
+std::set<std::string_view> words(std::string_view all) {
+  std::set<std::string_view> set;
+  for (std::size_t at = 0; at < all.size();) {
+    const auto end = std::min(all.find(' ', at), all.size());
+    set.insert(all.substr(at, end - at));
+    at = end + 1;
+  }
+  return set;
 }
+// The Verilog-2001 keywords.
+const std::set<std::string_view> &verilog_keywords() {
+  static const auto set = words(
+      "always and assign automatic begin buf bufif0 bufif1 case casex casez cell cmos config "
+      "deassign default defparam design disable edge else end endcase endconfig endfunction "
+      "endgenerate endmodule endprimitive endspecify endtable endtask event for force forever "
+      "fork function generate genvar highz0 highz1 if ifnone incdir include initial inout input "
+      "instance integer join large liblist library localparam macromodule medium module nand "
+      "negedge nmos nor noshowcancelled not notif0 notif1 or output parameter pmos posedge "
+      "primitive pull0 pull1 pulldown pullup pulsestyle_ondetect pulsestyle_onevent rcmos real "
+      "realtime reg release repeat rnmos rpmos rtran rtranif0 rtranif1 scalared showcancelled "
+      "signed small specify specparam strong0 strong1 supply0 supply1 table task time tran "
+      "tranif0 tranif1 tri tri0 tri1 triand trior trireg unsigned use vectored wait wand "
+      "weak0 weak1 while wire wor xnor xor");
+  return set;
+}
+} // namespace
+
+bool keyword(std::string_view name) { return verilog_keywords().contains(name); }
+namespace {
+// Letters, digits and underscores from a letter, at most limit characters.
+bool identifier(std::string_view name, std::size_t limit) {
+  const auto letter = [](char c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); };
+  if (name.empty() || name.size() > limit || !letter(name.front()))
+    return false;
+  return std::ranges::all_of(
+      name, [&](char c) { return letter(c) || (c >= '0' && c <= '9') || c == '_'; });
+}
+} // namespace
+
+bool valid_name(std::string_view name) {
+  return identifier(name, 128) && !name.starts_with("nl_") && !name.starts_with("nocloom_") &&
+         !keyword(name);
+}
+
+bool derived_name(std::string_view name) { return identifier(name, 1024) && !keyword(name); }
+
 } // namespace nocloom::detail
 
 namespace nocloom {
@@ -619,7 +634,9 @@ struct Checks {
     errors.back().notes = std::move(notes);
   }
   void name(const std::string &value, const std::string &field) {
-    if (!detail::valid_name(value))
+    if (detail::keyword(value))
+      (*this)("NCL_NAME_INVALID", field, value + " is a Verilog-2001 keyword");
+    else if (!detail::valid_name(value))
       (*this)("NCL_NAME_INVALID", field,
               "Expected a nonreserved identifier of 1 to 128 characters");
   }
@@ -664,6 +681,22 @@ void check_error_logging(Checks &c) {
     return std::ranges::find(logging.audit_flags, flag) != logging.audit_flags.end() ||
            std::ranges::find(user, flag) != user.end();
   };
+  // Each logger has a bank of registers, named in the map and in the C header: the first logger
+  // of the first log takes the window's name, the first of a later log the log's name, and logger
+  // n of a log <log>_<n>.
+  const auto window = std::ranges::find_if(d.targets, &Target::log_registers);
+  std::set<std::string> banks;
+  for (std::size_t i = 0; i < logging.logs.size() && window != d.targets.end(); ++i) {
+    const auto &log = logging.logs[i];
+    const auto at = "error_logging.logs[" + std::to_string(i) + "]";
+    for (std::size_t n = 0; n < std::max<std::size_t>(1, log.loggers.size()); ++n) {
+      const auto bank = n ? log.name + "_" + std::to_string(n) : i ? log.name : window->name;
+      if (!banks.insert(bank).second)
+        c("NCL_NAME_OUTPUT_COLLISION",
+          n ? at + ".loggers[" + std::to_string(n) + "]" : at + ".name",
+          "The bank of this logger takes the name " + bank + " of an earlier bank");
+    }
+  }
   for (std::size_t i = 0; i < logging.logs.size(); ++i) {
     const auto &log = logging.logs[i];
     const auto at = "error_logging.logs[" + std::to_string(i) + "]";
@@ -936,7 +969,7 @@ void check_cells(Checks &c) {
   const auto &cells = c.d.cells;
   auto check = [&](const std::string &path, const std::string &module,
                    std::vector<std::pair<const char *, std::string>> pins,
-                   const std::map<std::string, bool> &tie) {
+                   const std::map<std::string, bool> &tie, std::string_view model_net) {
     c.name(module, path + ".module");
     for (const auto &[pin, value] : tie)
       pins.emplace_back("tie", pin);
@@ -946,6 +979,9 @@ void check_cells(Checks &c) {
       c.name(pin, field);
       if (!used.insert(pin).second)
         c("NCL_NAME_COLLISION", field, "Pin " + pin + " has another role or tie");
+      if (pin == model_net)
+        c("NCL_NAME_OUTPUT_COLLISION", field,
+          "Pin " + pin + " is the net that the behavioral model of the cell declares");
     }
   };
   if (const auto &g = cells.clock_gate) {
@@ -953,12 +989,12 @@ void check_cells(Checks &c) {
         {"clock", g->clock}, {"enable", g->enable}, {"output", g->output}};
     if (g->test)
       pins.emplace_back("test", *g->test);
-    check("cells.clock_gate", g->module, pins, g->tie);
+    check("cells.clock_gate", g->module, pins, g->tie, detail::clock_gate_model_net);
   }
   if (const auto &s = cells.synchronizer) {
     check("cells.synchronizer", s->module,
           {{"clock", s->clock}, {"data", s->data}, {"reset", s->reset}, {"output", s->output}},
-          s->tie);
+          s->tie, detail::synchronizer_model_net);
     if (s->stages < 1 || s->stages > 4)
       c("NCL_CDC_STAGES_UNSUPPORTED", "cells.synchronizer.stages",
         "A synchronizer cell has 1 (a flip-flop) to 4 stages");
@@ -2091,7 +2127,9 @@ void check_user_flags(Checks &c) {
   if (flags.size() > 256)
     c("NCL_USER_FLAGS", "transport.user_flags", "A network carries at most 256 user flags");
   for (std::size_t i = 0; i < flags.size(); ++i) {
-    c.name(flags[i], "transport.user_flags[" + std::to_string(i) + "]");
+    if (!detail::valid_name(flags[i]))
+      c("NCL_NAME_INVALID", "transport.user_flags[" + std::to_string(i) + "]",
+        "Expected a nonreserved identifier of 1 to 128 characters");
     if (std::ranges::count(flags, flags[i]) > 1)
       c("NCL_USER_FLAGS", "transport.user_flags[" + std::to_string(i) + "]",
         "Duplicate user flag name");
@@ -2275,6 +2313,9 @@ Status validate(const Definition &definition, const GenerationOptions &options,
   auto plan = make_plan(definition, sources, options.validation);
   if (!plan)
     return Status::failure(plan.diagnostics());
-  return detail::check_axi4_network(*plan.value().data_, definition, options);
+  auto checked = detail::check_axi4_network(*plan.value().data_, definition, options);
+  if (!checked && checked.diagnostics().front().code == "NCL_NAME_OUTPUT_COLLISION")
+    return Status::failure(detail::locate(checked.diagnostics(), sources));
+  return checked;
 }
 } // namespace nocloom

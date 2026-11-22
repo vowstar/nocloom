@@ -34,9 +34,8 @@ one-direction access, timeouts, endpoint pipes, exclusive support and upsizing.
 Their initiators use 32-bit APB4 or AXI4 with one flow and no explicit default
 target. The network rejects link pipes and address selection mappings.
 
-With user flags and no whole record, both the target and its reaching
-initiators must use AXI4. With a whole record, target and initiator protocols
-must match.
+With user flags and no whole record, both the target and its reaching initiators
+must use AXI4. With a whole record, target and initiator protocols must match.
 
 A log in the register window's domain can watch a target in another domain
 only when both clocks share one root. A log outside the window's domain can
@@ -46,8 +45,7 @@ log. Both clocks need known periods. Whole records and other network link
 crossings are rejected in that configuration.
 
 This last configuration requires a common reset and non-divided clocks. Apply the
-[timing constraints](timing-constraints.md#cdc-constraints) to the generated
-crossing bindings.
+[timing constraints](timing-constraints.md#cdc-constraints) to the crossing bindings.
 
 ## Configuration
 
@@ -147,6 +145,8 @@ offsets in declaration order.
 | First logger of the first log | The name of the register window |
 | First logger of a later log | The name of the log |
 | A later logger of a log, with `logger_index` `n` | `<log>_<n>` |
+
+Bank names must be distinct (`NCL_NAME_OUTPUT_COLLISION`).
 
 `registers.local_address` is the target local byte address at the mapping base.
 It uses an [address string](address-map.md#target-mappings) and defaults to

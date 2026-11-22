@@ -117,6 +117,20 @@ to `nocloom`. Empty version uses `1.0`.
 IP-XACT remap states reject conflicting input values or a `false` selector other
 than one comparison of a one-bit input (`NCL_ADDRESS_CONDITION`).
 
+The component names its elements after the definition:
+
+| Element | Name |
+| --- | --- |
+| Bus interface | The endpoint name, or `<target>_<flow>` for each port set of an APB, AHB or AXI4-Lite target with several flows |
+| Address space | `<target>_space`, or `<target>_<flow>_space` for a port set |
+| Memory map | `<initiator>_map` for an initiator that reaches a target, and `<initiator>_map_<state>` for each remap |
+| Remap state | The selectors of the condition in name order, joined by `_and_`, each with `not_` when it is `false` |
+
+Two elements of one kind with the same name give `NCL_IPXACT_NAME`. Examples
+are an initiator and a target of the same name, or a selector `high_and_rom`
+next to a condition on `high` and `rom`. TileLink and Wishbone endpoints have no
+bus interface. The check applies only when the IP-XACT component is requested.
+
 ## Metadata
 
 Map and bundle use `format_version: 1` without recording the input schema

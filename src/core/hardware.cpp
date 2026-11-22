@@ -222,7 +222,7 @@ std::vector<std::size_t> canonicalize(HardwareIR &ir, const std::vector<ValueId>
 Status verify_structure(const HardwareIR &ir) {
   try {
     if (ir.ports.empty() || ir.values.empty() || !ir.name.starts_with("nocloom_") ||
-        !valid_name(std::string_view(ir.name).substr(8)))
+        !derived_name(std::string_view(ir.name).substr(8)))
       ir_fault("hardware", "Invalid module");
     std::set<std::string> names;
     std::set<std::pair<std::string, std::string>> bindings;

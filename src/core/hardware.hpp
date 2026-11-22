@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace nocloom::detail {
@@ -107,6 +108,15 @@ struct CellFile {
   std::string path, text;
   bool library = false;
 };
+// The modules of the cell wrapper files, each in <module>.v beside the network's own module
+// nocloom_<name> in nocloom_<name>.v: the clock gate, the synchronizer and the synchronizer that
+// clears synchronously.
+inline constexpr std::array<std::string_view, 3> cell_modules{
+    "nocloom_clock_gate", "nocloom_synchronizer", "nocloom_synchronizer_sync_reset"};
+// The net that the behavioral model of a bound library clock gate or synchronizer declares
+// beside the cell's pins.
+inline constexpr std::string_view clock_gate_model_net = "latched",
+                                  synchronizer_model_net = "stage";
 std::vector<CellFile> cell_files(const HardwareIR &ir, const TechnologyCells &cells = {});
 // The operand slots an operation reads; later slots hold no value.
 unsigned operand_count(Op op);

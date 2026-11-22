@@ -73,6 +73,9 @@ Result<ArtifactSet> generate(const Definition &definition, const GenerationOptio
   auto plan = make_plan(definition, sources, options.validation);
   if (!plan)
     return Result<ArtifactSet>::failure(plan.diagnostics());
-  return emit(plan.value(), options);
+  auto emitted = emit(plan.value(), options);
+  if (!emitted && emitted.diagnostics().front().code == "NCL_NAME_OUTPUT_COLLISION")
+    return Result<ArtifactSet>::failure(detail::locate(emitted.diagnostics(), sources));
+  return emitted;
 }
 } // namespace nocloom

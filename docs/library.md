@@ -105,7 +105,7 @@ both. A parent CMake project can use `add_subdirectory` and link
 | `add_ipxact` | Definition, artifact set and IP-XACT options. Adds a component XML file |
 | `version` | Returns the generator version |
 | `io::load_definition` | Path to a `.yaml` or `.yml` file. Returns `ParsedDefinition` |
-| `io::write_artifacts` | Artifact set and a new output directory. Returns `io::WriteReport`. Its `written_paths` member lists the written artifact paths, relative to the output directory |
+| `io::write_artifacts` | Artifact set and a new output directory. A parsed definition as third argument locates [`NCL_IO_CASE`](cli.md#letter-case-in-file-names) in it. Returns `io::WriteReport`. Its `written_paths` member lists the written artifact paths, relative to the output directory |
 
 `ArtifactSet` contains `Artifact` values with relative `path` and `text` fields.
 Failed results contain diagnostics without a value.

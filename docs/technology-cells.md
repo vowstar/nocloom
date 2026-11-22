@@ -35,6 +35,17 @@ use distinct modules, and each binding serves at least one instance. Pin roles
 and `tie` entries use distinct pins. Tie values are 0 or 1. Unlisted input pins
 stay unconnected.
 
+The behavioral model of each bound cell is in `<module>.v`, next to the
+generated files. These pin names give `NCL_NAME_OUTPUT_COLLISION`:
+
+| Cell | Rejected pin name |
+| --- | --- |
+| Clock gate | `latched` |
+| Synchronizer | `stage` |
+
+Module names that differ only in letter case are distinct modules and files.
+See [letter case in file names](cli.md#letter-case-in-file-names).
+
 ## Gate behavior
 
 Gating changes no endpoint cycle. Holding test high gives the same port

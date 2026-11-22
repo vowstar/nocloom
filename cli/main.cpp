@@ -112,7 +112,7 @@ int run(int argc, char **argv) {
   auto artifacts = nocloom::generate(definition.definition, options, &definition.sources);
   if (!artifacts)
     return report(artifacts.diagnostics());
-  auto written = nocloom::io::write_artifacts(artifacts.value(), output);
+  auto written = nocloom::io::write_artifacts(artifacts.value(), output, definition);
   if (!written)
     return report(written.diagnostics());
   std::cout << "Generated " << written.value().written_paths.size() << " files\n";

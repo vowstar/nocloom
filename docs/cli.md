@@ -48,6 +48,29 @@ syntax error. A cycle limit of 0, or from 1025 to 4294967295, is rejected with
 A file failure can leave partial output. Its diagnostic notes list files created
 before failure. The CLI does not overwrite or roll back that directory.
 
+## Letter case in file names
+
+Two output files can differ only in letter case, for example
+`nocloom_Clock_Gate.v` and `nocloom_clock_gate.v`. Some file systems hold such
+names as one file. Before `generate` writes such files into a new directory, it
+tests how the parent of that directory treats letter case. A new directory
+treats letter case as its parent does.
+
+The test looks up an entry of the parent under the name with the other letter
+case. An empty parent, or one that cannot be listed, shows no entry with a
+letter. Then the test uses the name of the new directory.
+
+| Test result | Result |
+| --- | --- |
+| The parent keeps such names apart | All files are written |
+| The parent ignores letter case | `NCL_IO_CASE` at the field that names the files. Nothing is created |
+| The parent ignores letter case, shown only by the new directory | `NCL_IO_CASE` at that field. The new output directory stays empty |
+| No result, because no name has a letter | The files are written as without such names. If a file meets its twin, `generate` stops with `NCL_IO_CASE` at that field. The files written before it stay, and the notes list them |
+
+An output directory that is present gives `NCL_IO_EXISTS` before any test.
+`generate` creates each file and never replaces one. `validate` does not test
+directories.
+
 ## Semantic diff
 
 ```sh

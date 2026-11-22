@@ -167,6 +167,8 @@ struct Endpoint {
   std::string clock_domain;
   std::string endpoint = name;
   std::optional<unsigned> set = std::nullopt;
+  // The definition field of its name.
+  std::string field = {};
 };
 // Whether a target of several flows has a port set per flow (an AXI4, AXI5, ACE5-Lite or AXI3
 // target carries the flow in AxID on its one set).
@@ -270,21 +272,26 @@ std::string vlnv(std::string_view vendor, std::string_view library, std::string_
 class Component {
 public:
   Component(const Definition &d, const Map &map, const IpxactOptions &o) : d_(d), map_(map), o_(o) {
-    std::ranges::transform(d.initiators, std::back_inserter(endpoints_), [](const Initiator &i) {
-      return Endpoint{i.name, i.protocol.value_or(Protocol::Axi4), true, i.clock_domain};
-    });
-    for (const auto &t : d.targets) {
+    for (std::size_t i = 0; i < d.initiators.size(); ++i) {
+      const auto &x = d.initiators[i];
+      endpoints_.push_back({x.name, x.protocol.value_or(Protocol::Axi4), true, x.clock_domain,
+                            x.name, std::nullopt, "initiators[" + std::to_string(i) + "].name"});
+    }
+    for (std::size_t j = 0; j < d.targets.size(); ++j) {
+      const auto &t = d.targets[j];
       // The registers of error logging have no ports.
       if (t.log_registers)
         continue;
-      const Endpoint e{t.name, t.protocol.value_or(Protocol::Axi4), false, t.clock_domain};
+      const Endpoint e{
+          t.name,       t.protocol.value_or(Protocol::Axi4),      false, t.clock_domain, t.name,
+          std::nullopt, "targets[" + std::to_string(j) + "].name"};
       if (!port_sets(t)) {
         endpoints_.push_back(e);
         continue;
       }
       for (unsigned k = 0; k < t.flows; ++k)
-        endpoints_.push_back(
-            {t.name + "_" + std::to_string(k), e.protocol, false, t.clock_domain, t.name, k});
+        endpoints_.push_back({t.name + "_" + std::to_string(k), e.protocol, false, t.clock_domain,
+                              t.name, k, e.field});
     }
     // Initiators, then targets, each in name order: declaration order never reaches the bytes.
     std::ranges::sort(endpoints_, {},
@@ -322,8 +329,19 @@ public:
     w_.close("component");
     return w_.text();
   }
+  // The first name that text() gave two elements of one kind, at the definition field of the
+  // second.
+  const std::optional<Diagnostic> &clash() const { return clash_; }
 
 private:
+  // A name written for an element of a kind. Other elements point at it by name, so one kind
+  // keeps its names apart.
+  std::string claim(const std::string &kind, const std::string &name, const std::string &field) {
+    if (!names_[kind].insert(name).second && !clash_)
+      clash_ = detail::error("NCL_IPXACT_NAME", field,
+                             "The IP-XACT " + kind + " name " + name + " names two elements");
+    return name;
+  }
   static std::string endpoint_key(const Endpoint &e) {
     return (e.initiator ? "initiator:" : "target:") + e.endpoint;
   }
@@ -396,7 +414,7 @@ private:
       return;
     const auto &bus = bus_type(e.protocol, e.initiator);
     w_.open("busInterface");
-    w_.leaf("name", e.name);
+    w_.leaf("name", claim("bus interface", e.name, e.field));
     w_.empty("busType", vlnv("amba.com", bus.library, bus.name, bus.version));
     w_.empty("abstractionType", vlnv("amba.com", bus.library, bus.abstraction, bus.version));
     if (e.initiator) {
@@ -478,7 +496,7 @@ private:
       for (const auto &[local, size] : all)
         range = std::max(range, local + size);
       w_.open("addressSpace");
-      w_.leaf("name", e.name + "_space");
+      w_.leaf("name", claim("address space", e.name + "_space", e.field));
       w_.leaf("range", hex(range));
       w_.leaf("width", std::to_string(data_width(e)));
       w_.open("segments");
@@ -519,12 +537,14 @@ private:
     }
     w_.close("remapStates");
   }
-  void subspace_map(const std::string &initiator, const Window &win) {
+  void subspace_map(const Endpoint &e, const std::string &scope, const Window &win) {
+    const auto &initiator = e.name;
     const auto &face = interface_of(win).name;
     const auto segment = segment_name(face, win.local, win.size);
     w_.open("subspaceMap",
             " spirit:masterRef=\"" + face + "\" spirit:segmentRef=\"" + segment + "\"");
-    w_.leaf("name", initiator + "_" + face + "_" + hex(win.base));
+    w_.leaf("name", claim("subspace map of " + scope, initiator + "_" + face + "_" + hex(win.base),
+                          e.field));
     w_.leaf("baseAddress", hex(win.base));
     w_.close("subspaceMap");
   }
@@ -541,10 +561,11 @@ private:
       if (!e.initiator || connected(e).empty())
         continue;
       w_.open("memoryMap");
-      w_.leaf("name", e.name + "_map");
+      const auto memory_map = claim("memory map", e.name + "_map", e.field);
+      w_.leaf("name", memory_map);
       for (const auto &win : map_.windows)
         if (win.when.empty() && reaches(e.name, win))
-          subspace_map(e.name, win);
+          subspace_map(e, memory_map, win);
       for (const auto &[name, state] : states()) {
         const auto in_state = [&](const Window &win) {
           return !win.when.empty() && remap_state(d_, win.when)->name == name &&
@@ -553,10 +574,11 @@ private:
         if (std::ranges::none_of(map_.windows, in_state))
           continue;
         w_.open("memoryRemap", " spirit:state=\"" + name + "\"");
-        w_.leaf("name", e.name + "_map_" + name);
+        const auto remap = claim("memory map", e.name + "_map_" + name, e.field);
+        w_.leaf("name", remap);
         for (const auto &win : map_.windows)
           if (in_state(win))
-            subspace_map(e.name, win);
+            subspace_map(e, remap, win);
         w_.close("memoryRemap");
       }
       w_.leaf("addressUnitBits", "8");
@@ -614,6 +636,8 @@ private:
   std::vector<Endpoint> endpoints_;
   std::set<std::string> top_;
   Writer w_;
+  std::map<std::string, std::set<std::string>> names_;
+  std::optional<Diagnostic> clash_;
 };
 
 Diagnostic failure(std::string field, std::string message) {
@@ -639,16 +663,29 @@ Status prepare_component(const Definition &definition, Map &map) {
   if (stranger != map.ports.end())
     return Status::failure(failure("artifacts", "The map endpoint " + stranger->endpoint +
                                                     " is not in the definition"));
-  // Every mode condition must map onto a remap state.
+  // Every mode condition must map onto a remap state, and two conditions onto two names.
+  std::map<std::string, std::map<std::string, bool>> conditions;
   for (std::size_t i = 0; i < definition.targets.size(); ++i)
-    for (std::size_t k = 0; k < definition.targets[i].mappings.size(); ++k)
-      if (const auto &when = definition.targets[i].mappings[k].when;
-          !when.empty() && !remap_state(definition, when))
+    for (std::size_t k = 0; k < definition.targets[i].mappings.size(); ++k) {
+      const auto &when = definition.targets[i].mappings[k].when;
+      const auto field =
+          "targets[" + std::to_string(i) + "].mappings[" + std::to_string(k) + "].when";
+      if (when.empty())
+        continue;
+      const auto state = remap_state(definition, when);
+      if (!state)
         return Status::failure(detail::error(
-            "NCL_ADDRESS_CONDITION",
-            "targets[" + std::to_string(i) + "].mappings[" + std::to_string(k) + "].when",
-            "An IP-XACT remap state holds address input values: a false selector needs one one-bit "
-            "input, and the selectors of a condition must not require two values of one input"));
+            "NCL_ADDRESS_CONDITION", field,
+            "An IP-XACT remap state holds address input values: a false selector needs one "
+            "one-bit input, and the selectors of a condition must not require two values of one "
+            "input"));
+      if (const auto [at, fresh] = conditions.emplace(state->name, when);
+          !fresh && at->second != when)
+        return Status::failure(
+            detail::error("NCL_IPXACT_NAME", field,
+                          "The IP-XACT remap state name " + state->name +
+                              " names two conditions; rename an address selector"));
+    }
   return Status::success({});
 }
 } // namespace
@@ -659,11 +696,16 @@ Status detail::process_ipxact(const Definition &definition, const Json &json, Ou
     return Status::failure(failure(
         "artifacts", "Expected the artifacts generated for this definition, with its map and "
                      "bundle"));
-  auto status = prepare_component(definition, *map);
-  if (status && output)
-    output->add(map->module + ".ipxact.xml", "ipxact_component",
-                Component(definition, *map, IpxactOptions{}).text());
-  return status;
+  if (auto status = prepare_component(definition, *map); !status)
+    return status;
+  const IpxactOptions options{};
+  Component component(definition, *map, options);
+  auto text = component.text();
+  if (component.clash())
+    return Status::failure(*component.clash());
+  if (output)
+    output->add(map->module + ".ipxact.xml", "ipxact_component", std::move(text));
+  return Status::success({});
 }
 
 Result<ArtifactSet> add_ipxact(const Definition &definition, const ArtifactSet &artifacts,
@@ -700,8 +742,12 @@ Result<ArtifactSet> add_ipxact(const Definition &definition, const ArtifactSet &
     return Result<ArtifactSet>::failure(failure("artifacts", "The artifacts already hold " + path));
   if (auto status = prepare_component(definition, *map); !status)
     return Result<ArtifactSet>::failure(status.diagnostics());
+  Component component(definition, *map, options);
+  auto text = component.text();
+  if (component.clash())
+    return Result<ArtifactSet>::failure(*component.clash());
   ArtifactSet out = artifacts;
-  out.push_back({path, Component(definition, *map, options).text()});
+  out.push_back({path, std::move(text)});
   bundle["files"].push_back({{"path", path}, {"role", "ipxact_component"}});
   std::ranges::find(out, bundle_at->path, &Artifact::path)->text = bundle.dump(2) + "\n";
   std::ranges::sort(out, {}, &Artifact::path);

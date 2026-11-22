@@ -187,6 +187,50 @@ def cli():
     assert not result.stdout and "NCL_UNSUPPORTED_PROTOCOL" in result.stderr and not absent.exists()
     run([CLI, "generate", bad, "--out-dir", absent, "--target", "systemc"], expected=1)
     assert not absent.exists()
+    # A network named like a cell module and a keyword as a name are refused before any output.
+    for name, code in (("clock_gate", "NCL_NAME_OUTPUT_COLLISION [name]"),
+                       ("module", "NCL_NAME_INVALID [name]")):
+        bad.write_text(definition(32, MAIN).replace("name: test_bus", "name: " + name, 1))
+        result = run([CLI, "generate", bad, "--out-dir", absent], expected=1)
+        assert not result.stdout and code in result.stderr and not absent.exists()
+    # A name that differs from a cell module only in letter case gives two files where the
+    # directory keeps them apart. Where it shows that it does not, the CLI stops at that name and
+    # creates nothing.
+    bad.write_text(definition(32, MAIN).replace("name: test_bus", "name: Clock_Gate", 1))
+    run([CLI, "validate", bad])
+    (ROOT / "Letter_Case").write_text("")
+    for folder in ("twins", "twins_slash/"):
+        result = run([CLI, "generate", bad, "--out-dir", folder], expected=None)
+        if (ROOT / "lETTER_cASE").exists():
+            assert result.returncode == 3 and not result.stdout and not (ROOT / folder).exists()
+            assert result.stderr.startswith(f"{bad}:2:7: NCL_IO_CASE [name]: The output files "
+                                            "nocloom_Clock_Gate.v and nocloom_clock_gate.v "
+                                            "differ only in letter case, and"), result.stderr
+        else:
+            assert result.returncode == 0 and result.stdout == "Generated 6 files\n", result
+            for module in ("nocloom_Clock_Gate", "nocloom_clock_gate"):
+                assert f"module {module} (" in (ROOT / folder / f"{module}.v").read_text()
+    # A parent and a directory name without a letter show nothing: the files are written as
+    # without twins. A present directory stays NCL_IO_EXISTS.
+    (ROOT / "4096" / "2025").mkdir(parents=True)
+    numeric = ROOT / "4096" / "123"
+    result = run([CLI, "generate", bad, "--out-dir", numeric], expected=None)
+    if (ROOT / "lETTER_cASE").exists():
+        assert result.returncode == 3 and not result.stdout, result
+        assert f"{bad}:2:7: NCL_IO_CASE [name]: The output files " in result.stderr, result.stderr
+        assert "The files written before" in result.stderr, result.stderr
+    else:
+        assert result.returncode == 0 and result.stdout == "Generated 6 files\n", result
+        assert len(list(numeric.iterdir())) == 6
+    files = sorted(path.name for path in numeric.iterdir())
+    result = run([CLI, "generate", bad, "--out-dir", numeric], expected=3)
+    assert "NCL_IO_EXISTS" in result.stderr and "NCL_IO_CASE" not in result.stderr, result.stderr
+    assert sorted(path.name for path in numeric.iterdir()) == files
+    legacy = definition(32, MAIN).replace("name: test_bus", "name: logic", 1)
+    bad.write_text(legacy)
+    legacy_output = ROOT / "verilog-2001-name"
+    run([CLI, "generate", bad, "--out-dir", legacy_output])
+    assert (legacy_output / "nocloom_logic.v").is_file()
     # CDC constraints are opt-in: without a crossing they are refused, with crossings they
     # add two files and their bundle entries and change nothing else.
     result = run([CLI, "generate", first.parent / "definition.yaml", "--out-dir", absent,

@@ -7,7 +7,8 @@ Use YAML or C++ `nocloom::Definition`. Both use the same validator.
 | Rule | Contract |
 | --- | --- |
 | Schema | `schema_version: 10` is required |
-| Names | Names start with a letter and contain only letters, digits and underscores, with at most 128 characters. Names cannot start with `nl_` or `nocloom_` and cannot be a Verilog-2001 keyword. Names within one kind are unique |
+| Names | Names start with a letter and contain only letters, digits and underscores, with at most 128 characters. Names cannot start with `nl_` or `nocloom_` or be a Verilog-2001 keyword. Keywords are case-sensitive. Names within one kind are unique |
+| Generated names | The network module is `nocloom_<name>` in `nocloom_<name>.v`. A name that gives the module of a generated cell file, such as `clock_gate`, is rejected (`NCL_NAME_OUTPUT_COLLISION`). Names that differ only in letter case give distinct modules and files, see [letter case in file names](cli.md#letter-case-in-file-names) |
 | Required endpoint fields | `name`, `clock_domain`, `protocol`, `data_width`. Targets also need `mappings`. [Full AXI](protocols.md), AXI4-Lite, APB5, APB4, AHB-Lite and AHB5 targets also need `attributes` |
 | Unknown fields | The YAML parser rejects unknown fields with `NCL_SCHEMA_UNKNOWN_FIELD` |
 | Duplicate YAML keys | The YAML parser rejects duplicate keys |
@@ -18,9 +19,7 @@ Use YAML or C++ `nocloom::Definition`. Both use the same validator.
 | YAML nodes | At most 4194304 |
 | YAML aliases, anchors, merge keys, explicit tags, null values and more than one document | Rejected |
 | Output order | Equal definitions, versions and generation configuration produce identical paths and bytes |
-
-See [diagnostics](diagnostics.md) for codes and source locations. Source labels
-affect diagnostics only.
+| Diagnostics | See [diagnostics](diagnostics.md) for codes and source locations. Source labels affect diagnostics only |
 
 ## Top-level fields
 

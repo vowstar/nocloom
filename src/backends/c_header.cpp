@@ -67,6 +67,9 @@ struct Headers {
     for (const auto &source : table.at("initiators")) {
       const auto name = source.at("name").get<std::string>();
       const auto path = module + "." + name + ".addresses.h";
+      // Common file systems take file names of at most 255 bytes; this one holds two names.
+      if (path.size() > 255)
+        throw NameConflict("C header file name " + path + " is longer than 255 bytes");
       auto text = begin(module + "_" + name + "_ADDRESS_H", path);
       std::map<std::string, unsigned> indices;
       for (const auto &window : source.at("windows")) {

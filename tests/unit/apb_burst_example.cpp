@@ -1631,11 +1631,12 @@ TEST_CASE("Network user flags drive target AxUSER ports, match YAML and reject o
     return plan ? std::string{} : plan.diagnostics().front().code;
   };
   auto base = public_apb();
-  base.transport->user_flags = {"tagged", "secure"};
+  base.transport->user_flags = {"tracked", "secure"};
   base.initiators[0].user_width = 2;
-  base.initiators[0].user_flags = {{"tagged", {S::User, false, 0}}, {"secure", {S::User, true, 1}}};
-  base.initiators[1].user_flags = {{"tagged", {S::Modifiable}}, {"secure", {S::Zero}}};
-  base.targets[0].user = {{"secure"}, {"tagged", false, true}, {"", true}};
+  base.initiators[0].user_flags = {{"tracked", {S::User, false, 0}},
+                                   {"secure", {S::User, true, 1}}};
+  base.initiators[1].user_flags = {{"tracked", {S::Modifiable}}, {"secure", {S::Zero}}};
+  base.targets[0].user = {{"secure"}, {"tracked", false, true}, {"", true}};
   base.transport->response_user_bits = 2;
   base.initiators[0].response_user_width = 3;
   base.targets[0].response_user_width = 1;
@@ -1662,12 +1663,12 @@ reset_ports: [{name: reset_n}]
 test_ports: [{name: test}]
 clock_domains: [{name: main, clock_port: clk_main, reset_port: reset_n, test_port: test}]
 initiators:
-  - {name: cpu0, clock_domain: main, protocol: axi4, data_width: 32, id_width: 4, len_width: 8, user_width: 2, response_user_width: 3, user_flags: {tagged: 'user[0]', secure: '~user[1]'}}
-  - {name: cpu1, clock_domain: main, protocol: axi4, data_width: 32, id_width: 4, len_width: 8, user_flags: {tagged: modifiable, secure: 0}}
+  - {name: cpu0, clock_domain: main, protocol: axi4, data_width: 32, id_width: 4, len_width: 8, user_width: 2, response_user_width: 3, user_flags: {tracked: 'user[0]', secure: '~user[1]'}}
+  - {name: cpu1, clock_domain: main, protocol: axi4, data_width: 32, id_width: 4, len_width: 8, user_flags: {tracked: modifiable, secure: 0}}
 targets:
-  - {name: bank0, clock_domain: main, protocol: axi4, data_width: 32, mappings: [{base: '0x1000', size: '0x1000'}], len_width: 8, attributes: amba, user: [secure, '~tagged', 1], response_user_width: 1}
+  - {name: bank0, clock_domain: main, protocol: axi4, data_width: 32, mappings: [{base: '0x1000', size: '0x1000'}], len_width: 8, attributes: amba, user: [secure, '~tracked', 1], response_user_width: 1}
   - {name: bank1, clock_domain: main, data_width: 32, protocol: apb4, mappings: [{base: '0x5000', size: '0x1000'}], attributes: amba}
-transport: {max_outstanding: 1, transport_word_bytes: 4, user_flags: [tagged, secure], response_user_bits: 2}
+transport: {max_outstanding: 1, transport_word_bytes: 4, user_flags: [tracked, secure], response_user_bits: 2}
 output: {backend: verilog, language: verilog_2001}
 )");
   REQUIRE(parsed);
@@ -1682,16 +1683,16 @@ output: {backend: verilog, language: verilog_2001}
   d.initiators[1].user_flags["other"] = {S::One};
   CHECK(code_of(d) == "NCL_USER_FLAGS");
   d = base;
-  d.initiators[1].user_flags["tagged"] = {S::User};
+  d.initiators[1].user_flags["tracked"] = {S::User};
   CHECK(code_of(d) == "NCL_USER_FLAGS");
   d = base;
-  d.targets[1].user = {{"tagged"}};
+  d.targets[1].user = {{"tracked"}};
   CHECK(code_of(d) == "NCL_USER_FLAGS");
   d = base;
   d.targets[0].user[0].flag = "unknown";
   CHECK(code_of(d) == "NCL_USER_FLAGS");
   d = base;
-  d.transport->user_flags.push_back("tagged");
+  d.transport->user_flags.push_back("tracked");
   CHECK(code_of(d) == "NCL_USER_FLAGS");
   d = base;
   d.targets[1].response_user_width = 1;

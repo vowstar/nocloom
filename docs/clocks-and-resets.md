@@ -203,8 +203,8 @@ to prevent stale-word replay.
 ## Clock and binding validation
 
 Clock and reset ports must be distinct legal Verilog identifiers without the
-`nl_` or `nocloom_` prefix. Verilog keywords are rejected. Unknown domain ports
-produce `NCL_DOMAIN_REFERENCE`. Every reset port must serve a domain.
+`nl_` or `nocloom_` prefix. Verilog-2001 keywords are rejected.
+Unknown domain ports give `NCL_DOMAIN_REFERENCE`. Resets must serve a domain.
 
 Domains can share reset, test, enable and ungate ports. Every enable port must
 serve a domain. Unused test or ungate ports remain inputs without loads.

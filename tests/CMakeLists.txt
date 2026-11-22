@@ -544,6 +544,10 @@ set_tests_properties(install_subdirectory PROPERTIES LABELS "install;release" PR
 target_sources(nocloom_unit PRIVATE unit/ipxact.cpp)
 add_test(NAME ipxact_structure COMMAND nocloom_unit "[ipxact]")
 set_tests_properties(ipxact_structure PROPERTIES TIMEOUT 60 LABELS "unit;quick")
+target_sources(nocloom_unit PRIVATE unit/reserved_names.cpp)
+add_test(NAME reserved_names COMMAND nocloom_unit "[reserved-names]")
+set_tests_properties(reserved_names PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
+  TIMEOUT 60 LABELS "unit;quick;ci")
 # The IEEE 1685-2009 schema is not part of the source tree. Point NOCLOOM_IPXACT_SCHEMA_DIR at an
 # unmodified copy of the published files (index.xsd and the files it includes) to register the
 # schema validation of every example's component.

@@ -302,7 +302,8 @@ constexpr Anchor target_anchors[] = {{"write_busy", "w.busy"},
 class MapWriter {
 public:
   MapWriter(const NetworkPlan &network, const ExchangeHardware &hardware)
-      : p(network), h(hardware), topology(Json::parse(network.topology_record)) {}
+      : p(network), h(hardware), topology(Json::parse(network.topology_record)),
+        generated_cells(cell_files(h.ir, p.cells)) {}
   Result<ArtifactSet> run(Json *output_map, bool netlist) {
     auto map = checked_map();
     if (!map)
@@ -313,6 +314,8 @@ public:
     return Result<ArtifactSet>::success(std::move(out));
   }
   Result<Json> checked_map() {
+    if (auto status = check_cell_names(); !status)
+      return Result<Json>::failure(status.diagnostics());
     for (auto stage :
          {&MapWriter::network_record, &MapWriter::endpoint_transactions, &MapWriter::target_widths,
           &MapWriter::target_attributes, &MapWriter::user_flags, &MapWriter::packets,
@@ -345,6 +348,18 @@ private:
   const NetworkPlan &p;
   const ExchangeHardware &h;
   const Json topology;
+  const std::vector<CellFile> generated_cells;
+
+  // Each module has its own file <module>.v. A bound module cannot start with nocloom_, so only
+  // the network module can take the name of a cell module. Names that differ in letter case are
+  // distinct modules and files.
+  Status check_cell_names() const {
+    const auto same = [&](const CellFile &cell) { return cell.path == h.ir.name + ".v"; };
+    if (std::ranges::none_of(generated_cells, same))
+      return Status::success({});
+    return Status::failure(error("NCL_NAME_OUTPUT_COLLISION", "name",
+                                 "A generated cell module also has the name " + h.ir.name));
+  }
   const bool multi_source = any(p.sources, [](const auto &s) { return s.outstanding > 1; });
   const bool multi_target = any(p.targets, [](const auto &t) { return t.outstanding > 1; });
   const Json apb_widths = by_name(p.targets, [](const auto &t) {
@@ -2307,9 +2322,10 @@ private:
                                                      "NocLoom", fnv1a64(out[0].text),
                                                      fnv1a64(map.at("definition").dump()))});
     // Cell wrappers precede the module in the sources; bound library cell models stay out.
-    for (const auto &cell : cell_files(h.ir, p.cells)) {
-      const bool bound = cell.path == "nocloom_clock_gate.v" ? p.cells.clock_gate.has_value()
-                                                             : p.cells.synchronizer.has_value();
+    for (const auto &cell : generated_cells) {
+      const bool bound = cell.path == std::string(cell_modules[0]) + ".v"
+                             ? p.cells.clock_gate.has_value()
+                             : p.cells.synchronizer.has_value();
       bundle["files"].push_back({{"path", cell.path},
                                  {"role", cell.library ? "library_cell_model"
                                           : bound      ? "cell_wrapper"

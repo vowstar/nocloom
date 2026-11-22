@@ -31,16 +31,20 @@ Report these as defects and include the definition.
 | `NCL_SCHEMA_TYPE` | Wrong value type or enum value |
 | `NCL_SCHEMA_FIELD_VERSION` | `synchronizer_stages` is set without an explicitly clocked graph |
 | `NCL_RESOURCE_LIMIT` | YAML exceeds its size, depth or node limit. A map read by `diff` exceeds its size or depth limit |
-| `NCL_NAME_INVALID`, `NCL_NAME_COLLISION` | Invalid or conflicting identifier |
+| `NCL_NAME_INVALID` | A name is not an identifier of 1 to 128 characters, or it starts with `nl_` or `nocloom_`. A Verilog-2001 keyword is also invalid |
+| `NCL_NAME_COLLISION` | Two names of one kind are the same |
+| `NCL_NAME_OUTPUT_COLLISION` | Two generated modules, files, nets or error log banks get the same name. See [definition](definition.md), [technology cells](technology-cells.md#technology-bindings) and [error logging](error-logging.md) |
 | `NCL_INPUT_FORMAT`, `NCL_DIFF_MAP` | Unsupported file extension or invalid comparison map |
 | `NCL_UNSUPPORTED_BACKEND` | Unsupported backend or a CDC output request without crossings |
 | `NCL_VALIDATION_OPTION` | A cycle limit outside 1 to 1024 |
 | `NCL_IO_PATH` | Unsafe output directory or artifact path, including symbolic links |
 | `NCL_IO_EXISTS`, `NCL_IO_READ`, `NCL_IO_WRITE` | Output already present, unreadable input or output write failure |
-| `NCL_C_HEADER_NAME` | Two generated C macros or include guards have the same name |
+| `NCL_IO_CASE` | Two output files differ only in letter case, and the output directory holds such names as one file. The CLI finds this before it writes, or when a file meets its twin. See [letter case in file names](cli.md#letter-case-in-file-names) |
+| `NCL_C_HEADER_NAME` | Two generated C macros or include guards have the same name, or a header file name is longer than 255 bytes |
 | `NCL_C_HEADER_RESERVED` | A generated C macro or include guard is reserved in C11 or C++20 |
 | `NCL_ADDRESS_TABLE_INPUT` | Artifact set has missing, duplicate or conflicting table inputs |
 | `NCL_IPXACT_INPUT` | Invalid IP-XACT vendor, library or version text, or an artifact set that is not from this definition |
+| `NCL_IPXACT_NAME` | Two IP-XACT elements of one kind have the same name, such as an initiator and a target of the same name |
 
 See [definition](definition.md), [CLI](cli.md) and [output formats](outputs.md).
 The codes of the C++ tree helper are in

@@ -118,6 +118,8 @@ name and produce `NCL_C_HEADER_RESERVED` with no artifacts. This includes a
 final underscore joined to a separator, such as target `ram_`. Names are
 checked only when C headers are enabled.
 
+A header file name longer than 255 bytes also produces `NCL_C_HEADER_NAME`.
+
 Hexadecimal constants use parentheses, with `U` through `0xffffffff` and `ULL`
 above it, including full 32-bit sizes and 48-bit addresses. Headers contain no
 generator version or timestamps.

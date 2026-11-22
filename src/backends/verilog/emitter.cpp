@@ -43,20 +43,20 @@ std::vector<std::string> input_pins(std::vector<std::string> roles,
 // while the latch holds one, so clock_out only pulses for whole high phases of clock_in.
 CellFile clock_gate_file(const std::optional<ClockGateCell> &cell) {
   const std::vector<std::string> ports{"clock_in", "enable", "test"};
+  const std::string module(cell_modules[0]);
   if (!cell)
-    return {"nocloom_clock_gate.v",
-            cell_text("Clock gate cell model.", "NOCLOOM_CLOCK_GATE_V", "nocloom_clock_gate", "",
-                      ports, "clock_out",
+    return {module + ".v",
+            cell_text("Clock gate cell model.", "NOCLOOM_CLOCK_GATE_V", module, "", ports,
+                      "clock_out",
                       "reg latched;\nalways @(clock_in or enable or test)\n  if (!clock_in)\n "
                       "   latched <= enable | test;\nassign clock_out = clock_in & latched;\n")};
   Pins pins{{cell->clock, "clock_in"}, {cell->enable, cell->test ? "enable" : "enable | test"}};
   if (cell->test)
     pins.emplace_back(*cell->test, "test");
   pins.emplace_back(cell->output, "clock_out");
-  return {"nocloom_clock_gate.v",
-          cell_text("Clock gate cell wrapper of " + cell->module + ".", "NOCLOOM_CLOCK_GATE_V",
-                    "nocloom_clock_gate", "", ports, "clock_out",
-                    bound(cell->module, "u_cell", pins, cell->tie))};
+  return {module + ".v", cell_text("Clock gate cell wrapper of " + cell->module + ".",
+                                   "NOCLOOM_CLOCK_GATE_V", module, "", ports, "clock_out",
+                                   bound(cell->module, "u_cell", pins, cell->tie))};
 }
 // The event control of a register on clock that a reset clears: the reset edge joins it unless
 // the register clears synchronously.
@@ -65,9 +65,7 @@ std::string clocked(const std::string &clock, const std::string &reset, bool low
          (sync ? std::string{} : (low ? " or negedge " : " or posedge ") + reset) + ")";
 }
 // The synchronizer cell module; a synchronously clearing one has its own name.
-std::string synchronizer_module(bool sync) {
-  return sync ? "nocloom_synchronizer_sync_reset" : "nocloom_synchronizer";
-}
+std::string synchronizer_module(bool sync) { return std::string(cell_modules[sync ? 2 : 1]); }
 // Synchronizer: STAGES registers cleared by reset_n shift d toward q. A bound flip-flop is
 // chained STAGES times (u_stage[k].u_cell); an integrated synchronizer is the cell u_cell.
 CellFile synchronizer_file(const std::optional<SynchronizerBinding> &cell, bool sync) {
@@ -102,28 +100,32 @@ CellFile model(const ClockGateCell &cell) {
   const auto test = cell.test.value_or("");
   const auto roles = test.empty() ? std::vector{cell.clock, cell.enable}
                                   : std::vector{cell.clock, cell.enable, test};
+  const std::string net(clock_gate_model_net);
   return {cell.module + ".v",
           cell_text(model_title(cell.module), "", cell.module, "", input_pins(roles, cell.tie),
                     cell.output,
-                    "reg latched;\nalways @(" + cell.clock + " or " + cell.enable +
+                    "reg " + net + ";\nalways @(" + cell.clock + " or " + cell.enable +
                         (test.empty() ? "" : " or " + test) + ")\n  if (!" + cell.clock +
-                        ")\n    latched <= " + cell.enable + (test.empty() ? "" : " | " + test) +
-                        ";\nassign " + cell.output + " = " + cell.clock + " & latched;\n"),
+                        ")\n    " + net + " <= " + cell.enable +
+                        (test.empty() ? "" : " | " + test) + ";\nassign " + cell.output + " = " +
+                        cell.clock + " & " + net + ";\n"),
           true};
 }
 CellFile model(const SynchronizerBinding &cell, bool sync) {
   const auto n = decimal(cell.stages);
   const bool low = cell.reset_active_low;
+  const std::string net(synchronizer_model_net);
   return {cell.module + ".v",
-          cell_text(model_title(cell.module), "", cell.module, "",
-                    input_pins({cell.clock, cell.data, cell.reset}, cell.tie), cell.output,
-                    "reg [" + n + " - 1:0] stage;\n" + clocked(cell.clock, cell.reset, low, sync) +
-                        "\n  if (" + (low ? "!" : "") + cell.reset + ")\n    stage <= " + n +
-                        "'d0;\n  else\n    stage <= " +
-                        (cell.stages == 1
-                             ? cell.data
-                             : "{stage[" + decimal(cell.stages - 2) + ":0], " + cell.data + "}") +
-                        ";\nassign " + cell.output + " = stage[" + n + " - 1];\n"),
+          cell_text(
+              model_title(cell.module), "", cell.module, "",
+              input_pins({cell.clock, cell.data, cell.reset}, cell.tie), cell.output,
+              "reg [" + n + " - 1:0] " + net + ";\n" + clocked(cell.clock, cell.reset, low, sync) +
+                  "\n  if (" + (low ? "!" : "") + cell.reset + ")\n    " + net + " <= " + n +
+                  "'d0;\n  else\n    " + net + " <= " +
+                  (cell.stages == 1
+                       ? cell.data
+                       : "{" + net + "[" + decimal(cell.stages - 2) + ":0], " + cell.data + "}") +
+                  ";\nassign " + cell.output + " = " + net + "[" + n + " - 1];\n"),
           true};
 }
 } // namespace
@@ -285,8 +287,8 @@ std::string emit_verilog(const HardwareIR &ir) {
       expression = "(" + arg(0) + " ? " + arg(1) + " : " + arg(2) + ")";
       break;
     case Op::ClockGate:
-      out += "nocloom_clock_gate " + name(i) + "_gate (.clock_in(" + arg(0) + "), .enable(" +
-             arg(1) + "), .test(" + arg(2) + "), .clock_out(" + name(i) + "));\n";
+      out += std::string(cell_modules[0]) + " " + name(i) + "_gate (.clock_in(" + arg(0) +
+             "), .enable(" + arg(1) + "), .test(" + arg(2) + "), .clock_out(" + name(i) + "));\n";
       continue;
     default:
       throw std::logic_error("Unverified hardware operation");
