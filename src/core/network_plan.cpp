@@ -106,6 +106,10 @@ bool data_side(const NetworkPlan &plan, const std::optional<Axi5Properties> &axi
 Axi5DataPorts axi5_data_ports(const std::optional<Axi5Properties> &axi5, unsigned data_user_bits) {
   return axi5 ? Axi5DataPorts{data_user_bits, axi5->poison, axi5->trace} : Axi5DataPorts{};
 }
+Axi5EchoPorts axi5_echo_ports(const std::optional<Axi5Properties> &axi5) {
+  return axi5 ? Axi5EchoPorts{axi5->unique_id, axi5->write_loop_width, axi5->read_loop_width}
+              : Axi5EchoPorts{};
+}
 bool axi4_port(std::optional<Protocol> protocol) {
   return protocol.value_or(Protocol::Axi4) == Protocol::Axi4 || axi5_port(protocol);
 }

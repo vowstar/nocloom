@@ -790,6 +790,7 @@ std::optional<Axi5Properties> axi5_properties(std::optional<Protocol> protocol,
 bool data_side(const NetworkPlan &plan, const std::optional<Axi5Properties> &axi5,
                unsigned data_user_bits);
 Axi5DataPorts axi5_data_ports(const std::optional<Axi5Properties> &axi5, unsigned data_user_bits);
+Axi5EchoPorts axi5_echo_ports(const std::optional<Axi5Properties> &axi5);
 // A full AXI burst port: AXI4, AXI5, ACE5-Lite or AXI3, which the network carries as AXI4 (absent
 // counts as AXI4).
 bool full_axi(std::optional<Protocol> protocol);

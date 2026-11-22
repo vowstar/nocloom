@@ -57,6 +57,7 @@ struct Descriptor {
   ValueId level; // the scheduling level from the AxQOS map
   // Whether AxSNOOP and AxDOMAIN form an admitted transaction, with AxDOMAIN or AxSNOOP ports.
   std::optional<ValueId> coherent;
+  ValueId echo; // the response echoes (Axi4InitiatorProfile::echo)
 };
 
 // The face inputs of one address channel (AW or AR), in port order.
@@ -66,6 +67,7 @@ struct AddressFace {
   ValueId audit;                   // the audit flags, with Axi4InitiatorProfile::audit_bits
   ValueId level;                   // the AxQOS map's level, with Axi4InitiatorProfile::level_bits
   std::optional<ValueId> coherent; // Descriptor::coherent
+  ValueId echo;                    // AxIDUNQ low, AxLOOP above it, with Axi4InitiatorProfile::echo
 };
 
 // Admission checks over a captured descriptor. Invalid bursts complete locally with SLVERR.
@@ -537,7 +539,7 @@ struct CapturedDescriptor {
   Descriptor d{};
   // The AxID register of the burst in service (the face value while `pass` holds is in d.id).
   ValueId id_reg{};
-  ValueId addr32{}, tag{}, addr_reg{}, burst_reg{};
+  ValueId addr32{}, tag{}, addr_reg{}, burst_reg{}, echo_reg{};
 };
 CapturedDescriptor capture_descriptor(logic::Logic &l, const Axi4InitiatorProfile &p,
                                       const Tracker &track, const std::string &dir, ValueId fire,
@@ -576,6 +578,8 @@ CapturedDescriptor capture_descriptor(logic::Logic &l, const Axi4InitiatorProfil
       cap.addr_reg = reg;
     if (field == "burst")
       cap.burst_reg = reg;
+    if (field == "echo")
+      cap.echo_reg = reg;
     l.b.update(reg, l.b.select(fire, value, reg));
     return pass ? l.b.select(*pass, value, reg) : value;
   };
@@ -598,6 +602,8 @@ CapturedDescriptor capture_descriptor(logic::Logic &l, const Axi4InitiatorProfil
     cap.d.level = p.axqos_map.empty() ? face.level : capture("level", p.level_bits, face.level);
   if (face.coherent)
     cap.d.coherent = capture("coherent", 1, *face.coherent);
+  if (const auto bits = p.echo.bits(dir == "wr"))
+    cap.d.echo = capture("echo", bits, face.echo);
   return cap;
 }
 
@@ -926,6 +932,19 @@ struct InitiatorLowering {
   // Network return storage can wait until the cycle after a pop before accepting a response.
   bool refill_return_on_pop = true;
   ValueId w_b_full{}, w_b_id{}, w_bvalid{};
+  // The staged B and R beat's echoes (Axi4InitiatorProfile::echo).
+  ValueId w_b_echo{}, r_rsp_echo{};
+  // BIDUNQ and BLOOP, or RIDUNQ and RLOOP, of a response from its echo value.
+  void echo_outputs(const std::string &ch, ValueId echo) {
+    const bool write = ch == "b";
+    if (!p.echo.bits(write))
+      return;
+    unsigned at = 0;
+    if (p.echo.unique)
+      axi_output(ch + "idunq", l.b.slice(echo, at++, 1));
+    if (const auto loop = p.echo.loop(write))
+      axi_output(ch + "loop", l.b.slice(echo, at, loop));
+  }
   ValueId r_rsp_id{}, r_beat{}, r_local_burst{}, r_offered{}, r_face_local{}, r_rvalid{};
   ValueId return_room(ValueId full, ValueId pop) {
     return refill_return_on_pop ? l.either(l.inv(full), pop) : l.inv(full);
@@ -1117,6 +1136,16 @@ struct InitiatorLowering {
       f.user = p.user_bits == p.axi5_attributes.bits() ? *block : l.b.concat(*block, f.user);
     if (p.audit_bits)
       f.audit = map_attributes(l, p.audit_flags, f.cache, f.prot, write_channel, user_port);
+    // The response echoes of the request, AxIDUNQ lowest.
+    if (p.echo.bits(ch == "aw")) {
+      std::optional<ValueId> echo;
+      const auto add = [&](ValueId v) { echo = echo ? l.b.concat(v, *echo) : v; };
+      if (p.echo.unique)
+        add(axi_input(ch + "idunq", 1));
+      if (const auto loop = p.echo.loop(ch == "aw"))
+        add(axi_input(ch + "loop", loop));
+      f.echo = *echo;
+    }
     f.valid = axi_input(ch + "valid", 1);
     return f;
   }
@@ -1200,6 +1229,7 @@ struct InitiatorLowering {
   void ahb_face();
   void write_issue();
   void write_waiting(ValueId issuing, ValueId admits, ValueId fresh, ValueId wvalid);
+  void update_write_issue(ValueId wrsp_fire, ValueId local_fill);
   void write_complete();
   void read_issue();
   void stage_beat(ValueId load);
@@ -1508,6 +1538,8 @@ void InitiatorLowering::write_issue() {
   // With several bursts in flight the request engine issues (states 0 and 1) and holds a local
   // completion until the B staging takes it (state 2). Slot: ID and the WLAST mismatch poison.
   std::vector<std::pair<std::string, unsigned>> slot_fields{{"poison", 1}};
+  if (const auto bits = p.echo.bits(true))
+    slot_fields.emplace_back("echo", bits);
   w_track = multi ? open_tracker(l, "wr", p.max_outstanding, id_entries, p.id_bits, dest_bits,
                                  slot_fields)
                   : Tracker{};
@@ -1646,44 +1678,7 @@ void InitiatorLowering::write_issue() {
   }
 }
 
-void InitiatorLowering::write_complete() {
-  const auto &d = w_cap.d;
-
-  // Write response: one aggregated single-fragment packet after the last beat; a network-side
-  // breach of that shape folds into SLVERR. A tracked engine stages B: a response packet whenever
-  // the staging has room (with its burst's ID and poison), else the local completion held in the
-  // issue stage. The staging never waits for anything but BREADY.
-  // A held engine with one burst has its own B staging too: the burst is done once its answer is
-  // staged, and the next burst issues while that B waits for BREADY.
-  const bool staged = multi || held;
-  // Local completions can replace a departing B. Network refill is configured separately
-  // to keep readiness within this direction's lifecycle when the face shares its response bus.
-  const auto b_room = staged ? l.either(l.inv(w_b_full), w_bready) : ValueId{};
-  const auto wrsp_room = refill_return_on_pop ? b_room : (staged ? l.inv(w_b_full) : ValueId{});
-  // A response of no burst in flight (an idle engine; a free slot) is taken and dropped.
-  auto wrsp_ready = multi  ? l.both(l.reset, wrsp_room)
-                    : held ? l.both(l.reset, l.either(w_idle, l.both(w_waiting, wrsp_room)))
-                           : l.both(l.reset, l.either(w_waiting, w_idle));
-  auto wrsp_fire = l.bind("wr.wrsp_fire", l.both(l.both(w_wrsp_valid, wrsp_ready),
-                                                 multi ? owns(w_wrsp_in, w_track) : w_waiting));
-  auto rsp_bad = l.inv(l.both(w_wrsp_in.at("first"), w_wrsp_in.at("last")));
-  auto wrsp_mapped = map_result(l, w_wrsp_in.at("result"), l.either(w_wrsp_in.at("error"), rsp_bad),
-                                p.slverr_only, exclusive_okay(w_wrsp_in));
-  // The WLAST poison of a tracked burst folds into its staged response.
-  if (multi)
-    wrsp_mapped = l.b.select(slot_field(l, w_track, "poison", slot_of(w_wrsp_in, w_track)),
-                             l.b.constant(2, 2), wrsp_mapped);
-  else if (held)
-    wrsp_mapped = l.b.select(w_poisoned, l.b.constant(2, 2), wrsp_mapped);
-
-  // A local completion waits in state 2 until the staging has room and no response packet
-  // competes; responses in flight are bounded by the slot table, and nothing else issues
-  // meanwhile, so it is never starved.
-  const auto local_fill =
-      multi  ? l.bind("wr.local_fill",
-                      l.both(l.reset, l.both(w_waiting, l.both(b_room, l.inv(w_wrsp_valid)))))
-      : held ? l.bind("wr.local_fill", l.both(l.reset, l.both(w_respond, b_room)))
-             : ValueId{};
+void InitiatorLowering::update_write_issue(ValueId wrsp_fire, ValueId local_fill) {
   const auto load = w_start;
   // A burst passing straight through may also end in its handshake cycle.
   const auto done_now = l.both(w_straight, l.either(w_last_transfer, w_last_absorb));
@@ -1740,6 +1735,47 @@ void InitiatorLowering::write_complete() {
       l.b.update(w_beat_be, l.b.select(w_accept, w_wstrb, w_beat_be));
     }
   }
+}
+
+void InitiatorLowering::write_complete() {
+  const auto &d = w_cap.d;
+
+  // Write response: one aggregated single-fragment packet after the last beat; a network-side
+  // breach of that shape folds into SLVERR. A tracked engine stages B: a response packet whenever
+  // the staging has room (with its burst's ID and poison), else the local completion held in the
+  // issue stage. The staging never waits for anything but BREADY.
+  // A held engine with one burst has its own B staging too: the burst is done once its answer is
+  // staged, and the next burst issues while that B waits for BREADY.
+  const bool staged = multi || held;
+  // Local completions can replace a departing B. Network refill is configured separately
+  // to keep readiness within this direction's lifecycle when the face shares its response bus.
+  const auto b_room = staged ? l.either(l.inv(w_b_full), w_bready) : ValueId{};
+  const auto wrsp_room = refill_return_on_pop ? b_room : (staged ? l.inv(w_b_full) : ValueId{});
+  // A response of no burst in flight (an idle engine; a free slot) is taken and dropped.
+  auto wrsp_ready = multi  ? l.both(l.reset, wrsp_room)
+                    : held ? l.both(l.reset, l.either(w_idle, l.both(w_waiting, wrsp_room)))
+                           : l.both(l.reset, l.either(w_waiting, w_idle));
+  auto wrsp_fire = l.bind("wr.wrsp_fire", l.both(l.both(w_wrsp_valid, wrsp_ready),
+                                                 multi ? owns(w_wrsp_in, w_track) : w_waiting));
+  auto rsp_bad = l.inv(l.both(w_wrsp_in.at("first"), w_wrsp_in.at("last")));
+  auto wrsp_mapped = map_result(l, w_wrsp_in.at("result"), l.either(w_wrsp_in.at("error"), rsp_bad),
+                                p.slverr_only, exclusive_okay(w_wrsp_in));
+  // The WLAST poison of a tracked burst folds into its staged response.
+  if (multi)
+    wrsp_mapped = l.b.select(slot_field(l, w_track, "poison", slot_of(w_wrsp_in, w_track)),
+                             l.b.constant(2, 2), wrsp_mapped);
+  else if (held)
+    wrsp_mapped = l.b.select(w_poisoned, l.b.constant(2, 2), wrsp_mapped);
+
+  // A local completion waits in state 2 until the staging has room and no response packet
+  // competes; responses in flight are bounded by the slot table, and nothing else issues
+  // meanwhile, so it is never starved.
+  const auto local_fill =
+      multi  ? l.bind("wr.local_fill",
+                      l.both(l.reset, l.both(w_waiting, l.both(b_room, l.inv(w_wrsp_valid)))))
+      : held ? l.bind("wr.local_fill", l.both(l.reset, l.both(w_respond, b_room)))
+             : ValueId{};
+  update_write_issue(wrsp_fire, local_fill);
   // The burst's WLAST poison when it leaves the issue stage, its last beat included when that
   // beat passes straight from the W face (zero for a local completion).
   const auto push_poison =
@@ -1770,6 +1806,13 @@ void InitiatorLowering::write_complete() {
     if (p.id_bits)
       l.b.update(w_b_id, l.b.select(wrsp_fire, multi ? response_id(w_wrsp_in) : w_cap.id_reg,
                                     l.b.select(local_fill, w_cap.id_reg, w_b_id)));
+    // The burst's echoes come from its slot, or from its descriptor while it is the only one.
+    if (p.echo.bits(true))
+      l.b.update(w_b_echo,
+                 l.b.select(wrsp_fire,
+                            multi ? slot_field(l, w_track, "echo", slot_of(w_wrsp_in, w_track))
+                                  : w_cap.echo_reg,
+                            l.b.select(local_fill, w_cap.echo_reg, w_b_echo)));
     l.b.update(w_b_full,
                l.b.select(l.either(wrsp_fire, local_fill), one, l.b.select(b_pop, zero, w_b_full)));
   } else {
@@ -1784,7 +1827,9 @@ void InitiatorLowering::write_complete() {
   if (multi) {
     // The poison is known when the burst leaves the issue stage
     // (zero for a local completion).
-    const std::map<std::string, ValueId> captured{{"poison", zero}};
+    std::map<std::string, ValueId> captured{{"poison", zero}};
+    if (p.echo.bits(true))
+      captured["echo"] = w_aw.echo;
     close_tracker(
         l, w_track, w_start, captured, l.bind("wr.push", l.either(w_last_transfer, w_last_absorb)),
         w_issue_tag, {{"poison", push_poison}}, d.id, w_dest.second, p.crossing,
@@ -1836,12 +1881,14 @@ void InitiatorLowering::write_complete() {
     if (p.id_bits && !p.lite)
       axi_output("bid", w_b_id);
     user_output("buser", w_buser_reg, zero);
+    echo_outputs("b", w_b_echo);
   } else {
     axi_output("bvalid", w_bvalid);
     axi_output("bresp", l.b.select(w_poisoned, l.b.constant(2, 2), w_bresp_reg));
     if (p.id_bits && !p.lite)
       axi_output("bid", d.id);
     user_output("buser", w_buser_reg, zero);
+    echo_outputs("b", d.echo);
   }
 }
 void InitiatorLowering::read_issue() {
@@ -1883,6 +1930,8 @@ void InitiatorLowering::read_issue() {
   std::vector<std::pair<std::string, unsigned>> slot_fields;
   if (!p.lite && !p.apb && !p.ahb)
     slot_fields.emplace_back("prefix", std::countr_zero(be_bits));
+  if (const auto bits = p.echo.bits(false))
+    slot_fields.emplace_back("echo", bits);
   r_track = multi ? open_tracker(l, "rr", p.max_outstanding, id_entries, p.id_bits, dest_bits,
                                  slot_fields)
                   : Tracker{};
@@ -2018,10 +2067,14 @@ void InitiatorLowering::write_response_valid() {
     w_b_full = l.state("wr.b_full", 1);
     if (p.id_bits)
       w_b_id = l.state("wr.rsp_id", p.id_bits);
+    if (const auto bits = p.echo.bits(true))
+      w_b_echo = l.state("wr.rsp_echo", bits);
   }
   w_bvalid = l.both(l.reset, multi || held ? w_b_full : w_respond);
 }
 void InitiatorLowering::read_response_valid() {
+  if ((multi || held) && p.echo.bits(false))
+    r_rsp_echo = l.state("rr.rsp_echo", p.echo.bits(false));
   if (multi) {
     r_rsp_id = p.id_bits ? l.state("rr.rsp_id", p.id_bits) : ValueId{};
     r_beat = l.state("rr.beat", p.axi_len_bits);
@@ -2087,12 +2140,18 @@ void InitiatorLowering::read_response() {
                           l.b.select(l.both(raccept, l.inv(r_face_local)), zero, r_rsp_full)));
     if (p.id_bits)
       l.b.update(r_rsp_id, l.b.select(rrsp_load, response_id(r_rrsp_in), r_rsp_id));
+    if (p.echo.bits(false))
+      l.b.update(r_rsp_echo,
+                 l.b.select(rrsp_load, slot_field(l, r_track, "echo", slot_of(r_rrsp_in, r_track)),
+                            r_rsp_echo));
     stage_beat(rrsp_load);
     std::map<std::string, ValueId> captured;
     if (!p.lite && !p.apb && !p.ahb)
       captured["prefix"] =
           l.pick(l.eq(r_ar.burst, 1), l.b.slice(r_ar.addr, 0, std::countr_zero(be_bits)),
                  l.num(std::countr_zero(be_bits), 0));
+    if (p.echo.bits(false))
+      captured["echo"] = r_ar.echo;
     close_tracker(l, r_track, r_start, captured, push, r_issue_tag, {}, d.id, r_dest.second,
                   p.crossing,
                   {{l.both(rrsp_load, r_rrsp_in.at("last")), slot_of(r_rrsp_in, r_track),
@@ -2117,6 +2176,8 @@ void InitiatorLowering::read_response() {
       axi_output("rlast", rlast);
     if (p.id_bits && !p.lite)
       axi_output("rid", l.bind("rr.face_id", l.b.select(r_face_local, r_cap.id_reg, r_rsp_id)));
+    if (p.echo.bits(false))
+      echo_outputs("r", l.b.select(r_face_local, r_cap.echo_reg, r_rsp_echo));
     read_group_outputs(r_face_local, rresp);
     // A tracked engine never reaches the APB tail (an APB face holds at most one
     // burst), so this return is the final finish of lower_axi4_initiator.
@@ -2162,6 +2223,8 @@ void InitiatorLowering::read_response() {
     stage_beat(rrsp_load);
     if (p.id_bits)
       l.b.update(r_rsp_id, l.b.select(stage, r_cap.id_reg, r_rsp_id));
+    if (p.echo.bits(false))
+      l.b.update(r_rsp_echo, l.b.select(stage, r_cap.echo_reg, r_rsp_echo));
     l.b.output("nl_rrsp_ready", rrsp_ready, "rrsp", "ready");
     r_arready = l.both(l.reset, l.either(r_taken, l.both(r_emitting, l.inv(r_sent))));
     r_ar_fire = l.bind("rr.ar_fire", l.both(r_ar.valid, r_arready));
@@ -2183,6 +2246,8 @@ void InitiatorLowering::read_response() {
                                                           : r_rsp_last)));
     if (p.id_bits)
       axi_output("rid", l.b.select(r_face_local, r_cap.id_reg, r_rsp_id));
+    if (p.echo.bits(false))
+      echo_outputs("r", l.b.select(r_face_local, r_cap.echo_reg, r_rsp_echo));
     read_group_outputs(face_local, rresp);
     return;
   }
@@ -2223,6 +2288,7 @@ void InitiatorLowering::read_response() {
     axi_output("rlast", last);
   if (p.id_bits && !p.lite)
     axi_output("rid", d.id);
+  echo_outputs("r", d.echo);
   read_group_outputs(r_errstream, rresp);
 }
 void InitiatorLowering::apb_tail() {

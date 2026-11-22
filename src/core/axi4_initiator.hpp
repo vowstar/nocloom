@@ -183,6 +183,9 @@ struct Axi4InitiatorProfile {
   // carry them from its ports and its R beats return them.
   Axi5DataPorts data_ports{};
   bool carry_groups = false;
+  // The response echoes of an axi5 face: each burst stores its AxIDUNQ and AxLOOP with its
+  // descriptor (in its slot with several bursts) and returns them with each response.
+  Axi5EchoPorts echo{};
   unsigned response_user_bits = 0;
   // Weft request level field width (message.hpp point 15), and the full AXI face's AxQOS map
   // (InitiatorQos::axqos_map): a nonempty map adds AWQOS and ARQOS ports of log2(size) bits and

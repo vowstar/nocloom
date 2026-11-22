@@ -426,11 +426,7 @@ struct EngineLowering {
     const auto full = shareable::line_shape(l, sent.at("len"), sent.at("size"), p.data_bits / 8);
     return l.b.concat(l.num(3, 0), l.both(d.at("snoop"), full));
   }
-  // With a timer, a failed target sees the frozen channel: held reports an
-  // address still waiting for its ready from before expiry.
-  void address_face(const std::string &prefix, const Fields &d, ValueId valid, ValueId id,
-                    std::optional<ValueId> held) {
-    out("axi", prefix + "valid", held ? l.b.select(failed, *held, active(valid)) : active(valid));
+  Fields address_signals(const std::string &prefix, const Fields &d, std::optional<ValueId> held) {
     const auto &ports = p.axi5_ports;
     std::vector<std::pair<std::string, std::string>> signals{
         {"addr", "address"}, {"len", "length"}, {"size", "size"}, {"burst", "burst"}};
@@ -438,7 +434,7 @@ struct EngineLowering {
       signals.emplace_back("cache", "cache");
     if (ports.prot)
       signals.emplace_back("prot", "protection");
-    std::map<std::string, ValueId> sent;
+    Fields sent;
     for (const auto &[signal, field] : signals) {
       auto value = d.at(field == "address" && p.start_address ? "start_address" : field);
       if (field == "address" && p.align_wrap && prefix == "ar")
@@ -467,6 +463,15 @@ struct EngineLowering {
       out("axi", prefix + signal, value);
       sent[signal] = value;
     }
+    return sent;
+  }
+  // With a timer, a failed target sees the frozen channel: held reports an
+  // address still waiting for its ready from before expiry.
+  void address_face(const std::string &prefix, const Fields &d, ValueId valid, ValueId id,
+                    std::optional<ValueId> held) {
+    out("axi", prefix + "valid", held ? l.b.select(failed, *held, active(valid)) : active(valid));
+    const auto &ports = p.axi5_ports;
+    const auto sent = address_signals(prefix, d, held);
     const auto freeze = [&](const std::string &signal, ValueId value) {
       return held ? frozen("timeout." + prefix + signal, value) : value;
     };
@@ -513,6 +518,11 @@ struct EngineLowering {
     if (prefix == "aw" ? ports.write_snoop : ports.read_snoop)
       out("axi", prefix + "snoop",
           prefix == "aw" ? freeze("snoop", write_opcode(d, sent)) : l.num(4, 0));
+    // The network keeps its own echoes, so a target sees AxIDUNQ and AxLOOP zero.
+    if (p.echo.unique)
+      out("axi", prefix + "idunq", zero);
+    if (const auto loop = p.echo.loop(prefix == "aw"))
+      out("axi", prefix + "loop", l.num(loop, 0));
     const auto lock = passthrough ? d.at("lock") : zero;
     out("axi", prefix + "lock", p.axi3 ? l.b.concat(zero, lock) : lock);
     if (!p.user.empty()) {
@@ -597,6 +607,13 @@ struct EngineLowering {
                           : in("axi", signal, p.response_user_port_bits);
     return l.b.select(taken, l.fit(port, p.response_user_bits),
                       l.b.constant(p.response_user_bits, 0));
+  }
+  // RIDUNQ and RLOOP of an AXI5 target: the network returns its own echoes.
+  void echo_inputs() {
+    if (p.echo.unique)
+      in("axi", "ridunq", 1);
+    if (p.echo.read_loop)
+      in("axi", "rloop", p.echo.read_loop);
   }
   // RUSER of an AXI5 target with data user bits: the response user port bits low, the data part
   // above them (IHI 0022 Issue L A12.5.3).
@@ -1124,6 +1141,11 @@ void EngineLowering::write_data() {
     out("axi", "wid", id_to_port(write_timer ? frozen("timeout.wid", wid) : wid));
   }
   write_group_outputs(wgroups, wstrb);
+  // The target's response echoes are not read.
+  if (p.echo.unique)
+    in("axi", "bidunq", 1);
+  if (p.echo.write_loop)
+    in("axi", "bloop", p.echo.write_loop);
   if (write_timer) {
     const auto awready = operand(aw_fire), wready = operand(w_fire);
     l.b.update(held_aw, l.b.select(failed, l.b.select(awready, zero, held_aw),
@@ -1844,6 +1866,7 @@ void EngineLowering::read_receive() {
                     l.either(l.eq(rresp, 0),
                              passthrough ? l.both(recv.at("lock"), l.eq(rresp, 1)) : zero)));
   auto rdata = in("axi", "rdata", p.data_bits);
+  echo_inputs();
   const auto rgroups = read_groups(data_ok);
   const auto groups_of = [&](ValueId mask) {
     return groups::gather(l, mask, p.data_bits / 8, p.data_user_bits_per_byte);
@@ -2174,6 +2197,7 @@ void EngineLowering::read_receive_joined() {
                     l.either(l.eq(rresp, 0),
                              passthrough ? l.both(recv.at("lock"), l.eq(rresp, 1)) : zero)));
   const auto rdata = in("axi", "rdata", p.data_bits);
+  echo_inputs();
   const auto rgroups = read_groups(p.failure_classes && p.carry_groups ? l.eq(rcode, 0) : data_ok);
   const auto first = l.eq(beat_now, 0);
   current = several ? beat_address(recv, beat_now) : l.b.select(first, recv.at("address"), ra);

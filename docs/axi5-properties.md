@@ -56,6 +56,10 @@ packet splitting and clock domain crossings.
 | Regular_Transactions_Only | An initiator can have any value. A target must have `false`, because packet splitting changes the shape of a burst |
 | Wrap_CLS_Modifiable | An initiator can have any value. A target must have `false`, because the network does not limit WRAP bursts to cache lines |
 | Fixed_Burst_Disable | An initiator can have any value. A target must have `false`, because an AXI target receives FIXED bursts |
+| Unique_ID_Support | An initiator stores AWIDUNQ and ARIDUNQ and returns them on BIDUNQ and RIDUNQ. A target sees AWIDUNQ and ARIDUNQ zero. See [response echoes](axi5.md#response-echoes) |
+| Loopback_Signals | An initiator stores AWLOOP and ARLOOP and returns them on BLOOP and RLOOP. A target sees AWLOOP and ARLOOP zero |
+| LOOP_W_WIDTH | `write_loop_width` sets the width of AWLOOP and BLOOP, 0 to 8 bits |
+| LOOP_R_WIDTH | `read_loop_width` sets the width of ARLOOP and RLOOP, 0 to 8 bits |
 | Device_Normal_Independence | The network keeps the order of one ID. A target with `true` needs the same value at each initiator that reaches it |
 | Ordered_Write_Observation | The property has no field. An initiator port of the network does not give this guarantee |
 | Multi_Copy_Atomicity | The property has no field. The network has no cache, and each address reaches one target |
@@ -70,10 +74,6 @@ packet splitting and clock domain crossings.
 | Property | Reason |
 | --- | --- |
 | Trace_Signals | The network rejects this property |
-| Unique_ID_Support | The network rejects this property |
-| Loopback_Signals | The network rejects this property |
-| LOOP_W_WIDTH | The property follows Loopback_Signals |
-| LOOP_R_WIDTH | The property follows Loopback_Signals |
 | Wakeup_Signals | The network has no clock or power control that uses AWAKEUP |
 | QoS_Accept | The network has no function that uses VAWQOSACCEPT or VARQOSACCEPT |
 | Busy_Support | The network has no rule to combine the BBUSY and RBUSY values of split packets |

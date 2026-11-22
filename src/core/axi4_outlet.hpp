@@ -118,6 +118,9 @@ struct Axi4OutletProfile {
   // them and the data_user field; otherwise it sends zero groups.
   Axi5DataPorts data_ports{};
   bool carry_groups = false;
+  // The echo ports of an axi5 target: AxIDUNQ and AxLOOP are zero, BIDUNQ, RIDUNQ, BLOOP and
+  // RLOOP are inputs the outlet does not read.
+  Axi5EchoPorts echo{};
   unsigned response_user_bits = 0;
   // AxUSER bit i: a constant or AttributeSource::User naming a flag by index; empty has no port.
   std::vector<AttributeBit> user{};

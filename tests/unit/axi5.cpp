@@ -538,3 +538,28 @@ TEST_CASE("AXI5 poison ports have one bit for each eight bytes", "[axi5]") {
   wide.targets[0].protocol = Protocol::Ace5Lite;
   CHECK(has(refused(wide), "NCL_AXI5_DATA_WIDTH", "targets[0].data_width"));
 }
+
+TEST_CASE("AXI5 unique ID and loopback ports return the request values", "[axi5]") {
+  using namespace nocloom;
+  auto d = parsed(with("axi5"));
+  auto &cpu = d.initiators[0].axi5.emplace();
+  cpu.unique_id = true;
+  cpu.write_loop_width = 3;
+  cpu.read_loop_width = 8;
+  auto &ram = d.targets[0].axi5.emplace();
+  ram.unique_id = true;
+  ram.write_loop_width = 2;
+  const auto r = generate(d);
+  REQUIRE(r);
+  const auto &rtl = artifact(r.value(), ".v");
+  for (const auto *port : {" nl_i_cpu_awidunq,", " nl_i_cpu_bidunq,", " nl_i_cpu_aridunq,",
+                           " nl_i_cpu_ridunq,", "[2:0] nl_i_cpu_awloop,", "[2:0] nl_i_cpu_bloop,",
+                           "[7:0] nl_i_cpu_arloop,", "[7:0] nl_i_cpu_rloop,", " nl_t_ram_awidunq,",
+                           " nl_t_ram_bidunq,", "[1:0] nl_t_ram_awloop,", "[1:0] nl_t_ram_bloop,"})
+    CHECK(rtl.find(port) != std::string::npos);
+  for (const auto *absent : {"nl_i_dma_awidunq", "nl_t_ram_arloop", "nl_t_ram_rloop"})
+    CHECK(rtl.find(absent) == std::string::npos);
+  auto wide = d;
+  wide.initiators[0].axi5->read_loop_width = 9;
+  CHECK(has(refused(wide), "NCL_AXI5_PROPERTIES", "initiators[0].axi5.read_loop_width"));
+}

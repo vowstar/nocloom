@@ -1345,6 +1345,7 @@ Axi4InitiatorProfile initiator_profile(const NetworkPlan &plan, unsigned index) 
   profile.byte_groups = plan.byte_groups;
   profile.data_ports = axi5_data_ports(sp.axi5, sp.data_user_bits);
   profile.carry_groups = data_side(plan, sp.axi5, sp.data_user_bits);
+  profile.echo = axi5_echo_ports(sp.axi5);
   profile.ahb5 = sp.ahb5;
   profile.hmaster_bits = sp.hmaster_bits;
   profile.hprot_bits = sp.hprot_bits;
@@ -1587,6 +1588,7 @@ Axi4OutletProfile axi4_outlet_profile(const NetworkPlan &plan, unsigned index) {
   profile.axi5_attributes = plan.axi5_attributes;
   profile.data_ports = axi5_data_ports(tp.axi5, tp.data_user_bits);
   profile.carry_groups = data_side(plan, tp.axi5, tp.data_user_bits);
+  profile.echo = axi5_echo_ports(tp.axi5);
   profile.region_port = tp.region_port;
   profile.axqos_levels = tp.axqos_levels;
   profile.level_bits = tp.axqos_levels.empty() ? 0 : plan.burst_level_bits;

@@ -169,6 +169,31 @@ An `axi5` endpoint with data user or poison ports is 32, 64 or 128 bits wide.
 Other widths give `NCL_AXI5_DATA_WIDTH`. An APB5 endpoint and an `axi5`
 endpoint exchange data user bits by the same rules.
 
+## Response echoes
+
+`unique_id` and the loop widths give an initiator values that come back with
+the response of each request. The initiator stores them with the request and
+returns them itself. The values do not travel to the target.
+
+| Field | Initiator ports | Returned value |
+| --- | --- | --- |
+| `unique_id` | AWIDUNQ, ARIDUNQ, BIDUNQ and RIDUNQ | BIDUNQ is the AWIDUNQ of the write. RIDUNQ is the ARIDUNQ of the read, on every read transfer |
+| `write_loop_width` | AWLOOP and BLOOP | BLOOP is the AWLOOP of the write |
+| `read_loop_width` | ARLOOP and RLOOP | RLOOP is the ARLOOP of the read, on every read transfer |
+
+The values return with every response, including a target response and a
+local response for a decode miss or a refused burst. For a split request, the
+values return in the single B response or R stream.
+
+Each request in flight keeps its own values. Several requests can be in flight.
+Their responses can return in any order that the AXI ordering rules allow.
+
+An `axi5` target with these fields has the same ports. The network drives
+AWIDUNQ, ARIDUNQ, AWLOOP and ARLOOP zero and does not read BIDUNQ, RIDUNQ,
+BLOOP and RLOOP. A target ID can join requests of several initiators, so the
+unique ID indicator of one initiator does not hold at the target. The network
+does not use AWIDUNQ and ARIDUNQ for ordering.
+
 ## Target AxREGION and AxQOS
 
 `axi4`, `axi5` and `ace5_lite` targets can drive AxREGION and AxQOS. The network

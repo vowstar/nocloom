@@ -3392,6 +3392,32 @@ private:
                              ep.bound.at("tl.d_take")});
   }
 
+  void source_slot_names(Names &words, const SourcePlan &sp, const Imported &ep,
+                         const std::string &dir, bool read) {
+    auto &[fields, controls] = words;
+    const auto &states = ep.states;
+    // A slot's write poison or read prefix is payload. Slot flags, the ID table, the tags,
+    // the read's local beat and the B staging flag are control.
+    for (unsigned k = 0; k < sp.engine_slots; ++k) {
+      const auto at = dir + ".s" + std::to_string(k) + ".";
+      const auto payload = at + std::array{"poison", "prefix"}[read];
+      if (states.contains(payload))
+        fields.push_back(payload);
+      if (states.contains(at + "echo"))
+        fields.push_back(at + "echo");
+      controls.push_back(at + "valid");
+    }
+    for (unsigned j = 0; j < sp.outstanding_ids; ++j) {
+      const auto at = dir + ".i" + std::to_string(j) + ".";
+      controls.push_back(at + "count");
+      if (plan.burst_id_bits)
+        controls.push_back(at + "id");
+      controls.push_back(at + "dest");
+    }
+    if (!read)
+      controls.insert(controls.end(), {"wr.tag", "wr.b_full"});
+  }
+
   void register_source_storage(unsigned si, const SourceSide &side, const Imported &converter,
                                const Imported &splitter) {
     const auto &sp = plan.sources[si];
@@ -3450,6 +3476,8 @@ private:
       if (!sp.apb)
         add_descriptor(fields, dir + ".desc.", id, plan.burst_user_bits, mapped,
                        plan.burst_audit_bits != 0, coherence_checked(axi5_request_ports(sp.axi5)));
+      if (states.contains(dir + ".desc.echo"))
+        fields.push_back(dir + ".desc.echo");
       add_source_progress(words, side.ep, sp, read);
       plane_words(side.ep.states, dir, words);
       if (read)
@@ -3463,26 +3491,8 @@ private:
         controls.insert(controls.end(), {"ahb.phase", "ahb.sent", "ahb.done", "ahb.err", "ahb.end",
                                          "ahb.left", "ahb.flight", "ahb.open_write"});
       }
-      if (outstanding > 1) {
-        // A slot's write poison or read prefix is payload. Slot flags, the ID table, the tags,
-        // the read's local beat and the B staging flag are control.
-        for (unsigned k = 0; k < outstanding; ++k) {
-          const auto at = dir + ".s" + std::to_string(k) + ".";
-          const auto payload = at + std::array{"poison", "prefix"}[read];
-          if (states.contains(payload))
-            fields.push_back(payload);
-          controls.push_back(at + "valid");
-        }
-        for (unsigned j = 0; j < sp.outstanding_ids; ++j) {
-          const auto at = dir + ".i" + std::to_string(j) + ".";
-          controls.push_back(at + "count");
-          if (id)
-            controls.push_back(at + "id");
-          controls.push_back(at + "dest");
-        }
-        if (!read)
-          controls.insert(controls.end(), {"wr.tag", "wr.b_full"});
-      }
+      if (outstanding > 1)
+        source_slot_names(words, sp, side.ep, dir, read);
       std::vector<ValueId> payload, control;
       consume_states(side.ep, words, assigned, payload, control);
       for (const auto *part : {&converter, &splitter})
@@ -3513,6 +3523,8 @@ private:
         staging.first = {"wr.bresp"};
         if (plan.burst_response_user_bits)
           staging.first.push_back("wr.b_user");
+        if (states.contains("wr.rsp_echo"))
+          staging.first.push_back("wr.rsp_echo");
         if (staged_one)
           staging.second.push_back("wr.b_full");
       } else {
@@ -3523,6 +3535,8 @@ private:
           staging.first.push_back("rr.rsp_exclusive_okay");
         if (plan.burst_response_user_bits)
           staging.first.push_back("rr.rsp_user");
+        if (states.contains("rr.rsp_echo"))
+          staging.first.push_back("rr.rsp_echo");
         staging.second = {"rr.rsp_full"};
       }
       for (const auto &name : {dir + ".rsp_id", dir + ".pslverr", dir + ".prdata_read",

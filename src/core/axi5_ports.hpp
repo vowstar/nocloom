@@ -39,6 +39,17 @@ struct Axi5DataPorts {
   bool any() const { return user || poison || trace; }
   bool operator==(const Axi5DataPorts &) const = default;
 };
+// The values an AXI5 initiator returns with each response of a request
+// (docs/axi5.md#response-echoes): AxIDUNQ on BIDUNQ and RIDUNQ, AxLOOP on BLOOP and RLOOP. A target
+// drives the request signals zero and ignores the response ones. bits() is the width of one
+// direction's stored value: the unique bit lowest, the loop value above it.
+struct Axi5EchoPorts {
+  bool unique = false;
+  unsigned write_loop = 0, read_loop = 0;
+  unsigned loop(bool write) const { return write ? write_loop : read_loop; }
+  unsigned bits(bool write) const { return (unique ? 1U : 0U) + loop(write); }
+  bool operator==(const Axi5EchoPorts &) const = default;
+};
 // The group of bits beside each data byte (message.hpp point 20): the data user bits from bit 0,
 // then the poison bit and the trace bit. The data_user payload field holds one group per byte,
 // byte b's at bits() * b.

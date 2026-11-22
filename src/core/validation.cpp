@@ -1266,9 +1266,6 @@ void check_axi5(Checks &c, std::optional<Protocol> protocol,
   // Properties that later network functions carry.
   for (const auto &[key, set, property] :
        {std::tuple{"trace", p.trace, "Trace_Signals"},
-        {"unique_id", p.unique_id, "Unique_ID_Support"},
-        {"write_loop_width", p.write_loop_width != 0, "Loopback_Signals"},
-        {"read_loop_width", p.read_loop_width != 0, "Loopback_Signals"},
         {"max_transaction_bytes", !initiator && p.max_transaction_bytes != 4096,
          "Max_Transaction_Bytes below 4096 at a target"}})
     if (set)

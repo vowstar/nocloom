@@ -310,6 +310,14 @@ struct Obligations {
       // An APB face holds its transfer: no descriptor, beat or count in the engine.
       if (sp.apb)
         source_state.source_engine[0] = source_state.source_engine[1] = 0;
+      // The response echoes of an AXI5 face: in the descriptor, in each slot of several bursts
+      // and with the staged B or R beat.
+      for (unsigned direction = 0; direction < 2; ++direction)
+        if (const auto echo = axi5_echo_ports(sp.axi5).bits(direction == 0)) {
+          source_state.source_engine[direction] +=
+              echo * (1 + (sp.engine_slots > 1 ? sp.engine_slots : 0));
+          source_state.source_return[direction] += echo;
+        }
       // The staged R beat's data user bits of an APB5 face, the byte groups of an AXI5 face.
       if (sp.apb && sp.data_user_bits)
         source_state.source_return[1] += 4 * plan.byte_groups.user;
