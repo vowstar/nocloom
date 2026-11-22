@@ -585,3 +585,51 @@ TEST_CASE("AXI5 trace ports carry the request bit and follow the data", "[axi5]"
   wide.initiators[0].protocol = Protocol::Ace5Lite;
   CHECK(has(refused(wide), "NCL_AXI5_DATA_WIDTH", "initiators[0].data_width"));
 }
+
+namespace {
+// The expression that drives a net, through plain assignments of one net to another.
+std::string driver(const std::string &rtl, std::string net) {
+  for (int hop = 0; hop < 64; ++hop) {
+    std::smatch m;
+    if (!std::regex_search(rtl, m, std::regex("assign " + net + " = ([^;]+);")))
+      return {};
+    const std::string value = m[1];
+    if (!std::regex_match(value, std::regex("[A-Za-z_][A-Za-z0-9_]*")))
+      return value;
+    net = value;
+  }
+  return {};
+}
+} // namespace
+
+TEST_CASE("Targets drive NSAID zero outside the Non-secure address space", "[axi5]") {
+  using namespace nocloom;
+  // IHI 0022 Issue L, A10.1.1: a request outside the Non-secure address space has NSAID zero.
+  // tests/axi5_request_bench.py checks the values in simulation. This test checks which targets
+  // can see a Non-secure request at all.
+  auto d = parsed(with("axi5"));
+  d.initiators[0].axi5.emplace().nsaid = true;
+  auto &ram = d.targets[0].axi5.emplace();
+  ram.nsaid = true;
+  ram.prot = false;
+  ram.priv_inst = true;
+  const auto zero = [](const Definition &x) {
+    const auto r = generate(x);
+    REQUIRE(r);
+    const auto &rtl = artifact(r.value(), ".v");
+    const auto aw = driver(rtl, "nl_t_ram_awnsaid"), ar = driver(rtl, "nl_t_ram_arnsaid");
+    REQUIRE_FALSE(aw.empty());
+    REQUIRE_FALSE(ar.empty());
+    return aw == "4'd0" && ar == "4'd0";
+  };
+  // Without AxPROT and AxPAS the target sees no Non-secure request.
+  CHECK(zero(d));
+  // AxPAS or AxPROT shows a Non-secure request, and NSAID passes on it.
+  auto pas = d;
+  pas.targets[0].axi5->pas_width = 1;
+  CHECK_FALSE(zero(pas));
+  auto prot = d;
+  prot.targets[0].axi5->prot = true;
+  prot.targets[0].axi5->priv_inst = false;
+  CHECK_FALSE(zero(prot));
+}

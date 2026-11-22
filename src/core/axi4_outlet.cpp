@@ -479,18 +479,24 @@ struct EngineLowering {
     };
     // AxPRIV, AxINST and AxPAS of an AXI5 target without AxPROT take the mapped protection bits 0,
     // 2 and 1 (IHI 0022 Issue L, A4.5.1).
+    std::optional<ValueId> protection;
     if (!ports.prot && (ports.priv_inst || ports.pas)) {
       const auto map = p.attributes.value_or(TargetAttributes::amba());
-      const auto protection =
+      protection =
           freeze("protection", map_attributes(l, map.prot, d.at("cache"), d.at("protection"),
                                               l.b.constant(1, prefix == "aw" ? 1 : 0)));
       if (ports.priv_inst) {
-        out("axi", prefix + "priv", l.b.slice(protection, 0, 1));
-        out("axi", prefix + "inst", l.b.slice(protection, 2, 1));
+        out("axi", prefix + "priv", l.b.slice(*protection, 0, 1));
+        out("axi", prefix + "inst", l.b.slice(*protection, 2, 1));
       }
       if (ports.pas)
-        out("axi", prefix + "pas", l.b.slice(protection, 1, 1));
+        out("axi", prefix + "pas", l.b.slice(*protection, 1, 1));
     }
+    // The target sees a Non-secure request when its AxPROT[1] or AxPAS is 1. Without either port
+    // it sees no Non-secure request. Only an NSAID port reads it.
+    std::optional<ValueId> nonsecure;
+    if (ports.nsaid && axi5_used().nsaid && (ports.prot || ports.pas))
+      nonsecure = l.b.slice(ports.prot ? sent.at("prot") : *protection, 1, 1);
     // AxREGION from the mapping that holds the packet: a packet never crosses a mapping edge.
     if (p.region_port)
       out("axi", prefix + "region",
@@ -509,7 +515,8 @@ struct EngineLowering {
     }
     const auto used = axi5_used();
     axi5::target_attributes(l, used, ports, 0, d.contains("axi5") ? d.at("axi5") : zero,
-                            d.at("protection"), [&](const std::string &signal, ValueId value) {
+                            d.at("protection"), nonsecure,
+                            [&](const std::string &signal, ValueId value) {
                               out("axi", prefix + signal, freeze(signal, value));
                             });
     // AxDOMAIN from the request, or from its AxCACHE without the domain field (docs/ace5-lite.md).

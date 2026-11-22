@@ -28,9 +28,16 @@ TARGETS = {
     't9': ('axi5', 32, 0x20000, dict(mpam='partid_9', subsystem_id_width=3, prot=False,
                                      pas_width=1)),
     't4': ('axi4', 32, 0x30000, None),
+    # NSAID without AxPROT and AxPAS, and NSAID behind an AxPROT mapping that makes every
+    # request Secure: both targets see no Non-secure request.
+    't5s': ('axi5', 32, 0x40000, dict(nsaid=True, prot=False, priv_inst=True)),
+    't5r': ('axi5', 32, 0x50000, dict(nsaid=True)),
 }
-REACH = {'wide': ['t5', 't5b', 't4'], 'narrow': ['t5', 't5b', 't9', 't4'],
-         'plain': ['t5', 't5b', 't9', 't4']}
+# Target AxPROT mappings other than the AMBA one.
+SECURE = {'t5r': ['privileged', 0, 'instruction']}
+REACH = {'wide': ['t5', 't5b', 't4', 't5s', 't5r'],
+         'narrow': ['t5', 't5b', 't9', 't4', 't5s', 't5r'],
+         'plain': ['t5', 't5b', 't9', 't4', 't5s', 't5r']}
 # Request attribute fields of the network: the widest source sets each width.
 FIELD = {'nsaid': 4, 'pbha': 4, 'subsysid': 5, 'mpam': 14}
 
@@ -59,6 +66,8 @@ def configuration(mode):
         entry = {'name': name, 'clock_domain': dst_domain, 'protocol': protocol,
                  'data_width': bits, 'id_width': 4, 'len_width': 8, 'attributes': 'amba',
                  'mappings': [{'base': hex(base), 'size': '0x10000', 'local_address': hex(base)}]}
+        if name in SECURE:
+            entry['attributes'] = {'preset': 'amba', 'prot': SECURE[name]}
         if axi5:
             entry['axi5'] = axi5
         cfg['targets'].append(entry)
@@ -153,9 +162,13 @@ def expected(t):
         cache = (c & 3) | (int(bool(c & 12)) << 2) | (((c >> 3) & 1) << 3)
     else:
         cache = (c & 3) | (((c >> 2) & 1) << 2) | (int(bool(c & 12)) << 3)
-    out = dict(prot=t['prot'], cache=cache)
+    prot = t['prot'] & ~2 if t['target'] in SECURE else t['prot']
+    out = dict(prot=prot, cache=cache)
     f = t['field']
-    out['nsaid'] = f['nsaid'] if axi5.get('nsaid') else None
+    # NSAID is zero unless the target sees a Non-secure request on AxPROT[1] or AxPAS (IHI 0022
+    # Issue L, A10.1.1).
+    nonsecure = (axi5.get('prot', True) or axi5.get('pas_width')) and prot >> 1 & 1
+    out['nsaid'] = (f['nsaid'] if nonsecure else 0) if axi5.get('nsaid') else None
     out['pbha'] = f['pbha'] if axi5.get('pbha') else None
     width = axi5.get('subsystem_id_width', 0)
     out['subsysid'] = f['subsysid'] & ((1 << width) - 1) if width else None

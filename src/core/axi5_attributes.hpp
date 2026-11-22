@@ -53,10 +53,13 @@ std::optional<ValueId> source_attributes(logic::Logic &l, const Axi5Attributes &
 // The AXI5 request ports of a target from the attributes at bit `offset` of the request user field.
 // emit(name, value) drives one port. A target port wider than its field takes zeros above it.
 // Without a field, NSAID, PBHA, the subsystem ID and AxTRACE are zero and MPAM carries MPAM_NS from
-// protection bit 1.
+// protection bit 1. `nonsecure` is set when the target sees a Non-secure request. NSAID is zero
+// for every other request (IHI 0022 Issue L, A10.1.1, and Issue F, E2.13.1: a Secure request
+// uses NSAID zero), and without `nonsecure` for all of them.
 template <class Emit>
 void target_attributes(logic::Logic &l, const Axi5Attributes &a, const Axi5RequestPorts &ports,
-                       unsigned offset, ValueId user, ValueId protection, Emit emit) {
+                       unsigned offset, ValueId user, ValueId protection,
+                       std::optional<ValueId> nonsecure, Emit emit) {
   unsigned at = offset;
   const auto field = [&](unsigned bits) {
     const auto value = bits ? std::optional{l.b.slice(user, at, bits)} : std::nullopt;
@@ -66,7 +69,7 @@ void target_attributes(logic::Logic &l, const Axi5Attributes &a, const Axi5Reque
   const auto nsaid = field(a.nsaid), pbha = field(a.pbha);
   const auto subsystem = field(a.subsystem_id), mpam = field(a.mpam), trace = field(a.trace);
   if (ports.nsaid)
-    emit("nsaid", nsaid.value_or(l.num(4, 0)));
+    emit("nsaid", nsaid && nonsecure ? l.b.select(*nonsecure, *nsaid, l.num(4, 0)) : l.num(4, 0));
   if (ports.pbha)
     emit("pbha", pbha.value_or(l.num(4, 0)));
   if (ports.subsystem_id)

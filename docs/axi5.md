@@ -91,7 +91,7 @@ through width conversion, packet splitting, pipes and clock domain crossings.
 | `mpam` | AWMPAM and ARMPAM, 11 bits for `partid_9` and 14 bits for `partid_12` | The same | MPAM_NS, PARTID and PMG of the request. A 9-bit PARTID gets zeros above it in a 14-bit port |
 | `subsystem_id_width` | AWSUBSYSID and ARSUBSYSID | The same | The subsystem ID of the request, with zeros above it |
 | `subsystem_id` | None. The value of every request of the initiator | Not allowed | |
-| `nsaid` | AWNSAID and ARNSAID, 4 bits | The same | The NSAID of the request |
+| `nsaid` | AWNSAID and ARNSAID, 4 bits | The same | The NSAID of a Non-secure request, 0 for other requests. See below |
 | `pbha` | AWPBHA and ARPBHA, 4 bits | The same | The PBHA of the request |
 | `prot: false` | No AWPROT and ARPROT | No AWPROT and ARPROT | |
 | `priv_inst` | AWPRIV, AWINST, ARPRIV and ARINST | The same | AxPRIV is protection bit 0 and AxINST is bit 2 after the `attributes` mapping |
@@ -104,6 +104,14 @@ The table gives the target values when the initiator has no attribute port.
 | --- | --- | --- | --- | --- |
 | Without the port | 0, or the `subsystem_id` value | MPAM_NS is AxPROT[1]. PARTID and PMG are 0 | `prot: false` without AxPRIV, AxINST or AxPAS gives 0 for those bits | 0 with `cache: false` |
 | APB, AHB, Wishbone, TileLink, AXI4, AXI3, AXI4-Lite | 0 | MPAM_NS is AxPROT[1]. PARTID and PMG are 0 | Its protection | Its AxCACHE |
+
+A target sees a Non-secure request when its AxPROT[1] or AxPAS is 1, after
+the `attributes` mapping. Its AWNSAID and ARNSAID are 0 for every other
+request, because Issue L, A10.1.1, allows NSAID only in the Non-secure address
+space. A target without AxPROT and AxPAS sees no Non-secure request, so its
+NSAID is always 0. MPAM_NS keeps the value of the request also when the mapping
+changes AxPROT[1]. AMBA permits all four combinations of MPAM_NS and the
+security of a request (CHI Issue E.b, 11.3.1).
 
 Each target port must hold the attributes of every initiator that reaches it.
 A subsystem ID port narrower than the subsystem ID of such an initiator, or a

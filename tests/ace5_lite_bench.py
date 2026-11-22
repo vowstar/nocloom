@@ -149,11 +149,13 @@ class Plan:
         start = self.slot(target)
         span = (length + 1) << size
         addr = start + offset
-        nsaid = random.getrandbits(4)
+        nsaid, prot = random.getrandbits(4), random.getrandbits(3)
+        # Every target with an NSAID port here has AxPROT: NSAID stays only on a Non-secure
+        # request (IHI 0022 Issue L, A10.1.1).
         t = dict(index=len(self.txs), source=source, target=target, write=write, addr=addr,
                  len=length, size=size, burst=burst, id=len(self.txs) % 4, lock=lock,
-                 cache=cache, prot=random.getrandbits(3), domain_in=domain, opcode=opcode,
-                 nsaid_in=nsaid, nsaid=nsaid if (axi5 or {}).get('nsaid') else 0, lo=start,
+                 cache=cache, prot=prot, domain_in=domain, opcode=opcode, nsaid_in=nsaid,
+                 nsaid=nsaid if (axi5 or {}).get('nsaid') and prot & 2 else 0, lo=start,
                  hi=addr + span, resp=2 if rejected else 0)
         effective = domain if dport else default_domain(cache)
         t['domain'] = effective
