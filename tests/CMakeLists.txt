@@ -1447,11 +1447,21 @@ add_test(NAME clock_parent_chain
 set_tests_properties(clock_parent_chain PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   TIMEOUT 60 LABELS "rtl;edit" ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
 
+# The directed constraints and two forced chains run as three entries.
 add_test(NAME clock_edge_constraints
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/clock_edge_constraints.py
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/clock_edge_constraints
-    --cases directed)
-set_tests_properties(clock_edge_constraints PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    --cases constraints)
+foreach(chain IN ITEMS 2_3 1_2_2)
+  string(REPLACE "_" "-" chain_option ${chain})
+  add_test(NAME clock_edge_constraints_chain_${chain}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/clock_edge_constraints.py
+      --cli $<TARGET_FILE:nocloom_cli>
+      --work ${CMAKE_CURRENT_BINARY_DIR}/clock_edge_constraints_chain_${chain}
+      --cases chain-${chain_option})
+endforeach()
+set_tests_properties(clock_edge_constraints clock_edge_constraints_chain_2_3
+  clock_edge_constraints_chain_1_2_2 PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   TIMEOUT 390 LABELS "rtl;focused;ci" ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
 add_test(NAME clock_edge_constraints_deep_chain
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/clock_edge_constraints.py

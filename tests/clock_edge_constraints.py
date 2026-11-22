@@ -485,22 +485,29 @@ def directed_constraints(cli, work):
     mixed_period(cli, work / 'mixed_period')
 
 
+# The forced chains each --cases value runs; constraints and all also run the
+# directed constraints. The parts share no files and run as separate entries.
+CHAINS = {
+    'all': ((2, 3), (2, 3, 2), (1, 2, 2)),
+    'constraints': (),
+    'chain-2-3': ((2, 3),),
+    'chain-1-2-2': ((1, 2, 2),),
+    'deep-chain': ((2, 3, 2),),
+}
+
+
 def main(cli, work, cases):
-    chains = {
-        'all': ((2, 3), (2, 3, 2), (1, 2, 2)),
-        'directed': ((2, 3), (1, 2, 2)),
-        'deep-chain': ((2, 3, 2),),
-    }
-    if cases != 'deep-chain':
+    if cases in ('all', 'constraints'):
         directed_constraints(cli, work)
-    forced_chains(cli, work / 'forced_chains', chains[cases])
+    if CHAINS[cases]:
+        forced_chains(cli, work / 'forced_chains', CHAINS[cases])
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--cli', type=Path, required=True)
     parser.add_argument('--work', type=Path, required=True)
-    parser.add_argument('--cases', choices=('all', 'directed', 'deep-chain'), default='all')
+    parser.add_argument('--cases', choices=tuple(CHAINS), default='all')
     args = parser.parse_args()
     args.work.mkdir(parents=True, exist_ok=True)
     main(args.cli, Path(tempfile.mkdtemp(prefix='edges-', dir=args.work)), args.cases)
