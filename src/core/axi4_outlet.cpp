@@ -9,6 +9,7 @@
 #include "logic.hpp"
 #include "mapping_decode.hpp"
 #include "message.hpp"
+#include "shareable.hpp"
 #include "strobe_lanes.hpp"
 #include <algorithm>
 #include <array>
@@ -119,6 +120,8 @@ static Axi5Attributes axi5_target_fields(const Axi4OutletProfile &p) {
   used.pbha = ports.pbha ? used.pbha : 0;
   used.subsystem_id = ports.subsystem_id ? used.subsystem_id : 0;
   used.mpam = ports.mpam ? used.mpam : 0;
+  used.domain = ports.domain ? used.domain : 0;
+  used.snoop = ports.domain && ports.write_snoop ? used.snoop : 0;
   return used;
 }
 
@@ -386,7 +389,7 @@ struct EngineLowering {
   }
   Axi5Attributes axi5_used() const { return axi5_target_fields(p); }
   // A request packet's axi5 field: the attributes of its user field that the ports read. A
-  // descriptor keeps it in place of the whole user field.
+  // descriptor keeps it in place of the whole user field, and the domain and snoop fields apart.
   void axi5_field(Fields &f) {
     const auto &all = p.axi5_attributes;
     const auto used = axi5_used();
@@ -404,7 +407,23 @@ struct EngineLowering {
       }
       at += bits;
     }
-    f["axi5"] = *word;
+    if (word)
+      f["axi5"] = *word;
+    if (used.domain)
+      f["domain"] = l.b.slice(f.at("user"), at, all.domain);
+    if (used.snoop)
+      f["snoop"] = l.b.slice(f.at("user"), at + all.domain, all.snoop);
+  }
+  // The four AxSNOOP bits of a packet on a target that takes the snoop field: WriteUniqueFull only
+  // when the packet, as it leaves, still holds the whole cache line, else zero (WriteUniquePtl in
+  // the Shareable domain). The shape comes from the port values.
+  ValueId write_opcode(const Fields &d, const std::map<std::string, ValueId> &sent) {
+    if (!axi5_used().snoop)
+      return l.num(4, 0);
+    // A packet of a line keeps its alignment (a mapping is whole pages or a naturally aligned
+    // sub-page), so a packet split from the line fails on its length.
+    const auto full = shareable::line_shape(l, sent.at("len"), sent.at("size"), p.data_bits / 8);
+    return l.b.concat(l.num(3, 0), l.both(d.at("snoop"), full));
   }
   // With a timer, a failed target sees the frozen channel: held reports an
   // address still waiting for its ready from before expiry.
@@ -418,6 +437,7 @@ struct EngineLowering {
       signals.emplace_back("cache", "cache");
     if (ports.prot)
       signals.emplace_back("prot", "protection");
+    std::map<std::string, ValueId> sent;
     for (const auto &[signal, field] : signals) {
       auto value = d.at(field == "address" && p.start_address ? "start_address" : field);
       if (field == "address" && p.align_wrap && prefix == "ar")
@@ -444,6 +464,7 @@ struct EngineLowering {
       if (field == "length")
         value = l.fit(value, p.axi_len_bits.value_or(p.packet_len_bits));
       out("axi", prefix + signal, value);
+      sent[signal] = value;
     }
     const auto freeze = [&](const std::string &signal, ValueId value) {
       return held ? frozen("timeout." + prefix + signal, value) : value;
@@ -479,10 +500,18 @@ struct EngineLowering {
           freeze("qos", p.level_bits ? l.by_index(d.at("level"), arms) : arms.front()));
     }
     const auto used = axi5_used();
-    axi5::target_attributes(l, used, ports, 0, used.bits() ? d.at("axi5") : zero,
+    axi5::target_attributes(l, used, ports, 0, d.contains("axi5") ? d.at("axi5") : zero,
                             d.at("protection"), [&](const std::string &signal, ValueId value) {
                               out("axi", prefix + signal, freeze(signal, value));
                             });
+    // AxDOMAIN from the request, or from its AxCACHE without the domain field (docs/ace5-lite.md).
+    if (ports.domain)
+      out("axi", prefix + "domain",
+          freeze("domain",
+                 used.domain ? d.at("domain") : shareable::default_domain(l, d.at("cache"))));
+    if (prefix == "aw" ? ports.write_snoop : ports.read_snoop)
+      out("axi", prefix + "snoop",
+          prefix == "aw" ? freeze("snoop", write_opcode(d, sent)) : l.num(4, 0));
     const auto lock = passthrough ? d.at("lock") : zero;
     out("axi", prefix + "lock", p.axi3 ? l.b.concat(zero, lock) : lock);
     if (!p.user.empty()) {
@@ -827,8 +856,9 @@ void EngineLowering::write_accept() {
   if (!p.user.empty() || (owned && several))
     descriptor.emplace_back("user");
   axi5_field(w);
-  if (axi5_used().bits())
-    descriptor.emplace_back("axi5");
+  for (const auto *name : {"axi5", "domain", "snoop"})
+    if (w.contains(name))
+      descriptor.emplace_back(name);
   if (p.level_bits)
     descriptor.emplace_back("level");
   // One burst keeps its target ID in its entry: no slots compare it, and its sum leaves the head's
@@ -1436,6 +1466,8 @@ void EngineLowering::read_accept() {
   if (target_id_bits && !several)
     r["target_id"] = descriptor_id(r, 1);
   axi5_field(r);
+  // A read carries no snoop bit: the write functions are done with the full descriptor.
+  std::erase(descriptor, std::string("snoop"));
   rs.resize(depth);
   for (unsigned k = 0; k < depth; ++k) {
     const auto at = "r.slot" + std::to_string(k) + ".";
@@ -2552,8 +2584,10 @@ std::pair<unsigned, unsigned> axi4_outlet_outstanding_bits(const Axi4OutletProfi
                 (joined || p.response_direct ? 0 : p.data_bits / 8 + 3 + several);
   const unsigned beats = (p.response_direct || (p.merged && !p.interleave) ? 1 : 2) *
                          (2 + p.data_bits + address + user);
-  const unsigned read = (joined ? p.max_outstanding * (descriptor + user) + beats
-                                : p.max_outstanding * descriptor + address + beats + user) +
+  // A read descriptor has no snoop bit.
+  const unsigned read_descriptor = descriptor - axi5_target_fields(p).snoop;
+  const unsigned read = (joined ? p.max_outstanding * (read_descriptor + user) + beats
+                                : p.max_outstanding * read_descriptor + address + beats + user) +
                         align;
   return {write, read};
 }

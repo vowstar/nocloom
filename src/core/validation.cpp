@@ -1144,16 +1144,29 @@ constexpr Axi5Refusal axi5_refusals[] = {
      [](const Axi5Properties &p) { return p.flow_control != Axi5FlowControl::Ready; }},
     {"act", "ACT_Support, ACT_R_WIDTH and ACT_W_WIDTH",
      [](const Axi5Properties &p) { return p.act; }},
-    {"shareable", "Shareable_Transactions",
-     [](const Axi5Properties &p) { return p.shareable.value_or(false); }},
-    {"write_snoop_width", "AWSNOOP_WIDTH",
-     [](const Axi5Properties &p) { return p.write_snoop_width.value_or(0) != 0; }},
-    {"read_snoop_width", "ARSNOOP_WIDTH",
-     [](const Axi5Properties &p) { return p.read_snoop_width.value_or(0) != 0; }},
+    {"write_snoop_width", "AWSNOOP_WIDTH of 5 bits, which only refused opcodes need",
+     [](const Axi5Properties &p) { return p.write_snoop_width == 5U; }},
     {"cache_line_bytes", "Cache_Line_Size other than 64 bytes",
      [](const Axi5Properties &p) { return p.cache_line_bytes != 64; }},
     {"pas_width", "PAS_WIDTH above 1, which needs RME_Support or GDI_Support",
      [](const Axi5Properties &p) { return p.pas_width > 1; }}};
+// The ACE5-Lite constraints on the AXI5 properties (IHI 0022 Issue L, table B2.4, and the signal
+// presence of table B2.2): shareable transactions, no AxPRIV, AxINST or AxPAS, AxSNOOP on an
+// initiator port (a Subordinate interface) and AxPROT on a target port (a Manager interface).
+void check_ace5_lite(Checks &c, const Axi5Properties &p, const std::string &at, bool initiator) {
+  for (const auto &[key, bad, message] :
+       {std::tuple{"shareable", !p.shareable.value_or(true),
+                   "An ace5_lite endpoint has shareable transactions. Remove shareable: false"},
+        {"priv_inst", p.priv_inst, "ACE5-Lite has no AxPRIV or AxINST: priv_inst is false"},
+        {"pas_width", p.pas_width != 0, "ACE5-Lite has no AxPAS: pas_width is 0"},
+        {"prot", !initiator && !p.prot, "An ace5_lite target port drives AxPROT: prot is true"},
+        {"write_snoop_width", initiator && p.write_snoop_width.value_or(4) != 4,
+         "An ace5_lite initiator port takes AWSNOOP: write_snoop_width is 4"},
+        {"read_snoop_width", initiator && p.read_snoop_width.value_or(4) != 4,
+         "An ace5_lite initiator port takes ARSNOOP: read_snoop_width is 4"}})
+    if (bad)
+      c("NCL_AXI5_PROPERTIES", at + "." + key, message);
+}
 // The axi5 object of an endpoint (docs/axi5.md). Field checks that span connected pairs are in
 // check_axi5_pairs.
 void check_axi5(Checks &c, std::optional<Protocol> protocol,
@@ -1162,11 +1175,13 @@ void check_axi5(Checks &c, std::optional<Protocol> protocol,
   if (!properties)
     return;
   const auto at = field + ".axi5";
-  if (protocol != Protocol::Axi5) {
-    c("NCL_AXI5_PROPERTIES", at, "The axi5 object requires protocol: axi5");
+  if (!detail::axi5_port(protocol)) {
+    c("NCL_AXI5_PROPERTIES", at, "The axi5 object requires protocol: axi5 or ace5_lite");
     return;
   }
   const auto &p = *properties;
+  if (protocol == Protocol::Ace5Lite)
+    check_ace5_lite(c, p, at, initiator);
   const auto pow2 = [](unsigned value, unsigned low, unsigned high) {
     return std::has_single_bit(value) && value >= low && value <= high;
   };
@@ -1229,7 +1244,7 @@ void check_axi5(Checks &c, std::optional<Protocol> protocol,
 void check_axi5_pairs(Checks &c) {
   const auto &d = c.d;
   const auto declared = [](const auto &endpoint, bool Axi5Properties::*member) {
-    return endpoint.protocol == Protocol::Axi5 && endpoint.axi5 && (*endpoint.axi5).*member;
+    return detail::axi5_port(endpoint.protocol) && endpoint.axi5 && (*endpoint.axi5).*member;
   };
   // A mapping below one 64-byte cache line leaves a decode miss inside a line.
   const auto small = std::ranges::find_if(d.targets, [](const Target &t) {
@@ -1255,11 +1270,11 @@ void check_axi5_pairs(Checks &c) {
   // A target port holds the request attributes of each initiator that reaches it.
   for (std::size_t k = 0; k < d.targets.size(); ++k) {
     const auto &t = d.targets[k];
-    if (t.protocol != Protocol::Axi5 || !t.axi5)
+    if (!detail::axi5_port(t.protocol) || !t.axi5)
       continue;
     const auto at = "targets[" + std::to_string(k) + "].axi5.";
     for (const auto &s : d.initiators) {
-      if (s.protocol != Protocol::Axi5 || !s.axi5 || !connects(d, s.name, t.name))
+      if (!detail::axi5_port(s.protocol) || !s.axi5 || !connects(d, s.name, t.name))
         continue;
       const auto source_bits = std::max<unsigned>(s.axi5->subsystem_id_width,
                                                   std::bit_width(s.axi5->subsystem_id.value_or(0)));
@@ -1625,9 +1640,10 @@ void check_target_face(Checks &c, const Target &t, const std::string &field) {
   const bool axi = full_axi(protocol);
   const bool bad_id = !axi ? t.id_width.has_value() : t.id_width > 31U;
   // The text names the protocol of the rejected port.
-  const std::string name = protocol == Protocol::Axi5   ? "AXI5"
-                           : protocol == Protocol::Axi3 ? "AXI3"
-                                                        : "AXI4";
+  const std::string name = protocol == Protocol::Axi5       ? "AXI5"
+                           : protocol == Protocol::Ace5Lite ? "ACE5-Lite"
+                           : protocol == Protocol::Axi3     ? "AXI3"
+                                                            : "AXI4";
   if (bad_id || (!axi ? t.len_width.has_value() : t.len_width.value_or(4) - 4 > 4))
     c("NCL_ENDPOINT_TRANSACTION_WIDTH", field + (bad_id ? ".id_width" : ".len_width"),
       !axi     ? "Only full AXI targets have ID ports, 0 to 31 bits, and length ports, 4 to 8 bits"
@@ -1665,9 +1681,17 @@ void check_target_attributes(Checks &c, const Target &t, const std::string &fiel
   };
   const bool axi = full_axi(protocol), ahb = detail::ahb_protocol(protocol);
   // An AXI5 target can omit AxCACHE, and AxPROT with its AxPRIV, AxINST and AxPAS replacements.
-  const auto ports = detail::axi5_request_ports(protocol == Protocol::Axi5 ? t.axi5 : std::nullopt);
+  const auto ports = detail::axi5_request_ports(detail::axi5_properties(protocol, t.axi5));
   const bool cache_port = axi && ports.cache;
   const bool prot_port = !ahb && (ports.prot || ports.priv_inst || ports.pas);
+  // AxDOMAIN goes out unchanged, so AxCACHE keeps its memory type: Device and Non-cacheable stay
+  // System requests (IHI 0022 Issue L, A8.3.1 and A8.3.4).
+  if (ports.domain && cache_port &&
+      (t.attributes->read_cache != amba.read_cache ||
+       t.attributes->write_cache != amba.write_cache))
+    c("NCL_TARGET_ATTRIBUTES", field + ".attributes",
+      "A target with AxDOMAIN ports needs the amba AxCACHE mapping, so that AxCACHE and AxDOMAIN "
+      "agree");
   if (!caps.attributes)
     c("NCL_TARGET_ATTRIBUTES", field + ".attributes",
       protocol == Protocol::Wishbone ? "Wishbone targets have no protection or cache signals"
@@ -1697,14 +1721,15 @@ void check_target_options(Checks &c, const Target &t, const std::string &field) 
   if (const auto &m = t.axqos_levels; !m.empty()) {
     const auto at = field + ".axqos_levels";
     if (!axi4_port(t.protocol))
-      c("NCL_QOS_MAP", at, "AxQOS levels need an axi4 or axi5 target");
+      c("NCL_QOS_MAP", at, "AxQOS levels need an axi4, axi5 or ace5_lite target");
     else if (m.size() != 8 || std::ranges::any_of(m, [](unsigned v) { return v > 15; }) ||
              !std::ranges::is_sorted(m))
       c("NCL_QOS_MAP", at,
         "AxQOS levels list 8 values of 0..15, one per level, that never decrease");
   }
   if (t.region_port && !axi4_port(t.protocol))
-    c("NCL_TARGET_REGION", field + ".region_port", "AxREGION ports need an axi4 or axi5 target");
+    c("NCL_TARGET_REGION", field + ".region_port",
+      "AxREGION ports need an axi4, axi5 or ace5_lite target");
   if (t.protocol == Protocol::Ahb5 && t.hresp_width.value_or(1) != 1)
     c("NCL_TARGET_AHB_HRESP", field + ".hresp_width", "AHB5 requires one-bit HRESP");
   const auto &caps = detail::protocol_caps(t.protocol.value_or(Protocol::Axi4));
@@ -1773,8 +1798,8 @@ void check_target_exclusive(Checks &c, const Target &t, const std::string &field
   else if (mode == ExclusiveAccess::Target &&
            !detail::protocol_caps(t.protocol.value_or(Protocol::Axi4)).lock)
     c("NCL_TARGET_EXCLUSIVE", at,
-      "Only AXI5, AXI4 and AXI3 targets have AxLOCK. APB, AHB, AXI4-Lite and Wishbone targets use "
-      "exclusive: network");
+      "Only AXI5, ACE5-Lite, AXI4 and AXI3 targets have AxLOCK. APB, AHB, AXI4-Lite and Wishbone "
+      "targets use exclusive: network");
   else if (t.access == Access::ReadOnly)
     c("NCL_TARGET_EXCLUSIVE", at, "A read-only target supports no exclusive access (AXI A10.2.2)");
   else if (t.access == Access::WriteOnly)
@@ -1783,8 +1808,8 @@ void check_target_exclusive(Checks &c, const Target &t, const std::string &field
       "read (AXI A7.2)");
   else if (keys == 0)
     c("NCL_TARGET_EXCLUSIVE", at,
-      "No read-write AXI5, AXI4 or AXI3 initiator reaches this target, so no exclusive access "
-      "can arrive");
+      "No read-write AXI5, ACE5-Lite, AXI4 or AXI3 initiator reaches this target, so no exclusive "
+      "access can arrive");
   else if (mode == ExclusiveAccess::Target && t.exclusive_owner_flags.empty())
     c("NCL_TARGET_EXCLUSIVE", field + ".exclusive_owner_flags",
       "exclusive: target requires exclusive_owner_flags to identify the owner");

@@ -215,8 +215,8 @@ TargetAttributes target_attributes(Reader &r, const YAML::Node &node, const std:
   r.object(node, path, {"preset", "read_cache", "write_cache", "prot", "hprot"});
   auto result = node["preset"] ? preset(r.field(node, "preset", path + ".preset"), path + ".preset")
                                : TargetAttributes::zero();
-  const bool axi =
-      protocol == Protocol::Axi4 || protocol == Protocol::Axi3 || protocol == Protocol::Axi5;
+  const bool axi = protocol == Protocol::Axi4 || protocol == Protocol::Axi3 ||
+                   protocol == Protocol::Axi5 || protocol == Protocol::Ace5Lite;
   const bool prot = axi || protocol == Protocol::Axi4Lite ||
                     (protocol == Protocol::Apb4 || protocol == Protocol::Apb5);
   auto bits = [&](const char *key, bool allowed, auto &array) {
@@ -428,14 +428,20 @@ Protocol endpoint_protocol(Reader &r, const YAML::Node &node, const std::string 
   const auto &names = nocloom::detail::protocol_names;
   const auto *found = std::find_if(std::begin(names), std::end(names),
                                    [&](const auto &p) { return name == p.name; });
-  // Other AXI5 interface classes of IHI 0022 Issue L, B2.1.
-  static const std::map<std::string, std::string> classes{{"axi5_lite", "AXI5-Lite"},
-                                                          {"ace5_lite", "ACE5-Lite"},
-                                                          {"ace5_lite_dvm", "ACE5-LiteDVM"},
-                                                          {"ace5_lite_acp", "ACE5-LiteACP"}};
+  // Other AXI5 interface classes of IHI 0022 Issue L, B2.1, and the coherent classes of earlier
+  // issues: the class name and the protocol to use instead.
+  static const std::map<std::string, std::pair<std::string, std::string>> classes{
+      {"axi5_lite", {"AXI5-Lite", "axi5"}},
+      {"ace5_lite_dvm", {"ACE5-LiteDVM", "ace5_lite"}},
+      {"ace5_lite_acp", {"ACE5-LiteACP", "ace5_lite"}},
+      {"ace5", {"ACE5", "ace5_lite"}},
+      {"ace", {"ACE", "ace5_lite"}},
+      {"ace_lite", {"ACE-Lite", "ace5_lite"}}};
   if (const auto it = classes.find(name); found == std::end(names) && it != classes.end())
     r.fail("NCL_UNSUPPORTED_PROTOCOL", path,
-           "The " + it->second + " interface class is not supported. Use axi5", value.Mark());
+           "The " + it->second.first + " interface class is not supported. Use " +
+               it->second.second,
+           value.Mark());
   if (found == std::end(names))
     r.fail("NCL_UNSUPPORTED_PROTOCOL", path,
            (initiator ? "Initiators support " : "Targets support ") +

@@ -350,8 +350,8 @@ private:
   const Json apb_widths = by_name(p.targets, [](const auto &t) {
     return t.apb_bits < 32 ? std::optional{t.apb_bits} : std::nullopt;
   });
-  // APB initiators travel as AXI4-Lite sources, AHB, AXI3 and AXI5 initiators as AXI4 sources;
-  // their own protocol names them.
+  // APB initiators travel as AXI4-Lite sources, AHB, AXI3, AXI5 and ACE5-Lite initiators as AXI4
+  // sources; their own protocol names them.
   const Json source_protocols = by_name(p.sources, [](const auto &s) {
     return std::optional{s.apb ? *s.apb == Protocol::Apb3   ? "apb3"
                                  : *s.apb == Protocol::Apb5 ? "apb5"
@@ -362,6 +362,7 @@ private:
                          : s.ahb5                                    ? "ahb5"
                          : s.ahb                                     ? "ahb_lite"
                          : s.axi3                                    ? "axi3"
+                         : s.external_protocol == Protocol::Ace5Lite ? "ace5_lite"
                          : s.axi5                                    ? "axi5"
                          : s.protocol == Protocol::Axi4Lite          ? "axi4_lite"
                                                                      : "axi4"};
@@ -1096,10 +1097,11 @@ private:
       definition["endpoint_protocols"]["initiators"] = source_protocols;
     static const char *const protocols[] = {"apb4",     "axi4_lite", "apb3", "apb2", "axi4",
                                             "ahb_lite", "axi3",      "ahb5", "apb5"};
-    // AXI3 and AXI5 targets travel as AXI4 targets; their own protocol names them.
+    // AXI3, AXI5 and ACE5-Lite targets travel as AXI4 targets; their own protocol names them.
     definition["endpoint_protocols"]["targets"] = by_name(p.targets, [](const TargetPlan &t) {
       return std::optional{t.service                                   ? "service"
                            : t.axi3                                    ? "axi3"
+                           : t.external_protocol == Protocol::Ace5Lite ? "ace5_lite"
                            : t.axi5                                    ? "axi5"
                            : t.external_protocol == Protocol::Wishbone ? "wishbone"
                            : t.external_protocol == Protocol::TlUl     ? "tl_ul"

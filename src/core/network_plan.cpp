@@ -80,10 +80,27 @@ Axi5RequestPorts axi5_request_ports(const std::optional<Axi5Properties> &propert
   ports.priv_inst = p.priv_inst;
   ports.pas = p.pas_width == 1;
   ports.cache = p.cache;
+  ports.domain = p.shareable.value_or(false);
+  ports.write_snoop = p.write_snoop_width.value_or(0) == 4;
+  ports.read_snoop = p.read_snoop_width.value_or(0) == 4;
   return ports;
 }
+bool axi5_port(std::optional<Protocol> protocol) {
+  return protocol == Protocol::Axi5 || protocol == Protocol::Ace5Lite;
+}
+std::optional<Axi5Properties> axi5_properties(std::optional<Protocol> protocol,
+                                              const std::optional<Axi5Properties> &properties) {
+  if (!axi5_port(protocol))
+    return std::nullopt;
+  auto out = properties.value_or(Axi5Properties{});
+  const bool ace = protocol == Protocol::Ace5Lite;
+  out.shareable = out.shareable.value_or(ace);
+  out.write_snoop_width = out.write_snoop_width.value_or(ace ? 4 : 0);
+  out.read_snoop_width = out.read_snoop_width.value_or(ace ? 4 : 0);
+  return out;
+}
 bool axi4_port(std::optional<Protocol> protocol) {
-  return protocol.value_or(Protocol::Axi4) == Protocol::Axi4 || protocol == Protocol::Axi5;
+  return protocol.value_or(Protocol::Axi4) == Protocol::Axi4 || axi5_port(protocol);
 }
 bool full_axi(std::optional<Protocol> protocol) {
   return axi4_port(protocol) || protocol == Protocol::Axi3;
@@ -366,14 +383,17 @@ void plan_axi5_attributes(NetworkPlan &plan) {
     a.subsystem_id = std::max(
         {a.subsystem_id, p.subsystem_id, static_cast<unsigned>(std::bit_width(p.subsystem_value))});
     a.mpam = std::max(a.mpam, p.mpam);
+    a.domain = std::max(a.domain, p.domain ? 2U : 0U);
+    a.snoop = std::max(a.snoop, p.domain && p.write_snoop ? 1U : 0U);
   };
   for (const auto &s : plan.sources)
     widest(sources, axi5_request_ports(s.axi5));
   for (const auto &t : plan.targets)
     widest(targets, axi5_request_ports(t.axi5));
   auto &a = plan.axi5_attributes;
-  for (const auto member : {&Axi5Attributes::nsaid, &Axi5Attributes::pbha,
-                            &Axi5Attributes::subsystem_id, &Axi5Attributes::mpam})
+  for (const auto member :
+       {&Axi5Attributes::nsaid, &Axi5Attributes::pbha, &Axi5Attributes::subsystem_id,
+        &Axi5Attributes::mpam, &Axi5Attributes::domain, &Axi5Attributes::snoop})
     a.*member = targets.*member ? sources.*member : 0U;
   plan.burst_user_bits += a.bits();
 }
@@ -427,8 +447,7 @@ void source_engine(SourcePlan &s, const Initiator &initiator) {
     s.axi_len_bits = 4;
   }
   s.axi3 = initiator.protocol == Protocol::Axi3;
-  if (initiator.protocol == Protocol::Axi5)
-    s.axi5 = initiator.axi5.value_or(Axi5Properties{});
+  s.axi5 = axi5_properties(initiator.protocol, initiator.axi5);
   if (s.axi3 || s.axi5)
     s.protocol = Protocol::Axi4;
   wishbone_engine(s);
@@ -523,8 +542,7 @@ void target_engine(TargetPlan &x, const Target &t) {
     x.tl_max_transfer_bytes = t.max_transfer_bytes.value_or(64);
   }
   x.axi3 = t.protocol == Protocol::Axi3;
-  if (t.protocol == Protocol::Axi5)
-    x.axi5 = t.axi5.value_or(Axi5Properties{});
+  x.axi5 = axi5_properties(t.protocol, t.axi5);
   x.protocol = full_axi(t.protocol) ? Protocol::Axi4 : t.protocol.value_or(Protocol::Axi4);
   x.protocol = target_engine_protocol(x.protocol);
   x.ahb5 = t.protocol == Protocol::Ahb5;

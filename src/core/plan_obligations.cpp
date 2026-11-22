@@ -298,8 +298,10 @@ struct Obligations {
       auto source_state = axi4_burst_state_bits(
           plan.burst_id_bits, std::min(8U, plan.packet_len_bits), plan.burst_address_bits,
           sp.engine_bits, sp.engine_slots, plan.exclusive, sp.protocol == Protocol::Axi4Lite,
-          plan.burst_user_bits + plan.burst_audit_bits, plan.burst_response_user_bits,
-          sp.qos.axqos_map.empty() ? 0U : plan.burst_level_bits, lite_beat_size(sp));
+          plan.burst_user_bits + plan.burst_audit_bits +
+              (coherence_checked(axi5_request_ports(sp.axi5)) ? 1U : 0U),
+          plan.burst_response_user_bits, sp.qos.axqos_map.empty() ? 0U : plan.burst_level_bits,
+          lite_beat_size(sp));
       if (sp.engine_slots > 1 && sp.protocol != Protocol::Axi4Lite && !sp.apb && !sp.ahb)
         source_state.source_engine[1] += sp.engine_slots * std::countr_zero(sp.engine_bits / 8);
       // An APB face holds its transfer: no descriptor, beat or count in the engine.

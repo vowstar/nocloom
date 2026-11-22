@@ -1,10 +1,12 @@
 # Protocols
 
-Byte lanes use little-endian ordering. The manuals use full AXI for AXI5, AXI4
-and AXI3, and Lite for AXI4-Lite. An `axi5` endpoint follows the `axi4` rules of
-these manuals. [AXI5 interfaces](axi5.md) gives its properties.
+Byte lanes use little-endian ordering. The manuals use full AXI for AXI5,
+ACE5-Lite, AXI4 and AXI3, and Lite for AXI4-Lite. An `axi5` or `ace5_lite`
+endpoint follows the `axi4` rules of these manuals. [AXI5 interfaces](axi5.md)
+gives its properties.
 
-Related manuals: [AXI5](axi5.md), [Wishbone](wishbone.md), [TileLink](tilelink.md),
+Related manuals: [AXI5](axi5.md), [ACE5-Lite](ace5-lite.md), [Wishbone](wishbone.md),
+[TileLink](tilelink.md),
 [AHB-Lite and AHB5](ahb.md),
 [APB and AXI4-Lite targets](dedicated-targets.md),
 [Widths and AXI target interfaces](width-conversion.md),
@@ -17,6 +19,7 @@ Related manuals: [AXI5](axi5.md), [Wishbone](wishbone.md), [TileLink](tilelink.m
 | `tl_ul` | Initiator or target | 32 |
 | `tl_uh` | Initiator or target | 32 |
 | `axi5` | Initiator or target with the properties of its `axi5` object | 32, 64, 128, 256, 512, 1024 |
+| `ace5_lite` | Initiator or target with shareable transactions | 32, 64, 128, 256, 512, 1024 |
 | `axi4` | Initiator or target | 32, 64, 128, 256, 512, 1024 |
 | `axi3` | Initiator or target | 32, 64, 128, 256, 512, 1024 |
 | `axi4_lite` | Initiator or target | 32, 64 |
@@ -151,8 +154,8 @@ later beats.
 AXI3 targets receive AxLOCK `01` for exclusive accesses using their own monitor,
 and `00` otherwise. Their WID repeats AWID in write order. Locked writes and
 write interleaving are not generated. Initiator AxQOS exists only with an
-[AxQOS map](scheduling.md#axqos-maps). AXI4 and AXI5 targets can drive AxREGION
-and AxQOS, see [target AxREGION and AxQOS](axi5.md#target-axregion-and-axqos).
+[AxQOS map](scheduling.md#axqos-maps). AXI4, AXI5 and ACE5-Lite targets can
+drive [AxREGION and AxQOS](axi5.md#target-axregion-and-axqos).
 Initiators have no AxREGION port.
 
 AXI4-Lite aligns addresses to its bus word before decode and admission, and

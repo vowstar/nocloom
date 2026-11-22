@@ -58,6 +58,10 @@ packet splitting and clock domain crossings.
 | Ordered_Write_Observation | The property has no field. An initiator port of the network does not give this guarantee |
 | Multi_Copy_Atomicity | The property has no field. The network has no cache, and each address reaches one target |
 | Read_Interleaving_Disabled | The property has no field in the `axi5` object. A target sets `read_interleaving_disabled`. An initiator port can interleave the read data of different IDs |
+| Shareable_Transactions | `shareable` selects the AxDOMAIN ports. AxDOMAIN goes with each packet. An initiator admits only the transactions of the [legal set](ace5-lite.md#legal-transactions) |
+| AWSNOOP_WIDTH | 0 or 4. The network carries a WriteUniqueFull while it stays one cache line, and gives other opcodes SLVERR. 5 bits only serve rejected opcodes |
+| ARSNOOP_WIDTH | 0 or 4. The network admits only the read opcode `0000` |
+| Cache_Line_Size | Only 64 bytes. The network checks the WriteUniqueFull shape against this size |
 
 ## Rejected properties
 
@@ -70,10 +74,6 @@ packet splitting and clock domain crossings.
 | Loopback_Signals | The network rejects this property |
 | LOOP_W_WIDTH | The property follows Loopback_Signals |
 | LOOP_R_WIDTH | The property follows Loopback_Signals |
-| Shareable_Transactions | The network rejects this property |
-| AWSNOOP_WIDTH | The network rejects this property |
-| ARSNOOP_WIDTH | The network rejects this property |
-| Cache_Line_Size | Only 64 bytes |
 | Wakeup_Signals | The network has no clock or power control that uses AWAKEUP |
 | QoS_Accept | The network has no function that uses VAWQOSACCEPT or VARQOSACCEPT |
 | Busy_Support | The network has no rule to combine the BBUSY and RBUSY values of split packets |
@@ -131,9 +131,10 @@ packet splitting and clock domain crossings.
 | Protocol value | Result |
 | --- | --- |
 | `axi5` | Accepted |
-| `ace5_lite` | Refused with `NCL_UNSUPPORTED_PROTOCOL` |
+| `ace5_lite` | Accepted. See [ACE5-Lite interfaces](ace5-lite.md) |
 | `axi5_lite` | Refused with `NCL_UNSUPPORTED_PROTOCOL` |
 | `ace5_lite_dvm` | Refused with `NCL_UNSUPPORTED_PROTOCOL` |
 | `ace5_lite_acp` | Refused with `NCL_UNSUPPORTED_PROTOCOL` |
+| `ace5`, `ace`, `ace_lite` | Refused with `NCL_UNSUPPORTED_PROTOCOL`. Issue L does not describe these classes |
 
 Issue L has no barrier transactions. No interface has AxBAR ports.

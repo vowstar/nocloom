@@ -2182,7 +2182,7 @@ void remove_one_way_ports(const NodeHardware &component, std::map<std::string, u
 // The descriptor words under a stem: address, length, size, burst, lock, cache, protection and
 // the ID, the user flags, the AxQOS map's level and the audit flags when there are some.
 void add_descriptor(std::vector<std::string> &words, const std::string &stem, bool id, bool user,
-                    bool level = false, bool audit = false) {
+                    bool level = false, bool audit = false, bool coherent = false) {
   for (const auto *field : {"addr", "len", "size", "burst", "lock", "cache", "prot"})
     words.push_back(stem + field);
   if (id)
@@ -2193,6 +2193,8 @@ void add_descriptor(std::vector<std::string> &words, const std::string &stem, bo
     words.push_back(stem + "level");
   if (audit)
     words.push_back(stem + "audit");
+  if (coherent)
+    words.push_back(stem + "coherent");
 }
 // A source engine's words besides its descriptor. An APB face holds the transfer: the engine keeps
 // its progress and no payload.
@@ -3447,7 +3449,7 @@ private:
       const bool mapped = !sp.qos.axqos_map.empty();
       if (!sp.apb)
         add_descriptor(fields, dir + ".desc.", id, plan.burst_user_bits, mapped,
-                       plan.burst_audit_bits != 0);
+                       plan.burst_audit_bits != 0, coherence_checked(axi5_request_ports(sp.axi5)));
       add_source_progress(words, side.ep, sp, read);
       plane_words(side.ep.states, dir, words);
       if (read)

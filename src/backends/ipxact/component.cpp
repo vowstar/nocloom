@@ -64,6 +64,10 @@ const BusType &bus_type(Protocol protocol, bool initiator) {
                            {"RPOISON", 0},
                            {"RTRACE", 1},
                            {"RLOOP", 0}});
+  // ACE5-Lite: AXI5 with the shareable transaction signals of the ACE5-Lite abstraction.
+  L ace5_lite = axi5;
+  ace5_lite.insert(ace5_lite.end(),
+                   {{"AWDOMAIN", 2}, {"AWSNOOP", 0}, {"ARDOMAIN", 2}, {"ARSNOOP", 4}});
   const L apb2 = {{"PADDR", 0},  {"PSELx", 1},  {"PENABLE", 1},
                   {"PWRITE", 1}, {"PRDATA", 0}, {"PWDATA", 0}};
   L apb3 = apb2;
@@ -80,6 +84,8 @@ const BusType &bus_type(Protocol protocol, bool initiator) {
       {Protocol::Axi4, {"AMBA4", "AXI4", "r0p0_0", "AXI4_rtl", "ACLK", "ARESETn", axi}},
       {Protocol::Axi3, {"AMBA3", "AXI", "r2p0_0", "AXI_rtl", "ACLK", "ARESETn", axi3}},
       {Protocol::Axi5, {"AMBA5", "AXI5", "r0p0_0", "AXI5_rtl", "ACLK", "ARESETn", axi5}},
+      {Protocol::Ace5Lite,
+       {"AMBA5", "ACE5-Lite", "r0p0_0", "ACE5-Lite_rtl", "ACLK", "ARESETn", ace5_lite}},
       {Protocol::Axi4Lite,
        {"AMBA4", "AXI4-Lite", "r0p0_0", "AXI4-Lite_rtl", "ACLK", "ARESETn", axi_lite}},
       {Protocol::Apb5, {"AMBA5", "APB5", "r0p0_0", "APB5_rtl", "PCLK", "PRESETn", apb5}},
@@ -162,12 +168,12 @@ struct Endpoint {
   std::string endpoint = name;
   std::optional<unsigned> set = std::nullopt;
 };
-// Whether a target of several flows has a port set per flow (an AXI4 or AXI3 target carries the
-// flow in AxID on its one set).
+// Whether a target of several flows has a port set per flow (an AXI4, AXI5, ACE5-Lite or AXI3
+// target carries the flow in AxID on its one set).
 bool port_sets(const Target &t) {
   const auto protocol = t.protocol.value_or(Protocol::Axi4);
   return t.flows > 1 && protocol != Protocol::Axi4 && protocol != Protocol::Axi3 &&
-         protocol != Protocol::Axi5;
+         protocol != Protocol::Axi5 && protocol != Protocol::Ace5Lite;
 }
 
 // The ports, windows and connected pairs the map records, in its order.

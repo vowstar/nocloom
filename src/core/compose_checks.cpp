@@ -5,6 +5,7 @@
 #include "network_plan_profiles.hpp"
 #include <algorithm>
 #include <set>
+#include <vector>
 
 namespace nocloom::detail {
 namespace {
@@ -159,7 +160,8 @@ std::optional<unsigned> miss_destination(const NetworkPlan &plan, const SourcePl
 // descriptor registers) equals the target the request switches select when
 // their own selection logic is evaluated with that address on their route
 // operand. Admission failures (exclusive, a 4 KiB crossing, an illegal
-// WRAP) decode to the local destination and never reach a switch.
+// WRAP, an illegal AxDOMAIN and AxSNOOP pair) decode to the local
+// destination and never reach a switch.
 Status verify_network_decode(const ExchangeHardware &h) {
   const auto &plan = h.plan;
   auto fail = [](std::string message) {
@@ -213,16 +215,20 @@ Status verify_network_decode(const ExchangeHardware &h) {
       const auto len = state_of(base + p + ".desc.len"), lock = state_of(base + p + ".desc.lock");
       const auto size = state_of(base + p + ".desc.size"), engine = state_of(base + p + ".state");
       const auto id = state_of(base + p + ".desc.id");
+      // A source with AxDOMAIN or AxSNOOP ports holds whether the pair was admitted.
+      const auto coherent = state_of(base + p + ".desc.coherent");
       if (!dest || !addr || !burst || !len || !lock || !size || !engine || (by_flow && !id))
         return fail("Source " + source + ": missing the " + p + " destination decode anchors");
       // A decode with conditional mappings takes the plane of the transport address (mode_planes).
       const auto plane = bound(base + p + ".plane_now");
       std::uint64_t ident = 0;
       auto decode = [&](std::uint64_t address, std::uint64_t length, std::uint64_t kind,
-                        std::uint64_t locked) {
+                        std::uint64_t locked, std::uint64_t pair = 1) {
         ConeEvaluator::Words words{{*addr, address}, {*burst, kind}, {*len, length},
                                    {*lock, locked},  {*size, 2},     {*engine, 1}},
             pinned;
+        if (coherent)
+          words[*coherent] = pair;
         if (by_flow)
           words[*id] = ident;
         if (plane) {
@@ -254,13 +260,17 @@ Status verify_network_decode(const ExchangeHardware &h) {
             return fail("Source " + source + ": the " + p + " destination decode of address " +
                         decimal(address) + " differs from the switches' selection");
           // Admission failures complete locally whatever the address: an INCR
-          // crossing 4 KiB, an illegal WRAP length.
+          // crossing 4 KiB, an illegal WRAP length, an illegal AxDOMAIN and AxSNOOP pair.
           const auto page_end = (address | 4095) - 3;
-          for (const auto local :
-               {decode(page_end, 1, 1, 0), decode(address & ~std::uint64_t{3}, 2, 2, 0)})
-            if (!local || *local != local_destination)
-              return fail("Source " + source + ": an admission failure at address " +
-                          decimal(address) + " does not decode to local completion");
+          std::vector locals{decode(page_end, 1, 1, 0),
+                             decode(address & ~std::uint64_t{3}, 2, 2, 0)};
+          if (coherent)
+            locals.push_back(decode(address, 0, 1, 0, 0));
+          if (std::ranges::any_of(locals, [&](const std::optional<std::uint64_t> &local) {
+                return !local || *local != local_destination;
+              }))
+            return fail("Source " + source + ": an admission failure at address " +
+                        decimal(address) + " does not decode to local completion");
           // A FIXED exclusive access fails admission inside an exclusive
           // window; elsewhere AxLOCK is ignored and it decodes as a normal one.
           const bool exclusive = std::ranges::any_of(windows, [&](const ExclusiveWindow &w) {

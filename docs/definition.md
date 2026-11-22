@@ -85,10 +85,9 @@ APB and Wishbone endpoints require a 32-bit network. Endpoint widths can
 differ from the network width under the [protocol rules](protocols.md). The
 [transactions manual](transactions.md) describes capacity and ordering keys.
 
-APB5 uses endpoint `user_width`, `user_flags`, `user` and
-`response_user_width` for [user signals](user-signals.md#apb5-user-ports).
-The request port is at most 128 bits and the response port at most 16 bits.
-Both default to zero.
+APB5 uses endpoint `user_width`, `user_flags`, `user` and `response_user_width`
+for [user signals](user-signals.md#apb5-user-ports). The request port is at most
+128 bits and the response port at most 16 bits. Both default to zero.
 
 Endpoint `data_user_width` enables PWUSER and PRUSER. It defaults to 0. On APB5
 endpoints it is 0 or `transport.data_user_bits_per_byte * data_width / 8`.
@@ -129,10 +128,10 @@ and limits.
 
 ## AXI5 endpoint fields
 
-`protocol: axi5` takes the fields of `axi4`. The optional `axi5` object declares
-the AXI5 properties of the port. Other protocols reject the object. C++
-endpoints use `Protocol::Axi5` and optional `Axi5Properties axi5`. See
-[AXI5 interfaces](axi5.md) for each field, its values and its property name.
+`axi5` and `ace5_lite` endpoints take the `axi4` fields and an optional `axi5`
+object of [AXI5 properties](axi5.md) and [ACE5-Lite rules](ace5-lite.md).
+Other protocols reject the object. C++ endpoints use `Protocol::Axi5` or
+`Protocol::Ace5Lite` and optional `Axi5Properties axi5`.
 
 ## AHB5 endpoint fields
 

@@ -32,8 +32,8 @@ other scheduling options use the ordinary protocol capability checks.
 
 | Sources | Targets | Scheduling options |
 | --- | --- | --- |
-| AXI4 and AXI3 | Full AXI4 or AXI3 | Fixed levels, AxQOS maps, shapers and schedulers |
-| AHB-Lite and AHB5, also alongside AXI4 and AXI3 | Full AXI4 or AXI3 | Fixed read and write levels from 0 to 7 |
+| [Full AXI](protocols.md) | Full AXI | Fixed levels, AxQOS maps, shapers and schedulers |
+| AHB-Lite and AHB5, also alongside full AXI | Full AXI | Fixed read and write levels from 0 to 7 |
 | 32-bit APB | 32-bit APB | Fixed levels, shapers and schedulers |
 
 Nonzero levels exclude AHB targets, other mixed protocol networks, targets
@@ -45,7 +45,7 @@ manager and does not select a scheduling level.
 
 ## AxQOS maps
 
-An AXI5, AXI4 or AXI3 initiator can set `qos.axqos_map`. Its 2, 4, 8 or 16 entries
+A full AXI initiator can set `qos.axqos_map`. Its 2, 4, 8 or 16 entries
 select initiator AxQOS ports of 1, 2, 3 or 4 bits. Entry q is the level of a
 burst whose AWQOS or ARQOS is q. Entries must be nondecreasing integers from 0
 to 7. The initiator captures the level with the burst address.
@@ -88,7 +88,7 @@ owes less than `burst_bytes` + 1 bytes. Other transfers wait until the budget
 recovers. The overshoot can include one transfer beyond the burst budget. Rate
 zero stops admission after the budget is exceeded and never recovers.
 
-A shaper supports a 32-bit APB3, APB4 or APB5 initiator, or an AXI4 or AXI3
+A shaper supports a 32-bit APB3, APB4 or APB5 initiator, or a full AXI
 initiator.
 It can combine with fixed levels. The initiator's transport clock stays open
 while it owes bytes.

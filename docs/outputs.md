@@ -202,6 +202,7 @@ the vendor `amba.com`. An abstraction has the bus name with the suffix `_rtl`.
 | Protocol | Library | Bus name | Version |
 | --- | --- | --- | --- |
 | AXI5 | `AMBA5` | `AXI5` | `r0p0_0` |
+| ACE5-Lite | `AMBA5` | `ACE5-Lite` | `r0p0_0` |
 | APB5 | `AMBA5` | `APB5` | `r0p0_0` |
 | AXI4 | `AMBA4` | `AXI4` | `r0p0_0` |
 | AXI4-Lite | `AMBA4` | `AXI4-Lite` | `r0p0_0` |

@@ -18,7 +18,8 @@ namespace nocloom {
 // is AMBA 3 AHB-Lite: a target outlet, or an initiator's subordinate port. Axi3 is an AMBA 3 AXI
 // port of an initiator or a target: AXI4 bursts of at most 16 beats with WID and a two-bit AxLOCK.
 // Axi5 is an AMBA AXI5 port (IHI 0022 Issue L) with AXI4 bursts and the properties of its
-// Axi5Properties object.
+// Axi5Properties object. Ace5Lite is an ACE5-Lite port: an Axi5 port whose properties take the
+// ACE5-Lite constraints of IHI 0022 Issue L, B2.1.2, with shareable transactions.
 enum class Protocol {
   Apb4,
   Axi4Lite,
@@ -32,7 +33,8 @@ enum class Protocol {
   Wishbone,
   TlUl,
   TlUh,
-  Axi5
+  Axi5,
+  Ace5Lite
 };
 namespace detail {
 // Internal. The name of each protocol in a definition file, in the order of the manual. Every
@@ -43,13 +45,13 @@ struct ProtocolName {
   bool initiator;
 };
 inline constexpr ProtocolName protocol_names[] = {
-    {Protocol::Axi5, "axi5", true},         {Protocol::Axi4, "axi4", true},
-    {Protocol::Axi3, "axi3", true},         {Protocol::Axi4Lite, "axi4_lite", true},
-    {Protocol::Apb5, "apb5", true},         {Protocol::Apb4, "apb4", true},
-    {Protocol::Apb3, "apb3", true},         {Protocol::Apb2, "apb2", false},
-    {Protocol::AhbLite, "ahb_lite", true},  {Protocol::Ahb5, "ahb5", true},
-    {Protocol::Wishbone, "wishbone", true}, {Protocol::TlUl, "tl_ul", true},
-    {Protocol::TlUh, "tl_uh", true}};
+    {Protocol::Axi5, "axi5", true},          {Protocol::Ace5Lite, "ace5_lite", true},
+    {Protocol::Axi4, "axi4", true},          {Protocol::Axi3, "axi3", true},
+    {Protocol::Axi4Lite, "axi4_lite", true}, {Protocol::Apb5, "apb5", true},
+    {Protocol::Apb4, "apb4", true},          {Protocol::Apb3, "apb3", true},
+    {Protocol::Apb2, "apb2", false},         {Protocol::AhbLite, "ahb_lite", true},
+    {Protocol::Ahb5, "ahb5", true},          {Protocol::Wishbone, "wishbone", true},
+    {Protocol::TlUl, "tl_ul", true},         {Protocol::TlUh, "tl_uh", true}};
 // The protocol names that an initiator, or a target, accepts, as in "axi4, axi3 or apb4".
 inline std::string supported_protocols(bool initiator) {
   std::string list;
@@ -441,9 +443,9 @@ struct Ahb5Properties {
   unsigned hauser_width = 0, hwuser_width = 0, hruser_width = 0, hbuser_width = 0;
   bool operator==(const Ahb5Properties &) const = default;
 };
-// AXI5 interface properties of an axi5 endpoint (IHI 0022 Issue L, table B2.4). The defaults add
-// no port, and an axi5 endpoint without the object takes them. docs/axi5.md maps each field to its
-// property name and states which values the network accepts.
+// AXI5 interface properties of an axi5 or ace5_lite endpoint (IHI 0022 Issue L, table B2.4). On
+// axi5 the defaults add no port, and an endpoint without the object takes them. docs/axi5.md maps
+// each field to its property name and states which values the network accepts.
 enum class Axi5Mpam { None, PartId9, PartId12 };
 enum class Axi5Tagging { None, Basic, Simplified, Standard };
 enum class Axi5InterfaceCheck { None, Data, All };
@@ -464,7 +466,8 @@ struct Axi5Properties {
   // Protection and memory attribute ports.
   bool prot = true, priv_inst = false, cache = true;
   unsigned pas_width = 0; // 0..3
-  // Shareable transactions. Absent takes the value of the protocol: false and 0 on axi5.
+  // Shareable transactions: AxDOMAIN ports, and AxSNOOP ports of 0 or 4 bits. Absent takes the
+  // value of the protocol: false and 0 on axi5, true and 4 on ace5_lite.
   std::optional<bool> shareable = std::nullopt;
   std::optional<unsigned> write_snoop_width = std::nullopt, read_snoop_width = std::nullopt;
   unsigned cache_line_bytes = 64;
@@ -578,7 +581,7 @@ struct Initiator {
   std::optional<std::string> default_class = std::nullopt;
   std::vector<IdRange> id_ranges = {};
   std::optional<Ahb5Properties> ahb5 = std::nullopt;
-  // Axi5 only. Absent takes the defaults.
+  // Axi5 and Ace5Lite only. Absent takes the defaults.
   std::optional<Axi5Properties> axi5 = std::nullopt;
   // By default, the zones have separate gates. An override requires a gated domain.
   std::optional<EndpointClockGates> clock_gating = std::nullopt;
@@ -737,7 +740,7 @@ struct Target {
   // its own. A configuration writes it as error_logging.registers; protocol stays apb4 here.
   bool log_registers = false;
   std::optional<Ahb5Properties> ahb5 = std::nullopt;
-  // Axi5 only. Absent takes the defaults.
+  // Axi5 and Ace5Lite only. Absent takes the defaults.
   std::optional<Axi5Properties> axi5 = std::nullopt;
   // By default, the zones have separate gates. An override requires a gated domain.
   std::optional<EndpointClockGates> clock_gating = std::nullopt;

@@ -61,7 +61,7 @@ The codes of the C++ tree helper are in
 | `NCL_WISHBONE_CYCLES` | `cycles` is set on another protocol or is not `classic` or `pipelined` |
 | `NCL_WISHBONE_OPTION` | Wishbone-only fields on another protocol, invalid retry, burst tags with pipelined cycles or target timeout, or an unsupported Wishbone endpoint option |
 | `NCL_AHB5_PROPERTIES` | The `ahb5` object requires AHB5. HPROT width must be 4 or 7. HMASTER width must be 0 to 32. A nonzero target width must hold each reaching source. Exclusive and user signals are unsupported. Targets accept only `attributes: amba`, without per-bit overrides |
-| `NCL_AXI5_PROPERTIES` | The `axi5` object requires `axi5`. A field is outside its range, `prot: true` comes with `priv_inst` or `pas_width`, or a constraint property does not hold for a connected pair. See [AXI5 interfaces](axi5.md) |
+| `NCL_AXI5_PROPERTIES` | The `axi5` object requires `axi5` or `ace5_lite`. A field is outside its range, `prot: true` comes with `priv_inst` or `pas_width`, or a constraint property does not hold for a connected pair. An `ace5_lite` endpoint breaks an ACE5-Lite rule. See [AXI5 interfaces](axi5.md) and [ACE5-Lite interfaces](ace5-lite.md) |
 | `NCL_AXI5_UNSUPPORTED` | The `axi5` object enables a property that the network does not support. The message names the property. See the [AXI5 property table](axi5-properties.md) |
 | `NCL_TARGET_AHB_BURSTS`, `NCL_TARGET_AHB_HRESP` | Burst shaping or `hresp_width` on a target that is not AHB, an invalid value, or two-bit HRESP on AHB5 |
 | `NCL_ENDPOINT_ACCESS` | `access` is not `read_write`, `read_only` or `write_only` |
@@ -152,7 +152,7 @@ See [address maps](address-map.md) and [definition shorthand](definition.md).
 | `NCL_CDC_LOW_LATENCY_CREDIT_DEPTH` | Fast related crossing depth differs from two |
 | `NCL_CDC_EDGE_ALIGNED_RELATION` | Neither endpoint is an edge ancestor of the other |
 | `NCL_QOS_LEVEL`, `NCL_QOS_MAP` | Invalid fixed level, AxQOS map or target `axqos_levels`, or incompatible initiator options |
-| `NCL_TARGET_REGION` | A mapping `region` above 15 or without `region_port`, `region_port` on a target other than `axi4` or `axi5`, or on an initiator |
+| `NCL_TARGET_REGION` | A mapping `region` above 15 or without `region_port`, `region_port` on a target other than `axi4`, `axi5` or `ace5_lite`, or on an initiator |
 | `NCL_QOS_SHAPER`, `NCL_QOS_SCHEDULER` | Invalid byte budgets, levels, threshold or required companion configuration |
 | `NCL_QOS_PROFILE` | Unsupported endpoint, width, whole-burst or scheduler-pipe combination. AHB sources accept fixed levels only, to full AXI targets when nonzero |
 

@@ -12,7 +12,9 @@ initiators:
      axi5: {max_transaction_bytes: 64}}
 ```
 
-The `axi5` object on another protocol gives `NCL_AXI5_PROPERTIES`.
+The `axi5` object on a protocol other than `axi5` and `ace5_lite` gives
+`NCL_AXI5_PROPERTIES`. An `ace5_lite` endpoint takes the same object with other
+defaults, see [ACE5-Lite interfaces](ace5-lite.md).
 
 ## Fields
 
@@ -36,9 +38,9 @@ range gives `NCL_AXI5_PROPERTIES`.
 | `priv_inst` | INSTPRIV_Present | Boolean | `false` |
 | `pas_width` | PAS_WIDTH | 0 to 3 | 0 |
 | `cache` | CACHE_Present | Boolean | `true` |
-| `shareable` | Shareable_Transactions | Boolean | `false` |
-| `write_snoop_width` | AWSNOOP_WIDTH | 0, 4 or 5 | 0 |
-| `read_snoop_width` | ARSNOOP_WIDTH | 0 or 4 | 0 |
+| `shareable` | Shareable_Transactions | Boolean | `false`, `true` on `ace5_lite` |
+| `write_snoop_width` | AWSNOOP_WIDTH | 0, 4 or 5 | 0, 4 on `ace5_lite` |
+| `read_snoop_width` | ARSNOOP_WIDTH | 0 or 4 | 0, 4 on `ace5_lite` |
 | `cache_line_bytes` | Cache_Line_Size | Power of two from 16 to 2048 | 64 |
 | `consistent_decerr` | Consistent_DECERR | Boolean | `false` |
 | `max_transaction_bytes` | Max_Transaction_Bytes | Power of two from 64 to 4096 | 4096 |
@@ -76,6 +78,8 @@ range gives `NCL_AXI5_PROPERTIES`.
 | `act` | ACT_Support, ACT_R_WIDTH, ACT_W_WIDTH | Boolean | `false` |
 
 `prot: true` excludes `priv_inst` and `pas_width` (Issue L, A4.5.1).
+`shareable`, `write_snoop_width` and `read_snoop_width` add the AxDOMAIN and
+AxSNOOP ports of [shareable transactions](ace5-lite.md).
 
 ## Request attributes
 
@@ -110,8 +114,8 @@ initiator. An `attributes` mapping of a signal that the target omits gives
 
 ## Target AxREGION and AxQOS
 
-`axi4` and `axi5` targets can drive AxREGION and AxQOS. The network computes
-both values at the target, so they need no initiator port.
+`axi4`, `axi5` and `ace5_lite` targets can drive AxREGION and AxQOS. The network
+computes both values at the target, so they need no initiator port.
 
 | Field | Place | Values | Result |
 | --- | --- | --- | --- |

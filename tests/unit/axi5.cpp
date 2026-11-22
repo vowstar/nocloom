@@ -186,13 +186,13 @@ TEST_CASE("Exclusive diagnostics name AXI5 among the protocols with AxLOCK", "[a
   CHECK(generate(d));
   d.targets[1].exclusive = ExclusiveAccess::Target;
   CHECK(has(refused(d), "NCL_TARGET_EXCLUSIVE", "targets[1].exclusive",
-            "Only AXI5, AXI4 and AXI3 targets have AxLOCK"));
+            "Only AXI5, ACE5-Lite, AXI4 and AXI3 targets have AxLOCK"));
   d = parsed(with("axi5"));
   d.targets[0].exclusive = ExclusiveAccess::Network;
   for (auto &i : d.initiators)
     i.access = Access::ReadOnly;
   CHECK(has(refused(d), "NCL_TARGET_EXCLUSIVE", "targets[0].exclusive",
-            "No read-write AXI5, AXI4 or AXI3 initiator"));
+            "No read-write AXI5, ACE5-Lite, AXI4 or AXI3 initiator"));
 }
 
 TEST_CASE("AXI5 constraint properties hold for every connected pair", "[axi5]") {
@@ -274,7 +274,7 @@ TEST_CASE("The axi5 object reads every field and refuses other interface classes
   CHECK(code("{mpam: partid_10}") == "NCL_AXI5_PROPERTIES");
   CHECK(code("{region: 1}") == "NCL_SCHEMA_UNKNOWN_FIELD");
   CHECK(code("{trace: 1}") == "NCL_SCHEMA_TYPE");
-  for (const auto *name : {"axi5_lite", "ace5_lite", "ace5_lite_dvm", "ace5_lite_acp"}) {
+  for (const auto *name : {"axi5_lite", "ace5_lite_dvm", "ace5_lite_acp"}) {
     const auto r = config::parse(std::regex_replace(with("axi5"), std::regex("protocol: apb4"),
                                                     std::string("protocol: ") + name),
                                  "axi5_ports.yaml");

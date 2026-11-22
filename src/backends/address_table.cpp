@@ -230,7 +230,8 @@ Table build(const Json &map, bool csv) {
         {"apb5", Protocol::Apb5},          {"apb4", Protocol::Apb4},
         {"apb3", Protocol::Apb3},          {"ahb_lite", Protocol::AhbLite},
         {"ahb5", Protocol::Ahb5},          {"tl_ul", Protocol::TlUl},
-        {"tl_uh", Protocol::TlUh},         {"axi5", Protocol::Axi5}};
+        {"tl_uh", Protocol::TlUh},         {"axi5", Protocol::Axi5},
+        {"ace5_lite", Protocol::Ace5Lite}};
     const bool full_axi = detail::full_axi(protocol_values.at(
         lookup<std::string>(protocols.value("initiators", Json::object()), source, "axi4")));
     // A narrower source zero-extends its address: it reaches only the low part of the space.

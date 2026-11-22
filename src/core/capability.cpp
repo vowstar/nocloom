@@ -23,6 +23,7 @@ constexpr ProtocolCaps caps[] = {
     {P::Apb2, false, true, wide, narrow, false, false, true, true, false, false, 1},
     {P::Axi4, true, true, wide, wide, true, true, false, false, false, true, 16},
     {P::Axi5, true, true, wide, wide, true, true, false, false, false, true, 16},
+    {P::Ace5Lite, true, true, wide, wide, true, true, false, false, false, true, 16},
     {P::AhbLite, true, true, wide, wide, true, true, true, false, true, false, 1},
     {P::Ahb5, true, true, wide, wide, true, true, true, false, true, false, 1},
     {P::Axi3, true, true, wide, wide, true, true, false, false, false, true, 16}};

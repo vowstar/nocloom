@@ -360,6 +360,10 @@ target_sources(nocloom_unit PRIVATE unit/axi5.cpp)
 add_test(NAME axi5_structure COMMAND nocloom_unit "[axi5]")
 set_tests_properties(axi5_structure PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit
   TIMEOUT 120 LABELS "unit;config;axi5;ci")
+target_sources(nocloom_unit PRIVATE unit/ace5_lite.cpp)
+add_test(NAME ace5_lite_structure COMMAND nocloom_unit "[ace5-lite]")
+set_tests_properties(ace5_lite_structure PROPERTIES
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/unit TIMEOUT 120 LABELS "unit;config;axi5;ci")
 # AXI5 request attributes: every bit through width conversion, packet splitting and a crossing.
 foreach(axi5_mode IN ITEMS switch clocked)
   add_test(NAME axi5_request_${axi5_mode}

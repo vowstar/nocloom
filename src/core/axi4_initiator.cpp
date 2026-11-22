@@ -6,6 +6,7 @@
 #include "diagnostic.hpp"
 #include "logic.hpp"
 #include "network_plan.hpp"
+#include "shareable.hpp"
 #include "strobe_lanes.hpp"
 #include "tilelink.hpp"
 #include "tilelink_uh.hpp"
@@ -53,14 +54,17 @@ struct Descriptor {
   ValueId user;  // the network user flags the burst drives
   ValueId audit; // the audit flags the burst drives
   ValueId level; // the scheduling level from the AxQOS map
+  // Whether AxSNOOP and AxDOMAIN form an admitted transaction, with AxDOMAIN or AxSNOOP ports.
+  std::optional<ValueId> coherent;
 };
 
 // The face inputs of one address channel (AW or AR), in port order.
 struct AddressFace {
   ValueId id, addr, len, size, burst, lock, cache, prot, valid;
-  ValueId user;  // the network user flags, with Axi4InitiatorProfile::user_bits
-  ValueId audit; // the audit flags, with Axi4InitiatorProfile::audit_bits
-  ValueId level; // the AxQOS map's level, with Axi4InitiatorProfile::level_bits
+  ValueId user;                    // the network user flags, with Axi4InitiatorProfile::user_bits
+  ValueId audit;                   // the audit flags, with Axi4InitiatorProfile::audit_bits
+  ValueId level;                   // the AxQOS map's level, with Axi4InitiatorProfile::level_bits
+  std::optional<ValueId> coherent; // Descriptor::coherent
 };
 
 // Admission checks over a captured descriptor. Invalid bursts complete locally with SLVERR.
@@ -248,8 +252,15 @@ Admission check_admission(logic::Logic &l, const Axi4InitiatorProfile &p, const 
   a.span_cross = l.bind(prefix + ".span_cross", l.b.binary(Op::UnsignedLess, a.budget, a.span));
   a.incr_ok = l.bind(prefix + ".incr_ok", l.either(l.inv(l.eq(d.burst, 1)), l.inv(a.span_cross)));
   const auto lock_ok = locked_packet_ok(l, p, d, a, transport_address_bits, prefix);
-  const std::array checks{a.size_ok, lock_ok,    a.exclusive_ok, a.burst_ok,
-                          a.wrap_ok, a.fixed_ok, a.incr_ok};
+  // The shareable pair check joins the size check, the shallowest one, so that no other check
+  // gets a deeper path to the admission.
+  const std::array checks{d.coherent ? l.both(a.size_ok, *d.coherent) : a.size_ok,
+                          lock_ok,
+                          a.exclusive_ok,
+                          a.burst_ok,
+                          a.wrap_ok,
+                          a.fixed_ok,
+                          a.incr_ok};
   auto admitted = l.every(checks);
   const auto legal = admitted;
   a.local_miss = a.missing = a.unmapped = l.bit(0);
@@ -584,6 +595,8 @@ CapturedDescriptor capture_descriptor(logic::Logic &l, const Axi4InitiatorProfil
     cap.d.audit = capture("audit", p.audit_bits, face.audit);
   if (p.level_bits)
     cap.d.level = p.axqos_map.empty() ? face.level : capture("level", p.level_bits, face.level);
+  if (face.coherent)
+    cap.d.coherent = capture("coherent", 1, *face.coherent);
   return cap;
 }
 
@@ -720,7 +733,8 @@ void initiator_axi5_errors(const Axi4InitiatorProfile &profile, std::vector<Diag
       (a.nsaid != 0 && a.nsaid != 4) || (a.pbha != 0 && a.pbha != 4) ||
       (a.subsystem_id && a.subsystem_id < ports.subsystem_id) ||
       (a.subsystem_id && !ports.subsystem_id &&
-       a.subsystem_id < static_cast<unsigned>(std::bit_width(ports.subsystem_value))))
+       a.subsystem_id < static_cast<unsigned>(std::bit_width(ports.subsystem_value))) ||
+      (a.domain != 0 && a.domain != 2) || a.snoop > 1 || (a.snoop && !a.domain))
     errors.push_back(initiator_error(
         "NCL_AXI4_INITIATOR_AXI5", "axi5_ports",
         "AXI5 request ports need a full AXI face and request attributes that hold them"));
@@ -1041,14 +1055,45 @@ struct InitiatorLowering {
       }
     }
     // The AXI5 request ports, and their attributes above the other user bits.
-    if (const auto block = axi5::source_attributes(
-            l, p.axi5_attributes, p.axi5_ports, f.prot,
-            [&](const std::string &signal, unsigned bits) { return axi_input(ch + signal, bits); }))
+    auto block = axi5::source_attributes(
+        l, p.axi5_attributes, p.axi5_ports, f.prot,
+        [&](const std::string &signal, unsigned bits) { return axi_input(ch + signal, bits); });
+    shareable_face(ch, f, block);
+    if (block)
       f.user = p.user_bits == p.axi5_attributes.bits() ? *block : l.b.concat(*block, f.user);
     if (p.audit_bits)
       f.audit = map_attributes(l, p.audit_flags, f.cache, f.prot, write_channel, user_port);
     f.valid = axi_input(ch + "valid", 1);
     return f;
+  }
+
+  // AxDOMAIN and AxSNOOP of one address channel (docs/ace5-lite.md): the admission check of the
+  // pair, and the domain and snoop fields on top of the attribute block. Without AxDOMAIN ports a
+  // request takes the domain of its AxCACHE. A WriteUniqueFull keeps its snoop bit only as one
+  // Regular cache line of this face; otherwise it travels as a WriteUniquePtl.
+  void shareable_face(const std::string &ch, AddressFace &f, std::optional<ValueId> &block) {
+    const auto &ports = p.axi5_ports;
+    const auto &a = p.axi5_attributes;
+    const bool write = ch == "aw";
+    const bool snoop_port = write ? ports.write_snoop : ports.read_snoop;
+    if (!coherence_checked(ports) && !a.domain)
+      return;
+    const auto domain =
+        ports.domain ? axi_input(ch + "domain", 2) : shareable::default_domain(l, f.cache);
+    const auto shared = shareable::shareable(l, domain);
+    const auto opcode = snoop_port ? axi_input(ch + "snoop", 4) : l.num(4, 0);
+    const auto unique_full = write ? l.both(l.eq(opcode, 1), shared) : zero;
+    if (coherence_checked(ports)) {
+      // IHI 0022 Issue L tables A7.3 and A7.4: opcode zero in every domain, WriteUniqueFull in the
+      // Shareable domain. A Shareable request is neither exclusive (A7.3) nor FIXED (A8.3.3).
+      const auto pair = l.either(l.eq(opcode, 0), unique_full);
+      f.coherent = l.both(pair, l.inv(l.both(shared, l.either(f.lock, l.eq(f.burst, 0)))));
+    }
+    const auto put = [&](ValueId field) { block = block ? l.b.concat(field, *block) : field; };
+    if (a.domain)
+      put(domain);
+    if (a.snoop)
+      put(l.both(unique_full, shareable::source_line(l, f.addr, f.len, f.size, p.data_bits / 8)));
   }
 
   // The mode plane of a direction's burst in service (Axi4InitiatorProfile::mode_windows): the
