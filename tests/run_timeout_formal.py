@@ -117,6 +117,22 @@ def ports(work):
     return result
 
 
+def header_ports(text):
+    """Names in the port list of the bench's module header, in order."""
+    header = re.match(r'module formal_top\(([^;]*)\);\n', text)
+    assert header, 'the bench does not start with the formal_top header'
+    return [re.fullmatch(r'.*?(\w+)', part.strip(), re.S).group(1)
+            for part in header.group(1).split(',')]
+
+
+def check_header(text):
+    """A port declared twice is an error in SystemVerilog tools other than Yosys."""
+    names = header_ports(text)
+    repeated = sorted({name for name in names if names.count(name) > 1})
+    assert not repeated, f'formal_top declares ports more than once: {", ".join(repeated)}'
+    return text
+
+
 def monitors(kind, n):
     kind = 'axi4' if kind == 'axi4x2' else kind
     # Reads that start after expiry: the rest of the packet already held.
@@ -469,8 +485,9 @@ def harness(kind, port_list, answer, n):
     axi4 = kind in ('axi4', 'axi4x2')
     tied = () if axi4 else ('nl_rrsp_ready', 'nl_wrsp_ready')
     ties = '\n'.join(f"assign {name} = 1'b1;" for name in tied)
+    # The clock is the header's first port.
     inputs = [f'input wire [{w - 1}:0] {n}' for n, w, i in port_list
-              if i and n not in tied]
+              if i and n not in tied and n != 'nl_clk']
     wires = [f'wire [{w - 1}:0] {n};' for n, w, i in port_list if not i or n in tied]
     stall = {'apb4': '!nl_apb_pready', 'apb3': '!nl_apb_pready', 'ahb_lite': '!nl_ahb_hreadyout',
              'axi4_lite': '!nl_axil_bvalid && !nl_axil_rvalid',
@@ -766,12 +783,13 @@ def main():
         subprocess.run([args.fixture, str(work), kind, str(args.cycles), answer,
                         *PROBES.get(kind, ())], check=True, timeout=120)
         port_list = ports(work)
-        top = (shared_harness(port_list, args.cycles) if shared else
-               harness(kind, port_list, answer, args.cycles))
+        top = check_header(shared_harness(port_list, args.cycles) if shared else
+                           harness(kind, port_list, answer, args.cycles))
         (work / 'formal_top.sv').write_text(top)
         directed_reach = kind in ('axi4', 'axi4x2') and 'reach' in run_tasks
         if directed_reach:
-            (work / 'reach.sv').write_text(axi_reach_harness(kind, port_list, args.cycles, top))
+            (work / 'reach.sv').write_text(
+                check_header(axi_reach_harness(kind, port_list, args.cycles, top)))
         if 'backpressure' in run_tasks:
             (work / 'backpressure.v').write_text(remove_w_backpressure((work / 'outlet.v').read_text()))
         # The bounded mode uses ABC's BMC to the same depth: on the AXI4-Lite

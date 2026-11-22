@@ -908,6 +908,12 @@ add_test(NAME target_timeout_cycles
     --work ${CMAKE_CURRENT_BINARY_DIR}/target_timeout_cycles)
 set_tests_properties(target_timeout_cycles PROPERTIES TIMEOUT 60 LABELS "rtl;focused;ci"
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+add_test(NAME target_timeout_formal_benches
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/timeout_formal_bench_test.py
+    --fixture $<TARGET_FILE:nocloom_timeout_outlet_fixture>
+    --work ${CMAKE_CURRENT_BINARY_DIR}/target_timeout_formal_benches)
+set_tests_properties(target_timeout_formal_benches PROPERTIES TIMEOUT 60 LABELS "unit;quick"
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 foreach(kind IN ITEMS apb4 apb3 axi4_lite ahb_lite axi4)
   # The AXI4-Lite outlet safety checks run bounded to 12 cycles. Expiry
   # reachability needs a 1030-frame trace and is covered by
