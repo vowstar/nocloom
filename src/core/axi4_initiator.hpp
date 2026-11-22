@@ -176,7 +176,13 @@ struct Axi4InitiatorProfile {
   // width sends zero and ignores returned tags.
   unsigned tag_bits = 0;
   unsigned user_bits = 0; // network user flags (message.hpp point 13)
+  // The byte group width of the data_user field (message.hpp point 20) and its layout.
   unsigned data_user_bits_per_byte = 0;
+  ByteGroups byte_groups{};
+  // The AXI5 data side ports of an axi5 face, and whether the face moves byte groups: its W beats
+  // carry them from its ports and its R beats return them.
+  Axi5DataPorts data_ports{};
+  bool carry_groups = false;
   unsigned response_user_bits = 0;
   // Weft request level field width (message.hpp point 15), and the full AXI face's AxQOS map
   // (InitiatorQos::axqos_map): a nonempty map adds AWQOS and ARQOS ports of log2(size) bits and

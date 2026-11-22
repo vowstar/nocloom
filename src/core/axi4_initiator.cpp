@@ -3,6 +3,7 @@
 #include "axi5_attributes.hpp"
 #include "beat_stage.hpp"
 #include "burst_faces.hpp"
+#include "byte_groups.hpp"
 #include "diagnostic.hpp"
 #include "logic.hpp"
 #include "network_plan.hpp"
@@ -860,6 +861,59 @@ struct InitiatorLowering {
   // The engine's AXI inputs and outputs behind an APB or AHB face.
   std::map<std::string, ValueId> face_in, face_out;
   ValueId apb_access{}, apb_read_address{}, apb_pwuser{}, apb_pruser{};
+  // The AXI5 W data side ports and the staged R beat's byte groups (Axi4InitiatorProfile::
+  // carry_groups).
+  std::optional<ValueId> w_wuser, w_wpoison, w_wtrace, r_rsp_groups;
+  void data_side_inputs() {
+    if (p.data_ports.user)
+      w_wuser = axi_input("wuser", p.data_ports.user);
+    if (p.data_ports.poison)
+      w_wpoison = axi_input("wpoison", (be_bits + 7) / 8);
+    if (p.data_ports.trace)
+      w_wtrace = axi_input("wtrace", 1);
+  }
+  // A W beat's byte groups from its data side ports: zero for an unstrobed byte, and for a part
+  // the network does not carry or the face does not have.
+  ValueId write_groups() {
+    const auto &g = p.byte_groups;
+    return groups::compose(l, g, be_bits, g.user ? w_wuser : std::nullopt,
+                           g.poison ? w_wpoison : std::nullopt, g.trace ? w_wtrace : std::nullopt,
+                           w_wstrb);
+  }
+  // RUSER (the response user field low, the data user bits of the beat's groups above), RPOISON
+  // and RTRACE of the R face. A failed or local beat (rresp[1]) returns zero groups.
+  void read_group_outputs(ValueId local, ValueId rresp) {
+    if (!p.data_ports.any()) {
+      user_output("ruser", r_rsp_user, local);
+      return;
+    }
+    const auto &g = p.byte_groups;
+    const auto fail = l.either(local, l.b.slice(rresp, 1, 1));
+    const auto staged =
+        r_rsp_groups ? l.pick(fail, l.num(be_bits * g.bits(), 0), *r_rsp_groups) : ValueId{};
+    if (p.data_ports.user || p.response_user_port_bits) {
+      std::optional<ValueId> ruser;
+      if (p.response_user_port_bits)
+        ruser = l.b.select(local, l.b.constant(p.response_user_port_bits, 0),
+                           r_rsp_user ? l.fit(*r_rsp_user, p.response_user_port_bits)
+                                      : l.b.constant(p.response_user_port_bits, 0));
+      if (p.data_ports.user) {
+        const auto data = r_rsp_groups && g.user
+                              ? groups::part(l, staged, be_bits, g.bits(), 0, g.user)
+                              : l.num(p.data_ports.user, 0);
+        ruser = ruser ? l.b.concat(data, *ruser) : data;
+      }
+      axi_output("ruser", *ruser);
+    }
+    if (p.data_ports.poison)
+      axi_output("rpoison", r_rsp_groups && g.poison
+                                ? groups::granules(l, staged, be_bits, g.bits(), g.poison_bit())
+                                : l.num((be_bits + 7) / 8, 0));
+    if (p.data_ports.trace)
+      axi_output("rtrace", r_rsp_groups && g.trace
+                               ? groups::any_bit(l, staged, be_bits, g.bits(), g.trace_bit())
+                               : zero);
+  }
   void apb_data_user_face(ValueId address, ValueId strobes);
   void apb_data_user_tail(ValueId answer, ValueId read_valid);
   // AHB face values handed from ahb_face to ahb_tail.
@@ -1156,7 +1210,7 @@ struct InitiatorLowering {
 void InitiatorLowering::apb_data_user_face(ValueId address, ValueId strobes) {
   if (!p.data_user_port_bits)
     return;
-  const auto k = p.data_user_bits_per_byte;
+  const auto k = p.byte_groups.user;
   const auto input = l.b.input("nl_apb_pwuser", p.data_user_port_bits, "apb", "pwuser");
   ValueId masked{};
   for (unsigned byte = 0; byte < face_bytes; ++byte) {
@@ -1181,7 +1235,7 @@ void InitiatorLowering::apb_data_user_face(ValueId address, ValueId strobes) {
 void InitiatorLowering::apb_data_user_tail(ValueId answer, ValueId read_valid) {
   if (!p.data_user_port_bits)
     return;
-  const auto k = p.data_user_bits_per_byte;
+  const auto k = p.byte_groups.user;
   auto user = apb_pruser;
   if (face_bytes < 4) {
     const auto kept = l.state("rr.pruser_lane", 2);
@@ -1410,6 +1464,7 @@ void InitiatorLowering::write_issue() {
   w_wlast = p.lite ? one : axi_input("wlast", 1);
   if (p.axi3 && p.id_bits)
     w_wid = axi_input("wid", p.id_bits);
+  data_side_inputs();
   auto wvalid = axi_input("wvalid", 1);
   if (!p.tilelink || p.tilelink_uh)
     w_bready = axi_input("bready", 1);
@@ -1757,9 +1812,13 @@ void InitiatorLowering::write_complete() {
   const auto face_data = strobed_data(l.b, w_wdata, w_wstrb, be_bits);
   const auto buffered = p.lite && !p.apb;
   wrq["data"] = buffered ? l.b.select(w_beat_full, w_beat_data, face_data) : face_data;
-  if (p.data_user_bits_per_byte)
+  if (p.carry_groups)
+    wrq["data_user"] = write_groups();
+  else if (p.data_user_bits_per_byte)
     wrq["data_user"] =
-        p.data_user_port_bits ? apb_pwuser : l.num(be_bits * p.data_user_bits_per_byte, 0);
+        p.data_user_port_bits
+            ? groups::regroup(l, apb_pwuser, be_bits, p.byte_groups.user, p.data_user_bits_per_byte)
+            : l.num(be_bits * p.data_user_bits_per_byte, 0);
   wrq["be"] = l.b.select(w_admission.unmapped, l.b.constant(be_bits, 0),
                          buffered ? l.b.select(w_beat_full, w_beat_be, w_wstrb) : w_wstrb);
   l.b.output("nl_wreq_valid", w_wrq_valid, "wreq", "valid");
@@ -1804,7 +1863,9 @@ void InitiatorLowering::read_issue() {
   r_rsp_full = l.state("rr.rsp_full", 1);
   r_rsp_data = l.state("rr.rsp_data", p.data_bits);
   if (p.data_user_port_bits)
-    apb_pruser = l.state("rr.rsp_data_user", be_bits * p.data_user_bits_per_byte);
+    apb_pruser = l.state("rr.rsp_data_user", be_bits * p.byte_groups.user);
+  if (p.carry_groups)
+    r_rsp_groups = l.state("rr.rsp_data_user", be_bits * p.data_user_bits_per_byte);
   r_rsp_result = l.state("rr.rsp_result", 2);
   r_rsp_error = l.state("rr.rsp_error", 1);
   r_rsp_last = l.state("rr.rsp_last", 1);
@@ -1917,23 +1978,36 @@ void InitiatorLowering::stage_beat(ValueId load) {
     staged.emplace_back(*r_rsp_exclusive, "exclusive_okay");
   if (r_rsp_user)
     staged.emplace_back(*r_rsp_user, "user");
+  if (r_rsp_groups)
+    staged.emplace_back(*r_rsp_groups, "data_user");
+  // The first INCR beat has no requested bytes below the captured start. Later beats may replay
+  // earlier bytes of a gathered word, so only the first one clears this prefix, in its data and
+  // its byte groups.
+  std::optional<std::pair<ValueId, ValueId>> prefix;
+  if (!p.lite && !p.apb && !p.ahb) {
+    const auto offset = multi ? slot_field(l, r_track, "prefix", slot_of(r_rrsp_in, r_track))
+                        : reuse_read_count()
+                            ? l.b.slice(r_remaining, 0, std::countr_zero(be_bits))
+                            : l.pick(l.eq(r_cap.burst_reg, 1),
+                                     l.b.slice(r_cap.addr_reg, 0, std::countr_zero(be_bits)),
+                                     l.num(std::countr_zero(be_bits), 0));
+    const auto lanes =
+        l.shl(l.b.unary(Op::BitNot, l.num(be_bits, 0), be_bits), offset, be_bits - 1);
+    const auto first = l.both(r_rrsp_in.at("first"), l.both(l.eq(r_rrsp_in.at("result"), 0),
+                                                            l.inv(r_rrsp_in.at("error"))));
+    prefix = {first, strobe_lanes(l.b, lanes, be_bits)};
+  }
   for (const auto &[reg, field] : staged) {
     auto value = r_rrsp_in.at(field);
-    if (field == "data" && !p.lite && !p.apb && !p.ahb) {
-      // The first INCR beat has no requested bytes below the captured start. Later beats may
-      // replay earlier bytes of a gathered word, so only the first one clears this prefix.
-      const auto offset = multi ? slot_field(l, r_track, "prefix", slot_of(r_rrsp_in, r_track))
-                          : reuse_read_count()
-                              ? l.b.slice(r_remaining, 0, std::countr_zero(be_bits))
-                              : l.pick(l.eq(r_cap.burst_reg, 1),
-                                       l.b.slice(r_cap.addr_reg, 0, std::countr_zero(be_bits)),
-                                       l.num(std::countr_zero(be_bits), 0));
-      const auto lanes =
-          l.shl(l.b.unary(Op::BitNot, l.num(be_bits, 0), be_bits), offset, be_bits - 1);
-      const auto first = l.both(r_rrsp_in.at("first"), l.both(l.eq(r_rrsp_in.at("result"), 0),
-                                                              l.inv(r_rrsp_in.at("error"))));
-      value = l.pick(first, l.both(value, strobe_lanes(l.b, lanes, be_bits)), value);
-    }
+    if (field == "data_user" && p.apb)
+      value = groups::regroup(l, value, be_bits, p.data_user_bits_per_byte, p.byte_groups.user);
+    if (field == "data" && prefix)
+      value = l.pick(prefix->first, l.both(value, prefix->second), value);
+    if (field == "data_user" && prefix && r_rsp_groups)
+      value = l.pick(
+          prefix->first,
+          l.both(value, groups::gather(l, prefix->second, be_bits, p.data_user_bits_per_byte)),
+          value);
     l.b.update(reg, l.b.select(load, value, reg));
   }
 }
@@ -2033,16 +2107,17 @@ void InitiatorLowering::read_response() {
     axi_output("arready", r_arready);
     axi_output("rvalid", r_rvalid);
     axi_output("rdata", l.b.select(r_face_local, l.b.constant(p.data_bits, 0), r_rsp_data));
-    axi_output("rresp", l.b.select(r_face_local, local_code,
-                                   map_result(l, r_rsp_result, r_rsp_error, p.slverr_only,
-                                              r_rsp_exclusive)));
+    const auto rresp =
+        l.b.select(r_face_local, local_code,
+                   map_result(l, r_rsp_result, r_rsp_error, p.slverr_only, r_rsp_exclusive));
+    axi_output("rresp", rresp);
     // An AXI4-Lite face has neither RLAST nor RID.
     const auto rlast = l.bind("rr.rlast", last_beat);
     if (!p.lite)
       axi_output("rlast", rlast);
     if (p.id_bits && !p.lite)
       axi_output("rid", l.bind("rr.face_id", l.b.select(r_face_local, r_cap.id_reg, r_rsp_id)));
-    user_output("ruser", r_rsp_user, r_face_local);
+    read_group_outputs(r_face_local, rresp);
     // A tracked engine never reaches the APB tail (an APB face holds at most one
     // burst), so this return is the final finish of lower_axi4_initiator.
     return;
@@ -2098,16 +2173,17 @@ void InitiatorLowering::read_response() {
         local_miss_decerr() ? local_response(l.either(tail_in_staging, l.b.slice(local_code, 0, 1)))
                             : local_code;
     axi_output("rdata", l.b.select(face_local, l.b.constant(p.data_bits, 0), r_rsp_data));
-    axi_output("rresp", l.b.select(face_local, face_error,
-                                   map_result(l, r_rsp_result, r_rsp_error, p.slverr_only,
-                                              r_rsp_exclusive)));
+    const auto rresp =
+        l.b.select(face_local, face_error,
+                   map_result(l, r_rsp_result, r_rsp_error, p.slverr_only, r_rsp_exclusive));
+    axi_output("rresp", rresp);
     axi_output("rlast", l.bind("rr.rlast", l.b.select(r_face_local, last_beat,
                                                       p.local_decode_miss
                                                           ? l.either(tail_in_staging, r_rsp_last)
                                                           : r_rsp_last)));
     if (p.id_bits)
       axi_output("rid", l.b.select(r_face_local, r_cap.id_reg, r_rsp_id));
-    user_output("ruser", r_rsp_user, face_local);
+    read_group_outputs(face_local, rresp);
     return;
   }
   // Response beat skid buffer with flow-through; RLAST is forwarded from the fragment's last
@@ -2138,15 +2214,16 @@ void InitiatorLowering::read_response() {
   axi_output("arready", r_arready);
   axi_output("rvalid", r_rvalid);
   axi_output("rdata", l.b.select(r_errstream, l.b.constant(p.data_bits, 0), r_rsp_data));
-  axi_output("rresp",
-             l.b.select(r_errstream, local_code,
-                        map_result(l, r_rsp_result, r_rsp_error, p.slverr_only, r_rsp_exclusive)));
+  const auto rresp =
+      l.b.select(r_errstream, local_code,
+                 map_result(l, r_rsp_result, r_rsp_error, p.slverr_only, r_rsp_exclusive));
+  axi_output("rresp", rresp);
   const auto last = l.bind("rr.rlast", l.b.select(r_errstream, last_beat, r_rsp_last));
   if (!p.lite)
     axi_output("rlast", last);
   if (p.id_bits && !p.lite)
     axi_output("rid", d.id);
-  user_output("ruser", r_rsp_user, r_errstream);
+  read_group_outputs(r_errstream, rresp);
 }
 void InitiatorLowering::apb_tail() {
   if (p.apb) {

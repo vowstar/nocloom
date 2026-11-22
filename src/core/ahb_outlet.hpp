@@ -1,4 +1,5 @@
 #pragma once
+#include "axi5_ports.hpp"
 #include "component.hpp"
 #include "exclusive.hpp"
 #include <nocloom/definition.hpp>
@@ -89,7 +90,9 @@ struct BurstOutletProfile {
   // returns its request's tag. Zero omits the field.
   unsigned tag_bits = 0;
   unsigned user_bits = 0; // network user flags (message.hpp point 13)
+  // The byte group width of the data_user field (message.hpp point 20) and its layout.
   unsigned data_user_bits_per_byte = 0;
+  ByteGroups byte_groups{};
   unsigned response_user_bits = 0;
   // AxUSER or PAUSER bit i: a constant or AttributeSource::User naming a flag by index; empty has
   // no port.

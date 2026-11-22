@@ -3,6 +3,7 @@
 #include "axi5_attributes.hpp"
 #include "beat_stage.hpp"
 #include "burst_faces.hpp"
+#include "byte_groups.hpp"
 #include "decode_packet.hpp"
 #include "diagnostic.hpp"
 #include "exclusive_monitor.hpp"
@@ -524,7 +525,8 @@ struct EngineLowering {
   }
   void response_face(const std::string &face, const Fields &d, ValueId full, ValueId address,
                      ValueId code, ValueId first, ValueId last, ValueId data,
-                     ValueId exclusive_okay, std::optional<ValueId> user) {
+                     ValueId exclusive_okay, std::optional<ValueId> user,
+                     std::optional<ValueId> data_groups = std::nullopt) {
     out(face, "valid", active(full));
     out(face, "address", address);
     out(face, "result", code);
@@ -543,7 +545,8 @@ struct EngineLowering {
     out(face, "last", last);
     out(face, "data", data);
     if (p.data_user_bits_per_byte)
-      out(face, "data_user", l.num(p.data_bits / 8 * p.data_user_bits_per_byte, 0));
+      out(face, "data_user",
+          data_groups.value_or(l.num(p.data_bits / 8 * p.data_user_bits_per_byte, 0)));
     if (p.tag_bits)
       out(face, "tag", d.at("tag"));
     if (p.id_bits)
@@ -589,9 +592,59 @@ struct EngineLowering {
   std::optional<ValueId> target_user(const char *signal, ValueId taken) {
     if (!p.response_user_bits || !p.response_user_port_bits)
       return std::nullopt;
-    return l.b.select(taken,
-                      l.fit(in("axi", signal, p.response_user_port_bits), p.response_user_bits),
+    const auto port = std::string_view(signal) == "ruser" && p.data_ports.user
+                          ? l.b.slice(ruser_in(), 0, p.response_user_port_bits)
+                          : in("axi", signal, p.response_user_port_bits);
+    return l.b.select(taken, l.fit(port, p.response_user_bits),
                       l.b.constant(p.response_user_bits, 0));
+  }
+  // RUSER of an AXI5 target with data user bits: the response user port bits low, the data part
+  // above them (IHI 0022 Issue L A12.5.3).
+  std::optional<ValueId> ruser_port;
+  ValueId ruser_in() {
+    if (!ruser_port)
+      ruser_port = in("axi", "ruser", p.response_user_port_bits + p.data_ports.user);
+    return *ruser_port;
+  }
+  // The byte groups of the arriving R beat (byte_groups.hpp) from the data part of RUSER, RPOISON
+  // and RTRACE, zero for a beat without data (ok clear); none unless the outlet carries them. The
+  // ports exist whenever the target declares them.
+  std::optional<ValueId> read_groups(ValueId ok) {
+    const unsigned bytes = p.data_bits / 8;
+    std::optional<ValueId> user, poison, trace;
+    if (p.data_ports.user)
+      user = l.b.slice(ruser_in(), p.response_user_port_bits, p.data_ports.user);
+    if (p.data_ports.poison)
+      poison = in("axi", "rpoison", (bytes + 7) / 8);
+    if (p.data_ports.trace)
+      trace = in("axi", "rtrace", 1);
+    if (!p.carry_groups)
+      return std::nullopt;
+    const auto &g = p.byte_groups;
+    const auto groups = groups::compose(
+        l, g, bytes, g.user ? user : std::nullopt, g.poison ? poison : std::nullopt,
+        g.trace ? trace : std::nullopt, l.b.unary(Op::BitNot, l.num(bytes, 0), bytes));
+    return l.b.select(ok, groups, l.num(bytes * g.bits(), 0));
+  }
+  // WUSER, WPOISON and WTRACE of the W beat from its byte groups, each byte's group counted only
+  // where its strobe is set; zero without groups.
+  void write_group_outputs(std::optional<ValueId> held, ValueId strobes) {
+    const unsigned bytes = p.data_bits / 8;
+    const auto &g = p.byte_groups;
+    std::optional<ValueId> groups;
+    if (held)
+      groups = l.both(*held, groups::gather(l, strobe_lanes(l.b, strobes, bytes), bytes, g.bits()));
+    if (p.data_ports.user)
+      out("axi", "wuser",
+          groups && g.user ? groups::part(l, *groups, bytes, g.bits(), 0, g.user)
+                           : l.num(p.data_ports.user, 0));
+    if (p.data_ports.poison)
+      out("axi", "wpoison",
+          groups && g.poison ? groups::granules(l, *groups, bytes, g.bits(), g.poison_bit())
+                             : l.num((bytes + 7) / 8, 0));
+    if (p.data_ports.trace)
+      out("axi", "wtrace",
+          groups && g.trace ? groups::any_bit(l, *groups, bytes, g.bits(), g.trace_bit()) : zero);
   }
   // Upstream packing gives multi-word WRAP reads a full-word SIZE and preserves the raw start.
   // A narrow WRAP that passes through unchanged needs no saved-word replay.
@@ -671,7 +724,7 @@ struct EngineLowering {
   ValueId response_offered{}, response_cut{}, block_count{};
   // A tagged length word belongs only to a locally rejected miss.
   ValueId local_error_on{}, local_error_now{}, aw_shown{};
-  std::optional<ValueId> stored_user, bstored_user;
+  std::optional<ValueId> stored_user, bstored_user, stored_groups;
   ValueId complete{};
   Fields front, recv;
   // Several bursts: per entry allocated (valid), passed to the target or over (issued) and
@@ -755,6 +808,11 @@ struct EngineLowering {
   void update_segment_last(const Stage &stage, ValueId moving, ValueId mload, ValueId inject);
   ValueId inside_block();
   void count_block_word(ValueId entering, ValueId last);
+  struct ReadSelection {
+    ValueId receiving, target_ready, r_owed;
+    std::optional<ValueId> id_match;
+  };
+  ReadSelection select_read_burst(ValueId rid);
   void read_receive();
   void read_update();
   void count_pool();
@@ -1037,6 +1095,12 @@ void EngineLowering::write_data() {
       l.latch("w.data", l.b.select(void_beat, l.b.constant(p.data_bits, 0), w.at("data")), load);
   auto strobes = l.b.select(void_beat, l.b.constant(p.data_bits / 8, 0), w.at("be"));
   auto wstrb = l.latch("w.strobes", strobes, load);
+  std::optional<ValueId> wgroups;
+  if (p.carry_groups)
+    wgroups = l.latch("w.data_user",
+                      l.b.select(void_beat, l.num(p.data_bits / 8 * p.data_user_bits_per_byte, 0),
+                                 w.at("data_user")),
+                      load);
   l.b.update(wlast, l.b.select(w_load, in_last, wlast));
   l.b.update(wdrop, l.b.select(load, drop, wdrop));
   aw_id = target_id_bits ? descriptor_id(aw, 0) : zero;
@@ -1059,6 +1123,7 @@ void EngineLowering::write_data() {
           l.latch("w.id", l.b.select(collecting, descriptor_id(aw, 0), descriptor_id(w, 0)), load);
     out("axi", "wid", id_to_port(write_timer ? frozen("timeout.wid", wid) : wid));
   }
+  write_group_outputs(wgroups, wstrb);
   if (write_timer) {
     const auto awready = operand(aw_fire), wready = operand(w_fire);
     l.b.update(held_aw, l.b.select(failed, l.b.select(awready, zero, held_aw),
@@ -1685,6 +1750,42 @@ void EngineLowering::watchdog(ValueId rready, ValueId target_rvalid, ValueId rec
   out("status", "timed_out", failed);
 }
 
+EngineLowering::ReadSelection EngineLowering::select_read_burst(ValueId rid) {
+  // Receive a whole burst from the oldest matching entry or report SLVERR on the fallback.
+  // A local entry waits for all older entries.
+  const unsigned width = std::max(1U, index_bits);
+  std::vector<ValueId> waiting, from_target, matching, rejecting, id_matches;
+  for (unsigned k = 0; k < depth; ++k) {
+    const auto open = l.both(rvalid[k], l.inv(rdone[k]));
+    const auto passed = l.both(skip, l.eq(qissue, k));
+    rejecting.push_back(timeout ? l.either(rejects[k], failed) : rejects[k]);
+    waiting.push_back(l.both(open, l.either(rissued[k], passed)));
+    from_target.push_back(l.both(l.both(open, rissued[k]), l.inv(rejecting.back())));
+    const auto match = target_id_bits ? l.b.binary(Op::Equal, descriptor_id(rs[k], 1), rid) : one;
+    matching.push_back(target_id_bits ? l.both(from_target.back(), match) : from_target.back());
+    id_matches.push_back(match);
+  }
+  const auto busy = l.inv(l.eq(rk, 0));
+  const auto oldest = first_from(l, waiting, qtail, width);
+  rlocal = l.bind("r.local", l.b.select(busy, pick(l, rejecting, rcur),
+                                        l.both(any_of(l, waiting), pick(l, rejecting, oldest))));
+  const auto any_match = any_of(l, matching);
+  const auto by_id = l.b.select(any_match, first_from(l, matching, qtail, width),
+                                first_from(l, from_target, qtail, width));
+  // A selected network entry already matched, except the fallback or a burst in progress.
+  std::optional<ValueId> received_id_match;
+  if (!p.id_route && target_id_bits > flow_bits)
+    received_id_match = l.b.select(busy, pick(l, id_matches, rcur), any_match);
+  rsel = l.bind("r.select", l.b.select(busy, rcur, l.b.select(rlocal, oldest, by_id)));
+  recv = select_fields(rsel);
+  recv_miss = pick(l, misses, rsel);
+  recv_rejecting = rlocal;
+  const auto receiving = l.either(busy, any_of(l, waiting));
+  const auto r_owed = any_of(l, from_target);
+  const auto target_ready = l.either(busy, r_owed);
+  return {receiving, target_ready, r_owed, received_id_match};
+}
+
 // WRAP read alignment sits between the stage's spare and main entries: a beat moving into the
 // main entry (from the spare entry, else as it arrives) that is an aligned read's first beat
 // answers its lanes from the start address up and holds the lanes below, with its result,
@@ -1695,45 +1796,12 @@ void EngineLowering::read_receive() {
   // The receiving entry's beats: R from the target once issued, or local
   // beats, while the stage's spare entry is free (behind a merge: while its one entry is free or
   // leaves in this cycle).
-  ValueId receiving{}, target_ready = one, r_owed = zero;
   const auto rid = target_id_bits ? id_from_port(in("axi", "rid", target_id_bits)) : zero;
-  std::optional<ValueId> received_id_match;
-  if (several) {
-    // Receive a whole burst from the oldest matching entry or report SLVERR on the fallback.
-    // A local entry waits for all older entries.
-    const unsigned width = std::max(1U, index_bits);
-    std::vector<ValueId> waiting, from_target, matching, rejecting, id_matches;
-    for (unsigned k = 0; k < depth; ++k) {
-      const auto open = l.both(rvalid[k], l.inv(rdone[k]));
-      const auto passed = l.both(skip, l.eq(qissue, k));
-      rejecting.push_back(timeout ? l.either(rejects[k], failed) : rejects[k]);
-      waiting.push_back(l.both(open, l.either(rissued[k], passed)));
-      from_target.push_back(l.both(l.both(open, rissued[k]), l.inv(rejecting.back())));
-      const auto match = target_id_bits ? l.b.binary(Op::Equal, descriptor_id(rs[k], 1), rid) : one;
-      matching.push_back(target_id_bits ? l.both(from_target.back(), match) : from_target.back());
-      id_matches.push_back(match);
-    }
-    const auto busy = l.inv(l.eq(rk, 0));
-    const auto oldest = first_from(l, waiting, qtail, width);
-    rlocal = l.bind("r.local", l.b.select(busy, pick(l, rejecting, rcur),
-                                          l.both(any_of(l, waiting), pick(l, rejecting, oldest))));
-    const auto any_match = any_of(l, matching);
-    const auto by_id = l.b.select(any_match, first_from(l, matching, qtail, width),
-                                  first_from(l, from_target, qtail, width));
-    // A selected network entry already matched, except the fallback or a burst in progress.
-    if (!p.id_route && target_id_bits > flow_bits)
-      received_id_match = l.b.select(busy, pick(l, id_matches, rcur), any_match);
-    rsel = l.bind("r.select", l.b.select(busy, rcur, l.b.select(rlocal, oldest, by_id)));
-    recv = select_fields(rsel);
-    recv_miss = pick(l, misses, rsel);
-    recv_rejecting = rlocal;
-    receiving = l.either(busy, any_of(l, waiting));
-    r_owed = any_of(l, from_target);
-    target_ready = l.either(busy, r_owed);
-  } else {
-    receiving =
-        l.both(l.inv(l.b.binary(Op::Equal, count, received)), l.either(l.eq(pending, 0), skip));
-  }
+  const auto [receiving, target_ready, r_owed, received_id_match] =
+      several ? select_read_burst(rid)
+              : ReadSelection{l.both(l.inv(l.b.binary(Op::Equal, count, received)),
+                                     l.either(l.eq(pending, 0), skip)),
+                              one, zero, std::nullopt};
   if (!segment) {
     rpop = l.both(active(rf), l.both(in("rrsp", "ready", 1), l.inv(zero)));
   }
@@ -1776,6 +1844,10 @@ void EngineLowering::read_receive() {
                     l.either(l.eq(rresp, 0),
                              passthrough ? l.both(recv.at("lock"), l.eq(rresp, 1)) : zero)));
   auto rdata = in("axi", "rdata", p.data_bits);
+  const auto rgroups = read_groups(data_ok);
+  const auto groups_of = [&](ValueId mask) {
+    return groups::gather(l, mask, p.data_bits / 8, p.data_user_bits_per_byte);
+  };
   const auto first = l.eq(rk, 0);
   current = l.b.select(first, recv.at("address"), ra);
   // A silent beat is dropped here; the burst still advances.
@@ -1850,7 +1922,9 @@ void EngineLowering::read_receive() {
     auto inject_value = held.value_or(zero);
     if (!held) {
       // Held in the field's own form (a global address keeps its stored width).
-      const auto captured = name == "r.data" ? l.both(moving, below) : moving;
+      const auto captured = name == "r.data"        ? l.both(moving, below)
+                            : name == "r.data_user" ? l.both(moving, groups_of(below))
+                                                    : moving;
       inject_value = align_word(name, captured, align_save, align_index, purge_index);
     }
     if (load)
@@ -1869,6 +1943,13 @@ void EngineLowering::read_receive() {
               return l.b.select(aligned_first,
                                 l.both(moving, l.b.unary(Op::BitNot, below, p.data_bits)), moving);
             });
+  if (rgroups)
+    stored_groups =
+        entry("r.data_user", "r.spare_data_user", *rgroups, std::nullopt, [&](ValueId moving) {
+          return l.b.select(aligned_first,
+                            l.both(moving, groups_of(l.b.unary(Op::BitNot, below, p.data_bits))),
+                            moving);
+        });
   stored_first = entry("r.response_first", "r.spare_first", first, zero);
   // An aligned read's last target beat is not its packet's last word: the held answer is.
   stored_last = entry("r.response_last", "r.spare_last", rlast, one,
@@ -1939,12 +2020,15 @@ void EngineLowering::read_update() {
   auto coded = stored_result, coded_data = stored_data;
   auto face_first = stored_first, face_address = stored_addr;
   local_error_face(front, coded, coded_data, face_first, face_address);
+  auto face_groups = stored_groups;
+  if (face_groups && p.failure_classes)
+    face_groups = l.b.select(local_error_on, l.num(l.width(*face_groups), 0), *face_groups);
   // exclusive_okay of each beat: a network exclusive read beat without
   // error, or the target's own EXOKAY.
   if (network)
     rexclusive = l.both(front.at("lock"), l.eq(coded, 0));
   response_face("rrsp", front, segment ? response_offered : rf, face_address, coded, face_first,
-                stored_last, coded_data, rexclusive, stored_user);
+                stored_last, coded_data, rexclusive, stored_user, face_groups);
   if (segment)
     l.b.output("nl_hint_cut", l.both(response_offered, response_cut), "hint", "cut");
   if (p.response_run_bits)
@@ -2090,6 +2174,7 @@ void EngineLowering::read_receive_joined() {
                     l.either(l.eq(rresp, 0),
                              passthrough ? l.both(recv.at("lock"), l.eq(rresp, 1)) : zero)));
   const auto rdata = in("axi", "rdata", p.data_bits);
+  const auto rgroups = read_groups(p.failure_classes && p.carry_groups ? l.eq(rcode, 0) : data_ok);
   const auto first = l.eq(beat_now, 0);
   current = several ? beat_address(recv, beat_now) : l.b.select(first, recv.at("address"), ra);
   auto kept = report_only ? l.both(rpush, l.inv(silent)) : rpush;
@@ -2101,6 +2186,8 @@ void EngineLowering::read_receive_joined() {
               {"first", first},
               {"last", rlast},
               {"address", l.global(current)}};
+  if (rgroups)
+    live["data_user"] = *rgroups;
   if (several)
     live["index"] = rsel;
   if (p.failure_classes)
@@ -2141,6 +2228,14 @@ void EngineLowering::read_receive_joined() {
     live["data"] =
         l.b.select(l.both(first, aligned),
                    l.both(raw_data, l.b.unary(Op::BitNot, below, p.data_bits)), raw_data);
+    const auto group_mask = [&](ValueId mask) {
+      return groups::gather(l, mask, lanes, p.data_user_bits_per_byte);
+    };
+    const auto raw_groups = rgroups.value_or(zero);
+    if (rgroups)
+      live["data_user"] = l.b.select(
+          l.both(first, aligned),
+          l.both(raw_groups, group_mask(l.b.unary(Op::BitNot, below, p.data_bits))), raw_groups);
     live["last"] = l.both(live.at("last"), l.inv(aligned));
     const auto inject = l.both(purging, l.inv(rspare));
     l.b.update(purging, l.b.select(inject, zero, l.b.select(aligned_tail, one, purging)));
@@ -2154,7 +2249,9 @@ void EngineLowering::read_receive_joined() {
         offered[name] = l.b.select(inject, name == "last" ? one : zero, value);
         continue;
       }
-      const auto captured = name == "data" ? l.both(raw_data, below) : value;
+      const auto captured = name == "data"        ? l.both(raw_data, below)
+                            : name == "data_user" ? l.both(raw_groups, group_mask(below))
+                                                  : value;
       const auto held = align_word(name, captured, aligned_first, index, purge_index);
       offered[name] = l.b.select(inject, held, value);
       if (name == "address")
@@ -2279,6 +2376,9 @@ void EngineLowering::join_responses() {
     l.b.update(local_error_on,
                l.b.select(take, l.both(read, rq.word.at("local_error")), local_error_on));
   const auto data = stage_of("r.data", rq.word.at("data"), r_taken);
+  std::optional<ValueId> data_groups;
+  if (rq.word.contains("data_user"))
+    data_groups = stage_of("r.data_user", rq.word.at("data_user"), r_taken);
   ValueId exclusive = zero;
   if (rq.word.contains("exclusive"))
     exclusive = both_ways("r.response_exclusive", "exclusive", b_field("response_exclusive"));
@@ -2306,8 +2406,10 @@ void EngineLowering::join_responses() {
   }
   auto face_code = code, face_data = data, face_first = first, face_address = address;
   local_error_face(front, face_code, face_data, face_first, face_address);
+  if (data_groups && p.failure_classes)
+    data_groups = l.b.select(local_error_on, l.num(l.width(*data_groups), 0), *data_groups);
   response_face("rrsp", front, l.both(offered, l.inv(jwrite)), face_address, face_code, face_first,
-                jlast, face_data, exclusive, user);
+                jlast, face_data, exclusive, user, data_groups);
   response_face("wrsp", wfields, l.both(offered, jwrite), address, code, one, one,
                 l.b.constant(p.data_bits, 0), exclusive, user);
   l.b.output("nl_hint_cut", l.both(offered, cut), "hint", "cut");
@@ -2552,6 +2654,8 @@ std::pair<unsigned, unsigned> axi4_outlet_outstanding_bits(const Axi4OutletProfi
   // The response user field of a target with BUSER and RUSER: staged with B and each R beat,
   // and the head of a read packet.
   const unsigned user = p.response_user_port_bits ? p.response_user_bits : 0U;
+  // The byte groups of the W entry beat and of each staged or held R beat.
+  const unsigned groups = p.carry_groups ? p.data_bits / 8 * p.data_user_bits_per_byte : 0U;
   const bool joined = p.interleave && p.max_outstanding > 1;
   // An AXI3 target with several bursts keeps the W entry beat's WID; behind the response merger
   // the parked B keeps its ID, result and user field.
@@ -2563,8 +2667,8 @@ std::pair<unsigned, unsigned> axi4_outlet_outstanding_bits(const Axi4OutletProfi
                             : joined          ? staging + 3 + p.source_bits + p.id_bits
                                               : 2 * staging;
   const unsigned write = p.max_outstanding < 2
-                             ? descriptor + p.data_bits + p.data_bits / 8 + 2 + user
-                             : descriptor + p.data_bits + p.data_bits / 8 + b_staged +
+                             ? descriptor + p.data_bits + groups + p.data_bits / 8 + 2 + user
+                             : descriptor + p.data_bits + groups + p.data_bits / 8 + b_staged +
                                    p.max_outstanding * write_slot + (p.interleave ? 1 : 2) * user +
                                    (p.axi3 ? axi4_outlet_id_bits(p) : 0U) + parked +
                                    (owned ? p.source_bits + p.id_bits + 1 : 0U);
@@ -2578,12 +2682,12 @@ std::pair<unsigned, unsigned> axi4_outlet_outstanding_bits(const Axi4OutletProfi
       !p.align_wrap
           ? 0U
           : p.max_outstanding *
-                    (p.data_bits + 2 + address + several + user +
+                    (p.data_bits + groups + 2 + address + several + user +
                      (joined && p.exclusive_target.mode != ExclusiveAccess::None ? 1 : 0)) +
                 1 + std::max(1U, index) +
                 (joined || p.response_direct ? 0 : p.data_bits / 8 + 3 + several);
   const unsigned beats = (p.response_direct || (p.merged && !p.interleave) ? 1 : 2) *
-                         (2 + p.data_bits + address + user);
+                         (2 + p.data_bits + groups + address + user);
   // A read descriptor has no snoop bit.
   const unsigned read_descriptor = descriptor - axi5_target_fields(p).snoop;
   const unsigned read = (joined ? p.max_outstanding * (read_descriptor + user) + beats

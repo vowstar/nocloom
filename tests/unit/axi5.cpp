@@ -476,3 +476,42 @@ TEST_CASE("Targets drive AxREGION from the address map and AxQOS from the level"
   wide.initiators[1].qos.levels = {1, 1};
   CHECK(has(refused(wide), "NCL_QOS_MAP", "targets[0].axqos_levels", "Initiator cpu"));
 }
+
+TEST_CASE("AXI5 data user ports carry one group per data byte", "[axi5]") {
+  using namespace nocloom;
+  auto d = parsed(with("axi5"));
+  d.transport->data_user_bits_per_byte = 2;
+  d.initiators[0].data_user_width = 16; // 64 bits
+  d.targets[0].data_user_width = 8;     // 32 bits
+  const auto r = generate(d);
+  REQUIRE(r);
+  const auto &rtl = artifact(r.value(), ".v");
+  // RUSER holds the response user bits low and the data user bits above them (A12.5.3).
+  for (const auto *port : {"[15:0] nl_i_cpu_wuser,", "[18:0] nl_i_cpu_ruser,",
+                           "[7:0] nl_t_ram_wuser,", "[10:0] nl_t_ram_ruser,"})
+    CHECK(rtl.find(port) != std::string::npos);
+  CHECK(rtl.find("nl_i_dma_wuser") == std::string::npos);
+  const auto refused_at = [&](auto edit, const std::string &code, const std::string &field) {
+    auto bad = d;
+    edit(bad);
+    CHECK(has(refused(bad), code, field));
+  };
+  // The data side opens for the widths its tests cover.
+  refused_at(
+      [](Definition &x) {
+        x.initiators[0].data_width = 256;
+        x.initiators[0].data_user_width = 64;
+        x.initiators[0].max_outstanding.reset();
+      },
+      "NCL_AXI5_DATA_WIDTH", "initiators[0].data_width");
+  refused_at([](Definition &x) { x.initiators[0].data_user_width = 15; }, "NCL_DATA_USER_WIDTH",
+             "initiators[0].data_user_width");
+  refused_at([](Definition &x) { x.transport->data_user_bits_per_byte = 0; }, "NCL_DATA_USER_WIDTH",
+             "targets[0].data_user_width");
+  refused_at(
+      [](Definition &x) {
+        x.targets[0].protocol = Protocol::Axi4;
+        x.targets[0].axi5.reset();
+      },
+      "NCL_APB5_DATA_USER_WIDTH", "targets[0].data_user_width");
+}

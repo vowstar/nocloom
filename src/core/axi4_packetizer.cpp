@@ -1,6 +1,7 @@
 #include "axi4_packetizer.hpp"
 #include "axi_burst_charge.hpp"
 #include "burst_faces.hpp"
+#include "byte_groups.hpp"
 #include "diagnostic.hpp"
 #include "logic.hpp"
 #include "message.hpp"
@@ -120,6 +121,10 @@ struct PacketizerLowering {
   };
   ValueId widen(ValueId v) { return l.zext(v, wide); }
   ValueId narrow_address(ValueId v) { return l.b.slice(v, 0, ab); }
+  // Byte groups at the data width and back (Axi4PacketizerProfile::carry_groups): every byte
+  // transform of the data applies to them unchanged.
+  ValueId spread(ValueId v) { return groups::spread(l, v, bytes, p.data_user_bits_per_byte); }
+  ValueId gather(ValueId v) { return groups::gather(l, v, bytes, p.data_user_bits_per_byte); }
   // 2^size - 1 over the wide address width (size never exceeds lw), a constant per size (no carry
   // chain).
   ValueId low_mask(ValueId size) {
@@ -812,6 +817,10 @@ struct PacketizerLowering {
     const auto be = l.both(wn.at("be"), l.shl(ones, l.b.slice(start, 0, lw), bytes - 1));
     wn["be"] = l.pick(sub, be, wn.at("be"));
     wn["data"] = l.pick(sub, l.both(wn.at("data"), strobe_lanes(l.b, be, bytes)), wn.at("data"));
+    if (p.carry_groups)
+      wn["data_user"] =
+          l.pick(sub, gather(l.both(spread(wn.at("data_user")), strobe_lanes(l.b, be, bytes))),
+                 wn.at("data_user"));
     wn["length"] = l.pick(sub, l.num(lb, 0), wn.at("length"));
     wn["size"] = l.pick(sub, packet.sub_size, wn.at("size"));
     wn["address"] = l.pick(sub, start, wn.at("address"));
@@ -851,6 +860,11 @@ struct PacketizerLowering {
   // its packet is alone in flight past the entry).
   std::optional<ValueId> write_dropping, miss_entered;
 
+  struct WriteWord {
+    ValueId data, be, error, first;
+    std::optional<ValueId> groups;
+  };
+  WriteWord collect_write_word(ValueId begins);
   void write_request();
   void write_response();
   void read_request();
@@ -880,6 +894,35 @@ struct PacketizerLowering {
   void read_response();
   void read_packet();
 };
+
+PacketizerLowering::WriteWord PacketizerLowering::collect_write_word(ValueId begins) {
+  auto open = l.state("w.open", 1), opened_first = l.state("w.open_first", 1);
+  auto acc_data = l.state("w.word_data", p.data_bits), acc_be = l.state("w.word_be", bytes);
+  auto acc_err = l.state("w.word_error", 1);
+  const auto lanes = strobe_lanes(l.b, wi.at("be"), bytes);
+  const auto kept_data = l.pick(open, acc_data, l.num(p.data_bits, 0));
+  const auto word_data = l.either(l.both(kept_data, l.b.unary(Op::BitNot, lanes, p.data_bits)),
+                                  l.both(wi.at("data"), lanes));
+  const auto word_be = l.either(l.pick(open, acc_be, l.num(bytes, 0)), wi.at("be"));
+  const auto word_err = l.either(l.both(open, acc_err), wi.at("error"));
+  const auto word_first = l.either(begins, l.both(open, opened_first));
+  const auto keep = l.both(load, l.inv(l.either(fills, dropped)));
+  l.b.update(open, l.pick(load, keep, open));
+  l.b.update(opened_first, l.pick(keep, word_first, opened_first));
+  l.b.update(acc_err, l.pick(keep, word_err, acc_err));
+  l.b.update(acc_data, l.pick(keep, word_data, acc_data));
+  l.b.update(acc_be, l.pick(keep, word_be, acc_be));
+  // The packing word's byte groups collect by strobe like its data.
+  std::optional<ValueId> word_groups;
+  if (p.carry_groups) {
+    const auto acc_groups = l.state("w.word_data_user", bytes * p.data_user_bits_per_byte);
+    const auto kept_groups = l.pick(open, spread(acc_groups), l.num(p.data_bits, 0));
+    word_groups = gather(l.either(l.both(kept_groups, l.b.unary(Op::BitNot, lanes, p.data_bits)),
+                                  l.both(spread(wi.at("data_user")), lanes)));
+    l.b.update(acc_groups, l.pick(keep, *word_groups, acc_groups));
+  }
+  return {word_data, word_be, word_err, word_first, word_groups};
+}
 
 void PacketizerLowering::write_request() {
   // ---------------- write: a beat or packed word leaves in the cycle it is offered and the up
@@ -1007,22 +1050,7 @@ void PacketizerLowering::write_request() {
   l.b.update(psize, l.pick(starting, psize_now, psize));
   l.b.update(pstart, l.pick(starting, pstart_now, pstart));
   l.b.update(remaining, l.pick(load, l.minus(rem, l.num(lb + 1, 1)), remaining));
-  auto open = l.state("w.open", 1), opened_first = l.state("w.open_first", 1);
-  auto acc_data = l.state("w.word_data", p.data_bits), acc_be = l.state("w.word_be", bytes);
-  auto acc_err = l.state("w.word_error", 1);
-  const auto lanes = strobe_lanes(l.b, wi.at("be"), bytes);
-  const auto kept_data = l.pick(open, acc_data, l.num(p.data_bits, 0));
-  const auto word_data = l.either(l.both(kept_data, l.b.unary(Op::BitNot, lanes, p.data_bits)),
-                                  l.both(wi.at("data"), lanes));
-  const auto word_be = l.either(l.pick(open, acc_be, l.num(bytes, 0)), wi.at("be"));
-  const auto word_err = l.either(l.both(open, acc_err), wi.at("error"));
-  const auto word_first = l.either(begins, l.both(open, opened_first));
-  const auto keep = l.both(load, l.inv(l.either(fills, dropped)));
-  l.b.update(open, l.pick(load, keep, open));
-  l.b.update(opened_first, l.pick(keep, word_first, opened_first));
-  l.b.update(acc_err, l.pick(keep, word_err, acc_err));
-  l.b.update(acc_data, l.pick(keep, word_data, acc_data));
-  l.b.update(acc_be, l.pick(keep, word_be, acc_be));
+  const auto [word_data, word_be, word_err, word_first, word_groups] = collect_write_word(begins);
   // The beat or word leaving now.
   Fields wn = wi;
   wn.erase("valid");
@@ -1034,6 +1062,8 @@ void PacketizerLowering::write_request() {
   wn["size"] = beat_size;
   wn["count"] = count_of(beat_size);
   wn["data"] = l.pick(wpack, word_data, wi.at("data"));
+  if (word_groups)
+    wn["data_user"] = l.pick(wpack, *word_groups, wi.at("data_user"));
   wn["be"] = l.pick(wpack, word_be, wi.at("be"));
   wn["error"] = l.pick(wpack, word_err, wi.at("error"));
   // A packing word sits at its word; one narrower word at its covering size's container.
@@ -1366,6 +1396,10 @@ void PacketizerLowering::read_response() {
   ValueId split_hit = zero, gathering = zero;
   auto gathered = std::pair{up.at("data"), up.at("result")};
   auto gathered_error = up.at("error");
+  // The answered beat's byte groups at the data width, gathered and clipped as its data.
+  std::optional<ValueId> gathered_groups;
+  if (p.carry_groups)
+    gathered_groups = spread(up.at("data_user"));
   for (unsigned k = 0; k < contexts; ++k) {
     const auto name = "r.context" + std::to_string(k);
     const auto load_k =
@@ -1422,11 +1456,25 @@ void PacketizerLowering::read_response() {
       gathered = {l.pick(merging, l.pick(failed, l.num(p.data_bits, 0), joined), gathered.first),
                   l.pick(merging, joined_result, gathered.second)};
       gathered_error = l.pick(merging, joined_error, gathered_error);
+      if (gathered_groups) {
+        const auto held = l.state(name + ".gather_data_user", bytes * p.data_user_bits_per_byte);
+        const auto joined_groups =
+            l.either(l.both(spread(up.at("data_user")), lanes),
+                     l.both(spread(held), l.b.unary(Op::BitNot, lanes, p.data_bits)));
+        l.b.update(held, l.pick(load_k, l.num(bytes * p.data_user_bits_per_byte, 0),
+                                l.pick(take, gather(joined_groups), held)));
+        gathered_groups =
+            l.pick(merging, l.pick(failed, l.num(p.data_bits, 0), joined_groups), *gathered_groups);
+      }
       gathering = l.either(gathering, absorb);
     }
     gathered.first =
         l.pick(l.both(hit, clipping), read_word_data(gathered.first, c, offset, answered, position),
                gathered.first);
+    if (gathered_groups)
+      gathered_groups =
+          l.pick(l.both(hit, clipping),
+                 read_word_data(*gathered_groups, c, offset, answered, position), *gathered_groups);
     const auto answer = exact_any ? l.both(fire, l.inv(absorb)) : fire;
     l.b.update(answered, l.pick(load_k, l.num(lb, 0), l.pick(answer, l.inc(answered), answered)));
     if (!exact_any)
@@ -1447,6 +1495,8 @@ void PacketizerLowering::read_response() {
     again = l.either(again, replay);
   }
   up["data"] = gathered.first;
+  if (gathered_groups)
+    up["data_user"] = gather(*gathered_groups);
   if (exact_any) {
     up["result"] = gathered.second, up["error"] = gathered_error;
     up_valid = l.both(up_valid, l.inv(gathering));

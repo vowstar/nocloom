@@ -112,6 +112,42 @@ A subsystem ID port narrower than the subsystem ID of such an initiator, or a
 initiator. An `attributes` mapping of a signal that the target omits gives
 `NCL_TARGET_ATTRIBUTES`.
 
+## Data side
+
+`data_user_width` gives an `axi5` endpoint WUSER and the data part of RUSER.
+The width is the number of data bytes times `transport.data_user_bits_per_byte`,
+as for APB5 (see [data user groups](user-signals.md#data-user-groups)). RUSER
+holds the response user bits of `response_user_width` in its low bits and the
+data user bits above them (Issue L, A12.5.3).
+
+```yaml
+transport: {data_user_bits_per_byte: 2}
+initiators:
+  - {name: cpu, clock_domain: main, protocol: axi5, data_width: 64,
+     data_user_width: 16, response_user_width: 3}
+```
+
+This initiator has a 16-bit WUSER and a 19-bit RUSER. RUSER bits 0 to 2 are the
+response user bits and bits 3 to 18 are the data user bits.
+
+Each data byte has its own group of data user bits. Byte b uses bits `k*b` to
+`k*b+k-1` of WUSER, or of the data part of RUSER, where `k` is
+`transport.data_user_bits_per_byte`. The group stays with its byte through width
+conversion, packet splitting, pipes and clock domain crossings.
+
+| Case | Data user bits |
+| --- | --- |
+| A write byte with its WSTRB bit low | Zero at the target |
+| A read transfer with SLVERR or DECERR | Zero |
+| An initiator without the ports writes | Zero at the target |
+| A target without the ports is read | Zero |
+| A target without the ports is written | The network drops them |
+| RUSER bytes outside the bytes of the read transfer | Not specified, as RDATA |
+
+An `axi5` endpoint with data user ports is 32, 64 or 128 bits wide. Other
+widths give `NCL_AXI5_DATA_WIDTH`. An APB5 endpoint and an `axi5` endpoint
+exchange data user bits by the same rules.
+
 ## Target AxREGION and AxQOS
 
 `axi4`, `axi5` and `ace5_lite` targets can drive AxREGION and AxQOS. The network

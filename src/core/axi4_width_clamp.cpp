@@ -1,5 +1,6 @@
 #include "axi4_width_clamp.hpp"
 #include "burst_faces.hpp"
+#include "byte_groups.hpp"
 #include "decode_packet.hpp"
 #include "diagnostic.hpp"
 #include "logic.hpp"
@@ -403,6 +404,15 @@ struct WidthCutLowering {
     return *mask;
   }
   ValueId expand(ValueId byte_mask) { return strobe_lanes(l.b, byte_mask, bytes); }
+  // Byte groups at the source data width and back (Axi4WidthCutProfile::carry_groups): every byte
+  // transform of the data applies to them unchanged. spread_down takes a down face's groups, a
+  // 32-bit face's on every lane as its word.
+  ValueId spread(ValueId v) { return groups::spread(l, v, bytes, p.data_user_bits_per_byte); }
+  ValueId regather(ValueId v) { return groups::gather(l, v, bytes, p.data_user_bits_per_byte); }
+  ValueId spread_down(ValueId v) {
+    return narrow_face ? replicate(groups::spread(l, v, 4, p.data_user_bits_per_byte)) : spread(v);
+  }
+  std::optional<ValueId> racc_groups;
   ValueId count_of(ValueId c, unsigned width) {
     return table(c, lw, [&](unsigned n) { return l.num(width, std::uint64_t{1} << n); });
   }
@@ -461,6 +471,7 @@ struct WidthCutLowering {
       gather_left_v{}, remaining_v{}, rfirst_v{};
   ValueId view(ValueId reg, ValueId in) { return l.pick(idle_issue, in, reg); }
 
+  ValueId admit_write();
   void write_request();
   void write_response();
   void read_issue();
@@ -513,6 +524,13 @@ struct WidthCutLowering {
       const auto pass_failed = l.either(rr.at("error"), l.inv(l.eq(rr.at("result"), 0)));
       passed["data"] =
           p.zero_failed_beats ? l.pick(pass_failed, l.num(p.data_bits, 0), lane_data) : lane_data;
+      if (p.carry_groups) {
+        const auto lane_groups =
+            l.both(spread_down(rr.at("data_user")), expand(lanes(rr.at("address"), l.num(3, 2))));
+        passed["data_user"] =
+            regather(p.zero_failed_beats ? l.pick(pass_failed, l.num(p.data_bits, 0), lane_groups)
+                                         : lane_groups);
+      }
       passed["count"] = count;
     }
     return passed;
@@ -537,6 +555,24 @@ struct WidthCutLowering {
       l.b.update(state.regs[k], l.pick(l.eq(rr.at("tag"), k), next, state.regs[k]));
   }
 };
+
+ValueId WidthCutLowering::admit_write() {
+  if (p.write_hints)
+    write_handed = handed_plan("write");
+  write_class = one;
+  ValueId write_admit = one;
+  if (multi) {
+    write_gate = serial_class::make(l, "w", contexts, "packets");
+    write_class = l.bind("w.serial_class", serial_request(up_w, plan_of(up_w, write_handed)));
+    write_admit = serial_class::admit(l, *write_gate, write_class);
+    write_metadata = {{"address", floor_to(up_w.at("start_address"), up_w.at("size"))},
+                      {"count", up_w.at("count")}};
+    write_context =
+        packet_context::make(l, "w.context", p.max_outstanding, p.packet_depth, write_metadata);
+    write_admit = l.both(write_admit, packet_context::room(l, *write_context, up_w.at("tag")));
+  }
+  return write_admit;
+}
 
 void WidthCutLowering::write_request() {
   // ---------------- write: the up face's beat, one target word per transfer.
@@ -566,20 +602,7 @@ void WidthCutLowering::write_request() {
   wcount = piece_count::counter(l, "w.count");
   for (unsigned k = 0; k < piece_count::kInFlight; ++k)
     ends.push_back(l.state("w.ends" + std::to_string(k), 1));
-  if (p.write_hints)
-    write_handed = handed_plan("write");
-  write_class = one;
-  ValueId write_admit = one;
-  if (multi) {
-    write_gate = serial_class::make(l, "w", contexts, "packets");
-    write_class = l.bind("w.serial_class", serial_request(up_w, plan_of(up_w, write_handed)));
-    write_admit = serial_class::admit(l, *write_gate, write_class);
-    write_metadata = {{"address", floor_to(up_w.at("start_address"), up_w.at("size"))},
-                      {"count", up_w.at("count")}};
-    write_context =
-        packet_context::make(l, "w.context", p.max_outstanding, p.packet_depth, write_metadata);
-    write_admit = l.both(write_admit, packet_context::room(l, *write_context, up_w.at("tag")));
-  }
+  const auto write_admit = admit_write();
   // The beat's plan: the up face's, with the handed fields.
   const auto wplan = write_handed ? plan_of(up_w, write_handed) : plan_of(wi);
   const auto entering_start = write_handed ? write_handed->start : wi.at("start_address");
@@ -713,6 +736,9 @@ void WidthCutLowering::write_request() {
   // target word keeps the source strobes of its lanes, so it stays clear.
   if (narrow_face) {
     wo["data"] = lane_of(wi.at("data"), beat_address, 32);
+    if (p.carry_groups)
+      wo["data_user"] = groups::gather(l, lane_of(spread(wi.at("data_user")), beat_address, 32), 4,
+                                       p.data_user_bits_per_byte);
     wo["be"] = lane_of(be, beat_address, 4);
     wo["count"] = l.pick(cut_v, l.num(down_count_bits, 4), narrow_count(wi.at("count")));
   } else {
@@ -856,6 +882,8 @@ void WidthCutLowering::read_issue() {
     asize = l.state("r.answer_size", 3);
     gather = l.state("r.gather", 1);
     racc = l.state("r.gather_data", p.data_bits);
+    if (p.carry_groups)
+      racc_groups = l.state("r.gather_data_user", bytes * p.data_user_bits_per_byte);
     code = l.state("r.gather_result", 2);
     bad = l.state("r.gather_error", 1);
     gather_left = l.state("r.gather_left", lb);
@@ -1162,6 +1190,14 @@ void WidthCutLowering::read_response() {
   const auto gathered_exclusive = gather_exclusive(first_sub, take);
   // A complete beat leaves with the word that completes it.
   l.b.update(racc, l.pick(take, gathered_data, racc));
+  std::optional<ValueId> gathered_groups;
+  if (racc_groups) {
+    const auto masked_groups =
+        l.both(spread_down(rr.at("data_user")), expand(part_lanes(word_address, ac_v)));
+    gathered_groups =
+        l.either(l.pick(first_sub, l.num(p.data_bits, 0), spread(*racc_groups)), masked_groups);
+    l.b.update(*racc_groups, l.pick(take, regather(*gathered_groups), *racc_groups));
+  }
   const auto cut_valid =
       io.active(l.both(l.both(serving, l.both(cut_v, l.inv(gathered_v))),
                        l.both(rr.at("valid"), unless_decoded(decoded, beat_end, decoded.ends))));
@@ -1285,6 +1321,13 @@ void WidthCutLowering::read_response() {
   if (p.decode_packets)
     own["data"] = l.pick(l.both(decoded.on, cut_v),
                          decode_packet::word_data(l, decoded.beats, p.data_bits), own.at("data"));
+  // A failed, rejected or local miss beat has zero groups.
+  if (gathered_groups) {
+    auto zeroed = l.either(reject_v, p.zero_failed_beats ? failed : zero);
+    if (p.decode_packets)
+      zeroed = l.either(zeroed, l.both(decoded.on, cut_v));
+    own["data_user"] = regather(l.pick(zeroed, l.num(p.data_bits, 0), *gathered_groups));
+  }
   const Fields passed = passed_response(own.at("count"));
   const Fields up = view_fields(l, own, passed, pass_v);
   // A word while no read is in flight (after a reset of this side alone) is taken and dropped.
@@ -1317,6 +1360,10 @@ void WidthCutLowering::read_reassembly() {
   // top of the narrowest target word is never stored.
   const unsigned stored_bits = p.data_bits - (8U << width_set().front());
   const auto own_data = per_tag("data", stored_bits);
+  const unsigned stored_bytes = stored_bits / 8;
+  std::optional<PerTag> own_groups;
+  if (p.carry_groups)
+    own_groups = per_tag("data_user", stored_bytes * p.data_user_bits_per_byte);
   const auto own_code = per_tag("result", 2), own_error = per_tag("error", 1);
   const auto serial = read_gate->serial;
   const auto rejecting = answering;
@@ -1359,6 +1406,18 @@ void WidthCutLowering::read_reassembly() {
   }
   const auto gathering = l.both(take, unless_decoded(decoded, l.inv(ends_beat), decoded.tail));
   update(own_data, l.pick(gathering, l.b.slice(gathered_data, 0, stored_bits), own_data.now));
+  std::optional<ValueId> gathered_groups;
+  if (own_groups) {
+    const auto masked_groups =
+        l.both(spread_down(rr.at("data_user")), expand(part_lanes(word_address, width)));
+    const auto held = l.zext(
+        groups::spread(l, own_groups->now, stored_bytes, p.data_user_bits_per_byte), p.data_bits);
+    gathered_groups = l.either(l.pick(gathers, held, l.num(p.data_bits, 0)), masked_groups);
+    update(*own_groups, l.pick(gathering,
+                               groups::gather(l, l.b.slice(*gathered_groups, 0, stored_bits),
+                                              stored_bytes, p.data_user_bits_per_byte),
+                               own_groups->now));
+  }
   update(own_code, l.pick(gathering, gathered_code, own_code.now));
   update(own_error, l.pick(gathering, gathered_error, own_error.now));
   update(own_gather,
@@ -1439,6 +1498,13 @@ void WidthCutLowering::read_reassembly() {
   if (p.decode_packets)
     own["data"] = l.pick(l.both(decoded.on, l.both(cut_v, l.inv(rejecting))),
                          decode_packet::word_data(l, decoded.beats, p.data_bits), own.at("data"));
+  // A failed, rejected or local miss beat has zero groups.
+  if (gathered_groups) {
+    auto zeroed = l.either(rejecting, p.zero_failed_beats ? failed : zero);
+    if (p.decode_packets)
+      zeroed = l.either(zeroed, l.both(decoded.on, cut_v));
+    own["data_user"] = regather(l.pick(zeroed, l.num(p.data_bits, 0), *gathered_groups));
+  }
   const Fields passed = passed_response(own.at("count"));
   const Fields up = view_fields(l, own, passed, l.both(l.inv(rejecting), pass_v));
   // A word while no read is in flight (after a reset of this side alone) is taken and dropped.
@@ -1532,6 +1598,7 @@ Result<NodeHardware> lower_axi4_width_clamp(const Axi4WidthClampProfile &p) {
   cut.response_user_bits = p.response_user_bits;
   cut.data_user_bits_per_byte = p.data_user_bits_per_byte;
   cut.level_bits = p.level_bits;
+  cut.carry_groups = p.carry_groups;
   cut.max_outstanding = p.max_outstanding;
   cut.packet_depth = p.packet_depth;
   cut.read_granule_taken = p.read_granule_taken;

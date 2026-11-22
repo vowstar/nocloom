@@ -25,6 +25,7 @@ packet splitting and clock domain crossings.
 | SUBSYSID_WIDTH | AWSUBSYSID and ARSUBSYSID go with each packet. A target port must hold the widest value that reaches it |
 | NSAccess_Identifiers | AWNSAID and ARNSAID go with each packet of the request |
 | PBHA_Support | AWPBHA and ARPBHA go with each packet of the request |
+| USER_DATA_WIDTH | `data_user_width` gives WUSER and the data part of RUSER. Each data byte carries its own group of user bits. See [data side](axi5.md#data-side) |
 
 ## Interpreted properties
 
@@ -67,7 +68,6 @@ packet splitting and clock domain crossings.
 
 | Property | Reason |
 | --- | --- |
-| USER_DATA_WIDTH | The network rejects this property. `data_user_width` applies to APB5 endpoints |
 | Poison | The network rejects this property |
 | Trace_Signals | The network rejects this property |
 | Unique_ID_Support | The network rejects this property |

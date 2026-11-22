@@ -53,6 +53,9 @@ struct Axi4WidthCutProfile : ComponentProfileBase {
   unsigned tag_bits = 0;
   unsigned user_bits = 0; // network user flags (message.hpp point 13), passed through
   unsigned data_user_bits_per_byte = 0;
+  // Move each byte group of the data_user field (message.hpp point 20) with its data byte through
+  // packing, gathering and replay; otherwise a converted beat carries zero groups.
+  bool carry_groups = false;
   unsigned response_user_bits = 0;
   // Request scheduling level (message.hpp point 15), passed through to every piece; zero omits it.
   unsigned level_bits = 0;
@@ -114,6 +117,9 @@ struct Axi4WidthClampProfile : ComponentProfileBase {
   unsigned tag_bits = 0;
   unsigned user_bits = 0; // network user flags (message.hpp point 13), passed through
   unsigned data_user_bits_per_byte = 0;
+  // Move each byte group of the data_user field (message.hpp point 20) with its data byte through
+  // packing, gathering and replay; otherwise a converted beat carries zero groups.
+  bool carry_groups = false;
   unsigned response_user_bits = 0;
   unsigned level_bits = 0; // Axi4WidthCutProfile
   unsigned max_outstanding = 1;

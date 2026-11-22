@@ -99,6 +99,13 @@ std::optional<Axi5Properties> axi5_properties(std::optional<Protocol> protocol,
   out.read_snoop_width = out.read_snoop_width.value_or(ace ? 4 : 0);
   return out;
 }
+bool data_side(const NetworkPlan &plan, const std::optional<Axi5Properties> &axi5,
+               unsigned data_user_bits) {
+  return axi5 && plan.data_user_bits_per_byte && (data_user_bits || axi5->poison || axi5->trace);
+}
+Axi5DataPorts axi5_data_ports(const std::optional<Axi5Properties> &axi5, unsigned data_user_bits) {
+  return axi5 ? Axi5DataPorts{data_user_bits, axi5->poison, axi5->trace} : Axi5DataPorts{};
+}
 bool axi4_port(std::optional<Protocol> protocol) {
   return protocol.value_or(Protocol::Axi4) == Protocol::Axi4 || axi5_port(protocol);
 }
@@ -397,6 +404,19 @@ void plan_axi5_attributes(NetworkPlan &plan) {
     a.*member = targets.*member ? sources.*member : 0U;
   plan.burst_user_bits += a.bits();
 }
+// The byte groups: a poison or trace bit is carried where some initiator and some target have
+// the ports.
+void plan_byte_groups(NetworkPlan &plan) {
+  const auto both = [&](bool Axi5Properties::*member) {
+    return std::ranges::any_of(plan.sources,
+                               [&](const SourcePlan &s) { return s.axi5 && (*s.axi5).*member; }) &&
+           std::ranges::any_of(plan.targets,
+                               [&](const TargetPlan &t) { return t.axi5 && (*t.axi5).*member; });
+  };
+  plan.byte_groups = {plan.data_user_bits_per_byte, both(&Axi5Properties::poison),
+                      both(&Axi5Properties::trace)};
+  plan.data_user_bits_per_byte = plan.byte_groups.bits();
+}
 void tilelink_source(SourcePlan &s, const Initiator &initiator) {
   if (initiator.protocol != Protocol::TlUl && initiator.protocol != Protocol::TlUh)
     return;
@@ -666,6 +686,7 @@ void plan_endpoints(NetworkPlan &plan, const Definition &d) {
     plan_target(plan, d, options, layout, t);
   std::ranges::sort(plan.targets, {}, &TargetPlan::name);
   plan_axi5_attributes(plan);
+  plan_byte_groups(plan);
   plan_routes(plan);
 }
 // The switch graphs: switches numbered per direction in name order (skipping endpoint names),

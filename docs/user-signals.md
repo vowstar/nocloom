@@ -63,10 +63,11 @@ Flags remain unchanged across packet splitting, width conversion and crossings.
 Response user fields truncate or zero-extend to `transport.response_user_bits`.
 A target without response user ports and every local response supply zero.
 AXI4-Lite packets use their first word's BUSER. Every AXI read packet repeats
-its first RUSER.
+its first RUSER. On an `axi5` port with `data_user_width`, RUSER also holds the
+[data user bits](axi5.md#data-side) above the response user bits.
 
 Split AXI reads use each packet's RUSER. A split write returns the final
-packet's BUSER. AXI WUSER is unsupported. Unknown
+packet's BUSER. Only `axi5` endpoints have WUSER. Unknown
 configuration fields produce `NCL_SCHEMA_UNKNOWN_FIELD`.
 
 ## APB5 user ports
@@ -128,8 +129,9 @@ APB5 PWUSER and PRUSER.
 
 Each APB5 endpoint sets `data_user_width` to 0 or `k * data_width / 8`.
 Zero omits both PWUSER and PRUSER. A nonzero width requires nonzero `k`.
-Other protocols reject a nonzero `data_user_width`.
-Invalid widths produce `NCL_APB5_DATA_USER_WIDTH`.
+An `axi5` endpoint uses the same field for WUSER and RUSER (see
+[AXI5 data side](axi5.md#data-side)). Other protocols reject a nonzero
+`data_user_width`. See [diagnostic codes](diagnostics.md) for invalid widths.
 
 This definition fragment sets `k` to 2. The 32-bit initiator gets 8-bit PWUSER
 and PRUSER ports. The 16-bit target gets 4-bit ports.

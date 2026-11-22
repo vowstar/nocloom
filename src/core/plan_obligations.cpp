@@ -114,6 +114,9 @@ unsigned outlet_engine_bits(const NetworkPlan &plan, const std::string &target,
   outlet.user = plan.target(target).user;
   outlet.response_user_bits = plan.burst_response_user_bits;
   outlet.response_user_port_bits = plan.target(target).response_user_bits;
+  outlet.data_user_bits_per_byte = plan.data_user_bits_per_byte;
+  outlet.carry_groups =
+      data_side(plan, plan.target(target).axi5, plan.target(target).data_user_bits);
   outlet.axi3 = plan.target(target).axi3;
   outlet.axi5_ports = axi5_request_ports(plan.target(target).axi5);
   outlet.axi5_attributes = plan.axi5_attributes;
@@ -141,7 +144,7 @@ unsigned dedicated_wide_bits(const NetworkPlan &plan, const std::string &target)
   return bytes > 4 ? 9 * (bytes - 4) : 0U;
 }
 unsigned apb_data_user_state(const NetworkPlan &plan, const TargetPlan &target, bool read) {
-  const auto width = 4 * plan.data_user_bits_per_byte;
+  const auto width = 4 * plan.byte_groups.user;
   if (!read)
     return target.data_user_bits ? width : 0U;
   const auto single = !target.back_to_back && !target.timeout;
@@ -257,7 +260,7 @@ unsigned dedicated_bus_bits(const NetworkPlan &plan, const std::string &target) 
                            : t.local_bits;
   return fixed + address + dedicated_wide_bits(plan, target) - (single ? 32U : 0U) +
          static_cast<unsigned>(t.user.size()) + t.flow_bits() +
-         (t.data_user_bits ? 4 * plan.data_user_bits_per_byte : 0U);
+         (t.data_user_bits ? 4 * plan.byte_groups.user : 0U);
 }
 // The obligations of one plan in the single domain, built source flows first, then target
 // services, packet grants and link stages.
@@ -307,8 +310,11 @@ struct Obligations {
       // An APB face holds its transfer: no descriptor, beat or count in the engine.
       if (sp.apb)
         source_state.source_engine[0] = source_state.source_engine[1] = 0;
-      if (sp.data_user_bits)
-        source_state.source_return[1] += 4 * plan.data_user_bits_per_byte;
+      // The staged R beat's data user bits of an APB5 face, the byte groups of an AXI5 face.
+      if (sp.apb && sp.data_user_bits)
+        source_state.source_return[1] += 4 * plan.byte_groups.user;
+      else if (data_side(plan, sp.axi5, sp.data_user_bits))
+        source_state.source_return[1] += sp.engine_bits / 8 * plan.data_user_bits_per_byte;
       for (unsigned direction = 0; direction < 2; ++direction) {
         const auto operation = direction == 0 ? "write" : "read";
         const auto id = flow_id(source, operation);

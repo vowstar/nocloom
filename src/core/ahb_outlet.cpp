@@ -3,6 +3,7 @@
 #include "attribute_map.hpp"
 #include "beat_stage.hpp"
 #include "burst_faces.hpp"
+#include "byte_groups.hpp"
 #include "diagnostic.hpp"
 #include "exclusive_monitor.hpp"
 #include "logic.hpp"
@@ -680,11 +681,12 @@ void ApbOutlet::bus_issue() {
 void ApbOutlet::data_user_issue() {
   if (!p.data_user_port_bits)
     return;
-  const auto saved = l.latch("w.data_user", w.at("data_user"), wt);
-  const auto current = l.pick(wt, w.at("data_user"), saved);
+  const auto k = p.byte_groups.user;
+  const auto arriving = groups::regroup(l, w.at("data_user"), 4, p.data_user_bits_per_byte, k);
+  const auto saved = l.latch("w.data_user", arriving, wt);
+  const auto current = l.pick(wt, arriving, saved);
   // Mask here too: target strobes can differ from the arriving word's strobes.
   ValueId masked{};
-  const auto k = p.data_user_bits_per_byte;
   for (unsigned byte = 0; byte < 4; ++byte) {
     const auto group =
         l.pick(l.b.slice(submask, byte, 1), l.b.slice(current, k * byte, k), l.num(k, 0));
@@ -695,7 +697,7 @@ void ApbOutlet::data_user_issue() {
 void ApbOutlet::data_user_drive() {
   if (!p.data_user_port_bits)
     return;
-  const auto k = p.data_user_bits_per_byte;
+  const auto k = p.byte_groups.user;
   auto physical = l.b.slice(bus_data_user, 0, p.data_user_port_bits);
   for (unsigned lane = physical_lanes; lane < 4; lane += physical_lanes)
     physical = l.pick(l.inv(l.eq(l.b.slice(bus_mask, lane, physical_lanes), 0)),
@@ -706,7 +708,12 @@ void ApbOutlet::data_user_drive() {
 void ApbOutlet::data_user_read(ValueId to_front, ValueId to_tail, ValueId shift) {
   if (!p.data_user_bits_per_byte)
     return;
-  const auto k = p.data_user_bits_per_byte, width = 4 * k;
+  // An APB target keeps the data user bits of each group; the poison and trace bits read zero.
+  const auto k = p.byte_groups.user, width = 4 * k;
+  if (!k) {
+    om["data_user"] = l.num(4 * p.data_user_bits_per_byte, 0);
+    return;
+  }
   ValueId word = l.num(width, 0);
   if (p.data_user_port_bits) {
     ValueId groups{};
@@ -735,7 +742,7 @@ void ApbOutlet::data_user_read(ValueId to_front, ValueId to_tail, ValueId shift)
     l.b.update(front, l.pick(shift, tail, loaded));
     l.b.update(tail, l.pick(to_tail, value, tail));
   }
-  om["data_user"] = front;
+  om["data_user"] = groups::regroup(l, front, 4, k, p.data_user_bits_per_byte);
 }
 void ApbOutlet::user_drive() {
   if (p.dialect != Protocol::Apb5)

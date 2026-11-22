@@ -2050,10 +2050,30 @@ void check_data_user(Checks &c) {
       if (!e.data_user_width)
         continue;
       const auto bytes = e.data_width.value_or(c.network_bits) / 8;
-      if (e.protocol != Protocol::Apb5 || !bytes || !k || k > 4 || e.data_user_width != k * bytes)
-        c("NCL_APB5_DATA_USER_WIDTH", kind + "[" + std::to_string(i) + "].data_user_width",
-          "A nonzero APB5 data user width must equal data bytes times "
+      if ((e.protocol != Protocol::Apb5 && e.protocol != Protocol::Axi5) || !bytes || !k || k > 4 ||
+          e.data_user_width != k * bytes)
+        c(detail::axi5_port(e.protocol) ? "NCL_DATA_USER_WIDTH" : "NCL_APB5_DATA_USER_WIDTH",
+          kind + "[" + std::to_string(i) + "].data_user_width",
+          "A nonzero data user width needs protocol apb5 or axi5 and must equal data bytes times "
           "transport.data_user_bits_per_byte, with 1 to 4 bits per byte");
+    }
+  };
+  check(c.d.initiators, "initiators");
+  check(c.d.targets, "targets");
+}
+// The data widths at which an axi5 endpoint has data side ports (docs/axi5.md#data-side): the
+// widths the data side tests cover.
+void check_axi5_data_width(Checks &c) {
+  const auto check = [&](const auto &endpoints, const std::string &kind) {
+    for (std::size_t i = 0; i < endpoints.size(); ++i) {
+      const auto &e = endpoints[i];
+      if (e.protocol != Protocol::Axi5 ||
+          !(e.data_user_width || (e.axi5 && (e.axi5->poison || e.axi5->trace))))
+        continue;
+      const auto bits = e.data_width.value_or(c.network_bits);
+      if (bits != 32 && bits != 64 && bits != 128)
+        c("NCL_AXI5_DATA_WIDTH", kind + "[" + std::to_string(i) + "].data_width",
+          "An axi5 endpoint with data user, poison or trace ports is 32, 64 or 128 bits wide");
     }
   };
   check(c.d.initiators, "initiators");
@@ -2064,6 +2084,7 @@ void check_data_user(Checks &c) {
 // bits of AXI4, AXI3 and AXI4-Lite targets that name declared flags.
 void check_user_flags(Checks &c) {
   check_data_user(c);
+  check_axi5_data_width(c);
   const auto &flags = c.d.transport.value_or(TransportOptions{}).user_flags;
   if (c.d.transport && c.d.transport->response_user_bits > 256)
     c("NCL_USER_FLAGS", "transport.response_user_bits",

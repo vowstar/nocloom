@@ -49,6 +49,9 @@ struct Axi4UpsizeProfile : ComponentProfileBase {
   unsigned tag_bits = 0;
   unsigned user_bits = 0; // network user flags (message.hpp point 13)
   unsigned data_user_bits_per_byte = 0;
+  // Move each byte group of the data_user field (message.hpp point 20) with its data byte through
+  // packing, gathering and replay; otherwise a converted beat carries zero groups.
+  bool carry_groups = false;
   unsigned response_user_bits = 0;
   // Accepted packets retained until their final upstream response transfers.
   unsigned max_outstanding = 1;

@@ -243,6 +243,13 @@ Result<MessageLayout> describe_messages(MessageParameters parameters);
 //    zero-data error beats. Native target responses carry no descriptor tag, including DECERR:
 //    result 3 marks the descriptor, or decode_flag reserves error=1 with network_miss for it.
 //    In decode_flag profiles native failures use result alone, with error=0.
+// 20. Byte groups. With BurstProfile::data_user_bits_per_byte > 0 the payload carries
+//    `data_user`: one group of that many bits per data byte, byte b's group at bits g*b
+//    (ByteGroups in axi5_ports.hpp: the data user bits, then the poison and the trace bit where
+//    the network carries them). A group belongs to its byte. A source of an AXI5 face with data
+//    side ports (Axi4InitiatorProfile::carry_groups) clears the group of an unstrobed byte, and
+//    the width converters, the packet splitter and the target merge of such endpoints move each
+//    group with its byte (a failed beat's groups are zero); elsewhere they send zero groups.
 //
 // Burst capability of one endpoint. id_bits is the AxID field width (0..16;
 // zero omits the id field and the ID ports entirely). packet_len_bits counts
@@ -292,7 +299,7 @@ struct BurstProfile {
   bool decode_packets = false;
   // Reserves the error flag for that descriptor instead of result code 3 (decode_packet.hpp).
   bool decode_flag = false;
-  // Number of user bits carried with each data byte. Zero omits the data_user field.
+  // Bits of the byte group carried with each data byte (point 20). Zero omits the data_user field.
   unsigned data_user_bits_per_byte = 0;
   bool operator==(const BurstProfile &) const = default;
 };

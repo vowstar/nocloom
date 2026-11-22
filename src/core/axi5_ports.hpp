@@ -31,4 +31,23 @@ struct Axi5RequestPorts {
 inline bool coherence_checked(const Axi5RequestPorts &ports) {
   return ports.domain || ports.write_snoop || ports.read_snoop;
 }
+// The AXI5 data side ports of one endpoint (docs/axi5.md): WUSER and the data part of RUSER, of
+// `user` bits, WPOISON and RPOISON, WTRACE and RTRACE.
+struct Axi5DataPorts {
+  unsigned user = 0;
+  bool poison = false, trace = false;
+  bool any() const { return user || poison || trace; }
+  bool operator==(const Axi5DataPorts &) const = default;
+};
+// The group of bits beside each data byte (message.hpp point 20): the data user bits from bit 0,
+// then the poison bit and the trace bit. The data_user payload field holds one group per byte,
+// byte b's at bits() * b.
+struct ByteGroups {
+  unsigned user = 0; // transport.data_user_bits_per_byte
+  bool poison = false, trace = false;
+  unsigned bits() const { return user + (poison ? 1U : 0U) + (trace ? 1U : 0U); }
+  unsigned poison_bit() const { return user; }
+  unsigned trace_bit() const { return user + (poison ? 1U : 0U); }
+  bool operator==(const ByteGroups &) const = default;
+};
 } // namespace nocloom::detail

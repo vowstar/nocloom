@@ -63,6 +63,7 @@ The codes of the C++ tree helper are in
 | `NCL_AHB5_PROPERTIES` | The `ahb5` object requires AHB5. HPROT width must be 4 or 7. HMASTER width must be 0 to 32. A nonzero target width must hold each reaching source. Exclusive and user signals are unsupported. Targets accept only `attributes: amba`, without per-bit overrides |
 | `NCL_AXI5_PROPERTIES` | The `axi5` object requires `axi5` or `ace5_lite`. A field is outside its range, `prot: true` comes with `priv_inst` or `pas_width`, or a constraint property does not hold for a connected pair. An `ace5_lite` endpoint breaks an ACE5-Lite rule. See [AXI5 interfaces](axi5.md) and [ACE5-Lite interfaces](ace5-lite.md) |
 | `NCL_AXI5_UNSUPPORTED` | The `axi5` object enables a property that the network does not support. The message names the property. See the [AXI5 property table](axi5-properties.md) |
+| `NCL_AXI5_DATA_WIDTH` | An `axi5` endpoint with data user ports is not 32, 64 or 128 bits wide. See [AXI5 data side](axi5.md#data-side) |
 | `NCL_TARGET_AHB_BURSTS`, `NCL_TARGET_AHB_HRESP` | Burst shaping or `hresp_width` on a target that is not AHB, an invalid value, or two-bit HRESP on AHB5 |
 | `NCL_ENDPOINT_ACCESS` | `access` is not `read_write`, `read_only` or `write_only` |
 | `NCL_APB_INITIATOR`, `NCL_AHB_INITIATOR` | Unsupported options on a dedicated initiator |
@@ -76,7 +77,8 @@ The codes of the C++ tree helper are in
 | `NCL_AXI4_NARROW_BURSTS` | Unsupported narrow mode or conflict with target read side effects |
 | `NCL_AXI4_PACKETS` | Invalid pair packet limits or an unsupported initiator for those limits |
 | `NCL_TARGET_ATTRIBUTES` | Missing, unsupported or invalid target attribute mapping |
-| `NCL_APB5_DATA_USER_WIDTH` | Invalid data user width. Transport accepts 0 to 4 bits per byte. Nonzero endpoint width requires APB5 and must equal data bytes times the nonzero transport value |
+| `NCL_APB5_DATA_USER_WIDTH` | Invalid transport group size or data user width at an [endpoint](user-signals.md#data-user-groups) outside the AXI5 family |
+| `NCL_DATA_USER_WIDTH` | Invalid data user width at an AXI5 or ACE5-Lite endpoint |
 | `NCL_APB5_USER_WIDTH` | APB5 request user exceeds 128 bits or response user exceeds 16 bits |
 | `NCL_USER_FLAGS` | Invalid user flags |
 | `NCL_TARGET_EXCLUSIVE` | Invalid exclusive mode, owner flags, monitors or reaching initiators |

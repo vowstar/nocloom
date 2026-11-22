@@ -106,6 +106,9 @@ struct Axi4PacketizerProfile : ComponentProfileBase {
   unsigned tag_bits = 0;
   unsigned user_bits = 0; // network user flags (message.hpp point 13)
   unsigned data_user_bits_per_byte = 0;
+  // Move each byte group of the data_user field (message.hpp point 20) with its data byte through
+  // packing, gathering and replay; otherwise a converted beat carries zero groups.
+  bool carry_groups = false;
   unsigned response_user_bits = 0;
   unsigned level_bits = 0; // request scheduling level (message.hpp point 15)
   // Above one, single-packet bursts pass independently; splitting, folding or

@@ -1,6 +1,7 @@
 #include "axi4_upsize.hpp"
 #include "beat_stage.hpp"
 #include "burst_faces.hpp"
+#include "byte_groups.hpp"
 #include "decode_packet.hpp"
 #include "diagnostic.hpp"
 #include "logic.hpp"
@@ -72,6 +73,11 @@ struct UpsizeLowering {
     return l.both(address, l.b.unary(Op::BitNot, low, w));
   }
   ValueId expand(ValueId byte_mask) { return strobe_lanes(l.b, byte_mask, bytes); }
+  // Byte groups at the target data width and back (Axi4UpsizeProfile::carry_groups): every byte
+  // transform of the data applies to them unchanged.
+  ValueId spread(ValueId v) { return groups::spread(l, v, bytes, p.data_user_bits_per_byte); }
+  ValueId regather(ValueId v) { return groups::gather(l, v, bytes, p.data_user_bits_per_byte); }
+  std::optional<ValueId> saved_groups;
   ValueId read_word_data(ValueId data, const Fields &d, ValueId address, ValueId left) {
     // Keep every requested byte of an INCR word, including its later source beats.
     // In beat units, the last requested byte is in the current word's beat
@@ -356,6 +362,28 @@ void UpsizeLowering::write_words() {
   wo = wi;
   wo.erase("valid");
   wo["data"] = l.pick(pass, wi.at("data"), l.pick(emit_hold, hold_now_data, word_data));
+  // The words' byte groups merge by lane as their data.
+  if (p.carry_groups) {
+    const auto group_bits = bytes * p.data_user_bits_per_byte;
+    const auto cur_groups = l.state("w.word_data_user", group_bits);
+    const auto hold_groups = l.state("w.hold_data_user", group_bits);
+    const auto merge_groups = [&](std::optional<ValueId> held) {
+      const auto kept = held ? spread(*held) : l.num(p.data_bits, 0);
+      return regather(l.either(l.both(kept, l.b.unary(Op::BitNot, data_mask, p.data_bits)),
+                               l.both(spread(wi.at("data_user")), data_mask)));
+    };
+    const auto fresh_groups = merge_groups(std::nullopt);
+    const auto word_groups = l.pick(wi.at("first"), fresh_groups, merge_groups(cur_groups));
+    const auto hold_now_groups = l.pick(wi.at("first"), fresh_groups, merge_groups(hold_groups));
+    l.b.update(cur_groups,
+               l.pick(keep_word, word_groups,
+                      l.pick(l.both(load, emit_word), l.num(group_bits, 0), cur_groups)));
+    l.b.update(hold_groups,
+               l.pick(l.both(load, to_hold), hold_now_groups,
+                      l.pick(l.both(load, emit_hold), l.num(group_bits, 0), hold_groups)));
+    wo["data_user"] =
+        l.pick(pass, wi.at("data_user"), l.pick(emit_hold, hold_now_groups, word_groups));
+  }
   wo["be"] = l.pick(pass, wi.at("be"), l.pick(emit_hold, hold_now_be, word_be));
   // A merged word sits at its word; a single word narrower than the target
   // at its covering size's container, as the read request.
@@ -557,6 +585,8 @@ void UpsizeLowering::read_request() {
   rfirst = l.state("r.first", 1);
   saved = l.state("r.saved", 1);
   saved_data = l.state("r.saved_data", p.data_bits);
+  if (p.carry_groups)
+    saved_groups = l.state("r.saved_data_user", bytes * p.data_user_bits_per_byte);
   saved_result = l.state("r.saved_result", 2);
   saved_error = l.state("r.saved_error", 1);
   next_word = l.address_state("r.next_word", ab);
@@ -749,6 +779,14 @@ void UpsizeLowering::read_response() {
   if (p.decode_packets)
     up["data"] =
         l.pick(decoded, decode_packet::word_data(l, remaining, p.data_bits), up.at("data"));
+  // The beat's byte groups follow its data; a failed or local miss word has none.
+  if (saved_groups) {
+    const auto word_groups = word_of("r.data_user", rr.at("data_user"));
+    l.b.update(*saved_groups, l.pick(first_word, rr.at("data_user"), *saved_groups));
+    up["data_user"] = regather(l.pick(
+        p.decode_packets ? l.either(failed, decoded) : failed, l.num(p.data_bits, 0),
+        read_word_data(spread(l.pick(from_word, word_groups, *saved_groups)), rd, sa, remaining)));
+  }
   if (p.response_run_bits)
     l.b.output("nl_hint_wrap_end",
                burst_run_end(l, rd, l.pick(rpass, l.fit(rr.at("address"), ab), sa), p.data_bits,
@@ -914,6 +952,10 @@ void UpsizeLowering::reads_by_key() {
                       read_word_data(from_store("data"), rd, beat_address, left));
   if (p.decode_packets)
     up["data"] = l.pick(decoded, decode_packet::word_data(l, left, p.data_bits), up.at("data"));
+  if (p.carry_groups)
+    up["data_user"] = regather(
+        l.pick(p.decode_packets ? l.either(failed, decoded) : failed, l.num(p.data_bits, 0),
+               read_word_data(spread(from_store("data_user")), rd, beat_address, left)));
   up = view_fields(l, up, rr, l.both(rpass, l.inv(draining)));
   l.b.output("nl_hint_word_end", l.either(rpass, l.both(fanning, leaves_word)), "hint", "word_end");
   // The stage waits for the stored word's first beat, as for a word entering a serializer.
@@ -952,8 +994,8 @@ Fields UpsizeLowering::replay_bank(ValueId capture, ValueId release, ValueId all
     const auto valid = l.state(at + "saved_valid", 1);
     l.b.update(valid,
                l.pick(l.either(take, l.both(release, mine)), zero, l.pick(save, one, valid)));
-    for (const auto *name : {"data", "result", "error", "exclusive_okay", "user"}) {
-      if (!rr.contains(name))
+    for (const auto *name : {"data", "result", "error", "exclusive_okay", "user", "data_user"}) {
+      if (!rr.contains(name) || (std::string_view(name) == "data_user" && !p.carry_groups))
         continue;
       const auto field = l.latch(at + "saved_" + name, rr.at(name), save);
       selected[name] = k ? l.pick(mine, field, selected.at(name)) : field;

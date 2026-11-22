@@ -578,6 +578,9 @@ struct NetworkPlan {
   unsigned burst_level_bits = 0;
   // Network user flags (message.hpp point 13), transport.user_flags in order; zero without them.
   unsigned burst_user_bits = 0, burst_response_user_bits = 0;
+  // The byte group layout (axi5_ports.hpp): the data user bits per byte, and the poison and trace
+  // bits where some initiator and some target have the ports. data_user_bits_per_byte is its width.
+  ByteGroups byte_groups;
   unsigned data_user_bits_per_byte = 0;
   // AHB5 request metadata above the named flags: presence, HPROT, HMASTER.
   bool ahb5 = false;
@@ -782,6 +785,11 @@ bool axi5_port(std::optional<Protocol> protocol);
 // shareable fields; none for another protocol.
 std::optional<Axi5Properties> axi5_properties(std::optional<Protocol> protocol,
                                               const std::optional<Axi5Properties> &properties);
+// Whether an AXI5 endpoint has data side ports (data user, poison or trace) in a network with byte
+// groups: its burst components then move each group with its data byte.
+bool data_side(const NetworkPlan &plan, const std::optional<Axi5Properties> &axi5,
+               unsigned data_user_bits);
+Axi5DataPorts axi5_data_ports(const std::optional<Axi5Properties> &axi5, unsigned data_user_bits);
 // A full AXI burst port: AXI4, AXI5, ACE5-Lite or AXI3, which the network carries as AXI4 (absent
 // counts as AXI4).
 bool full_axi(std::optional<Protocol> protocol);

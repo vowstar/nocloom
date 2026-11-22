@@ -3517,7 +3517,7 @@ private:
           staging.second.push_back("wr.b_full");
       } else {
         staging.first = {"rr.rsp_data", "rr.rsp_result", "rr.rsp_error", "rr.rsp_last"};
-        if (sp.data_user_bits)
+        if (sp.data_user_bits || data_side(plan, sp.axi5, sp.data_user_bits))
           staging.first.push_back("rr.rsp_data_user");
         if (plan.exclusive)
           staging.first.push_back("rr.rsp_exclusive_okay");
@@ -5286,7 +5286,7 @@ private:
     if (!profile.user.empty() && profile.user_bits)
       fields.push_back(dir + ".request_user");
     fields.push_back(dir + ".data");
-    if (profile.data_user_bits_per_byte && read) {
+    if (profile.byte_groups.user && read) {
       fields.insert(fields.end(), {"r.data_user", "r.tail_data_user"});
       if (profile.data_user_port_bits && profile.apb_data_bits < 32)
         fields.push_back("r.gather_user");

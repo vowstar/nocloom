@@ -774,6 +774,7 @@ Axi4WidthClampProfile clamp_profile(const NetworkPlan &plan, unsigned index, boo
   }
   // A wide read beat with a failed part returns zero data as a whole.
   profile.zero_failed_beats = true;
+  profile.carry_groups = data_side(plan, source.axi5, source.data_user_bits);
   profile.response_runs = plan.response_runs;
   profile.decode_packets = plan.failure_classes;
   profile.decode_flag = decode_flag(plan);
@@ -1119,6 +1120,7 @@ Axi4PacketizerProfile packet_profile(const NetworkPlan &plan, unsigned index) {
   auto profile = burst_fields<Axi4PacketizerProfile>(plan, "s" + std::to_string(index));
   profile.data_bits = source.engine_bits;
   profile.split_narrow = source.split_narrow;
+  profile.carry_groups = data_side(plan, source.axi5, source.data_user_bits);
   profile.exclusive_can_cut = false;
   profile.write = !source.read_only; // a read-only source has no write face to cut
   profile.level_bits = plan.burst_level_bits;
@@ -1161,6 +1163,8 @@ Axi4UpsizeProfile upsize_profile(const NetworkPlan &plan, unsigned index) {
   profile.arrival = arrival_block(plan, plan.targets[index]);
   profile.joined = joined_target(plan, plan.targets[index]);
   profile.read_only = plan.targets[index].read_only;
+  profile.carry_groups =
+      data_side(plan, plan.targets[index].axi5, plan.targets[index].data_user_bits);
   return profile;
 }
 
@@ -1258,7 +1262,8 @@ Axi4InitiatorProfile initiator_profile(const NetworkPlan &plan, unsigned index) 
   profile.lite = sp.protocol == Protocol::Axi4Lite;
   profile.apb = sp.apb;
   profile.apb_data_bits = sp.apb_bits;
-  profile.data_user_port_bits = sp.data_user_bits;
+  // PWUSER and PRUSER of an APB5 face; an AXI5 face takes data_ports.
+  profile.data_user_port_bits = sp.apb ? sp.data_user_bits : 0;
   profile.ahb = sp.ahb;
   profile.axi3 = sp.axi3;
   profile.tilelink_uh = sp.external_protocol == Protocol::TlUh;
@@ -1337,6 +1342,9 @@ Axi4InitiatorProfile initiator_profile(const NetworkPlan &plan, unsigned index) 
   profile.user_bits = plan.burst_user_bits;
   profile.response_user_bits = plan.burst_response_user_bits;
   profile.data_user_bits_per_byte = plan.data_user_bits_per_byte;
+  profile.byte_groups = plan.byte_groups;
+  profile.data_ports = axi5_data_ports(sp.axi5, sp.data_user_bits);
+  profile.carry_groups = data_side(plan, sp.axi5, sp.data_user_bits);
   profile.ahb5 = sp.ahb5;
   profile.hmaster_bits = sp.hmaster_bits;
   profile.hprot_bits = sp.hprot_bits;
@@ -1483,6 +1491,7 @@ static Profile target_fields(Profile profile, const NetworkPlan &plan, const Tar
   profile.user_bits = plan.burst_user_bits;
   profile.response_user_bits = plan.burst_response_user_bits;
   profile.data_user_bits_per_byte = plan.data_user_bits_per_byte;
+  profile.byte_groups = plan.byte_groups;
   profile.user = tp.user;
   profile.response_user_port_bits = tp.response_user_bits;
   profile.exclusive_target = tp.exclusive;
@@ -1576,6 +1585,8 @@ Axi4OutletProfile axi4_outlet_profile(const NetworkPlan &plan, unsigned index) {
   profile.axi3 = tp.axi3;
   profile.axi5_ports = axi5_request_ports(tp.axi5);
   profile.axi5_attributes = plan.axi5_attributes;
+  profile.data_ports = axi5_data_ports(tp.axi5, tp.data_user_bits);
+  profile.carry_groups = data_side(plan, tp.axi5, tp.data_user_bits);
   profile.region_port = tp.region_port;
   profile.axqos_levels = tp.axqos_levels;
   profile.level_bits = tp.axqos_levels.empty() ? 0 : plan.burst_level_bits;
