@@ -1368,10 +1368,13 @@ void LiteOutlet::write_issue() {
   l.b.update(bus_open, l.b.select(load, one, l.b.select(bus_done, zero, bus_open)));
   l.b.update(bus_address, l.b.select(load, bus_offset(w.at("address")), bus_address));
   l.b.update(bus_prot, l.b.select(load, prot, bus_prot));
-  if (!p.user.empty())
-    l.b.update(bus_user,
-               l.b.select(load, map_attributes(l, p.user, w.at("cache"), prot, one, w.at("user")),
-                          bus_user));
+  if (!p.user.empty()) {
+    // A network without user flags carries no user field: the list holds constants only.
+    const auto flags = p.user_bits ? std::optional{w.at("user")} : std::nullopt;
+    l.b.update(
+        bus_user,
+        l.b.select(load, map_attributes(l, p.user, w.at("cache"), prot, one, flags), bus_user));
+  }
   l.b.update(bus_data, l.b.select(load, load_data, bus_data));
   l.b.update(bus_mask, l.b.select(load, load_mask, bus_mask));
   if (p.flows > 1)
@@ -1583,7 +1586,7 @@ void LiteOutlet::read_issue() {
     shape["source"] = r.at("source");
   if (p.tag_bits)
     shape["tag"] = r.at("tag");
-  if (!p.user.empty())
+  if (!p.user.empty() && p.user_bits)
     shape["user"] = r.at("user");
   if (monitored)
     shape["exclusive"] = zero;
@@ -1617,7 +1620,7 @@ void LiteOutlet::read_issue() {
   ValueId ar_addr = cur_issue_addr;
   ValueId ar_cache = issue_entry.at("cache"), ar_prot = issue_entry.at("protection");
   std::optional<ValueId> ar_user;
-  if (!p.user.empty())
+  if (!p.user.empty() && p.user_bits)
     ar_user = issue_entry.at("user");
   if (timeout) {
     // The held packet is the one under the issue cursor (with one packet, the queue head).
@@ -1670,8 +1673,8 @@ void LiteOutlet::read_issue() {
     ar_prot = map_attributes(l, p.attributes->prot, ar_cache, ar_prot, zero);
   out("axil", "araddr", bus_offset(ar_addr));
   out("axil", "arprot", ar_prot);
-  if (ar_user)
-    out("axil", "aruser", map_attributes(l, p.user, ar_cache, ar_prot, zero, *ar_user));
+  if (!p.user.empty())
+    out("axil", "aruser", map_attributes(l, p.user, ar_cache, ar_prot, zero, ar_user));
   const auto ar_hs = l.both(arvalid, arready);
   if (timeout)
     ar_wait = l.both(issue_offered, l.inv(arready));

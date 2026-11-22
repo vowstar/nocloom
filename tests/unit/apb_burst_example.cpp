@@ -1723,3 +1723,37 @@ output: {backend: verilog, language: verilog_2001}
   CHECK(unknown.diagnostics().front().code == "NCL_SCHEMA_UNKNOWN_FIELD");
   CHECK(unknown.diagnostics().front().field == "transport.unknown_option");
 }
+
+TEST_CASE("Constant target AxUSER bits need no network user flags", "[apb-burst-example]") {
+  using namespace nocloom;
+  for (const auto protocol :
+       {Protocol::Axi4, Protocol::Axi3, Protocol::Axi4Lite, Protocol::Axi5, Protocol::Ace5Lite})
+    for (const unsigned capacity : {1U, 2U}) {
+      auto d = public_apb();
+      REQUIRE(d.transport->user_flags.empty());
+      set_protocol(d.targets[0], protocol);
+      d.targets[0].user = {{"", true}, {"", false}, {"", true, true}};
+      if (protocol != Protocol::Axi4Lite) {
+        d.targets[0].id_width = 6;
+        d.targets[0].len_width = 4;
+        d.targets[0].max_outstanding = capacity;
+        d.transport->max_outstanding = capacity;
+      }
+      const auto api = generate(d);
+      REQUIRE(api);
+      const auto rtl = std::ranges::find_if(api.value(), [](const auto &a) {
+        return a.path.ends_with(".v") && a.path != "nocloom_clock_gate.v" &&
+               a.path != "nocloom_synchronizer.v";
+      });
+      REQUIRE(rtl != api.value().end());
+      for (const auto *port :
+           {"output wire [2:0] nl_t_bank0_awuser", "output wire [2:0] nl_t_bank0_aruser"})
+        CHECK(rtl->text.find(port) != std::string::npos);
+      // A flag name still needs its declaration.
+      d.targets[0].user[1].flag = "tracked";
+      const auto plan = make_plan(d);
+      REQUIRE_FALSE(plan);
+      CHECK(plan.diagnostics().front().code == "NCL_USER_FLAGS");
+      CHECK(plan.diagnostics().front().field == "targets[0].user[1]");
+    }
+}

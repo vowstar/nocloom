@@ -535,8 +535,10 @@ struct EngineLowering {
     const auto lock = passthrough ? d.at("lock") : zero;
     out("axi", prefix + "lock", p.axi3 ? l.b.concat(zero, lock) : lock);
     if (!p.user.empty()) {
+      // A network without user flags carries no user field: the list holds constants only.
+      const auto flags = p.user_bits ? std::optional{d.at("user")} : std::nullopt;
       const auto user = map_attributes(l, p.user, d.at("cache"), d.at("protection"),
-                                       l.b.constant(1, prefix == "aw" ? 1 : 0), d.at("user"));
+                                       l.b.constant(1, prefix == "aw" ? 1 : 0), flags);
       out("axi", prefix + "user", held ? frozen("timeout." + prefix + "user", user) : user);
     }
     if (target_id_bits)
@@ -956,7 +958,7 @@ void EngineLowering::write_accept() {
     descriptor.emplace_back("id");
   if (passthrough || network)
     descriptor.emplace_back("lock");
-  if (!p.user.empty() || (owned && several))
+  if ((!p.user.empty() && p.user_bits) || (owned && several))
     descriptor.emplace_back("user");
   axi5_field(w);
   for (const auto *name : {"axi5", "domain", "snoop"})

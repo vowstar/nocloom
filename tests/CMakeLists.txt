@@ -1014,6 +1014,20 @@ foreach(axi3_case IN ITEMS initiator_switch:switch initiator_wide:wide target:ta
   set_tests_properties(axi3_${axi3_name} PROPERTIES TIMEOUT 1800 LABELS "rtl;axi4;axi3;focused"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 endforeach()
+# Constant AxUSER bits at AXI4, AXI3 and AXI4-Lite targets of a network without user flags.
+add_test(NAME constant_user_cli
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/constant_user.py
+    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/constant_user_cli
+    --mode cli)
+set_tests_properties(constant_user_cli PROPERTIES TIMEOUT 120 LABELS "config;quick;ci")
+foreach(mode IN ITEMS axi4 axi4_timeout axi3 axi4_lite)
+  add_test(NAME constant_user_${mode}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/constant_user.py
+      --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/constant_user_${mode}
+      --mode ${mode})
+  set_tests_properties(constant_user_${mode} PROPERTIES TIMEOUT 120 LABELS "rtl;axi4;focused;ci"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+endforeach()
 # Exclusive access (AXI A7.2): network monitors, target mode and the default.
 foreach(mode IN ITEMS graph wide funnel split split_none)
   add_test(NAME exclusive_${mode}

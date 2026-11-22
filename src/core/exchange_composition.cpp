@@ -5405,7 +5405,7 @@ private:
       pkt_fields.insert(pkt_fields.end(), {"length", "burst"});
     if (read)
       pkt_fields.insert(pkt_fields.end(), {"cache", "protection", "error"});
-    if (read && !profile.user.empty())
+    if (read && !profile.user.empty() && profile.user_bits)
       pkt_fields.emplace_back("user");
     add_id_source(pkt_fields, "", plan.burst_id_bits, plan.source_bits);
     for (unsigned i = 0; i < capacity; ++i) {
