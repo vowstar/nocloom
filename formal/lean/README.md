@@ -114,7 +114,12 @@ Response injection requires the whole request to arrive first. Context
 accounting excludes ended transactions by definition, so it cannot expose a
 context leak.
 
-`CircuitRefinement` has no instance connecting this model to RTL.
+`CircuitRefinementInv` in `Refinement.lean` states refinement from a circuit.
+One circuit step maps to one or more model steps inside a circuit invariant.
+
+`map_legal` and `stall_map` carry a legal circuit run and a circuit stall to
+the model. `CircuitRefinement` is the case of one model step per circuit step.
+Neither has an instance that connects this model to RTL.
 `ServiceContinuation` holds for `Toy`. It is an open obligation for `Wormhole`,
 so `deadlock_free` cannot establish its RTL deadlock freedom.
 
@@ -122,8 +127,8 @@ so `deadlock_free` cannot establish its RTL deadlock freedom.
 
 | Hardware detail | Model limitation |
 | --- | --- |
-| Per-target K and separate read/write pools | One capacity per response-slot pool |
-| FIFO occupancy and pipeline stages | One capacity per instance. Stages between outputs are not slots |
+| Per-target K and separate read/write pools | One context count per response slot. AXI4 and AXI3 targets have K. Other targets free a context when the bus completes, so they have K plus the slot capacity. AXI4-Lite direction changes are not modeled |
+| FIFO occupancy and pipeline stages | One capacity per slot: the link pipe slots in front of its head and a target's response pipe, at least 1. Width adapters and crossings do not count |
 | W channel | Request words follow `Step.inject` rules without an RTL comparison |
 | Split packets | Pieces of one burst have no shared relation |
 | Source pools | Uninjected words hold no resource. Source grant retention while waiting for a pool is unchecked |

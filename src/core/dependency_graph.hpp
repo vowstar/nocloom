@@ -62,8 +62,8 @@ struct DependencyExclusion {
 };
 // The transport tables of the Lean model (formal/lean/GenericNoC/Wormhole.lean): routes (slot,
 // destination, output), nexts and pools (output, slot), the holds (slot and destination, or output
-// and slot, with a node) and the names of the numbers. Absent, with the reason, where the model
-// cannot state the network.
+// and slot, with a node), the capacities and the names of the numbers. Absent, with the reason,
+// where the model cannot state the network.
 struct DependencyModel {
   bool present = false;
   std::string omitted;
@@ -74,7 +74,8 @@ struct DependencyModel {
   // Per output, in input order: output, input slot, before, after, other.
   std::vector<std::array<std::uint32_t, 5>> contention;
   std::vector<std::pair<std::uint32_t, std::string>> slots, outputs, destinations;
-  unsigned pool_cap = 1;
+  // Per slot, the words it holds (caps); per target response slot, the contexts (pool_caps).
+  std::vector<std::pair<std::uint32_t, unsigned>> caps, pool_caps;
   bool operator==(const DependencyModel &) const = default;
 };
 // A clause of the model's run condition `Fair` (formal/lean/GenericNoC/WormholeLive.lean) that the

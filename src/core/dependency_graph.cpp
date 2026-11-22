@@ -288,8 +288,10 @@ private:
     for (std::size_t i = 0; i <= route.nodes.size(); ++i) {
       const auto &to = i < route.nodes.size() ? route.nodes[i] : route.exit;
       const auto name = scope + from + ">" + to;
-      if (i == 0)
+      if (i == 0) {
         stall = link_stages(link_named(name), stall);
+        slot_links.try_emplace(slot_name, name);
+      }
       if (i == route.nodes.size()) {
         const auto end = response ? response_end(route) : request_end(route);
         const auto &last = passes.back();
@@ -321,6 +323,7 @@ private:
         const auto linkname = scope + to + ">" + route.nodes[i + 1];
         slot = node("link.word", linkname, scope + to);
         slot_name = linkname;
+        slot_links.try_emplace(slot_name, linkname);
         stall = link_stages(link_named(linkname), held);
         edge(slot, stall, DependencyRule::Occupancy);
         stall = slot;
@@ -351,6 +354,30 @@ private:
     std::string flow; // Of a per-flow target: which of its slave interfaces.
   };
   std::map<std::string, std::string> next_slots;
+  // The link whose stages hold a slot's words before its head: the first link of an endpoint's
+  // routes, or the link of a link word.
+  std::map<std::string, std::string> slot_links;
+  // The model capacity of a slot: the slots of the pipes in front of its head, at least one. A
+  // target's response pipe counts too. Adapters and crossings do not count.
+  unsigned slot_capacity(const std::string &name) const {
+    const auto &stages = link_named(slot_links.at(name)).stages;
+    auto words = std::accumulate(stages.begin(), stages.end(), 0U, [](unsigned n, const auto &s) {
+      return n + (s.kind == StageKind::Pipe ? s.pipe.slot_count() : 0U);
+    });
+    if (name.starts_with("target/")) {
+      const auto &pipes = plan.target(name.substr(7, name.find('/', 7) - 7)).pipes;
+      words = std::accumulate(pipes.begin(), pipes.end(), words, [](unsigned n, const auto &p) {
+        return n + (p.name.ends_with("/pipe/response") ? p.mode.slot_count() : 0U);
+      });
+    }
+    return std::max(words, 1U);
+  }
+  // The contexts of a target's response slot. AXI4 and AXI3 keep a request's context until its
+  // final response leaves the adapter, as the model does. Other targets free it when the bus
+  // completes, so the responses waiting in the slot can hold one context each on top.
+  static unsigned pool_capacity(const TargetPlan &t, unsigned slot_words) {
+    return t.protocol == Protocol::Axi4 ? t.outstanding : t.outstanding + slot_words;
+  }
   // The name of the slot a route's words start in.
   std::string entry_slot(const SwitchRoute &route, bool response) const {
     if (!response)
@@ -849,9 +876,13 @@ private:
       m.heads.push_back({key.first, key.second, n});
     for (const auto &[key, n] : b.grant_nodes)
       m.grants.push_back({key.first, key.second, n});
-    m.pool_cap = 1;
-    for (const auto &t : plan.targets)
-      m.pool_cap = std::max(m.pool_cap, t.outstanding);
+    for (const auto &[name, id] : b.slots)
+      m.caps.push_back({id, slot_capacity(name)});
+    std::ranges::sort(m.caps);
+    for (const auto &[slot, target] : pool_of)
+      m.pool_caps.push_back(
+          {slot,
+           pool_capacity(*target, std::ranges::lower_bound(m.caps, std::pair{slot, 0U})->second)});
     m.present = true;
     model = std::move(m);
     named_numbers(b);
@@ -942,6 +973,7 @@ private:
       if (it == slots.end())
         continue;
       m.pools.push_back({out, pass_dest.at(&pass), it->second});
+      pool_of[it->second] = &plan.target(pass.exit);
       for (const auto d : dests_of.at(it->second)) {
         edge(heads.at({it->second, d}), pass.slot, DependencyRule::PoolWait);
         edge(heads.at({it->second, d}), pass.held, DependencyRule::PoolWait);
@@ -960,6 +992,7 @@ private:
     return std::ranges::binary_search(m.may_hold, std::tuple{at, dest});
   }
   DependencyModel model;
+  std::map<std::uint32_t, const TargetPlan *> pool_of; // response slot to its target
 
   std::uint32_t existing_node(const DependencyNodeRef &ref) const {
     const auto it = index.find({ref.kind, ref.key});
@@ -1334,7 +1367,9 @@ void emit_model(std::string &o, const DependencyModel &m) {
   };
   const auto number = [](auto v) { return std::to_string(v); };
   const auto named = [](const auto &t) { return quoted(t.second); };
-  o += "{\n  \"cap\": 1,\n  \"pool_cap\": " + std::to_string(m.pool_cap) + ",\n";
+  o += "{\n";
+  emit_rows(o, "caps", m.caps, pair);
+  emit_rows(o, "pool_caps", m.pool_caps, pair);
   emit_rows(o, "routes", m.routes, triple);
   emit_rows(o, "nexts", m.nexts, pair);
   emit_rows(o, "pools", m.pools, triple);

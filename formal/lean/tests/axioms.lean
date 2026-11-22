@@ -32,3 +32,7 @@ import GenericNoC
 #print axioms Wormhole.no_restart
 #print axioms Wormhole.Requests.no_phantom
 #print axioms ToyChain.toy_deadlockFree
+#print axioms GenericNoC.CircuitRefinementInv.map_legal
+#print axioms GenericNoC.CircuitRefinementInv.stall_map
+#print axioms GenericNoC.CircuitRefinement.toInv_run
+#print axioms Wormhole.Import.capOf_pos

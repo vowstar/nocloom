@@ -61,6 +61,10 @@ CASES = [
     ("RealTwoTargets", "graph_real_two_targets", None, "ok"),
     ("RealFlows", "graph_real_flows", None, "ok"),
     ("RealBound", "graph_real_bound", None, "ok"),
+    # Capacities per slot: any positive table proves completion, a gap or a zero is refused.
+    ("Caps", "graph_good", "model_caps", "ok"),
+    ("CapsZero", "graph_good", "model_caps_zero", ("gen", "caps must be [key, positive capacity]")),
+    ("CapsShort", "graph_good", "model_caps_short", ("gen", "caps must list exactly")),
     # The generator names a clause of `Fair` its logic breaks: no completion theorem.
     ("Withdrawn", "graph_withdrawn", "model_per_word", "ok"),
     ("ScopeMissing", "graph_scope_missing", None, ("gen", "no completion scope")),

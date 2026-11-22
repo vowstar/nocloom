@@ -21,7 +21,8 @@ structure GenericNoC : Type 1 where
   Owner : Type
   /-- I: initial states. -/
   init : State → Prop
-  /-- T: synchronous transition relation. -/
+  /-- T: the transition relation.  An instance chooses its granularity: `Wormhole`
+      takes one event per step. -/
   step : State → State → Prop
   /-- Owner observation; `none` iff the point is unheld. -/
   own : State → Hold → Option Owner

@@ -981,3 +981,48 @@ TEST_CASE("The completion scope names each clause of Fair the generated logic br
   CHECK(dependency_graph_json(graph, report, "m", "", "", "").find("\"applies\": false") !=
         std::string::npos);
 }
+
+TEST_CASE("Model capacities count the pipes in front of a slot and each target's contexts",
+          "[dependency]") {
+  const auto capacity = [](const DependencyModel &m, const std::string &slot,
+                           const std::vector<std::pair<std::uint32_t, unsigned>> &table) {
+    const auto named = std::ranges::find(m.slots, slot, [](const auto &s) { return s.second; });
+    REQUIRE(named != m.slots.end());
+    const auto row = std::ranges::find(table, named->first, [](const auto &r) { return r.first; });
+    REQUIRE(row != table.end());
+    return row->second;
+  };
+  for (const bool pipes : {false, true}) {
+    const auto plan = plan_of(Ends{32, 2, 4, 3, false, true, pipes});
+    const auto m = build_dependency_graph(plan, dependency_facts(plan)).model;
+    REQUIRE(m.present);
+    CHECK(m.caps.size() == m.slots.size());
+    // A full pipe holds two words of the link word behind it. No pipe still holds one.
+    // Response nodes a, c, d0 and d1 are rsp_node0 to rsp_node3.
+    for (const auto *link : {"rsp/rsp_node0>rsp_node2", "rsp/rsp_node0>rsp_node3",
+                             "rsp/rsp_node1>rsp_node2", "rsp/rsp_node1>rsp_node3"})
+      CHECK(capacity(m, link, m.caps) == (pipes ? 2U : 1U));
+    for (const auto *slot : {"source/s0", "source/s1", "target/t0", "target/t1"})
+      CHECK(capacity(m, slot, m.caps) == 1U);
+    // An AXI4 target keeps a context until its final response leaves: its own K.
+    for (const auto *slot : {"target/t0", "target/t1"})
+      CHECK(capacity(m, slot, m.pool_caps) == 3U);
+  }
+  // A target's response pipe holds words of its response slot.
+  auto text = shape_text({32, 2, 4, 3});
+  text.replace(text.find("{name: t0, "), 11, "{name: t0, pipes: {response: {slice: full}}, ");
+  const auto piped = plan_of(text);
+  const auto p = build_dependency_graph(piped, dependency_facts(piped)).model;
+  REQUIRE(p.present);
+  CHECK(capacity(p, "target/t0", p.caps) == 2U);
+  CHECK(capacity(p, "target/t1", p.caps) == 1U);
+  CHECK(capacity(p, "target/t0", p.pool_caps) == 3U);
+  // An APB target frees its context when the bus completes: a waiting response holds one more.
+  const auto apb =
+      plan_of(read_text(std::string(NOCLOOM_SOURCE_DIR) + "/examples/apb_simple.yaml"));
+  const auto m = build_dependency_graph(apb, dependency_facts(apb)).model;
+  REQUIRE(m.present);
+  REQUIRE_FALSE(m.pool_caps.empty());
+  for (const auto &[slot, contexts] : m.pool_caps)
+    CHECK(contexts == 1U + capacity(m, m.slots.at(slot).second, m.caps));
+}

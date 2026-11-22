@@ -20,7 +20,16 @@
  "bound": [
   0
  ],
- "cap": 4,
+ "caps": [
+  [
+   0,
+   4
+  ],
+  [
+   1,
+   4
+  ]
+ ],
  "contig": [],
  "endpoints": [
   0,
@@ -70,6 +79,7 @@
    "node": 7
   }
  ],
+ "pool_caps": [],
  "routes": [
   [
    0,

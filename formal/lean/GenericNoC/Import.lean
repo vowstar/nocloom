@@ -113,6 +113,21 @@ def pairSet (l : List (Nat × Nat)) (a b : Nat) : Bool := l.contains (a, b)
 /-- A set of numbers as a function. -/
 def natSet (l : List Nat) (a : Nat) : Bool := l.contains a
 
+/-- A capacity table by slot.  A slot the table does not list has capacity 1; the
+    importer lists every slot of the instance. -/
+def capOf (rows : List (Nat × Nat)) (k : Nat) : Nat := (rows.lookup k).getD 1
+
+/-- Every capacity is positive when every listed one is. -/
+theorem capOf_pos {rows : List (Nat × Nat)} (h : rows.all (fun r => decide (0 < r.2)) = true)
+    (k : Nat) : 0 < capOf rows k := by
+  unfold capOf
+  cases hl : rows.lookup k with
+  | none => decide
+  | some v =>
+    have hm := Config.lookup_mem hl
+    have := List.all_eq_true.1 h _ hm
+    simpa using this
+
 /-- The certificate gives the no-cycle statement directly. -/
 theorem no_cycle {t : EdgeTable} (h : t.checkRank = true) (u : Nat) : ¬ t.Path u u :=
   fun p => Nat.lt_irrefl _ (EdgeTable.Path.rank_lt h p)

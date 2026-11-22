@@ -198,6 +198,18 @@ def hop_table(model):
     return table
 
 
+def capacity_rows(model, field, keys):
+    """A capacity per key, positive, listing exactly the given keys."""
+    rows = model.get(field)
+    if (not isinstance(rows, list) or any(
+            not isinstance(r, list) or len(r) != 2 or any(type(v) is not int for v in r)
+            or r[1] < 1 for r in rows)):
+        fail("%s must be [key, positive capacity] rows" % field)
+    if sorted(r[0] for r in rows) != sorted(set(keys)):
+        fail("%s must list exactly the keys %s" % (field, sorted(set(keys))))
+    return sorted(map(tuple, rows))
+
+
 def pack(values):
     total = 0
     for index, value in enumerate(values):
@@ -336,12 +348,17 @@ def main(argv):
             hops_term = "%s.toArray" % triples(hop_rows)
             slots_term = str(slots)
             ups_term = "Import.upsList %s" % nat_pairs(up_rows)
+        caps = capacity_rows(model, "caps", slots)
+        pool_caps = capacity_rows(model, "pool_caps", sorted({r[2] for r in pools}))
+        out.append("def capRows : List (Nat × Nat) := %s\n" % nat_pairs(caps))
+        out.append("def poolCapRows : List (Nat × Nat) := %s\n\n" % nat_pairs(pool_caps))
+        out.append("theorem caps_ok : capRows.all (fun r => decide (0 < r.2)) = true := by decide\n\n")
         out.append("def config : Config where\n")
         out.append("  routes := %s\n" % routes_term)
         out.append("  nexts := %s\n" % nexts_term)
         out.append("  pools := %s\n" % pools_term)
-        out.append("  cap := fun _ => %d\n" % model["cap"])
-        out.append("  poolCap := fun _ => %d\n" % model.get("pool_cap", 0))
+        out.append("  cap := Import.capOf capRows\n")
+        out.append("  poolCap := Import.capOf poolCapRows\n")
         out.append("  endpoints := %s\n" % ends_term)
         out.append("  mayHold := %s\n" % hold_term)
         out.append("  contig := Import.natSet (%s)\n" % contig_term)
@@ -401,15 +418,15 @@ def main(argv):
                    "    (hs : ∀ n, Step config (s n) (s (n + 1))) (F : Fair config s) (τ k : Nat) :\n"
                    "    ∃ u, τ ≤ u ∧ (s u).live k = false :=\n"
                    "  checked_transaction_completes (t := table) (node := node) wf_ok\n"
-                   "    (fun _ => by show 0 < %d; decide) hops_ok certificate\n"
-                   "    (checkCoverageFast_covered covered_ok) heads_ok h0 hs F τ k\n\n" % model["cap"])
+                   "    (Import.capOf_pos caps_ok) hops_ok certificate\n"
+                   "    (checkCoverageFast_covered covered_ok) heads_ok h0 hs F τ k\n\n")
         out.append("theorem delivered {s : Nat → St} (h0 : s 0 = St.empty)\n"
                    "    (hs : ∀ n, Step config (s n) (s (n + 1))) (F : Fair config s) (τ k : Nat)\n"
                    "    (hused : (s τ).used k = true) :\n"
                    "    ∃ u, τ ≤ u ∧ ∀ v, u ≤ v → (s v).live k = false ∧ ∀ p, ¬ hasTok (s v) p k :=\n"
                    "  checked_transaction_delivered (t := table) (node := node) wf_ok\n"
-                   "    (fun _ => by show 0 < %d; decide) hops_ok certificate\n"
-                   "    (checkCoverageFast_covered covered_ok) heads_ok h0 hs F τ k hused\n\n" % model["cap"])
+                   "    (Import.capOf_pos caps_ok) hops_ok certificate\n"
+                   "    (checkCoverageFast_covered covered_ok) heads_ok h0 hs F τ k hused\n\n")
         theorems += ["completes", "delivered"]
     for theorem in theorems:
         out.append("#print axioms %s\n" % theorem)
