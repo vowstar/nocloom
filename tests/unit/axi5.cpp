@@ -429,3 +429,50 @@ TEST_CASE("AXI5 request attribute ports follow the declared properties", "[axi5]
   mapping.targets[0].attributes = TargetAttributes::zero();
   CHECK(generate(mapping));
 }
+
+TEST_CASE("Targets drive AxREGION from the address map and AxQOS from the level", "[axi5]") {
+  using namespace nocloom;
+  auto d = parsed(with("axi4"));
+  d.targets[0].region_port = true;
+  d.targets[0].mappings[0].region = 7;
+  d.targets[0].axqos_levels = {0, 1, 2, 3, 4, 5, 6, 7};
+  const auto r = generate(d);
+  REQUIRE(r);
+  const auto &rtl = artifact(r.value(), ".v");
+  for (const auto *port : {"[3:0] nl_t_ram_awregion,", "[3:0] nl_t_ram_arregion,",
+                           "[3:0] nl_t_ram_awqos,", "[3:0] nl_t_ram_arqos,"})
+    CHECK(rtl.find(port) != std::string::npos);
+  CHECK(rtl.find("nl_i_cpu_awregion") == std::string::npos);
+  const auto refused_at = [&](auto edit, const std::string &code, const std::string &field) {
+    auto bad = d;
+    edit(bad);
+    CHECK(has(refused(bad), code, field));
+  };
+  refused_at([](Definition &x) { x.targets[0].mappings[0].region = 16; }, "NCL_TARGET_REGION",
+             "targets[0].mappings[0].region");
+  refused_at([](Definition &x) { x.targets[0].region_port = false; }, "NCL_TARGET_REGION",
+             "targets[0].mappings[0].region");
+  refused_at([](Definition &x) { x.targets[1].region_port = true; }, "NCL_TARGET_REGION",
+             "targets[1].region_port");
+  refused_at([](Definition &x) { x.targets[0].axqos_levels.pop_back(); }, "NCL_QOS_MAP",
+             "targets[0].axqos_levels");
+  refused_at([](Definition &x) { x.targets[0].axqos_levels[3] = 16; }, "NCL_QOS_MAP",
+             "targets[0].axqos_levels");
+  refused_at([](Definition &x) { x.targets[0].axqos_levels[3] = 0; }, "NCL_QOS_MAP",
+             "targets[0].axqos_levels");
+  refused_at([](Definition &x) { x.targets[1].axqos_levels.assign(8, 1); }, "NCL_QOS_MAP",
+             "targets[1].axqos_levels");
+  // An initiator has no AxREGION port (IHI 0022 Issue L, A4.7.1).
+  const auto parsed_region = config::parse(
+      std::regex_replace(with("axi5"), std::regex("protocol: axi5, data_width: 32, user"),
+                         "protocol: axi5, data_width: 32, region_port: true, user"),
+      "axi5_ports.yaml");
+  REQUIRE_FALSE(parsed_region);
+  CHECK(parsed_region.diagnostics().front().code == "NCL_TARGET_REGION");
+  // A wider initiator with an AxQOS map loses its level in the width clamp.
+  auto wide = d;
+  wide.initiators[0].qos.axqos_map = {0, 1, 2, 3};
+  wide.initiators[0].max_outstanding.reset();
+  wide.initiators[1].qos.levels = {1, 1};
+  CHECK(has(refused(wide), "NCL_QOS_MAP", "targets[0].axqos_levels", "Initiator cpu"));
+}

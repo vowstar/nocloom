@@ -575,7 +575,8 @@ void plan_target(NetworkPlan &plan, const Definition &d, const TransportOptions 
                           false,
                           y.when,
                           plane,
-                          y.flow});
+                          y.flow,
+                          y.region});
   }
   x.flows = t.flows;
   std::ranges::sort(x.mappings, {}, [](const MappingPlan &m) { return m.window.base; });
@@ -597,6 +598,8 @@ void plan_target(NetworkPlan &plan, const Definition &d, const TransportOptions 
   x.write_only = t.access == Access::WriteOnly;
   x.back_to_back = t.apb_back_to_back.value_or(false);
   x.read_side_effects = t.read_side_effects.value_or(false);
+  x.region_port = t.region_port;
+  x.axqos_levels = t.axqos_levels;
   const auto stem = "target/" + t.name + "/pipe/";
   endpoint_pipe(x.pipes, stem + "arrival", t.pipes.arrival);
   endpoint_pipe(x.pipes, stem + "dispatch",

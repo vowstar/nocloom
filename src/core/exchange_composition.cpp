@@ -2029,8 +2029,9 @@ Status plan_composition(NetworkPlan &plan) {
         });
     plan.burst_path_bits = static_cast<unsigned>(std::bit_width(widest - 1));
   }
-  // The request scheduling level (message.hpp point 15) of sources that map their AxQOS.
-  plan.burst_level_bits = plan.mapped() ? 3 : 0;
+  // The request scheduling level (message.hpp point 15) of sources that map their AxQOS, and of
+  // targets that drive AxQOS from it.
+  plan.burst_level_bits = plan.mapped() || plan.level_targets() ? 3 : 0;
   plan.source_bits = std::max(1U, static_cast<unsigned>(std::bit_width(
                                       static_cast<unsigned>(2 * plan.sources.size() - 1))));
   // The network ID field takes the widest source ID.

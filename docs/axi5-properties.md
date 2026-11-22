@@ -46,7 +46,8 @@ packet splitting and clock domain crossings.
 | INSTPRIV_Present | `priv_inst` selects the AxPRIV and AxINST ports. They map to protection bits 0 and 2 |
 | PAS_WIDTH | `pas_width` is 0 or 1. AxPAS bit 0 maps to protection bit 1. Wider values need RME or GDI, which are rejected |
 | CACHE_Present | `cache` selects the AxCACHE ports. An initiator without them sends `0000` |
-| QOS_Present | An initiator maps AxQOS to a scheduling level with `qos.axqos_map`. A target has no AxQOS port |
+| QOS_Present | An initiator maps AxQOS to a scheduling level with `qos.axqos_map`. A target drives AxQOS from the level of the request with `axqos_levels` |
+| REGION_Present | A target drives AxREGION from the address map window that the request hits. An initiator has no AxREGION port |
 | Exclusive_Accesses | The target field `exclusive` selects how the network serves exclusive accesses |
 | Consistent_DECERR | The validator checks each target that an initiator with `consistent_decerr: true` reaches |
 | Max_Transaction_Bytes | An initiator can have any value. A target has 4096 |
@@ -73,7 +74,6 @@ packet splitting and clock domain crossings.
 | AWSNOOP_WIDTH | The network rejects this property |
 | ARSNOOP_WIDTH | The network rejects this property |
 | Cache_Line_Size | Only 64 bytes |
-| REGION_Present | The network rejects this property. No port has AxREGION |
 | Wakeup_Signals | The network has no clock or power control that uses AWAKEUP |
 | QoS_Accept | The network has no function that uses VAWQOSACCEPT or VARQOSACCEPT |
 | Busy_Support | The network has no rule to combine the BBUSY and RBUSY values of split packets |

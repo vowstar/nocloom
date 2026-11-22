@@ -19,7 +19,9 @@ budget.
 ## Fixed levels
 
 An initiator sets `qos.levels.read` and `qos.levels.write`. Both default to
-zero. Fixed levels do not read initiator AxQOS or drive target AxQOS. FIFO
+zero. Fixed levels do not read initiator AxQOS. A target with `axqos_levels`
+drives AxQOS from the level of each request, see
+[target AxQOS](axi5.md#target-axregion-and-axqos). FIFO
 arbitration retains request arrival order before the level filter. Continuous
 higher-level traffic can starve lower levels.
 

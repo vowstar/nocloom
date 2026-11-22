@@ -462,6 +462,22 @@ struct EngineLowering {
       if (ports.pas)
         out("axi", prefix + "pas", l.b.slice(protection, 1, 1));
     }
+    // AxREGION from the mapping that holds the packet: a packet never crosses a mapping edge.
+    if (p.region_port)
+      out("axi", prefix + "region",
+          freeze("region", p.mappings.empty()
+                               ? l.num(4, 0)
+                               : mapping_decode::region(
+                                     l, d.at(p.start_address ? "start_address" : "address"),
+                                     address_bits, p.mappings)));
+    // AxQOS from the scheduling level of the packet (Axi4OutletProfile::axqos_levels).
+    if (!p.axqos_levels.empty()) {
+      std::vector<ValueId> arms;
+      std::ranges::transform(p.axqos_levels, std::back_inserter(arms),
+                             [&](unsigned v) { return l.num(4, v); });
+      out("axi", prefix + "qos",
+          freeze("qos", p.level_bits ? l.by_index(d.at("level"), arms) : arms.front()));
+    }
     const auto used = axi5_used();
     axi5::target_attributes(l, used, ports, 0, used.bits() ? d.at("axi5") : zero,
                             d.at("protection"), [&](const std::string &signal, ValueId value) {
@@ -752,6 +768,7 @@ EngineLowering::EngineLowering(const Axi4OutletProfile &p, unsigned address_bits
   profile.user_bits = p.user_bits;
   profile.response_user_bits = p.response_user_bits;
   profile.data_user_bits_per_byte = p.data_user_bits_per_byte;
+  profile.level_bits = p.level_bits;
   l.block = p.arrival;
   l.block_bits = address_bits;
 }
@@ -812,6 +829,8 @@ void EngineLowering::write_accept() {
   axi5_field(w);
   if (axi5_used().bits())
     descriptor.emplace_back("axi5");
+  if (p.level_bits)
+    descriptor.emplace_back("level");
   // One burst keeps its target ID in its entry: no slots compare it, and its sum leaves the head's
   // path to the AW and AR ports. Several compute it per entry from the fields they keep.
   if (target_id_bits && !several) {
@@ -2491,7 +2510,8 @@ std::pair<unsigned, unsigned> axi4_outlet_outstanding_bits(const Axi4OutletProfi
   const unsigned descriptor =
       address * (p.start_address ? 2 : 1) + p.packet_len_bits + 12 + p.id_bits + p.source_bits +
       (p.user.empty() && !(owned && p.max_outstanding > 1) ? 0 : p.user_bits) +
-      axi5_target_fields(p).bits() + (p.max_outstanding > 1 ? 0 : axi4_outlet_id_bits(p));
+      axi5_target_fields(p).bits() + p.level_bits +
+      (p.max_outstanding > 1 ? 0 : axi4_outlet_id_bits(p));
   const unsigned staging = 2 + 3 + p.source_bits + p.id_bits + address;
   const unsigned write_slot =
       p.source_bits + p.id_bits + address + 3 + 2 +

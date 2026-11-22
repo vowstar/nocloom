@@ -151,7 +151,8 @@ See [address maps](address-map.md) and [definition shorthand](definition.md).
 | `NCL_CDC_RELATED_ENABLE_PORT`, `NCL_CDC_RELATED_ROOT`, `NCL_CDC_RELATED_RESET` | Enable port, root relationship or independent reset unsupported for related clocks |
 | `NCL_CDC_LOW_LATENCY_CREDIT_DEPTH` | Fast related crossing depth differs from two |
 | `NCL_CDC_EDGE_ALIGNED_RELATION` | Neither endpoint is an edge ancestor of the other |
-| `NCL_QOS_LEVEL`, `NCL_QOS_MAP` | Invalid fixed level or AxQOS map, or incompatible initiator options |
+| `NCL_QOS_LEVEL`, `NCL_QOS_MAP` | Invalid fixed level, AxQOS map or target `axqos_levels`, or incompatible initiator options |
+| `NCL_TARGET_REGION` | A mapping `region` above 15 or without `region_port`, `region_port` on a target other than `axi4` or `axi5`, or on an initiator |
 | `NCL_QOS_SHAPER`, `NCL_QOS_SCHEDULER` | Invalid byte budgets, levels, threshold or required companion configuration |
 | `NCL_QOS_PROFILE` | Unsupported endpoint, width, whole-burst or scheduler-pipe combination. AHB sources accept fixed levels only, to full AXI targets when nonzero |
 

@@ -195,6 +195,9 @@ struct AddressMapping {
   std::map<std::string, bool> when = {};
   // The target flow the mapping reaches (Target::flows), 0 for a target of one flow.
   unsigned flow = 0;
+  // The AxREGION value of a request that the mapping decodes, 0..15. A nonzero value needs
+  // Target::region_port.
+  unsigned region = 0;
   AddressWindow window() const { return {base, size}; }
   bool operator==(const AddressMapping &) const = default;
 };
@@ -698,6 +701,13 @@ struct Target {
   // stays one per direction. Absent or false preserves the default idle
   // cycle between accesses.
   std::optional<bool> apb_back_to_back = std::nullopt;
+  // AXI4 and AXI5 targets: AWREGION and ARREGION ports that carry the AddressMapping::region of
+  // the mapping each request hits.
+  bool region_port = false;
+  // AXI4 and AXI5 targets: AWQOS and ARQOS ports. Entry L is the AxQOS value, 0..15, of a request
+  // at scheduling level L; eight entries that never decrease. A request without a level takes
+  // entry 0. Empty has no port.
+  std::vector<unsigned> axqos_levels = {};
   // Every target protocol; absent means false. True marks reads (and writes) with side effects:
   // an AXI4 or AHB source sends an INCR burst with AxCACHE[1] and AxLOCK clear whose start lies
   // in this target as naturally aligned power-of-two blocks, one target access each, and

@@ -1024,6 +1024,11 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
     for (std::size_t i = 0; i < initiators.size(); ++i) {
       auto node = initiators[i];
       const auto path = "initiators[" + std::to_string(i) + "]";
+      // AxREGION exists only downstream of the address decode (IHI 0022 Issue L, A4.7.1).
+      if (node.IsMap() && node["region_port"])
+        r.fail("NCL_TARGET_REGION", path + ".region_port",
+               "An initiator has no AxREGION port. A target drives AxREGION from the address map",
+               node["region_port"].Mark());
       r.object(node, path, detail::initiator_fields());
       d.initiators.push_back({r.string(r.field(node, "name", path + ".name"), path + ".name"),
                               r.string(r.field(node, "clock_domain", path + ".clock_domain"),
@@ -1235,7 +1240,7 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
       for (std::size_t m = 0; m < mappings.size(); ++m) {
         const auto at = path + ".mappings[" + std::to_string(m) + "]";
         auto mapping = mappings[m];
-        r.object(mapping, at, {"base", "size", "local_address", "when", "flow"});
+        r.object(mapping, at, {"base", "size", "local_address", "when", "flow", "region"});
         auto &out = d.targets.back().mappings.emplace_back();
         out.base = r.address(r.field(mapping, "base", at + ".base"), at + ".base");
         out.size = r.address(r.field(mapping, "size", at + ".size"), at + ".size");
@@ -1244,6 +1249,8 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
                                         at + ".local_address");
         if (mapping["flow"])
           out.flow = r.integer(r.field(mapping, "flow", at + ".flow"), at + ".flow");
+        if (mapping["region"])
+          out.region = r.integer(r.field(mapping, "region", at + ".region"), at + ".region");
         if (mapping["when"]) {
           // A mode condition: {flag: true | false, ...}.
           const auto when = r.field(mapping, "when", at + ".when");
@@ -1281,6 +1288,16 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
       if (node["apb_back_to_back"])
         d.targets.back().apb_back_to_back =
             r.boolean(node["apb_back_to_back"], path + ".apb_back_to_back");
+      if (node["axqos_levels"]) {
+        const auto at = path + ".axqos_levels";
+        const auto list = r.field(node, "axqos_levels", at);
+        r.sequence(list, at);
+        for (std::size_t k = 0; k < list.size(); ++k)
+          d.targets.back().axqos_levels.push_back(
+              r.integer(list[k], at + "[" + std::to_string(k) + "]"));
+      }
+      if (node["region_port"])
+        d.targets.back().region_port = r.boolean(node["region_port"], path + ".region_port");
       if (node["read_side_effects"])
         d.targets.back().read_side_effects =
             r.boolean(node["read_side_effects"], path + ".read_side_effects");

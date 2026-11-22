@@ -1371,7 +1371,8 @@ static std::vector<AddressMapping> outlet_mappings(const TargetPlan &tp) {
       return AddressMapping{.base = r.base,
                             .size = r.size,
                             .local_address = m.local_base + (r.base - m.window.base),
-                            .flow = m.flow};
+                            .flow = m.flow,
+                            .region = m.region};
     });
   std::ranges::sort(out, {}, &AddressMapping::base);
   return out;
@@ -1572,6 +1573,9 @@ Axi4OutletProfile axi4_outlet_profile(const NetworkPlan &plan, unsigned index) {
   profile.axi3 = tp.axi3;
   profile.axi5_ports = axi5_request_ports(tp.axi5);
   profile.axi5_attributes = plan.axi5_attributes;
+  profile.region_port = tp.region_port;
+  profile.axqos_levels = tp.axqos_levels;
+  profile.level_bits = tp.axqos_levels.empty() ? 0 : plan.burst_level_bits;
   profile.flows = tp.flows;
   profile.align_wrap = aligns_wrap_reads(plan, index);
   profile.id_sources = reaching_sources(plan, tp.name);

@@ -192,6 +192,19 @@ std::optional<Finding> subpage_source_flows(const RuleView &v) {
 
 constexpr CapabilityRule rules[] = {
     {"source.subpage_flows", "NCL_SOURCE_PATH", Scope::Pair, Stage::Plan, subpage_source_flows},
+    // The packets of an initiator with an AxQOS map that is wider than a target it reaches leave
+    // its width clamp without the map's level: a target cannot drive AxQOS from it.
+    {"qos.target_levels", "NCL_QOS_MAP", Scope::Pair, Stage::Plan,
+     [](const RuleView &v) {
+       const auto &pair = v.plan.pairs[v.at];
+       const auto &s = v.plan.sources[pair.source];
+       const auto &t = v.plan.targets[pair.target];
+       return when(!t.axqos_levels.empty() && !s.qos.axqos_map.empty() && s.clamp.has_value(),
+                   target_field(v.def, t.name, "axqos_levels"),
+                   "AxQOS levels need each initiator with an AxQOS map that reaches the target to "
+                   "be no wider than its targets. Initiator " +
+                       s.name + " is wider");
+     }},
     {"ahb5.master_width", "NCL_AHB5_PROPERTIES", Scope::Pair, Stage::Plan,
      [](const RuleView &v) {
        const auto &pair = v.plan.pairs[v.at];

@@ -1694,6 +1694,17 @@ void check_target_options(Checks &c, const Target &t, const std::string &field) 
     c("NCL_WISHBONE_OPTION", field + ".flows", "Wishbone targets require one flow");
   check_ahb5(c, t.protocol, t.ahb5, field);
   check_axi5(c, t.protocol, t.axi5, field, false);
+  if (const auto &m = t.axqos_levels; !m.empty()) {
+    const auto at = field + ".axqos_levels";
+    if (!axi4_port(t.protocol))
+      c("NCL_QOS_MAP", at, "AxQOS levels need an axi4 or axi5 target");
+    else if (m.size() != 8 || std::ranges::any_of(m, [](unsigned v) { return v > 15; }) ||
+             !std::ranges::is_sorted(m))
+      c("NCL_QOS_MAP", at,
+        "AxQOS levels list 8 values of 0..15, one per level, that never decrease");
+  }
+  if (t.region_port && !axi4_port(t.protocol))
+    c("NCL_TARGET_REGION", field + ".region_port", "AxREGION ports need an axi4 or axi5 target");
   if (t.protocol == Protocol::Ahb5 && t.hresp_width.value_or(1) != 1)
     c("NCL_TARGET_AHB_HRESP", field + ".hresp_width", "AHB5 requires one-bit HRESP");
   const auto &caps = detail::protocol_caps(t.protocol.value_or(Protocol::Axi4));
@@ -1808,6 +1819,10 @@ void check_target_exclusive(Checks &c, const Target &t, const std::string &field
 // One mapping of a target: inside the address space, whole pages or a power-of-two sub-page
 // aligned to its size, its local interval within the local address port.
 void check_mapping(Checks &c, const Target &t, const AddressMapping &m, const std::string &field) {
+  if (m.region > 15)
+    c("NCL_TARGET_REGION", field + ".region", "A region is 0 to 15");
+  else if (m.region && !t.region_port)
+    c("NCL_TARGET_REGION", field + ".region", "A nonzero region needs region_port: true");
   const auto limit = std::uint64_t{1} << c.d.address_width;
   const bool sized = t.address_width >= 2U && t.address_width <= c.d.address_width;
   const auto local = std::uint64_t{1} << (sized ? *t.address_width : c.d.address_width);

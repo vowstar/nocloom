@@ -108,6 +108,34 @@ A subsystem ID port narrower than the subsystem ID of such an initiator, or a
 initiator. An `attributes` mapping of a signal that the target omits gives
 `NCL_TARGET_ATTRIBUTES`.
 
+## Target AxREGION and AxQOS
+
+`axi4` and `axi5` targets can drive AxREGION and AxQOS. The network computes
+both values at the target, so they need no initiator port.
+
+| Field | Place | Values | Result |
+| --- | --- | --- | --- |
+| `region_port` | Target | Boolean, default `false` | AWREGION and ARREGION ports of 4 bits |
+| `region` | Each mapping of a target | 0 to 15, default 0 | The AxREGION of each request that the mapping decodes |
+| `axqos_levels` | Target | 8 values from 0 to 15 that never decrease. Empty by default | AWQOS and ARQOS ports. Value L is the AxQOS of a request at scheduling level L |
+
+Two mappings with different global windows can reach one local window. Their
+regions tell the requests apart. A packet never crosses a mapping, so each
+packet of a split request has the region of its own address.
+
+The level of a request is its [scheduling level](scheduling.md) at the target.
+It comes from a fixed level, an AxQOS map or a bandwidth scheduler. In a network
+without scheduling levels, each request uses level 0 and drives
+`axqos_levels[0]`. An initiator with an
+AxQOS map that is wider than a target with `axqos_levels` cannot reach that
+target. Such a definition gives `NCL_QOS_MAP`.
+
+A nonzero `region` without `region_port`, a region above 15 and
+`region_port` on another protocol give `NCL_TARGET_REGION`. An initiator has no
+AxREGION port, and `region_port` on an initiator gives `NCL_TARGET_REGION`.
+`axqos_levels` that is not 8 values of 0 to 15 that never decrease gives
+`NCL_QOS_MAP`.
+
 ## Constraints
 
 Some properties are rules about the transactions. The validator checks them.

@@ -344,6 +344,15 @@ foreach(axi5_mode IN ITEMS switch clocked)
   set_tests_properties(axi5_request_${axi5_mode} PROPERTIES TIMEOUT 600
     LABELS "rtl;axi5;focused;ci" WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 endforeach()
+# Target AxREGION of each window and AxQOS of each level, with and without levels.
+foreach(axi5_mode IN ITEMS levels clocked wide)
+  add_test(NAME axi5_target_${axi5_mode}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/axi5_target_bench.py
+      --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/axi5_target_${axi5_mode}
+      --mode ${axi5_mode})
+  set_tests_properties(axi5_target_${axi5_mode} PROPERTIES TIMEOUT 600
+    LABELS "rtl;axi5;focused;ci" WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+endforeach()
 # The shorthand pairs read tests/shorthand and examples from the source tree.
 target_sources(nocloom_unit PRIVATE unit/shorthand.cpp ${PROJECT_SOURCE_DIR}/cli/diff.cpp)
 target_include_directories(nocloom_unit PRIVATE ${PROJECT_SOURCE_DIR}/cli)

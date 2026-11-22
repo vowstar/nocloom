@@ -150,9 +150,10 @@ later beats.
 
 AXI3 targets receive AxLOCK `01` for exclusive accesses using their own monitor,
 and `00` otherwise. Their WID repeats AWID in write order. Locked writes and
-write interleaving are not generated. AXI has no AxREGION ports. Initiator AxQOS
-exists only with an [AxQOS map](scheduling.md#axqos-maps), and target AxQOS is
-absent.
+write interleaving are not generated. Initiator AxQOS exists only with an
+[AxQOS map](scheduling.md#axqos-maps). AXI4 and AXI5 targets can drive AxREGION
+and AxQOS, see [target AxREGION and AxQOS](axi5.md#target-axregion-and-axqos).
+Initiators have no AxREGION port.
 
 AXI4-Lite aligns addresses to its bus word before decode and admission, and
 reads the whole word. Its network request uses full-width INCR with ID, CACHE

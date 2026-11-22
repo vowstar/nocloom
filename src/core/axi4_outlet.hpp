@@ -119,6 +119,12 @@ struct Axi4OutletProfile {
   // (axi5_ports.hpp, the top axi5_attributes.bits() of user_bits).
   Axi5RequestPorts axi5_ports{};
   Axi5Attributes axi5_attributes{};
+  // AWREGION and ARREGION: the AddressMapping::region of the mapping holding the request.
+  bool region_port = false;
+  // AWQOS and ARQOS: entry L for a request at scheduling level L (the request field of level_bits),
+  // entry 0 without the field. Empty has no port.
+  std::vector<unsigned> axqos_levels{};
+  unsigned level_bits = 0;
   unsigned response_user_port_bits = 0; // BUSER and RUSER inputs; none at zero
   // Weft exclusive fields (message.hpp contract point 11). Without exclusive
   // support AxLOCK stays 0 and exclusive_okay is never set. exclusive_target:

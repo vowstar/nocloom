@@ -48,6 +48,8 @@ struct MappingPlan {
   unsigned plane = 0;
   // The target flow it reaches (AddressMapping::flow).
   unsigned flow = 0;
+  // The AxREGION value of its requests (AddressMapping::region).
+  unsigned region = 0;
   bool operator==(const MappingPlan &) const = default;
 };
 // One row of the address decode table, in base order: a routing window of one target mapping.
@@ -157,6 +159,10 @@ struct TargetPlan {
   bool axi3 = false, ahb5 = false;
   // The properties of an AXI5 target, an AXI4 target behind AXI5 ports.
   std::optional<Axi5Properties> axi5;
+  // AWREGION and ARREGION ports (Target::region_port).
+  bool region_port = false;
+  // AWQOS and ARQOS of each scheduling level (Target::axqos_levels); empty has no port.
+  std::vector<unsigned> axqos_levels;
   unsigned hmaster_bits = 0, hprot_bits = 4;
   bool hnonsec = false;
   std::vector<MappingPlan> mappings; // in base order
@@ -701,6 +707,11 @@ struct NetworkPlan {
   bool mapped() const {
     return std::ranges::any_of(sources,
                                [](const SourcePlan &s) { return !s.qos.axqos_map.empty(); });
+  }
+  // A target drives AxQOS from the levels of a network with levels: its requests carry the field.
+  bool level_targets() const {
+    return levels() && std::ranges::any_of(
+                           targets, [](const TargetPlan &t) { return !t.axqos_levels.empty(); });
   }
   // The scheduling levels a packet may take: 0 to the highest configured level.
   unsigned level_count() const {

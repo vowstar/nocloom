@@ -84,6 +84,14 @@ inline ValueId flow(logic::Logic &l, ValueId address, unsigned bits,
     out = l.pick(hit(l, address, bits, mappings[k]), l.b.constant(width, mappings[k].flow), out);
   return out;
 }
+// The region (AddressMapping::region, four bits) of the mapping holding address, else of the last.
+inline ValueId region(logic::Logic &l, ValueId address, unsigned bits,
+                      const std::vector<AddressMapping> &mappings) {
+  auto out = l.b.constant(4, mappings.back().region);
+  for (auto k = mappings.size() - 1; k-- > 0;)
+    out = l.pick(hit(l, address, bits, mappings[k]), l.b.constant(4, mappings[k].region), out);
+  return out;
+}
 // The end of the first mapping that ends above address (`wide` bits, one more than the address
 // space), else of the last.
 inline ValueId end(logic::Logic &l, ValueId address, unsigned wide,
