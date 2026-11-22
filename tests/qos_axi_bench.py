@@ -4,12 +4,14 @@ Three 32-bit AXI4 sources issue reads and writes of 1..8 beats to target t0 with
 in flight: s0 maps its AxQOS to levels (MAP), s1 uses a shaper (64 bytes per 1024 cycles,
 burst 64, level 1) or a scheduler (260 bytes per 1024 cycles, burst 64, levels 3 and 0)
 with one or four bursts in flight, and s2 uses the fixed level 2. A burst's address names its source, direction and number k,
-and its AxQOS is QOS(k, write). Source s1 issues unaligned FIXED and INCR bursts, and narrow
-INCR bursts that the network packs into two words. The checks use the source requests to
+and its AxQOS is QOS(k, write). In the wide variant s0 is 64 bits wide and issues 8-byte beats:
+the 32-bit target receives each burst with twice as many words. Source s1 issues unaligned FIXED
+and INCR bursts, and narrow INCR bursts that the network packs into two words. The checks use the source requests to
 calculate charges. The target observations confirm delivery and packing. Each cycle the bench checks:
 - each decision of the target's switch output serves a valid candidate of the highest level among
-  the valid ones (s0 at the level of its request, s1 at 1, s2 at 2; shaper variant), and s0's
-  decisions carry MAP[AxQOS] of its bursts in the order the target receives them;
+  the valid ones (s0 at MAP[AxQOS] of its next burst in the direction of its request, s1 at 1, s2
+  at 2; shaper variant), s0's request carries that level whenever it is valid at a decision, and
+  s0's decisions carry MAP[AxQOS] of its bursts in the order the target receives them;
 - the shaper counter, in 1/1024 bytes, follows next = max(0, A - 64 + q), q = bytes * 1024 of
   the burst entering, and a burst enters only while A / 1024 <= 64;
 - the scheduler counter follows the capped step with q of the burst whose last response left the
@@ -35,10 +37,10 @@ def qos(k, write):
 
 
 def config(use_scheduler, axqos_map=MAP, shaper_budget=SHAPER_BUDGET,
-           scheduler_budget=SCHEDULER_BUDGET, outstanding=1):
-    source = lambda name, **q: {'name': name, 'clock_domain': 'main', 'protocol': 'axi4',
-                                'data_width': 32, 'id_width': 2, 'len_width': 8,
-                                'max_outstanding': 4, **q}
+           scheduler_budget=SCHEDULER_BUDGET, outstanding=1, s0_bits=32):
+    source = lambda name, width=32, **q: {'name': name, 'clock_domain': 'main', 'protocol': 'axi4',
+                                          'data_width': width, 'id_width': 2, 'len_width': 8,
+                                          'max_outstanding': 4, **q}
     s1 = (source('s1', max_outstanding=outstanding,
                  qos={'shaper': scheduler_budget, 'scheduler': SCHEDULE}) if use_scheduler else
           source('s1', qos={'levels': {'read': 1, 'write': 1}, 'shaper': shaper_budget}))
@@ -47,7 +49,7 @@ def config(use_scheduler, axqos_map=MAP, shaper_budget=SHAPER_BUDGET,
         'reset_ports': [{'name': 'reset_n'}], 'test_ports': [{'name': 'test'}],
         'clock_domains': [{'name': 'main', 'clock_port': 'clk', 'reset_port': 'reset_n',
                            'test_port': 'test'}],
-        'initiators': [source('s0', qos={'axqos_map': axqos_map}), s1,
+        'initiators': [source('s0', s0_bits, qos={'axqos_map': axqos_map}), s1,
                        source('s2', qos={'levels': {'read': 2, 'write': 2}})],
         'targets': [{'name': 't0', 'clock_domain': 'main', 'protocol': 'axi4', 'data_width': 32,
                      'len_width': 8, 'attributes': 'amba', 'max_outstanding': 2,
@@ -91,8 +93,9 @@ reg [47:0] ROM[0:767];
 initial begin
 @ROM@
 end
-reg [31:0] araddr[0:2], awaddr[0:2], wdata[0:2];
-reg [3:0] wstrb[0:2];
+reg [31:0] araddr[0:2], awaddr[0:2];
+reg [63:0] wdata[0:2];
+reg [7:0] wstrb[0:2];
 reg [7:0] arlen[0:2], awlen[0:2];
 reg [1:0] arid[0:2], awid[0:2];
 reg [2:0] arqos[0:2], awqos[0:2];
@@ -103,7 +106,7 @@ wire [1:0] burst_w = awaddr[1][7:5] == 3'd1 ? 2'd0 : 2'd1;
 reg [2:0] arvalid=0, awvalid=0, wvalid=0, wlast=0;
 wire [2:0] arready, awready, wready, bvalid, rvalid, rlast;
 wire [1:0] bid[0:2], bresp[0:2], rid[0:2], rresp[0:2];
-wire [31:0] rdata[0:2];
+wire [63:0] rdata[0:2];
 wire [31:0] t_araddr, t_awaddr, t_wdata;
 wire [2:0] t_arsize, t_awsize;
 wire [3:0] t_arid, t_awid; wire [7:0] t_arlen, t_awlen;
@@ -143,14 +146,15 @@ begin
   fin[2*s+w]=1;
 end
 endtask
-function automatic [3:0] lanes(input [31:0] start, input integer beat,
-                                input integer bytes, input bit fixed_addr);
+// The byte lanes of a beat of `bytes` bytes on a face of `word` bytes.
+function automatic [7:0] lanes(input [31:0] start, input integer beat,
+                                input integer bytes, input bit fixed_addr, input integer word);
   integer lo, hi;
   begin
     lo = (fixed_addr || beat==0) ? start : ((start & ~(bytes-1)) + beat*bytes);
-    lo = lo & 3;
+    lo = lo & (word-1);
     hi = lo | (bytes-1);
-    lanes = (4'hf << lo) & (4'hf >> (3-hi));
+    lanes = (8'hff << lo) & (8'hff >> (7-hi));
   end
 endfunction
 task automatic drive_w(input integer s);
@@ -160,11 +164,11 @@ begin
     @(negedge clk);
     if(wq_r[s] < wq_w[s]) begin
       e = wq[s][wq_r[s]%256];
-      bytes = (s==1 && e[7:5]==3'd2) ? 2 : 4;
+      bytes = (s==1 && e[7:5]==3'd2) ? 2 : s==0 ? @S0_BYTES@ : 4;
       fixed_addr = s==1 && e[7:5]==3'd1;
       for(b=0;b<=e[39:32];b=b+1) begin
-        wstrb[s] = lanes(e[31:0], b, bytes, fixed_addr);
-        wdata[s] = (e[31:0] + 4*b) ^ 32'h5a000000; wlast[s] = (b==e[39:32]); wvalid[s]=1;
+        wstrb[s] = lanes(e[31:0], b, bytes, fixed_addr, s==0 ? @S0_BYTES@ : 4);
+        wdata[s] = {2{(e[31:0] + 32'd4*b) ^ 32'h5a000000}}; wlast[s] = (b==e[39:32]); wvalid[s]=1;
         @(posedge clk); while(wready[s]!==1'b1) @(posedge clk);
         @(negedge clk); wvalid[s]=0; wlast[s]=0;
       end
@@ -198,9 +202,9 @@ always @(posedge clk) if(reset_n) for(s_i=0;s_i<3;s_i=s_i+1) begin
        rlast[s_i] !== (read_beat[s_i][i]==expected_read[39:32])) begin
       $display("ASSERT_FAIL:QOS_AXI.READ source=%0d", s_i); $fatal(1); end
     read_lanes = lanes(expected_read[31:0], read_beat[s_i][i],
-                       s_i==1 && expected_read[7:5]==3'd2 ? 2 : 4,
-                       s_i==1 && expected_read[7:5]==3'd1);
-    for(lane=0;lane<4;lane=lane+1)
+                       s_i==1 && expected_read[7:5]==3'd2 ? 2 : s_i==0 ? @S0_BYTES@ : 4,
+                       s_i==1 && expected_read[7:5]==3'd1, s_i==0 ? @S0_BYTES@ : 4);
+    for(lane=0;lane<8;lane=lane+1)
       if(read_lanes[lane] && rdata[s_i][8*lane+:8] !== 8'ha5) begin
         $display("ASSERT_FAIL:QOS_AXI.READ_DATA source=%0d lane=%0d", s_i, lane); $fatal(1); end
     if(rlast[s_i]) begin
@@ -263,8 +267,8 @@ endmodule
 '''
 
 
-def bench(gen, test):
-    """The bench of the network generated in gen, with the test input at test."""
+def bench(gen, test, s0_bits=32):
+    """The bench of the network generated in gen, with the test input at test and s0 of s0_bits."""
     m = json.loads((gen / 'nocloom_qos_axi.map.json').read_text())
     rtl = (gen / 'nocloom_qos_axi.v').read_text()
     num = lambda ref: ref.removeprefix('value/')
@@ -291,7 +295,7 @@ def bench(gen, test):
         p = f'nl_i_s{s}_'
         for c in ('ar', 'aw'):
             d = c[1]
-            size = f'size_{d}' if s == 1 else "3'd2"
+            size = f'size_{d}' if s == 1 else f"3'd{(s0_bits if s == 0 else 32).bit_length() - 4}"
             burst = f'burst_{d}' if s == 1 else "2'b01"
             ports += [f'.{p}{c}addr({c}addr[{s}])', f'.{p}{c}burst({burst})',
                       f".{p}{c}cache(4'b0011)", f'.{p}{c}id({c}id[{s}])', f'.{p}{c}len({c}len[{s}])',
@@ -299,11 +303,14 @@ def bench(gen, test):
                       f".{p}{c}size({size})", f'.{p}{c}valid({c}valid[{s}])']
             if s == 0:
                 ports.append(f'.{p}{c}qos({c}qos[0])')
+        bits = s0_bits if s == 0 else 32
         ports += [f'.{p}bid(bid[{s}])', f".{p}bready(1'b1)", f'.{p}bresp(bresp[{s}])',
-                  f'.{p}bvalid(bvalid[{s}])', f'.{p}rdata(rdata[{s}])', f'.{p}rid(rid[{s}])',
-                  f'.{p}rlast(rlast[{s}])', f".{p}rready(1'b1)", f'.{p}rresp(rresp[{s}])',
-                  f'.{p}rvalid(rvalid[{s}])', f'.{p}wdata(wdata[{s}])', f'.{p}wlast(wlast[{s}])',
-                  f'.{p}wready(wready[{s}])', f'.{p}wstrb(wstrb[{s}])', f'.{p}wvalid(wvalid[{s}])']
+                  f'.{p}bvalid(bvalid[{s}])', f'.{p}rdata(rdata[{s}][{bits - 1}:0])',
+                  f'.{p}rid(rid[{s}])', f'.{p}rlast(rlast[{s}])', f".{p}rready(1'b1)",
+                  f'.{p}rresp(rresp[{s}])', f'.{p}rvalid(rvalid[{s}])',
+                  f'.{p}wdata(wdata[{s}][{bits - 1}:0])', f'.{p}wlast(wlast[{s}])',
+                  f'.{p}wready(wready[{s}])', f'.{p}wstrb(wstrb[{s}][{bits // 8 - 1}:0])',
+                  f'.{p}wvalid(wvalid[{s}])']
     t = 'nl_t_t0_'
     for c in ('ar', 'aw'):
         ports += [f'.{t}{c}addr(t_{c}addr)', f'.{t}{c}burst()', f'.{t}{c}cache()',
@@ -318,6 +325,7 @@ def bench(gen, test):
     decide = f"(({net(grant['acquire'])} | {net(grant['release'])}) & !dut.nl_internal_v{held})"
     return (TB.replace('@ROM@', '\n'.join(rom)).replace('@BURSTS@', str(BURSTS))
             .replace('@PORTS@', ',\n'.join(' ' + p for p in ports)).replace('@TEST@', str(test))
+            .replace('@S0_BYTES@', str(s0_bits // 8))
             .replace('@V0@', net(formal['s0']['request_valid']))
             .replace('@V1@', net(formal['s1']['request_valid']))
             .replace('@V2@', net(formal['s2']['request_valid']))
@@ -328,7 +336,7 @@ def bench(gen, test):
             .replace('@COUNTER@', net(q['control'][0])).replace('@CHARGE@', net(q['acquire'])))
 
 
-def check(log, use_scheduler, multi=False):
+def check(log, use_scheduler, multi=False, s0_bits=32):
     """Check a simulation log and return its rows.
 
     Raise RuntimeError for incomplete observations and AssertionError for a violation.
@@ -357,6 +365,10 @@ def check(log, use_scheduler, multi=False):
         assert [a for _, a, *_ in got] == [b[0] for b in plan[key]], f'bursts of {key} at the target'
     for w in (0, 1):
         assert list(source[w]) == [b[0] for b in plan[1, w]], f'source requests {w}'
+        # A wide s0 burst reaches the target as twice as many target words.
+        words = s0_bits // 32
+        assert [(ln, sz) for _, _, ln, sz in arrivals[0, w]] == \
+            [((b[1] + 1) * words - 1, 2) for b in plan[0, w]], f'target bursts of s0 direction {w}'
         packed = [(ln, sz) for _, a, ln, sz in arrivals[1, w] if (a >> 5) % 8 == 2]
         assert packed and set(packed) == {(1, 2)}, f'narrow requests of direction {w} were not packed'
     decided = {0: [], 1: []}
@@ -366,10 +378,14 @@ def check(log, use_scheduler, multi=False):
             continue
         valid = [v0, v1, v2]
         assert valid[win], f'decision for an invalid candidate at cycle {c}'
+        # s0's head is its next undecided burst of the request's direction.
+        head = plan[0, w0][len(decided[w0])] if v0 and len(decided[w0]) < BURSTS else None
         if win == 0:
             decided[w0].append(l0)
         if not use_scheduler:
-            levels = [l0, 1, 2]
+            if v0:
+                assert head is not None and l0 == MAP[head[3]], f'level of s0 at cycle {c}'
+            levels = [MAP[head[3]] if v0 else 0, 1, 2]
             top = max(levels[i] for i in range(3) if valid[i])
             contests += sum(valid) > 1
             assert levels[win] == top, f'a lower level won at cycle {c}'
@@ -430,9 +446,10 @@ def request_charge(address, length, size, burst):
 
 def mutants():
     """Altered configurations the checks must reject: a map one level higher than the one the
-    checks expect, a faster shaper, a faster scheduler and a scheduler of four bursts in flight
-    with a smaller burst_bytes."""
+    checks expect, a wide source whose requests all carry level 0, a faster shaper, a faster
+    scheduler and a scheduler of four bursts in flight with a smaller burst_bytes."""
     return {'map_raised': (False, dict(axqos_map=[1, 1, 2, 2, 3, 3, 4, 4])),
+            'map_wide_zero': (False, dict(s0_bits=64, axqos_map=[0] * 8)),
             'shaper_rate': (False, dict(shaper_budget=dict(SHAPER_BUDGET, bytes_per_1024_cycles=68))),
             'scheduler_rate': (True, dict(scheduler_budget=dict(SCHEDULER_BUDGET, bytes_per_1024_cycles=264))),
             'scheduler_four_burst_bytes': (

@@ -219,13 +219,15 @@ def fine_scheduler(cli, case):
 
 def axi(cli, root):
     """AXI4 sources with an AxQOS map and a shaper, then with a scheduler: each checked with
-    gated and ungated clocks, which must agree, and altered configurations the checks reject."""
+    gated and ungated clocks, which must agree, and altered configurations the checks reject. The
+    mapped source is also checked 64 bits wide, cut to the 32-bit target."""
     case = root / 'axi'; case.mkdir()
     runs, rejected = {}, {}
     variants = [('shaper', False, {}, 0), ('shaper_ungated', False, {}, 1),
                 ('scheduler', True, {}, 0), ('scheduler_ungated', True, {}, 1),
                 ('scheduler_four', True, dict(outstanding=4), 0),
-                ('scheduler_four_ungated', True, dict(outstanding=4), 1)]
+                ('scheduler_four_ungated', True, dict(outstanding=4), 1),
+                ('map_wide', False, dict(s0_bits=64), 0)]
     variants += [(name, use_scheduler, kw, 1)
                  for name, (use_scheduler, kw) in qos_axi_bench.mutants().items()]
     for name, use_scheduler, kw, test in variants:
@@ -235,11 +237,12 @@ def axi(cli, root):
                            capture_output=True, text=True, timeout=300)
         (sim / 'generate.log').write_text(q.stdout + q.stderr); assert q.returncode == 0, q.stderr
         (sim / 'network.v').write_text(generated_rtl(sim / 'gen' / 'nocloom_qos_axi.v'))
-        (sim / 'tb.sv').write_text(qos_axi_bench.bench(sim / 'gen', test))
+        (sim / 'tb.sv').write_text(qos_axi_bench.bench(sim / 'gen', test, kw.get('s0_bits', 32)))
         code = simulate(sim, sim / 'compiled'); log = (sim / 'simulation.log').read_text()
         assert code == 0, log[-3000:]
         try:
-            runs[name] = qos_axi_bench.check(log, use_scheduler, kw.get('outstanding', 1) > 1)
+            runs[name] = qos_axi_bench.check(log, use_scheduler, kw.get('outstanding', 1) > 1,
+                                             kw.get('s0_bits', 32))
         except AssertionError as e:
             assert name in qos_axi_bench.mutants(), (name, str(e))
             rejected[name] = str(e)
