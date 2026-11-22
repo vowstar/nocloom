@@ -220,12 +220,11 @@ all tests. Formal tests also need SymbiYosys (`sby`) with Z3, and Lean 4.24.0
 with `lake`. The `clang-format` target reformats the sources in place.
 
 [tests/SUITES.md](tests/SUITES.md) describes the test tiers and resource limits.
-The suite runner plans 8 GiB of memory for each test
-slot and keeps 16 GiB or more free.
-See the [verification policy](tests/VERIFICATION_POLICY.md) for test selection.
-The [proof scope](formal/lean/README.md) list Lean proofs and
-SymbiYosys checks with their tests and limits. No proof shows that the
-generated Verilog refines the Lean model.
+The suite runner plans 8 GiB of memory per test slot and keeps 16 GiB or more
+free. [tests/VERIFICATION_POLICY.md](tests/VERIFICATION_POLICY.md) describes
+which tests a change needs. [formal/lean/README.md](formal/lean/README.md) lists
+what the Lean proofs and SymbiYosys checks of generated Verilog show, with tests
+and limits. No proof shows that generated Verilog refines the Lean model.
 
 Commit messages follow
 [Conventional Commits](https://www.conventionalcommits.org/). Add a
