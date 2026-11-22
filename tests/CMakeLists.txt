@@ -382,6 +382,17 @@ foreach(axi5_mode IN ITEMS levels clocked wide)
   set_tests_properties(axi5_target_${axi5_mode} PROPERTIES TIMEOUT 600
     LABELS "rtl;axi5;focused;ci" WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 endforeach()
+# Shareable transactions: AxDOMAIN and AxSNOOP of every legal transaction at each target, the
+# WriteUniqueFull shape at each width, and SLVERR for each refused opcode. The outstanding mode
+# keeps several bursts of each direction in flight at every initiator.
+foreach(ace5_mode IN ITEMS switch clocked line plain outstanding)
+  add_test(NAME ace5_lite_${ace5_mode}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/ace5_lite_bench.py
+      --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/ace5_lite_${ace5_mode}
+      --mode ${ace5_mode})
+  set_tests_properties(ace5_lite_${ace5_mode} PROPERTIES TIMEOUT 600
+    LABELS "rtl;axi5;focused;ci" WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+endforeach()
 # The shorthand pairs read tests/shorthand and examples from the source tree.
 target_sources(nocloom_unit PRIVATE unit/shorthand.cpp ${PROJECT_SOURCE_DIR}/cli/diff.cpp)
 target_include_directories(nocloom_unit PRIVATE ${PROJECT_SOURCE_DIR}/cli)
