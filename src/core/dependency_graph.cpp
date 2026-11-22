@@ -1444,7 +1444,7 @@ std::string dependency_graph_json(const DependencyGraph &graph, const Dependency
                                   std::string_view module, std::string_view generator,
                                   std::string_view rtl_fingerprint,
                                   std::string_view plan_fingerprint) {
-  std::string o = "{\n \"format\": \"nocloom.dependency\",\n \"format_version\": 1,\n";
+  std::string o = "{\n \"format\": \"nocloom.dependency\",\n \"format_version\": 2,\n";
   o += " \"generator\": " + quoted(generator) + ",\n \"module\": " + quoted(module) + ",\n";
   o += " \"orientation\": \"blocker_to_blocked\",\n";
   o += " \"fingerprints\": {\"rtl\": " + quoted(rtl_fingerprint) +

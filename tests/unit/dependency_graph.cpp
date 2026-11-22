@@ -373,7 +373,7 @@ TEST_CASE("The dependency artifact is deterministic and names no path", "[depend
       dependency_graph_json(graph, report, "m", "NocLoom", fnv1a64("a"), fnv1a64("b"));
   CHECK(text == dependency_graph_json(graph, report, "m", "NocLoom", fnv1a64("a"), fnv1a64("b")));
   CHECK(text.find("\"status\": \"cycle\"") != std::string::npos);
-  CHECK(text.find("\"format_version\": 1") != std::string::npos);
+  CHECK(text.find("\"format_version\": 2") != std::string::npos);
   CHECK(fnv1a64("") == "fnv1a64:cbf29ce484222325");
 }
 

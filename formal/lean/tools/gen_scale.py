@@ -52,11 +52,12 @@ def main(argv):
                     edges += [[after(o, i + 1), after(o, i), "M1", 0],
                               [after(o, i + 1), other(o, i), "M1", 0]]
                 contention.append([o, i, before(o, i), after(o, i), other(o, i)])
-    graph = {"format": "nocloom.dependency", "format_version": 1,
+    graph = {"format": "nocloom.dependency", "format_version": 2,
+             "completion": {"applies": True, "theorems": ["completes", "delivered"], "unmet": []},
              "orientation": "blocker_to_blocked", "nodes": nodes, "edges": edges,
              "groups": [], "result": {"status": "no_cycle"}}
     model = {"contention": contention, "routes": [[p, d, d] for p in range(n) for d in range(n)],
-             "cap": 4, "endpoints": list(range(n)), "ahead": [[p, d] for p in range(n) for d in range(n)],
+             "caps": [[p, 4] for p in range(n)], "pool_caps": [], "endpoints": list(range(n)), "ahead": [[p, d] for p in range(n) for d in range(n)],
              "holds": [{"head": [p, d], "node": head(p, d)} for p in range(n) for d in range(n)]
                       + [{"grant": [o, p], "node": grant(o, p)} for o in range(n) for p in range(n)]}
     with open(argv[2], "w", encoding="utf-8") as handle:

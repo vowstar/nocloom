@@ -76,7 +76,7 @@ def load(path):
 def read_graph(graph):
     if graph.get("format") != "nocloom.dependency":
         fail("not a dependency artifact")
-    if type(graph.get("format_version")) is not int or graph["format_version"] != 1:
+    if type(graph.get("format_version")) is not int or graph["format_version"] != 2:
         fail("format_version %r is not supported" % graph.get("format_version"))
     if graph.get("orientation") != "blocker_to_blocked":
         fail("orientation %r is not supported" % graph.get("orientation"))
@@ -99,6 +99,8 @@ def read_graph(graph):
     for index, node in enumerate(nodes):
         if "rank" not in node:
             fail("node %d has no rank" % index)
+        if type(node["rank"]) is not int or node["rank"] < 0:
+            fail("node %d rank %r is not a nonnegative integer" % (index, node["rank"]))
         ranks.append(node["rank"])
     edges = sorted({(e[0], e[1]) for e in graph["edges"]})
     return len(nodes), edges, ranks

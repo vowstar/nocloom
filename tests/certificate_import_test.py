@@ -92,14 +92,22 @@ def check_imports(source, work, graphs):
             rejects(source, work, name + ('Existing' if existing else ''), graph,
                     'NCL_CERTIFICATE_EDGE_FORMAT', existing=existing)
     for name, version in (('TrueVersion', True), ('FalseVersion', False),
-                          ('FloatVersion', 1.0), ('FractionalVersion', 1.5),
-                          ('ZeroVersion', 0), ('OtherVersion', 2),
+                          ('FloatVersion', 2.0), ('FractionalVersion', 1.5),
+                          ('ZeroVersion', 0), ('OldVersion', 1), ('OtherVersion', 3),
                           ('StringVersion', '1'), ('NullVersion', None)):
         graph = copy.deepcopy(ordinary)
         graph['format_version'] = version
         for existing in (False, True):
             rejects(source, work, name + ('Existing' if existing else ''), graph,
                     f'format_version {version!r} is not supported', existing=existing)
+    for name, rank in (('FloatRank', 1.0), ('StringRank', '1'), ('TrueRank', True),
+                       ('NegativeRank', -1), ('NullRank', None)):
+        graph = copy.deepcopy(ordinary)
+        graph['nodes'][0]['rank'] = rank
+        for suffix, options in (('', ()), ('GraphOnly', ('--graph-only',)),
+                                ('Kernel', ('--kernel',))):
+            rejects(source, work, name + suffix, graph,
+                    f'node 0 rank {rank!r} is not a nonnegative integer', options)
 
 
 def check_scope(source, work, graphs):

@@ -160,8 +160,8 @@ list. Input must contain one map, one bundle and no address table
 
 ## Dependency format
 
-An edge points from a blocker to what it can block. `format_version` changes
-when a field changes meaning.
+An edge points from a blocker to what it can block. The file has
+`format_version` 2. It changes when a field changes meaning.
 
 | JSON field | Meaning |
 | --- | --- |

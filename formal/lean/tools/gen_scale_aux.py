@@ -22,7 +22,8 @@ def main(argv):
         for k in range(fanout):
             edges.append([a, n * n + (a + k) % (n * n), "M1", 0])
             edges.append([n * n + a, 2 * n * n + (a + k) % (n * n), "M2", 0])
-    graph = {"format": "nocloom.dependency", "format_version": 1,
+    graph = {"format": "nocloom.dependency", "format_version": 2,
+             "completion": {"applies": True, "theorems": ["completes", "delivered"], "unmet": []},
              "orientation": "blocker_to_blocked", "nodes": nodes, "edges": edges,
              "groups": [], "result": {"status": "no_cycle"}}
     with open(argv[3], "w", encoding="utf-8") as handle:

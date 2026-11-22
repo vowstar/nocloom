@@ -968,7 +968,7 @@
   "rtl": "fnv1a64:c0107301cd780403"
  },
  "format": "nocloom.dependency",
- "format_version": 1,
+ "format_version": 2,
  "generator": "NocLoom",
  "model": {
   "ahead": [
