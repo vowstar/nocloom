@@ -517,3 +517,24 @@ TEST_CASE("AXI5 data user ports carry one group per data byte", "[axi5]") {
       },
       "NCL_APB5_DATA_USER_WIDTH", "targets[0].data_user_width");
 }
+
+TEST_CASE("AXI5 poison ports have one bit for each eight bytes", "[axi5]") {
+  using namespace nocloom;
+  auto d = parsed(with("axi5"));
+  d.initiators[0].axi5.emplace().poison = true; // 64 bits
+  d.targets[0].axi5.emplace().poison = true;    // 32 bits
+  d.initiators[0].data_width = 128;
+  d.initiators[0].max_outstanding.reset();
+  const auto r = generate(d);
+  REQUIRE(r);
+  const auto &rtl = artifact(r.value(), ".v");
+  for (const auto *port : {"[1:0] nl_i_cpu_wpoison,", "[1:0] nl_i_cpu_rpoison,",
+                           " nl_t_ram_wpoison,", " nl_t_ram_rpoison,"})
+    CHECK(rtl.find(port) != std::string::npos);
+  CHECK(rtl.find("nl_i_dma_wpoison") == std::string::npos);
+  auto wide = d;
+  wide.targets[0].data_width = 256;
+  CHECK(has(refused(wide), "NCL_AXI5_DATA_WIDTH", "targets[0].data_width"));
+  wide.targets[0].protocol = Protocol::Ace5Lite;
+  CHECK(has(refused(wide), "NCL_AXI5_DATA_WIDTH", "targets[0].data_width"));
+}

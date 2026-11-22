@@ -144,9 +144,30 @@ conversion, packet splitting, pipes and clock domain crossings.
 | A target without the ports is written | The network drops them |
 | RUSER bytes outside the bytes of the read transfer | Not specified, as RDATA |
 
-An `axi5` endpoint with data user ports is 32, 64 or 128 bits wide. Other
-widths give `NCL_AXI5_DATA_WIDTH`. An APB5 endpoint and an `axi5` endpoint
-exchange data user bits by the same rules.
+`poison: true` gives WPOISON and RPOISON with one bit for each 8 bytes of data
+(Issue L, A16.1). A 32-bit port has one bit. The network carries the bits when
+some initiator and some target have the ports.
+
+Each data byte carries a poison bit. An initiator gives each strobed byte the
+WPOISON bit of its 8-byte granule. A target gets the OR of the bits of the
+strobed bytes of each granule of its write transfer.
+
+Each byte of a target's read transfer takes the RPOISON bit of its granule.
+An initiator gets the OR of the bits of the bytes in each granule of its read
+word. A poisoned byte keeps its mark through every width conversion.
+
+| Case | Poison bits |
+| --- | --- |
+| A granule of a write transfer without a strobed byte | Zero at the target |
+| A read transfer with SLVERR or DECERR | Zero |
+| An initiator without the ports writes | Zero at the target |
+| A target without the ports is read | Zero |
+| A target without the ports is written | The network drops them, so the target does not see that the data is poisoned |
+| RPOISON bits of granules outside the bytes of the read transfer | Can be set, as Issue L permits |
+
+An `axi5` endpoint with data user or poison ports is 32, 64 or 128 bits wide.
+Other widths give `NCL_AXI5_DATA_WIDTH`. An APB5 endpoint and an `axi5`
+endpoint exchange data user bits by the same rules.
 
 ## Target AxREGION and AxQOS
 

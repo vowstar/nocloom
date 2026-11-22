@@ -13,52 +13,66 @@ from pathlib import Path
 from cross_hardware_sim import simulate
 from sim_engine import generated_rtl
 
-# Endpoint: name -> (protocol, data bits, data side ports, extra fields). Each target owns 256 KiB
-# at its base, its local address equal to the global one.
+# Endpoint: name -> (protocol, data bits, data side ports, extra fields). The ports are letters:
+# u for data user, p for poison. Each target owns 256 KiB at its base, its local address equal to
+# the global one.
 MODES = {
     # One switch, 32-bit network: every pair of 32, 64 and 128 bits, and endpoints without ports.
     'widths': dict(
         k=2, network=32, clocked=False,
-        sources={'s32': ('axi5', 32, True, {}), 's64': ('axi5', 64, True, {}),
-                 's128': ('axi5', 128, True, {'response_user_width': 2}),
-                 'p64': ('axi4', 64, False, {})},
-        targets={'t32': ('axi5', 32, True, {}),
-                 't64': ('axi5', 64, True, {}),
-                 't128': ('axi5', 128, True, {'response_user_width': 2, 'max_outstanding': 4}),
-                 'q32': ('axi4', 32, False, {}),
-                 'x64': ('axi5', 64, True, {'read_side_effects': True})},
+        sources={'s32': ('axi5', 32, 'up', {}), 's64': ('axi5', 64, 'p', {}),
+                 's128': ('axi5', 128, 'up', {'response_user_width': 2}),
+                 'p64': ('axi4', 64, '', {})},
+        targets={'t32': ('axi5', 32, 'up', {}),
+                 't64': ('axi5', 64, 'u', {}),
+                 't128': ('axi5', 128, 'up', {'response_user_width': 2, 'max_outstanding': 4}),
+                 'q32': ('axi4', 32, '', {}),
+                 'x64': ('axi5', 64, 'p', {'read_side_effects': True})},
         limits=[]),
     # Packet limits and narrow bursts split per beat.
     'split': dict(
         k=4, network=32, clocked=False,
-        sources={'s32': ('axi5', 32, True, {}),
-                 's64': ('axi5', 64, True, {'narrow_bursts': 'merge_modifiable',
+        sources={'s32': ('axi5', 32, 'up', {}),
+                 's64': ('axi5', 64, 'up', {'narrow_bursts': 'merge_modifiable',
                                             'max_outstanding': 4}),
-                 's128': ('axi5', 128, True, {'max_outstanding': 4})},
-        targets={'t32': ('axi5', 32, True, {'max_outstanding': 2}),
-                 't64': ('axi5', 64, True, {}),
-                 't128': ('axi5', 128, True, {'max_outstanding': 4})},
+                 's128': ('axi5', 128, 'up', {'max_outstanding': 4})},
+        targets={'t32': ('axi5', 32, 'up', {'max_outstanding': 2}),
+                 't64': ('axi5', 64, 'up', {}),
+                 't128': ('axi5', 128, 'up', {'max_outstanding': 4})},
         limits=[(s, t, 16) for s in ('s32', 's64', 's128') for t in ('t32', 't64', 't128')]),
     # A 64-bit network: 64-bit initiators into 32, 64 and 128 bits.
     'net64': dict(
         k=3, network=64, clocked=False,
-        sources={'s64': ('axi5', 64, True, {'max_outstanding': 4}),
-                 'r64': ('axi5', 64, True, {'response_user_width': 2})},
-        targets={'t32': ('axi5', 32, True, {'response_user_width': 2}),
-                 't64': ('axi5', 64, True, {'max_outstanding': 4}),
-                 't128': ('axi5', 128, True, {'read_side_effects': True})},
+        sources={'s64': ('axi5', 64, 'up', {'max_outstanding': 4}),
+                 'r64': ('axi5', 64, 'u', {'response_user_width': 2})},
+        targets={'t32': ('axi5', 32, 'p', {'response_user_width': 2}),
+                 't64': ('axi5', 64, 'up', {'max_outstanding': 4}),
+                 't128': ('axi5', 128, 'up', {'read_side_effects': True})},
         limits=[('s64', 't128', 32)]),
     # Two clock domains, a 64-bit pair without conversion and a 128-bit initiator into 32 bits.
     'clocked': dict(
         k=1, network=32, clocked=True,
-        sources={'s64': ('axi5', 64, True, {'response_user_width': 1}),
-                 's128': ('axi5', 128, True, {}), 's32': ('axi5', 32, True, {})},
-        targets={'t64': ('axi5', 64, True, {'response_user_width': 1}),
-                 't32': ('axi5', 32, True, {}), 't128': ('axi5', 128, True, {})},
+        sources={'s64': ('axi5', 64, 'up', {'response_user_width': 1}),
+                 's128': ('axi5', 128, 'p', {}), 's32': ('axi5', 32, 'u', {})},
+        targets={'t64': ('axi5', 64, 'up', {'response_user_width': 1}),
+                 't32': ('axi5', 32, 'up', {}), 't128': ('axi5', 128, 'p', {})},
         limits=[('s128', 't32', 32)],
         reach={'s64': ['t64'], 's128': ['t32', 't128'], 's32': ['t32', 't128']}),
 }
 BASES = 0x40000
+
+
+def data_side(entry, ports, bits, k):
+    if 'u' in ports:
+        entry['data_user_width'] = bits // 8 * k
+    if 'p' in ports:
+        entry.setdefault('axi5', {})['poison'] = True
+
+
+def has(endpoint, part):
+    if part == 'u':
+        return bool(endpoint.get('data_user_width'))
+    return bool(endpoint.get('axi5', {}).get({'p': 'poison'}[part]))
 
 
 def configuration(mode):
@@ -84,8 +98,7 @@ def configuration(mode):
     for name, (protocol, bits, ports, extra) in m['sources'].items():
         entry = {'name': name, 'clock_domain': src_domain, 'protocol': protocol,
                  'data_width': bits, 'id_width': 2, 'len_width': 8}
-        if ports:
-            entry['data_user_width'] = bits // 8 * m['k']
+        data_side(entry, ports, bits, m['k'])
         entry.update(extra)
         cfg['initiators'].append(entry)
     for index, (name, (protocol, bits, ports, extra)) in enumerate(m['targets'].items()):
@@ -93,8 +106,7 @@ def configuration(mode):
         entry = {'name': name, 'clock_domain': dst_domain, 'protocol': protocol,
                  'data_width': bits, 'id_width': 4, 'len_width': 8, 'attributes': 'amba',
                  'mappings': [{'base': hex(base), 'size': hex(BASES), 'local_address': hex(base)}]}
-        if ports:
-            entry['data_user_width'] = bits // 8 * m['k']
+        data_side(entry, ports, bits, m['k'])
         entry.update(extra)
         cfg['targets'].append(entry)
     if m['clocked']:
@@ -184,7 +196,8 @@ def bench(mode, cfg, ports, txs, seed):
         table.append(
             f"lo[{g}]=32'h{t['lo']:x}; hi[{g}]=32'h{t['hi']:x}; wr[{g}]={int(t['write'])}; "
             f"tg[{g}]={tlist.index(t['target'])}; gk[{g}]={t['kind']}; gp[{g}]={t['pos']}; "
-            f"gs[{g}]={int(bool(sources[t['source']].get('data_user_width')))}; "
+            f"gs[{g}]={int(has(sources[t['source']], 'u'))}; "
+            f"gq[{g}]={int(has(sources[t['source']], 'p'))}; "
             f"fl[{g}]={int(t['fail'])}; "
             f"want[{g}]={(t['hi'] - t['lo']) if t['burst'] else (t['len'] + 1) << t['size']};")
     def ruser_resp(e):
@@ -192,8 +205,9 @@ def bench(mode, cfg, ports, txs, seed):
     drivers = []
     for si, (s, e) in enumerate(sources.items()):
         lanes = e['data_width'] // 8
+        granules = max(1, lanes // 8)
         p = f'nl_i_{s}_'
-        has = bool(e.get('data_user_width'))
+        user, poison = has(e, 'u'), has(e, 'p')
         rb = ruser_resp(e)
         calls = []
         for t in [x for x in txs if x['source'] == s]:
@@ -201,10 +215,22 @@ def bench(mode, cfg, ports, txs, seed):
             calls.append(f"{call}{s}({t['index']}, 32'h{t['addr']:x}, 8'd{t['len']}, "
                          f"3'd{t['size']}, 2'd{t['burst']}, 2'd{t['id']});")
         wuser = (f"{p}wuser[lane*{k} +: {k}] = grp(g, (b & ~32'd{lanes - 1}) + lane, 0);"
-                 if has else '')
+                 if user else '')
+        # WPOISON of each granule of the beat: the poison bit of its eight-byte address granule.
+        wpoison = (f"for (j = 0; j < {granules}; j = j + 1) "
+                   f"{p}wpoison[j] = pfn(g, ((b & ~32'd{lanes - 1}) + 8 * j) >> 3, 0);"
+                   if poison else '')
         rcheck = ''
-        if has:
-            rcheck = f'''
+        if poison:
+            rcheck += f'''
+        for (j = 0; j < {granules}; j = j + 1)
+          if (!(8 * j + 7 < (b % {lanes}) || 8 * j >= (b % {lanes}) + (1 << size) - (b % (1 << size))))
+            check({p}rpoison[j] ==
+                  (fail || !tq[tg[g]] ? 1'b0 : pfn(g, ((b & ~32'd{lanes - 1}) + 8 * j) >> 3, 5)),
+                  $sformatf("RPOISON {s} g=%0d k=%0d granule=%0d %b", g, k, j, {p}rpoison[j]));'''
+        ruser_check = ''
+        if user:
+            ruser_check = f'''
         if (lane >= (b % {lanes}) && lane < (b % {lanes}) + (1 << size) - (b % (1 << size)))
           check({p}ruser[{rb} + lane*{k} +: {k}] ==
                 (fail || !th[tg[g]] ? {k}'d0 : grp(g, (b & ~32'd{lanes - 1}) + lane, 5)),
@@ -229,7 +255,7 @@ function automatic [31:0] beat_{s}(input [31:0] a, input [7:0] len, input [2:0] 
 endfunction
 task automatic write_{s}(input integer g, input [31:0] a, input [7:0] len, input [2:0] size,
                          input [1:0] burst, input [1:0] id);
-  integer k, lane, guard; reg [31:0] b; reg fail;
+  integer k, lane, guard, j; reg [31:0] b; reg fail;
   begin
     fail = fl[g];
     {p}awaddr = a; {p}awlen = len; {p}awsize = size; {p}awburst = burst; {p}awid = id;
@@ -244,6 +270,7 @@ task automatic write_{s}(input integer g, input [31:0] a, input [7:0] len, input
         {p}wstrb[lane] = lane >= (b % {lanes}) && lane < (b % {lanes}) + (1 << size) - (b % (1 << size));
         {wuser}
       end
+      {wpoison}
       {p}wlast = k == len; {p}wvalid = 1;
       @(posedge {sclk}); guard = 0;
       while (!{p}wready) begin guard = guard + 1; check(guard < 20000, "W_HANG"); @(posedge {sclk}); end
@@ -259,7 +286,7 @@ task automatic write_{s}(input integer g, input [31:0] a, input [7:0] len, input
 endtask
 task automatic read_{s}(input integer g, input [31:0] a, input [7:0] len, input [2:0] size,
                         input [1:0] burst, input [1:0] id);
-  integer k, lane, guard; reg [31:0] b; reg fail;
+  integer k, lane, guard, j; reg [31:0] b; reg fail;
   begin
     fail = fl[g];
     {p}araddr = a; {p}arlen = len; {p}arsize = size; {p}arburst = burst; {p}arid = id;
@@ -285,8 +312,8 @@ task automatic read_{s}(input integer g, input [31:0] a, input [7:0] len, input 
         if (!fail && lane >= (b % {lanes}) && lane < (b % {lanes}) + (1 << size) - (b % (1 << size)))
           check({p}rdata[lane*8 +: 8] == rfn((b & ~32'd{lanes - 1}) + lane),
                 $sformatf("R_DATA {s} g=%0d a=%h k=%0d lane=%0d %h/%h", g, a, k, lane,
-                          {p}rdata[lane*8 +: 8], rfn((b & ~32'd{lanes - 1}) + lane)));{rcheck}
-      end
+                          {p}rdata[lane*8 +: 8], rfn((b & ~32'd{lanes - 1}) + lane)));{ruser_check}
+      end{rcheck}
     end
     @(negedge {sclk}); {p}rready = 0;
   end
@@ -301,19 +328,35 @@ end
     for ti, (tname, e) in enumerate(targets.items()):
         lanes = e['data_width'] // 8
         p = f'nl_t_{tname}_'
-        has = bool(e.get('data_user_width'))
+        granules = max(1, lanes // 8)
+        user, poison = has(e, 'u'), has(e, 'p')
         rb = ruser_resp(e)
         wcheck = ''
-        if has:
+        if user:
             wcheck = f'''
         check({p}wuser[lane*{k} +: {k}] ==
               ({p}wstrb[lane] && g >= 0 && gs[g] ? grp(g, (b & ~32'd{lanes - 1}) + lane, 0) : {k}'d0),
               $sformatf("WUSER {tname} g=%0d k=%0d lane=%0d strobe=%0d %h", g, k, lane,
                         {p}wstrb[lane], {p}wuser[lane*{k} +: {k}]));'''
         rdrive = ''
-        if has:
+        if user:
             rdrive = (f"{p}ruser[{rb} + lane*{k} +: {k}] = "
                       f"g >= 0 ? grp(g, (b & ~32'd{lanes - 1}) + lane, 5) : {k}'d0;")
+        # WPOISON of each granule: the OR of the poison bits of its strobed bytes.
+        pcheck = ''
+        prdrive = ''
+        if poison:
+            pcheck = f'''
+      for (j = 0; j < {granules}; j = j + 1) begin
+        want_poison = 0;
+        for (lane = 8 * j; lane < 8 * j + 8 && lane < {lanes}; lane = lane + 1)
+          if ({p}wstrb[lane] && g >= 0 && gq[g])
+            want_poison = want_poison | pfn(g, ((b & ~32'd{lanes - 1}) + lane) >> 3, 0);
+        check({p}wpoison[j] == want_poison,
+              $sformatf("WPOISON {tname} g=%0d k=%0d granule=%0d %b", g, k, j, {p}wpoison[j]));
+      end'''
+            prdrive = (f"for (j = 0; j < {granules}; j = j + 1) {p}rpoison[j] = "
+                       f"g >= 0 ? pfn(g, ((b & ~32'd{lanes - 1}) + 8 * j) >> 3, 5) : 1'b0;")
         resp_drive = f"{p}ruser[{rb - 1}:0] = tr[{ti}];" if rb else ''
         idw = names[p + 'awid']['width']
         responders.append(f'''
@@ -338,7 +381,7 @@ function automatic integer find_{tname}(input [31:0] a, input w);
   end
 endfunction
 initial begin : write_{tname}
-  integer g, k, lane; reg [31:0] a, b; reg [7:0] len; reg [2:0] size; reg [1:0] burst;
+  integer g, k, lane, j; reg want_poison; reg [31:0] a, b; reg [7:0] len; reg [2:0] size; reg [1:0] burst;
   reg [{idw - 1}:0] id;
   {p}awready = 0; {p}wready = 0; {p}bvalid = 0;
   wait (reset_n);
@@ -365,7 +408,7 @@ initial begin : write_{tname}
           check({p}wdata[lane*8 +: 8] == wfn((b & ~32'd{lanes - 1}) + lane), "W_DATA");
           if (g >= 0) seen[g] = seen[g] + 1;
         end{wcheck}
-      end
+      end{pcheck}
     end
     @(negedge {tclk}); {p}wready = 0; {p}bvalid = 1; {p}bid = id;
     {p}bresp = g >= 0 && fl[g] ? 2'd2 : 2'd0;
@@ -374,7 +417,7 @@ initial begin : write_{tname}
   end
 end
 initial begin : read_{tname}
-  integer g, k, lane; reg [31:0] a, b; reg [7:0] len; reg [2:0] size; reg [1:0] burst;
+  integer g, k, lane, j; reg [31:0] a, b; reg [7:0] len; reg [2:0] size; reg [1:0] burst;
   reg [{idw - 1}:0] id;
   {p}arready = 0; {p}rvalid = 0;
   wait (reset_n);
@@ -395,6 +438,7 @@ initial begin : read_{tname}
         {rdrive}
       end
       {resp_drive}
+      {prdrive}
       {p}rvalid = 1; {p}rid = id; {p}rresp = g >= 0 && fl[g] ? 2'd2 : 2'd0; {p}rlast = k == len;
       @(posedge {tclk}); while (!{p}rready) @(posedge {tclk});
       @(negedge {tclk}); {p}rvalid = 0;
@@ -404,7 +448,7 @@ end
 ''')
     init = [f"{p['name']} = 0;" for p in ports if p['direction'] == 'input'
             and not p['name'].startswith('clk_') and p['name'] != 'reset_n']
-    th = ' '.join(f"th[{i}] = {int(bool(t.get('data_user_width')))};"
+    th = ' '.join(f"th[{i}] = {int(has(t, 'u'))}; tq[{i}] = {int(has(t, 'p'))};"
                   for i, t in enumerate(targets.values()))
     tr = ' '.join(f"tr[{i}] = {(i + 1) % (1 << ruser_resp(t)) if ruser_resp(t) else 0};"
                   for i, t in enumerate(targets.values()))
@@ -429,9 +473,10 @@ function automatic [7:0] rfn(input [31:0] a);
   rfn = a[7:0] * 8'd11 + a[14:8] * 8'd3 + 8'h6c;
 endfunction
 reg [31:0] lo [0:{n - 1}]; reg [31:0] hi [0:{n - 1}]; reg wr [0:{n - 1}]; integer tg [0:{n - 1}];
-integer gk [0:{n - 1}]; integer gp [0:{n - 1}]; reg gs [0:{n - 1}]; reg fl [0:{n - 1}];
+integer gk [0:{n - 1}]; integer gp [0:{n - 1}]; reg gs [0:{n - 1}]; reg gq [0:{n - 1}];
+reg fl [0:{n - 1}];
 integer hits [0:{n - 1}]; integer seen [0:{n - 1}]; integer want [0:{n - 1}];
-reg th [0:{len(targets) - 1}]; reg [7:0] tr [0:{len(targets) - 1}];
+reg th [0:{len(targets) - 1}]; reg tq [0:{len(targets) - 1}]; reg [7:0] tr [0:{len(targets) - 1}];
 // A byte's group: walking one (kind 0) or zero (kind 1) over the {k} bits of 16 byte positions,
 // else a hash of the address. salt 5 marks read data.
 function automatic [{k - 1}:0] grp(input integer g, input [31:0] a, input integer salt);
@@ -445,6 +490,19 @@ function automatic [{k - 1}:0] grp(input integer g, input [31:0] a, input intege
       grp = ((a % 16) == ((pos / {k}) % 16)) ? ({k}'d1 << (pos % {k})) : {k}'d0;
       if (gk[g] == 1) grp = ~grp & {k}'d{mask};
     end
+  end
+endfunction
+// The poison bit of an eight-byte granule: walking one (kind 0) or zero (kind 1) over four
+// granules, else a hash.
+function automatic pfn(input integer g, input [31:0] granule, input integer salt);
+  integer pos; reg [31:0] h;
+  begin
+    pos = gp[g] + salt;
+    if (gk[g] == 2) begin
+      h = (granule * 32'h7feb352d) ^ (pos * 32'h846ca68b); h = h ^ (h >> 15);
+      pfn = h[4];
+    end else
+      pfn = ((granule % 4) == (pos % 4)) ^ (gk[g] == 1);
   end
 endfunction
 // Wait cycles before a beat: none mostly, one to three now and then.

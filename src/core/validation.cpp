@@ -1230,7 +1230,6 @@ void check_axi5(Checks &c, std::optional<Protocol> protocol,
   // Properties that later network functions carry.
   for (const auto &[key, set, property] :
        {std::tuple{"trace", p.trace, "Trace_Signals"},
-        {"poison", p.poison, "Poison"},
         {"unique_id", p.unique_id, "Unique_ID_Support"},
         {"write_loop_width", p.write_loop_width != 0, "Loopback_Signals"},
         {"read_loop_width", p.read_loop_width != 0, "Loopback_Signals"},
@@ -2061,19 +2060,19 @@ void check_data_user(Checks &c) {
   check(c.d.initiators, "initiators");
   check(c.d.targets, "targets");
 }
-// The data widths at which an axi5 endpoint has data side ports (docs/axi5.md#data-side): the
-// widths the data side tests cover.
+// The data side width limit applies to both forms of the AXI5 interface.
 void check_axi5_data_width(Checks &c) {
   const auto check = [&](const auto &endpoints, const std::string &kind) {
     for (std::size_t i = 0; i < endpoints.size(); ++i) {
       const auto &e = endpoints[i];
-      if (e.protocol != Protocol::Axi5 ||
+      if (!detail::axi5_port(e.protocol) ||
           !(e.data_user_width || (e.axi5 && (e.axi5->poison || e.axi5->trace))))
         continue;
       const auto bits = e.data_width.value_or(c.network_bits);
       if (bits != 32 && bits != 64 && bits != 128)
         c("NCL_AXI5_DATA_WIDTH", kind + "[" + std::to_string(i) + "].data_width",
-          "An axi5 endpoint with data user, poison or trace ports is 32, 64 or 128 bits wide");
+          "An AXI5 or ACE5-Lite endpoint with data user, poison or trace ports is 32, 64 or 128 "
+          "bits wide");
     }
   };
   check(c.d.initiators, "initiators");
