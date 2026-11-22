@@ -23,6 +23,8 @@ def layout(mode):
     if mode == 'line':
         sources = {f's{b}': ('ace5_lite', b, None) for b in (32, 128, 512)}
         targets = {f't{b}': ('ace5_lite', b, None) for b in (32, 64, 128, 256, 512, 1024)}
+        # 32-byte windows apart in the local space cut each line in two.
+        targets['tsub'] = ('ace5_lite', 32, None)
         return sources, targets, [('s128', 't256', 32)]
     if mode == 'plain':
         return ({'plain': ('axi4', 32, None), 'wide': ('axi4', 128, None)},
@@ -45,8 +47,11 @@ def layout(mode):
 
 def windows(name, k):
     """The (global base, local address, bytes) windows of target k: one 64 KiB window, a page off
-    its global base for t32."""
+    its global base for t32, and for tsub two 32-byte windows at the start of each 512-byte slot."""
     base = k << 16
+    if name == 'tsub':
+        return [(base + n * 0x200 + h * 0x20, n * 0x100 + h * 0x40, 0x20)
+                for n in range(9) for h in range(2)]
     return [(base, base + (0x1000 if name == 't32' else 0), 0x10000)]
 
 
@@ -75,6 +80,10 @@ def configuration(mode):
         'initiators': [], 'targets': [], 'connectivity': 'all',
         'transport': {'data_width': 32, **({'max_outstanding': 4} if deep else {})},
         'output': {'backend': 'verilog', 'language': 'verilog_2001'}}
+    if 'tsub' in targets:
+        # A 512-bit beat does not fit a 32-byte window.
+        cfg['connectivity'] = {s: [t for t in targets if s != 's512' or t != 'tsub']
+                               for s in sources}
     if limits:
         cfg['transport']['packet_limits'] = [{'source': s, 'target': t, 'max_bytes': b}
                                              for s, t, b in limits]
@@ -242,6 +251,8 @@ class Plan:
         for s, (_, bits, _) in self.sources.items():
             word = (bits // 8).bit_length() - 1
             for target in self.targets:
+                if bits > 128 and target == 'tsub':
+                    continue
                 if bits // 8 <= LINE:
                     self.add(s, target, True, LINE // (bits // 8) - 1, word, 1, 2, 1, cache=15)
                 else:
