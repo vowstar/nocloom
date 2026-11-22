@@ -222,9 +222,10 @@ with `lake`. The `clang-format` target reformats the sources in place.
 [tests/SUITES.md](tests/SUITES.md) describes the test tiers and resource limits.
 The suite runner plans 8 GiB of memory for each test
 slot and keeps 16 GiB or more free.
-[tests/VERIFICATION_POLICY.md](tests/VERIFICATION_POLICY.md) describes which
-tests a change needs, and [formal/lean/README.md](formal/lean/README.md)
-describes the Lean model of the transport and its theorems.
+See the [verification policy](tests/VERIFICATION_POLICY.md) for test selection.
+The [proof scope](formal/lean/README.md) list Lean proofs and
+SymbiYosys checks with their tests and limits. No proof shows that the
+generated Verilog refines the Lean model.
 
 Commit messages follow
 [Conventional Commits](https://www.conventionalcommits.org/). Add a

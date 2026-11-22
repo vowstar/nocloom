@@ -343,6 +343,11 @@ add_test(NAME formal_lean_examples
     --work ${CMAKE_CURRENT_BINARY_DIR}/formal_lean_examples)
 set_tests_properties(formal_lean_examples PROPERTIES TIMEOUT 1800 PROCESSORS 1
   LABELS "formal;release")
+# The claims in formal/lean/README.md name registered tests and the scripts' own counts.
+add_test(NAME formal_claims
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/formal_claims_test.py
+    --source ${PROJECT_SOURCE_DIR} --build ${PROJECT_BINARY_DIR})
+set_tests_properties(formal_claims PROPERTIES TIMEOUT 60 LABELS "quick;focused;ci")
 # The RTL hang fault of the liveness test is a cycle of the dependency graph.
 add_test(NAME hang_controls
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/hang_controls_test.py

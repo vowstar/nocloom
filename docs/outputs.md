@@ -100,8 +100,8 @@ The remaining clauses of `Fair` are premises of the theorems.
 
 | Clause | Configuration that excludes the theorem |
 | --- | --- |
-| `arb_fair` | An output with `fixed_priority`. A source that sets a scheduling level |
-| `answer`, `pool_fair` | A target timeout without `completion`, except on a TL-UH target |
+| `arb_fair` | An output with `fixed_priority`. A source with `qos.levels` above 0, `qos.scheduler` or `qos.axqos_map` |
+| `answer`, `pool_fair` | A target timeout with `completion: false`, except on a TL-UH target |
 
 A source with a `qos.shaper` of rate zero and no `qos.scheduler` breaks
 `arb_fair`. Past `burst_bytes`, the source starts no further transfer.
@@ -171,7 +171,8 @@ when a field changes meaning.
 | `excluded` | Omitted relations and their associated conditions |
 | `environment` | External nodes and their required assumptions |
 | `fingerprints` | FNV-1a 64 hashes of RTL and map definition |
-| `model` | Numbered transport tables for at most 4096 endpoint pairs, otherwise null with an omission reason |
+| `model` | Numbered transport tables, or null with the reason in `model_omitted`: more than 4096 endpoint pairs, or a plan shape the model cannot state |
+| `completion` | Whether the Lean completion theorems are stated: `applies`, `theorems` and the `unmet` clauses |
 | `result` | Cycle status, cycles, rules and suggested changes |
 
 Acyclic edges increase rank. Cycles indicate possible waits without proving

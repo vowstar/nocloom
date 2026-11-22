@@ -1,12 +1,39 @@
 # Lean transport model
 
-This directory contains machine-checked theorems about a model of the NocLoom
-transport.
-It uses Lean core with the version pinned in `lean-toolchain`.
+This directory holds a Lean model of the NocLoom transport and theorems about
+that model. It also checks the rank certificate of each generated dependency
+file. Ranks that rise along every edge exclude a wait cycle. The tables also
+list the bounded solver checks and the netlist check of generated Verilog.
 
-The theorems cover the model and its certificate. They do not establish
-equivalence between generated RTL and the model.
-Simulation and bounded solver results on RTL provide separate evidence.
+The Lean kernel checks every proof, except in a dependency file above 3000
+distinct edges. There `native_decide` also trusts the Lean compiler. `lean-toolchain`
+pins the Lean version. `Fair` states the assumptions about a model run, see
+[Fair and generated Verilog](#fair-and-generated-verilog).
+
+## What is checked
+
+| Claim | Object | Check | Limit |
+| --- | --- | --- | --- |
+| On a legal run that satisfies `Fair`, every live transaction ends and its words leave the network | The model built from the model table of one dependency file | `Wormhole.checked_transaction_completes` and `Wormhole.checked_transaction_delivered`, test `formal_lean` | The file must pass the rule check |
+| A dependency file whose ranks rise along every edge has no wait cycle, and its model table passes the rule check | `nocloom_<name>.dependency.json` | `tools/gen_instance.py` and `lake env lean`, tests `dependency_certificate_lean` and `formal_lean_examples` | Every example and the 11 liveness shapes. A file without a model table gets the certificate only |
+| A dependency file sets `completion.applies` to false for four conditions that break `Fair`. With a model table, the Lean file then states `completion_withdrawn` and not `completes` | The `completion` field of the dependency file | The `[dependency]` cases of tests `unit_*`, test `dependency_certificate_import` | The generator decides the field from the network plan. Lean does not check it |
+| Each `cross` slot can cross in the hardware. A `bound` source has one direction and no ID. The response release equals its release cone | The netlist that the generator prints as Verilog | Test `dependency_release_cone` and the `[dependency]` cases of tests `unit_*` | A structural comparison in one direction. Routes over a link with a pipe, width adapter or clock crossing are skipped, and so are the `scale_*` examples |
+| While a request is open, some handshake occurs within 10 cycles | Generated Verilog of 11 AXI4 network shapes | Tests `liveness_formal_*` with SymbiYosys | A bounded check to depth 24 by default. A case name gives another depth, and L4 and L8_merged_contexts stop before most traffic ends. On L1 and L2, F1 to F4 are each needed, keep the states they must allow, and lose them in a stronger form. Data is not checked |
+| A known hang is detected | The `holding` release policy of `GenericNoC/Instances/TwoTargets.lean`, which keeps a grant across segments, the same fault in generated Verilog, and its graph form | `GenericNoC/Instances/TwoTargets.lean`, `GenericNoC/Instances/MultiHop.lean`, tests `liveness_formal_hangs` and `hang_controls` | One fault on four shapes. Its graph form is a cycle on the same shapes. This does not describe every hang |
+| Each net and output port of the printed top module carries the netlist value of the module inputs, registers and cell outputs | Generated Verilog and its netlist, see [netlist](../../docs/netlist.md) | `NetlistCheck.check_sound`, test `netlist_roundtrip` | Every example and liveness shape. Registers, clock gates and synchronizer cells are compared one by one. Cell files are not read |
+
+## What has no proof
+
+| Statement | Status | Work needed for a proof |
+| --- | --- | --- |
+| Generated Verilog refines the model | No proof of `CircuitRefinementInv` for a network | A proof of it with a circuit invariant for a fixed small network |
+| Every generated network is free of deadlock | `ServiceContinuation` is open for `Wormhole` | A proof of `ServiceContinuation` for `Wormhole` and a refinement to Verilog |
+| A network with unmet clauses in its `completion` field completes its transactions | No completion theorem is stated. The statement does not hold for every run | None. See [output files](../../docs/outputs.md#dependency-graph) for the settings that remove each unmet clause |
+| The four conditions of the `completion` field are all the ways generated logic breaks `Fair` | Each clause has a reason in the table below, not a proof | A proof of each clause for the arbiters, targets and clocks of generated Verilog |
+| A network without a model table completes its transactions | No model table, so no rule check and no theorem | A model that states more than 4096 endpoint pairs, several outputs for one destination, and bound sources with several paths |
+| Slot capacities and context counts equal the storage of generated Verilog | A rule derives them from the network plan. They are not compared with the Verilog | A comparison with the storage of generated Verilog |
+| Generated Verilog answers every request without a depth bound | Bounded checks only | Unbounded checks on the small shapes |
+| Data correctness and timing bounds | Outside the model | Transaction simulation checks data on its configurations. See [test suites](../../tests/SUITES.md) |
 
 ## Build and check
 
@@ -15,17 +42,14 @@ lake build
 python3 tools/run_checks.py
 ```
 
-`run_checks.py` rejects missing `lean` or `lake`, and any Lean version that
-differs from the pinned version.
-It writes beneath `.lake/build/checks`, or `--work DIR`, and deletes nothing.
-CTest registers it as `formal_lean` in tier `release`.
-`NetlistCheck` checks generated RTL against its [netlist](../../docs/netlist.md) (CTest `netlist_roundtrip`, tier `release`).
+`run_checks.py` rejects missing `lean` or `lake` and another Lean version. It
+writes beneath `.lake/build/checks`, or `--work DIR`, and deletes nothing. CTest
+registers it as `formal_lean` and the netlist check as `netlist_roundtrip`, both
+in tier `release`.
 
-`dependency_certificate_import` checks generated four-column edges without
-Lean and has the `quick` and `ci` labels.
-`dependency_certificate_lean` checks generated certificates and rank rejection
-with Lean. It has the `formal` and `release` labels and fails if Lean or lake
-is missing or the Lean version differs from the pinned version.
+`dependency_certificate_import` (`quick`, `ci`) checks edge import without
+Lean. `dependency_certificate_lean` (`formal`, `release`) checks certificates
+and rank rejection with Lean, and fails without Lean or with another version.
 
 ## Model and assumptions
 
@@ -44,39 +68,40 @@ the same destination.
 | `bound` | A source waits for its answers before requesting another target | Declaration checks inspect ID width and direction. They do not inspect the source's request-hold logic |
 
 `Step.fire` continues a segment only with a following word for the same
-destination. `Step.cut` ends the segment otherwise.
-An endpoint lacking `contig` and `ahead` requires `mayHold`, `cross` and the
-corresponding graph edges.
-
-`Fair` assumes fair arbitration, enabled transfers, finite segments, endpoint
-answers and eventual context availability.
-Some clauses state that a wait ends or identifies a stuck head. These are
-assumptions about a run.
-
-`holder_gets_word` derives progress for a holder inside a coherent stream.
+destination. `Step.cut` ends the segment otherwise. An endpoint lacking
+`contig` and `ahead` requires `mayHold`, `cross` and the matching graph edges.
 
 ## Fair and generated Verilog
 
-Each clause of `Fair`, and each sink that `room` treats as free, needs a source
-in generated Verilog. The bounded liveness test `tests/run_liveness_formal.py`
+`Fair` has six clauses. `room` is the model test for space behind an output.
+Each clause, and each place where `room` finds space without a check, needs a
+source in generated Verilog or in the endpoints. `tests/run_liveness_formal.py`
 assumes F1 to F4 about the endpoints and checks the rest on the Verilog.
 
-| Clause | Given by | Liveness test |
+| Label | Endpoint assumption of the liveness test |
+| --- | --- |
+| F1 | Sources raise RREADY and BREADY within 1 cycle, 4 cycles on L4 |
+| F2 | W comes within 1 cycle of its AW |
+| F3 | Targets raise ARREADY, AWREADY and WREADY within 1 cycle while they have room |
+| F4 | A target with open reads offers a word within 1 cycle, and passes over an open read that can go at most two times |
+
+| Clause or `room` case | Given by | In the liveness test |
 | --- | --- | --- |
-| `arb_fair` | An output arbiter with a wait bound. Test `arbiter_library_formal` proves the bound for `round_robin`, `fifo` and `rotating_priority`. The completion scope withdraws the theorems for `fixed_priority` and scheduling levels | Checked. The shapes use `round_robin` |
-| `fire_fair` | Valid and ready handshakes while every clock runs | Checked |
-| `seg_finite` | Packets of bounded length | Checked |
-| `cont` | Write data from sources and response words from targets | F2, F4 |
-| `pool_fair` | Targets that answer, so that their contexts free | F4 |
-| `answer` | Targets that answer. The completion scope withdraws the theorems for a timeout without `completion` | F4 |
-| `room` at a target context | Targets that take a request while they have room | F3 |
-| `room` at a source sink | Sources that take responses | F1 |
+| `arb_fair` | An output arbiter with a wait bound. Test `arbiter_library_formal` proves the bound for `round_robin`, `fifo` and `rotating_priority` with 2 to 5 candidates, `fifo` also with 8 | Checked on Verilog with `round_robin` |
+| `fire_fair` | Valid and ready handshakes while every clock runs | Checked on Verilog |
+| `seg_finite` | Packets of bounded length | Checked on Verilog |
+| `cont` | Write data from sources and response words from targets | Assumed: F2, F4 |
+| `pool_fair` | Targets that answer, so that their contexts free | Assumed: F4 |
+| `answer` | Targets that answer | Assumed: F4 |
+| `room` at a target context | Targets that take a request while they have room | Assumed: F3 |
+| `room` at a source | Sources that take responses | Assumed: F1 |
+
+The `completion` field of the dependency file names the clauses that a network
+does not meet. See [output files](../../docs/outputs.md#dependency-graph).
 
 The graph and model tables come from one plan. Rule coverage checks their
 consistency, without comparing their behavior against RTL.
-`wfCheck` requires response coverage in `answers`. The hanging examples
-demonstrate two hangs satisfying `Fair`, without characterizing every possible
-hang.
+`wfCheck` requires response coverage in `answers`.
 
 ## Graph rules
 
@@ -93,9 +118,8 @@ establish required pairs, and `checkCoverage` checks their connections.
 | `holdAcross` | Head at or upstream of a holder that can change destination | Held grant | `block_holdAcross` |
 | `context` | Slot head | Transaction in or owed by the slot | `head_routed`, `head_in_range` |
 
-Context points rank above graph nodes and block no resource. They need no
-artifact edge.
-A live transaction holds a `ctx` point while a word occupies a slot, or a `wait`
+Context points rank above graph nodes, block no resource and need no edge. A
+live transaction holds a `ctx` point while a word occupies a slot, or a `wait`
 point otherwise.
 
 Each transaction event reduces its variant: remaining uninjected words times
@@ -103,12 +127,8 @@ Each transaction event reduces its variant: remaining uninjected words times
 Under `Fair`, held points eventually advance and the transaction completes.
 
 `tools/edge_use.py` classifies graph edges as `used`, `helper`, `environment`,
-`summary` or `outside`.
-Unused edges still constrain rank. Removing one does not establish that its
-hardware wait is irrelevant.
-
-An unrequired edge between hold points is `unexplained` and fails the check. The
-tool checks three artifacts in `tests/data`.
+`summary` or `outside`. Unused edges still constrain rank. An unrequired edge
+between hold points is `unexplained` and fails the check.
 
 ## Theorem scope
 
@@ -127,21 +147,17 @@ tool checks three artifacts in `tests/data`.
 | `Wormhole.no_restart` | An ended token cannot be accepted again |
 
 A token denotes one transaction, not a reusable bus ID. `Step.inject` declares
-its word count and requires the last word to end it.
-Response injection requires the whole request to arrive first. Context
-accounting excludes ended transactions by definition, so it cannot expose a
-context leak.
+its word count and requires the last word to end it. Response injection requires
+the whole request to arrive first. Context accounting excludes ended
+transactions by definition, so it cannot expose a context leak.
 
 `CircuitRefinementInv` in `Refinement.lean` states refinement from a circuit.
 One circuit step maps to one or more model steps inside a circuit invariant.
 
 `map_legal` and `stall_map` carry a legal circuit run and a circuit stall to
 the model. `CircuitRefinement` is the case of one model step per circuit step.
-Neither has an instance that connects this model to RTL.
-`ServiceContinuation` holds for `Toy`. It is an open obligation for `Wormhole`,
-so `deadlock_free` cannot establish its RTL deadlock freedom.
-
-`advances_on_every_compliant_run` does not require `ServiceContinuation`.
+`ServiceContinuation` holds for `Toy`. `advances_on_every_compliant_run` does
+not require it.
 
 | Hardware detail | Model limitation |
 | --- | --- |
@@ -152,8 +168,7 @@ so `deadlock_free` cannot establish its RTL deadlock freedom.
 | Source pools | Uninjected words hold no resource. Source grant retention while waiting for a pool is unchecked |
 | Gather, merge, ID tables, gating, wake-up, resets, width conversion and locked transfers | No corresponding model behavior |
 
-These theorems establish neither data correctness nor timing bounds. A target
-that never answers violates `Fair`.
+A target that never answers violates `Fair`.
 
 ## Trust and instances
 
@@ -166,9 +181,8 @@ that never answers violates `Fair`.
 | Larger, default | `native_decide` | `native_decide` |
 | Larger, `--kernel` | Kernel chunks | `native_decide` |
 
-In the kernel, edges, ranks and node keys are numbers of 32-bit fields. The
-kernel reads them with big-number arithmetic, and the file checks one theorem
-at a time.
+In the kernel, edges, ranks and node keys are numbers of 32-bit fields, read
+with big-number arithmetic. The file checks one theorem at a time.
 
 `native_decide` adds trust in `Lean.ofReduceBool` and `Lean.trustCompiler`.
 Contention pairs grow cubically without helper nodes. With `contention` rows,
@@ -178,9 +192,8 @@ Contention pairs grow cubically without helper nodes. With `contention` rows,
 `model` table in the artifact or a `--model` file, it also checks the transport
 rules. Without a model, or with `--graph-only`, it checks graph acyclicity only.
 
-Use the CLI output `nocloom_<name>.dependency.json` as `GRAPH.json`.
-See [output files](../../docs/outputs.md).
-From this directory, convert the artifact and check the proof with Lean:
+Use the CLI output `nocloom_<name>.dependency.json` as `GRAPH.json`, see
+[output files](../../docs/outputs.md). From this directory, run:
 
 ```sh
 python3 tools/gen_instance.py GRAPH.json Network OUT.lean
@@ -204,26 +217,29 @@ node indexes. The rule identifies the wait relation.
 The importer sorts and removes duplicate source and destination pairs.
 It checks every fourth column before it removes duplicates.
 
-An edge with a nonzero group fails with
-`NCL_CERTIFICATE_ALTERNATIVE_GROUP`. An edge with a wrong column count or a
-group that is not a nonnegative integer fails with
-`NCL_CERTIFICATE_EDGE_FORMAT`. A nonempty top-level `groups` or a status other
-than `no_cycle` also fails conversion. These failures return exit code `3`
-before creating or changing the proof source, including with `--graph-only`
-and `--kernel`. Exit code `0` means the source was written. Exit code `2`
-reports argument parsing errors.
+An edge with a nonzero group fails with `NCL_CERTIFICATE_ALTERNATIVE_GROUP`. An
+edge with a wrong column count or a group that is not a nonnegative integer
+fails with `NCL_CERTIFICATE_EDGE_FORMAT`. A nonempty top-level `groups` or a
+status other than `no_cycle` also fails conversion.
+
+A missing, malformed or contradictory `completion` field fails with
+`NCL_CERTIFICATE_SCOPE`. With a model table, `caps` and `pool_caps` must give a
+positive value for exactly each slot and response slot. Each failure in this
+section returns exit code `3` before it creates or changes the proof source,
+also with `--graph-only` and `--kernel`. Exit code `0` means the source was
+written. Exit code `2` reports argument parsing errors.
 
 Conversion does not validate a certificate. Lean must accept the generated
 proof. Ranks that do not increase along an edge fail a certificate theorem
 (`chunk` in the kernel, `certificate` with `native_decide`) even when the
 artifact claims `no_cycle`.
 
-`Instances/TwoTargets.lean` compares `perWord`, `contiguous` and `holding`
-release policies. The first two satisfy the rules.
-`holding` cannot satisfy W2 with any graph. `Instances/MultiHop.lean` gives a
+`GenericNoC/Instances/TwoTargets.lean` compares `perWord`, `contiguous` and
+`holding` release policies. The first two satisfy the rules. `holding` cannot
+satisfy W2 with any graph. `GenericNoC/Instances/MultiHop.lean` gives a
 corresponding multi-hop hang.
 
-`Instances/Requests.lean` contains a two-word request and its answer.
+`GenericNoC/Instances/Requests.lean` contains a two-word request and its answer.
 Files in `tests/fail` and designated `tests/data` cases must fail for the reason
 checked by `run_checks.py`.
 
