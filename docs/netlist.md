@@ -3,6 +3,23 @@
 `--netlist` adds `nocloom_<name>.netlist.txt`. It lists the hardware that
 `nocloom_<name>.v` prints, one record per line. The bundle lists the file with
 role `netlist`. The flag adds nothing else to the other files.
+The [format](#format) section at the end lists the records.
+
+## Lean check
+
+The Lean checker in `formal/lean/NetlistCheck` reads the top module and the
+netlist file. It reads the module as the Verilog-2001 subset that NocLoom
+prints, and rejects any other text.
+
+| Part of the module | The check |
+| --- | --- |
+| Text | Printing the parsed module gives back the text, byte for byte |
+| Ports and declarations | Equal to the ports and values of the netlist |
+| Continuous assignments | One per value and output, in the form of its operation. The theorem `check_sound` proves that each net and output port then carries the netlist value of the module inputs, registers and cell outputs |
+| Registers, clock gates, synchronizer cells | Compared one by one with the netlist |
+
+The check does not read the cell files and does not relate the netlist to the
+transport model. CTest runs it as `netlist_roundtrip` on every example.
 
 ## Format
 

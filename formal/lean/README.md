@@ -19,6 +19,7 @@ python3 tools/run_checks.py
 differs from the pinned version.
 It writes beneath `.lake/build/checks`, or `--work DIR`, and deletes nothing.
 CTest registers it as `formal_lean` in tier `release`.
+`NetlistCheck` checks generated RTL against its [netlist](../../docs/netlist.md) (CTest `netlist_roundtrip`, tier `release`).
 
 `dependency_certificate_import` checks generated four-column edges without
 Lean and has the `quick` and `ci` labels.

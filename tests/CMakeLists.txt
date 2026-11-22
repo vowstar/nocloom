@@ -306,6 +306,13 @@ add_test(NAME formal_lean
   COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/formal/lean/tools/run_checks.py
     --work ${CMAKE_CURRENT_BINARY_DIR}/formal_lean)
 set_tests_properties(formal_lean PROPERTIES TIMEOUT 900 LABELS "formal;release")
+# The printed Verilog read back in Lean and compared with the netlist (formal/lean/NetlistCheck).
+# Lean is required: a missing tool fails the test.
+add_test(NAME netlist_roundtrip
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_netlist_roundtrip.py
+    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/netlist_roundtrip)
+set_tests_properties(netlist_roundtrip PROPERTIES TIMEOUT 900 LABELS "formal;release"
+  PROCESSORS 1)
 add_executable(nocloom_certificate_graphs generate_certificate_graphs.cpp)
 target_link_libraries(nocloom_certificate_graphs PRIVATE nocloom_config)
 target_include_directories(nocloom_certificate_graphs PRIVATE ${PROJECT_SOURCE_DIR}/src)
