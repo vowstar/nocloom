@@ -88,6 +88,8 @@ struct HardwareIR {
 Status verify_structure(const HardwareIR &ir);
 Status verify(const HardwareIR &ir);
 std::string emit_verilog(const HardwareIR &ir);
+// The emitted hardware as text records (docs/netlist.md#format).
+std::string emit_netlist(const HardwareIR &ir);
 // A synchronizer chain of the emitted hardware: stages registers of width bits on one clock,
 // cleared by one reset, from head (sampling source) to tail. It is emitted as width one-bit
 // synchronizer cell instances, instance(bit).

@@ -310,6 +310,52 @@ output: {backend: verilog, language: verilog_2001}
   }
 }
 
+TEST_CASE("The netlist text is an explicit, deterministic addition", "[graph-clocked-example]") {
+  using namespace nocloom;
+  using nlohmann::json;
+  const auto d = graph_clocked_definition();
+  const auto off = generate(d);
+  REQUIRE(off);
+  GenerationOptions options;
+  options.netlist = true;
+  const auto on = generate(d, options);
+  REQUIRE(on);
+  REQUIRE(generate(d, options).value() == on.value());
+  // Every artifact but the bundle is unchanged; the bundle lists the one new file last.
+  REQUIRE(on.value().size() == off.value().size() + 1);
+  for (const auto &a : off.value())
+    if (!a.path.ends_with(".bundle.json"))
+      REQUIRE(std::ranges::find(on.value(), a) != on.value().end());
+  const auto text = [&](const std::string &path) {
+    const auto it = std::ranges::find(on.value(), path, &Artifact::path);
+    REQUIRE(it != on.value().end());
+    return it->text;
+  };
+  auto bundle = json::parse(text("nocloom_graph.bundle.json"));
+  REQUIRE(bundle["files"].back() ==
+          json{{"path", "nocloom_graph.netlist.txt"}, {"role", "netlist"}});
+  bundle["files"].erase(bundle["files"].size() - 1);
+  const auto plain = std::ranges::find(off.value(), "nocloom_graph.bundle.json", &Artifact::path);
+  REQUIRE(bundle.dump(2) + "\n" == plain->text);
+  const auto netlist = text("nocloom_graph.netlist.txt");
+  REQUIRE(netlist.starts_with("# SPDX-License-Identifier: "));
+  REQUIRE(netlist.find("\nnetlist 1\nmodule nocloom_graph\nreset asynchronous\nport ") !=
+          std::string::npos);
+  REQUIRE(netlist.ends_with("\nend\n"));
+  // One value record per emitted value: the RTL declares each value but the inner synchronizer
+  // stages, and the netlist lists those stages.
+  const auto count = [](const std::string &s, const std::string &what) {
+    std::size_t n = 0;
+    for (auto at = s.find(what); at != std::string::npos; at = s.find(what, at + 1))
+      ++n;
+    return n;
+  };
+  const auto rtl = text("nocloom_graph.v");
+  REQUIRE(count(netlist, "\nvalue ") >= count(rtl, "\nwire ") + count(rtl, "\nreg "));
+  REQUIRE(count(netlist, "\nsynchronizer ") > 0);
+  REQUIRE(count(netlist, " clock_gate ") == count(rtl, "\nnocloom_clock_gate "));
+}
+
 TEST_CASE("CDC constraints are an explicit, deterministic addition", "[graph-clocked-example]") {
   using namespace nocloom;
   using nlohmann::json;

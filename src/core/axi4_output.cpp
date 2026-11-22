@@ -303,11 +303,11 @@ class MapWriter {
 public:
   MapWriter(const NetworkPlan &network, const ExchangeHardware &hardware)
       : p(network), h(hardware), topology(Json::parse(network.topology_record)) {}
-  Result<ArtifactSet> run(Json *output_map) {
+  Result<ArtifactSet> run(Json *output_map, bool netlist) {
     auto map = checked_map();
     if (!map)
       return Result<ArtifactSet>::failure(map.diagnostics());
-    auto out = artifacts(map.value());
+    auto out = artifacts(map.value(), netlist);
     if (output_map)
       *output_map = std::move(map).value();
     return Result<ArtifactSet>::success(std::move(out));
@@ -2281,7 +2281,8 @@ private:
     return record;
   }
   // A swappable cell model file instantiated by the module (the clock gate) joins the sources.
-  ArtifactSet artifacts(const Json &map) const {
+  // The netlist text, when requested, follows the cell files in the bundle.
+  ArtifactSet artifacts(const Json &map, bool netlist) const {
     const auto &top = h.ir.name;
     const auto rtl = top + ".v", mapping = top + ".map.json", manifest = top + ".bundle.json",
                dependency = top + ".dependency.json";
@@ -2318,6 +2319,10 @@ private:
           bundle[key].insert(bundle[key].end() - 1, cell.path);
       out.push_back({cell.path, cell.text});
     }
+    if (netlist) {
+      bundle["files"].push_back({{"path", top + ".netlist.txt"}, {"role", "netlist"}});
+      out.push_back({top + ".netlist.txt", emit_netlist(h.ir)});
+    }
     out.push_back({manifest, bundle.dump(2) + "\n"});
     std::ranges::sort(out, {}, &Artifact::path);
     return license_output_json(std::move(out));
@@ -2337,10 +2342,10 @@ Status check_axi4_network(const NetworkPlan &p, const Definition &definition,
 }
 
 Result<ArtifactSet> emit_axi4_network(const NetworkPlan &p, RegisterReset register_reset,
-                                      Json *output_map) {
+                                      Json *output_map, bool netlist) {
   auto lowered = lower_axi4_exchange_composition(p, register_reset);
   if (!lowered)
     return Result<ArtifactSet>::failure(lowered.diagnostics());
-  return MapWriter(p, lowered.value()).run(output_map);
+  return MapWriter(p, lowered.value()).run(output_map, netlist);
 }
 } // namespace nocloom::detail

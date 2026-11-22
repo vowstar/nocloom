@@ -1017,6 +1017,9 @@ struct GenerationOptions {
   bool address_table = false;
   // Adds an IP-XACT component with the default component identifier.
   bool ipxact = false;
+  // Adds <top>.netlist.txt: the hardware that <top>.v prints, as text records. Off leaves every
+  // artifact unchanged.
+  bool netlist = false;
 };
 using SourceMap = std::map<std::string, SourceLocation>;
 struct ParsedDefinition {

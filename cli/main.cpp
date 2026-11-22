@@ -32,6 +32,7 @@ int run(int argc, char **argv) {
   bool address_table = false;
   bool cdc_constraints = false;
   bool c_header = false;
+  bool netlist = false;
   nocloom::ValidationOptions limits;
   auto *validate = app.add_subcommand("validate", "Validate an interconnect definition");
   validate->add_option("input", input, "YAML definition")->required();
@@ -47,6 +48,8 @@ int run(int argc, char **argv) {
                       "Request CDC timing exceptions and a synthesis preserve list");
     command->add_flag("--c-header", c_header,
                       "Request C headers for address windows and error log registers");
+    command->add_flag("--netlist", netlist,
+                      "Request the hardware that the Verilog prints as text records");
     command->add_option("--cycle-limit", limits.cycle_limit,
                         "Route cycles reported per direction, 1 to 1024 (default 4)");
     command->add_option("--contributor-limit", limits.contributor_limit,
@@ -98,6 +101,7 @@ int run(int argc, char **argv) {
   options.c_header = c_header;
   options.address_table = address_table;
   options.ipxact = ipxact;
+  options.netlist = netlist;
   if (*validate) {
     auto status = nocloom::validate(definition.definition, options, &definition.sources);
     if (!status)
