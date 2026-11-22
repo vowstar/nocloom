@@ -54,6 +54,23 @@ assumptions about a run.
 
 `holder_gets_word` derives progress for a holder inside a coherent stream.
 
+## Fair and generated Verilog
+
+Each clause of `Fair`, and each sink that `room` treats as free, needs a source
+in generated Verilog. The bounded liveness test `tests/run_liveness_formal.py`
+assumes F1 to F4 about the endpoints and checks the rest on the Verilog.
+
+| Clause | Given by | Liveness test |
+| --- | --- | --- |
+| `arb_fair` | An output arbiter with a wait bound. Test `arbiter_library_formal` proves the bound for `round_robin`, `fifo` and `rotating_priority`. The completion scope withdraws the theorems for `fixed_priority` and scheduling levels | Checked. The shapes use `round_robin` |
+| `fire_fair` | Valid and ready handshakes while every clock runs | Checked |
+| `seg_finite` | Packets of bounded length | Checked |
+| `cont` | Write data from sources and response words from targets | F2, F4 |
+| `pool_fair` | Targets that answer, so that their contexts free | F4 |
+| `answer` | Targets that answer. The completion scope withdraws the theorems for a timeout without `completion` | F4 |
+| `room` at a target context | Targets that take a request while they have room | F3 |
+| `room` at a source sink | Sources that take responses | F1 |
+
 The graph and model tables come from one plan. Rule coverage checks their
 consistency, without comparing their behavior against RTL.
 `wfCheck` requires response coverage in `answers`. The hanging examples
@@ -144,9 +161,13 @@ that never answers violates `Fair`.
 
 | Edge-table size and option | Certificate | Rule coverage |
 | --- | --- | --- |
-| Up to 3000 edges | Kernel | Kernel |
+| Up to 3000 edges | Kernel chunks | Kernel |
 | Larger, default | `native_decide` | `native_decide` |
 | Larger, `--kernel` | Kernel chunks | `native_decide` |
+
+In the kernel, edges, ranks and node keys are numbers of 32-bit fields. The
+kernel reads them with big-number arithmetic, and the file checks one theorem
+at a time.
 
 `native_decide` adds trust in `Lean.ofReduceBool` and `Lean.trustCompiler`.
 Contention pairs grow cubically without helper nodes. With `contention` rows,
@@ -192,8 +213,9 @@ and `--kernel`. Exit code `0` means the source was written. Exit code `2`
 reports argument parsing errors.
 
 Conversion does not validate a certificate. Lean must accept the generated
-proof. Ranks that do not increase along an edge fail its certificate theorem
-even when the artifact claims `no_cycle`.
+proof. Ranks that do not increase along an edge fail a certificate theorem
+(`chunk` in the kernel, `certificate` with `native_decide`) even when the
+artifact claims `no_cycle`.
 
 `Instances/TwoTargets.lean` compares `perWord`, `contiguous` and `holding`
 release policies. The first two satisfy the rules.

@@ -166,35 +166,31 @@ theorem searchIn_sound {arr : Array (Nat × Nat)} {e : Nat × Nat} :
           · exact ih h
     · simp at h
 
-/-- Sorted copy of the edges for the fast lookup. -/
+/-- Fast membership in the edges: a lookup that only succeeds on an edge. -/
 structure Index (t : EdgeTable) where
-  arr : Array (Nat × Nat)
-  /-- Every indexed pair is an edge of the table. -/
-  sound : ∀ e, e ∈ arr → t.edgeRel e.1 e.2
-
-/-- Fast membership. -/
-def Index.mem {t : EdgeTable} (ix : Index t) (e : Nat × Nat) : Bool :=
-  searchIn ix.arr e 64 0 ix.arr.size
+  mem : Nat × Nat → Bool
+  /-- Every pair the lookup accepts is an edge of the table. -/
+  sound : ∀ e, mem e = true → t.edgeRel e.1 e.2
 
 theorem Index.mem_sound {t : EdgeTable} {ix : Index t} {u v : Nat}
     (h : ix.mem (u, v) = true) : t.edgeRel u v :=
-  ix.sound (u, v) (searchIn_sound h)
+  ix.sound (u, v) h
 
 /-- Index built from the table itself: slow to prove for huge tables, so
     generated instances use this only through `checkIndex`. -/
 def checkIndex (t : EdgeTable) (arr : Array (Nat × Nat)) : Bool :=
   arr.toList == t.edges
 
-/-- An array equal to the edge list is a valid index. -/
+/-- An array equal to the edge list is a valid index, searched by bisection. -/
 def indexOfCheck {t : EdgeTable} (arr : Array (Nat × Nat)) (h : t.checkIndex arr = true) :
     Index t where
-  arr := arr
+  mem e := searchIn arr e 64 0 arr.size
   sound := by
     intro e he
     have heq : arr.toList = t.edges := by simpa [checkIndex] using h
     show (e.1, e.2) ∈ t.edges
     rw [← heq]
-    simpa using he
+    simpa using searchIn_sound he
 
 /-- Every step of an explicit path witness is an edge.  `via` lists the nodes
     between `u` and `v`. -/

@@ -329,6 +329,19 @@ foreach(case IN ITEMS import lean)
     TIMEOUT ${certificate_timeout} PROCESSORS 1 LABELS "${certificate_labels}"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} RESOURCE_LOCK dependency_certificate)
 endforeach()
+# Every example and liveness shape through the Lean certificate check.
+add_test(NAME formal_lean_examples
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/lean_examples_test.py
+    --source ${PROJECT_SOURCE_DIR} --cli $<TARGET_FILE:nocloom_cli>
+    --work ${CMAKE_CURRENT_BINARY_DIR}/formal_lean_examples)
+set_tests_properties(formal_lean_examples PROPERTIES TIMEOUT 1800 PROCESSORS 1
+  LABELS "formal;release")
+# The RTL hang fault of the liveness test is a cycle of the dependency graph.
+add_test(NAME hang_controls
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/hang_controls_test.py
+    --source ${PROJECT_SOURCE_DIR} --fixture $<TARGET_FILE:nocloom_certificate_graphs>
+    --work ${CMAKE_CURRENT_BINARY_DIR}/hang_controls)
+set_tests_properties(hang_controls PROPERTIES TIMEOUT 120 LABELS "quick;focused;ci")
 target_sources(nocloom_unit PRIVATE unit/width_adapter.cpp)
 target_sources(nocloom_unit PRIVATE unit/axi4_config.cpp unit/axi3.cpp)
 target_sources(nocloom_unit PRIVATE unit/axi5.cpp)

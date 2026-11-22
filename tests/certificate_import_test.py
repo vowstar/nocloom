@@ -194,9 +194,9 @@ def check_proofs(source, work, graphs):
         else:
             line = checks.first_error_line(out, text)
             require(result.returncode != 0 and line is not None
-                    and line.startswith('theorem certificate')
+                    and line.startswith('theorem chunk')
                     and 'Tactic `decide` proved that the proposition' in text,
-                    f'{name}: rank was not rejected at certificate: {text}')
+                    f'{name}: rank was not rejected at a certificate chunk: {text}')
         print(f'PASS {name}: Lean {"checked the certificate" if valid else "rejected the rank"}')
 
 

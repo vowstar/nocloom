@@ -70,6 +70,28 @@ def nodeMap (heads grants : Array (Nat × Nat × Nat)) : Hold → Nat
   | .grant o p => keyNode grants o p
   | _ => 0
 
+/-- `keyNode` over a number of 32-bit fields, three per row, for the kernel: it
+    reads rows by big-number arithmetic instead of walking a list. -/
+def packedNode (lit rows a b : Nat) : Nat :=
+  let rec go : Nat → Nat → Nat → Nat
+    | 0, _, _ => 0
+    | fuel + 1, lo, hi =>
+      if lo < hi then
+        let mid := (lo + hi) / 2
+        let x := EdgeTable.Kernel.fld lit (3 * mid)
+        let y := EdgeTable.Kernel.fld lit (3 * mid + 1)
+        if x == a && y == b then EdgeTable.Kernel.fld lit (3 * mid + 2)
+        else if x < a || (x == a && y < b) then go fuel (mid + 1) hi
+        else go fuel lo mid
+      else 0
+  go 64 0 rows
+
+/-- Node map of a kernel instance. -/
+def packedNodeMap (heads headRows grants grantRows : Nat) : Hold → Nat
+  | .head p d => packedNode heads headRows p d
+  | .grant o p => packedNode grants grantRows o p
+  | _ => 0
+
 /-- Pairs from text, as a list. -/
 def pairListOf (groups : List (List String)) : List (Nat × Nat) := (pairsOf groups).toList
 

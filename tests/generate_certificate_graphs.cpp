@@ -4,15 +4,16 @@
 #include <iostream>
 #include <iterator>
 #include <nocloom/config.hpp>
+#include <optional>
 #include <string_view>
 
 using namespace nocloom::detail;
 
 namespace {
 bool write_graph(const std::filesystem::path &out, const std::string &name, DependencyGraph graph,
-                 bool cycle) {
+                 std::optional<bool> cycle) {
   const auto report = check_dependency_graph(graph);
-  if (report.findings.empty() == cycle) {
+  if (cycle && report.findings.empty() == *cycle) {
     std::cerr << "Unexpected cycle status for " << name << '\n';
     return false;
   }
@@ -23,10 +24,13 @@ bool write_graph(const std::filesystem::path &out, const std::string &name, Depe
 }
 } // namespace
 
-// Usage: INPUT OUT [ordinary]. With "ordinary" only the product graph is written, so INPUT need
-// not name the endpoints s0 and t0 that the other graphs edit.
+// Usage: INPUT OUT [ordinary | held]. With "ordinary" only the product graph is written, so INPUT
+// need not name the endpoints s0 and t0 that the other graphs edit. "held" adds held.json: the
+// graph of the same plan whose response grants never end a segment before the last word, the
+// fault that tests/run_liveness_formal.py injects into the RTL of its hang cases.
 int main(int argc, char **argv) {
-  if (argc != 3 && (argc != 4 || std::string_view(argv[3]) != "ordinary"))
+  const std::string_view mode = argc == 4 ? argv[3] : "";
+  if (argc != 3 && (argc != 4 || (mode != "ordinary" && mode != "held")))
     return 2;
   std::ifstream file(argv[1]);
   const std::string text{std::istreambuf_iterator<char>(file), {}};
@@ -42,6 +46,11 @@ int main(int argc, char **argv) {
   const auto ordinary = build_dependency_graph(plan.value(), facts);
   if (ordinary.edges.empty() || !write_graph(out, "ordinary", ordinary, false))
     return 1;
+  if (mode == "held") {
+    facts.segment_ends.assign(facts.segment_ends.size(), false);
+    return write_graph(out, "held", build_dependency_graph(plan.value(), facts), std::nullopt) ? 0
+                                                                                               : 1;
+  }
   if (argc == 4)
     return 0;
   const auto &edge = ordinary.edges.front();
