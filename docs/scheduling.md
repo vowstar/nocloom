@@ -130,7 +130,7 @@ endpoints and no width adapters or target timeout.
 | --- | --- |
 | Maximum INCR burst | Fits every connected packet window, capped at 4 KiB |
 | Every packet boundary | At least 4 KiB |
-| Excluded conversions | Narrow splitting, WRAP decomposition, width conversion |
+| Excluded conversions | Narrow splitting, WRAP decomposition, and a target narrower than the initiator. A wider target is accepted |
 
 Scheduler thresholds compare whole bytes. The threshold is `burst_bytes` times
 `threshold_percent` divided by 100, rounded down. The whole owed bytes of a

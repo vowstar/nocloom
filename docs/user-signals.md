@@ -140,9 +140,9 @@ and PRUSER ports. The 16-bit target gets 4-bit ports.
 transport:
   data_user_bits_per_byte: 2
 initiators:
-  - {name: s, protocol: apb5, data_width: 32, data_user_width: 8}
+  - {name: s, clock_domain: main, protocol: apb5, data_width: 32, data_user_width: 8}
 targets:
-  - {name: t, protocol: apb5, data_width: 16, data_user_width: 4}
+  - {name: t, clock_domain: main, protocol: apb5, data_width: 16, data_user_width: 4}
 ```
 
 Byte `b` carries user bits `k*b` through `k*b+k-1`.

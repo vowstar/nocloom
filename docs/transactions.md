@@ -9,7 +9,7 @@ Related manuals: [Read response interleaving](read-responses.md),
 | Initiator | `max_outstanding` |
 | --- | --- |
 | AXI4, AXI3, AXI4-Lite | 1 to 64, reads and writes combined |
-| APB, AHB-Lite, AHB5, classic Wishbone | 1 |
+| APB, AHB-Lite, AHB5, classic Wishbone | 1. Set it when `transport.max_outstanding` is above 1, or the definition fails with `NCL_AXI4_CAPACITY_COMBINATION` |
 | Pipelined Wishbone | 1 to 64, includes the request held before network admission |
 
 An initiator's `max_outstanding` overrides `transport.max_outstanding`.
