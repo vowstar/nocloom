@@ -1,5 +1,6 @@
 """Target AxREGION and AxQOS: the region of each address map window and the AxQOS of each
-scheduling level at AXI5 and AXI4 targets, through packet splitting and a clock crossing."""
+scheduling level at AXI5 and AXI4 targets, through packet splitting, a clock crossing and the
+width clamp of initiators with AxQOS maps that are wider than the targets."""
 import argparse
 import json
 import re
@@ -25,6 +26,12 @@ def sources(mode):
     """name -> (protocol, data bits, qos)."""
     if mode == 'wide':
         return {'a5': ('axi5', 128, {}), 'a4': ('axi4', 32, {})}
+    if mode == 'wide_mapped':
+        # Both mapped initiators are wider than the 32-bit targets: their width clamps carry
+        # the level of each request.
+        return {'wide5': ('axi5', 64, {'axqos_map': MAP8}),
+                'wide4': ('axi4', 128, {'axqos_map': MAP16}),
+                'fixed': ('axi5', 32, {'levels': {'read': 1, 'write': 4}})}
     fixed = {'fixed': ('axi5', 32, {'levels': {'read': 5, 'write': 2}}),
              'wide': ('axi5', 64, {'levels': {'read': 7, 'write': 6}})}
     # The crossing mode has fixed levels alone: no initiator maps AxQOS.
@@ -113,7 +120,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--cli', required=True)
     ap.add_argument('--work', required=True)
-    ap.add_argument('--mode', choices=('levels', 'clocked', 'wide'), required=True)
+    ap.add_argument('--mode', choices=('levels', 'clocked', 'wide', 'wide_mapped'),
+                    required=True)
     args = ap.parse_args()
     base = Path(args.work).resolve()
     base.mkdir(parents=True, exist_ok=True)

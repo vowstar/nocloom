@@ -166,9 +166,7 @@ packet of a split request has the region of its own address.
 The level of a request is its [scheduling level](scheduling.md) at the target.
 It comes from a fixed level, an AxQOS map or a bandwidth scheduler. In a network
 without scheduling levels, each request uses level 0 and drives
-`axqos_levels[0]`. An initiator with an
-AxQOS map that is wider than a target with `axqos_levels` cannot reach that
-target. Such a definition gives `NCL_QOS_MAP`.
+`axqos_levels[0]`.
 
 A nonzero `region` without `region_port`, a region above 15 and
 `region_port` on another protocol give `NCL_TARGET_REGION`. An initiator has no

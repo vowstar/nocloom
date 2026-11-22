@@ -469,12 +469,14 @@ TEST_CASE("Targets drive AxREGION from the address map and AxQOS from the level"
       "axi5_ports.yaml");
   REQUIRE_FALSE(parsed_region);
   CHECK(parsed_region.diagnostics().front().code == "NCL_TARGET_REGION");
-  // A wider initiator with an AxQOS map loses its level in the width clamp.
+  // A wider initiator with an AxQOS map keeps its level through the width clamp. Levels need a
+  // network of AXI targets alone.
   auto wide = d;
+  wide.targets.pop_back();
   wide.initiators[0].qos.axqos_map = {0, 1, 2, 3};
   wide.initiators[0].max_outstanding.reset();
   wide.initiators[1].qos.levels = {1, 1};
-  CHECK(has(refused(wide), "NCL_QOS_MAP", "targets[0].axqos_levels", "Initiator cpu"));
+  CHECK(generate(wide));
 }
 
 TEST_CASE("AXI5 data user ports carry one group per data byte", "[axi5]") {

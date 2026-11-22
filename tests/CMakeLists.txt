@@ -383,8 +383,9 @@ foreach(axi5_mode IN ITEMS widths split net64 clocked)
   set_tests_properties(axi5_data_${axi5_mode} PROPERTIES TIMEOUT 600
     LABELS "rtl;axi5;focused;ci" WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 endforeach()
-# Target AxREGION of each window and AxQOS of each level, with and without levels.
-foreach(axi5_mode IN ITEMS levels clocked wide)
+# Target AxREGION of each window and AxQOS of each level, with and without levels, and with
+# AxQOS-mapped initiators wider than the targets.
+foreach(axi5_mode IN ITEMS levels clocked wide wide_mapped)
   add_test(NAME axi5_target_${axi5_mode}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/axi5_target_bench.py
       --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/axi5_target_${axi5_mode}
