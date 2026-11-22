@@ -775,6 +775,8 @@ Axi4WidthClampProfile clamp_profile(const NetworkPlan &plan, unsigned index, boo
   // A wide read beat with a failed part returns zero data as a whole.
   profile.zero_failed_beats = true;
   profile.carry_groups = data_side(plan, source.axi5, source.data_user_bits);
+  if (profile.carry_groups && plan.byte_groups.trace)
+    profile.group_trace_bit = plan.byte_groups.trace_bit();
   profile.response_runs = plan.response_runs;
   profile.decode_packets = plan.failure_classes;
   profile.decode_flag = decode_flag(plan);
@@ -1121,6 +1123,8 @@ Axi4PacketizerProfile packet_profile(const NetworkPlan &plan, unsigned index) {
   profile.data_bits = source.engine_bits;
   profile.split_narrow = source.split_narrow;
   profile.carry_groups = data_side(plan, source.axi5, source.data_user_bits);
+  if (profile.carry_groups && plan.byte_groups.trace)
+    profile.group_trace_bit = plan.byte_groups.trace_bit();
   profile.exclusive_can_cut = false;
   profile.write = !source.read_only; // a read-only source has no write face to cut
   profile.level_bits = plan.burst_level_bits;

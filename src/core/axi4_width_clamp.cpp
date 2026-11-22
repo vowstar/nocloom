@@ -791,6 +791,18 @@ void WidthCutLowering::write_response() {
   l.b.update(acc, l.pick(closed, l.num(2, 0), l.pick(absorb, merge(acc, wb.at("result")), acc)));
   l.b.update(acc_error,
              l.pick(closed, zero, l.pick(absorb, l.either(acc_error, wb.at("error")), acc_error)));
+  // The trace bits of the earlier pieces' B, OR-ed into the final one's groups.
+  std::optional<ValueId> acc_trace, b_groups;
+  if (p.group_trace_bit && !narrow_face) {
+    acc_trace = l.state("w.trace", 1);
+    const auto trace_now = groups::any_bit(l, wb.at("data_user"), bytes, p.data_user_bits_per_byte,
+                                           *p.group_trace_bit);
+    l.b.update(*acc_trace,
+               l.pick(closed, zero, l.pick(absorb, l.either(*acc_trace, trace_now), *acc_trace)));
+    b_groups =
+        l.either(wb.at("data_user"), groups::flags(l, *acc_trace, bytes, p.data_user_bits_per_byte,
+                                                   *p.group_trace_bit));
+  }
   Fields wr;
   for (const auto *name : {"tag", "id", "source"})
     if (wb.contains(name))
@@ -811,6 +823,10 @@ void WidthCutLowering::write_response() {
   wr["count"] = narrow_face ? w.at("count") : l.pick(own_b, w.at("count"), wb.at("count"));
   wr["data"] =
       narrow_face ? l.num(p.data_bits, 0) : l.pick(local_b, l.num(p.data_bits, 0), wb.at("data"));
+  if (b_groups)
+    wr["data_user"] =
+        l.pick(local_b, l.num(bytes * p.data_user_bits_per_byte, 0),
+               multi ? l.pick(write_gate->serial, *b_groups, wb.at("data_user")) : *b_groups);
   if (multi) {
     const auto response_tag = l.pick(local_b, w.at("tag"), wb.at("tag"));
     const auto metadata = packet_context::front(l, *write_context, response_tag);
@@ -1599,6 +1615,7 @@ Result<NodeHardware> lower_axi4_width_clamp(const Axi4WidthClampProfile &p) {
   cut.data_user_bits_per_byte = p.data_user_bits_per_byte;
   cut.level_bits = p.level_bits;
   cut.carry_groups = p.carry_groups;
+  cut.group_trace_bit = p.group_trace_bit;
   cut.max_outstanding = p.max_outstanding;
   cut.packet_depth = p.packet_depth;
   cut.read_granule_taken = p.read_granule_taken;

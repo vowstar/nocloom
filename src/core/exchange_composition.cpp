@@ -942,7 +942,9 @@ public:
       for (std::size_t f = 0; f < in.data.size(); ++f) {
         const auto &[name, width] = fields[f];
         auto value = in.data[f];
-        const bool lane = name.starts_with("data") || name.starts_with("be");
+        // A write response keeps its byte groups where they carry BTRACE (message.hpp point 20).
+        const bool groups = response && name.starts_with("data_user") && out.plan.byte_groups.trace;
+        const bool lane = (name.starts_with("data") && !groups) || name.starts_with("be");
         if (k == unloaded && (lane || name == "first" || name == "last"))
           value = b.constant(width, lane ? 0 : 1);
         else if (name == "write")
@@ -3525,6 +3527,8 @@ private:
           staging.first.push_back("wr.b_user");
         if (states.contains("wr.rsp_echo"))
           staging.first.push_back("wr.rsp_echo");
+        if (states.contains("wr.b_trace"))
+          staging.first.push_back("wr.b_trace");
         if (staged_one)
           staging.second.push_back("wr.b_full");
       } else {

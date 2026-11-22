@@ -121,6 +121,7 @@ static Axi5Attributes axi5_target_fields(const Axi4OutletProfile &p) {
   used.pbha = ports.pbha ? used.pbha : 0;
   used.subsystem_id = ports.subsystem_id ? used.subsystem_id : 0;
   used.mpam = ports.mpam ? used.mpam : 0;
+  used.trace = ports.trace ? used.trace : 0;
   used.domain = ports.domain ? used.domain : 0;
   used.snoop = ports.domain && ports.write_snoop ? used.snoop : 0;
   return used;
@@ -401,7 +402,8 @@ struct EngineLowering {
     for (const auto &[bits, kept] : {std::pair{all.nsaid, used.nsaid},
                                      {all.pbha, used.pbha},
                                      {all.subsystem_id, used.subsystem_id},
-                                     {all.mpam, used.mpam}}) {
+                                     {all.mpam, used.mpam},
+                                     {all.trace, used.trace}}) {
       if (kept) {
         const auto slice = l.b.slice(f.at("user"), at, bits);
         word = word ? l.b.concat(slice, *word) : slice;
@@ -608,6 +610,24 @@ struct EngineLowering {
     return l.b.select(taken, l.fit(port, p.response_user_bits),
                       l.b.constant(p.response_user_bits, 0));
   }
+  // BTRACE of an AXI5 target: the trace bit of the B's byte groups where the outlet carries them.
+  bool btrace_carried() const {
+    return p.carry_groups && p.byte_groups.trace && p.data_ports.trace;
+  }
+  std::optional<ValueId> btrace_port;
+  std::optional<ValueId> target_btrace(ValueId taken) {
+    if (!btrace_carried())
+      return std::nullopt;
+    return l.b.select(taken, *btrace_port, zero);
+  }
+  // The B's byte groups: each group's trace bit is BTRACE.
+  std::optional<ValueId> b_groups(std::optional<ValueId> trace) {
+    if (!trace)
+      return std::nullopt;
+    const auto &g = p.byte_groups;
+    return groups::flags(l, *trace, p.data_bits / 8, g.bits(), g.trace_bit());
+  }
+  std::optional<ValueId> bstored_trace;
   // RIDUNQ and RLOOP of an AXI5 target: the network returns its own echoes.
   void echo_inputs() {
     if (p.echo.unique)
@@ -818,6 +838,7 @@ struct EngineLowering {
   void watchdog(ValueId rready, ValueId target_rvalid, ValueId receiving, ValueId r_owed);
   // The BUSER of a B taken (fire), a parked one's from its register; none without the port.
   std::optional<ValueId> b_user(const ParkedB &b, ValueId fire, ValueId load);
+  std::optional<ValueId> b_trace(const ParkedB &b, ValueId fire, ValueId load);
   void read_accept();
   ValueId issue_ready_now();
   void read_issue();
@@ -1212,6 +1233,13 @@ std::pair<ValueId, ValueId> EngineLowering::take_b(const ParkedB &b, ValueId spa
   return {fire, load};
 }
 
+std::optional<ValueId> EngineLowering::b_trace(const ParkedB &b, ValueId fire, ValueId load) {
+  const auto trace = target_btrace(fire);
+  if (!trace || !(p.merger_hints || ilv))
+    return trace;
+  return l.b.select(l.both(fire, b.parked), l.latch("w.b_parked_trace", *btrace_port, load),
+                    *trace);
+}
 std::optional<ValueId> EngineLowering::b_user(const ParkedB &b, ValueId fire, ValueId load) {
   if (!p.response_user_bits || !p.response_user_port_bits)
     return std::nullopt;
@@ -1235,6 +1263,8 @@ void EngineLowering::write_respond() {
     join_states();
   const auto bresp = in("axi", "bresp", 2);
   const auto bid = target_id_bits ? id_from_port(in("axi", "bid", target_id_bits)) : zero;
+  if (p.data_ports.trace)
+    btrace_port = in("axi", "btrace", 1);
   WriteFace face{aw, aw.at("address"), {}, zero, zero};
   if (several)
     write_respond_several(bresp, bid, face);
@@ -1243,7 +1273,8 @@ void EngineLowering::write_respond() {
   if (ilv)
     return;
   response_face("wrsp", face.fields, p.write_only ? l.either(bf, face.through) : bf, face.address,
-                face.stored, one, one, l.b.constant(p.data_bits, 0), face.exclusive, bstored_user);
+                face.stored, one, one, l.b.constant(p.data_bits, 0), face.exclusive, bstored_user,
+                b_groups(bstored_trace));
 }
 
 std::pair<ValueId, ValueId> EngineLowering::unaccepted_tail(ValueId alloc) {
@@ -1372,6 +1403,8 @@ void EngineLowering::write_respond_several(ValueId bresp, ValueId bid, WriteFace
       live["response_exclusive"] = l.both(l.both(freed_lock, l.inv(freed_excluded)), l.eq(bnow, 0));
     if (const auto user = b_user(held_b, b_fire, load))
       live["user"] = *user;
+    if (const auto trace = b_trace(held_b, b_fire, load))
+      live["trace"] = *trace;
     live["size"] = answered("size", pick(l, field(&WriteSlot::size), freed));
     live["source"] = answered("source", freed_source);
     for (const auto &[name, member] : echoed_slot_fields())
@@ -1398,6 +1431,8 @@ void EngineLowering::write_respond_several(ValueId bresp, ValueId bid, WriteFace
   if (!ilv) {
     if (const auto user = b_user(held_b, b_fire, load))
       bstored_user = held("w.rsp.user", "w.rsp_spare.user", *user);
+    if (const auto trace = b_trace(held_b, b_fire, load))
+      bstored_trace = held("w.rsp.trace", "w.rsp_spare.trace", *trace);
     face.fields["size"] = held("w.rsp.size", "w.rsp_spare.size",
                                answered("size", pick(l, field(&WriteSlot::size), freed)));
     face.fields["source"] =
@@ -1504,6 +1539,8 @@ void EngineLowering::write_respond_single(ValueId bresp, ValueId bid, WriteFace 
           l.both(l.inv(local_b), exclusive_success(l, bresp, bfault, aw.at("lock")));
     if (const auto buser = target_user("buser", l.inv(local_b)))
       live["user"] = *buser;
+    if (const auto trace = target_btrace(l.inv(local_b)))
+      live["trace"] = *trace;
     const auto store = report_only ? l.both(bpush, l.inv(silent)) : bpush;
     bsilent_done = report_only ? l.both(bpush, silent) : zero;
     boffer = {bf, store, live};
@@ -1518,6 +1555,10 @@ void EngineLowering::write_respond_single(ValueId bresp, ValueId bid, WriteFace 
   if (const auto buser = target_user("buser", l.inv(local_b))) {
     const auto held_user = l.latch("w.response_user", *buser, bpush);
     bstored_user = p.write_only ? l.b.select(bf, held_user, *buser) : held_user;
+  }
+  if (const auto trace = target_btrace(l.inv(local_b))) {
+    const auto held_trace = l.latch("w.response_trace", *trace, bpush);
+    bstored_trace = p.write_only ? l.b.select(bf, held_trace, *trace) : held_trace;
   }
   // A write-only target offers its B to the network in the cycle it arrives while no response
   // waits (no read response to alternate with); it is stored only when the network refuses it.
@@ -2409,6 +2450,9 @@ void EngineLowering::join_responses() {
   std::optional<ValueId> user;
   if (rq.word.contains("user"))
     user = both_ways("r.response_user", "user", b_field("user"));
+  std::optional<ValueId> btrace;
+  if (bq.word.contains("trace"))
+    btrace = stage_of("w.rsp.trace", bq.word.at("trace"), b_taken);
   Fields front_fields;
   if (cur_index) {
     l.b.update(*cur_index, l.b.select(r_taken, rq.word.at("index"), *cur_index));
@@ -2435,7 +2479,7 @@ void EngineLowering::join_responses() {
   response_face("rrsp", front, l.both(offered, l.inv(jwrite)), face_address, face_code, face_first,
                 jlast, face_data, exclusive, user, data_groups);
   response_face("wrsp", wfields, l.both(offered, jwrite), address, code, one, one,
-                l.b.constant(p.data_bits, 0), exclusive, user);
+                l.b.constant(p.data_bits, 0), exclusive, user, b_groups(btrace));
   l.b.output("nl_hint_cut", l.both(offered, cut), "hint", "cut");
   if (p.response_run_bits)
     l.b.output("nl_hint_wrap_end",
@@ -2680,6 +2724,16 @@ std::pair<unsigned, unsigned> axi4_outlet_outstanding_bits(const Axi4OutletProfi
   const unsigned user = p.response_user_port_bits ? p.response_user_bits : 0U;
   // The byte groups of the W entry beat and of each staged or held R beat.
   const unsigned groups = p.carry_groups ? p.data_bits / 8 * p.data_user_bits_per_byte : 0U;
+  // BTRACE of a staged B: the response register(s), or the B pipe and the joined stage, and a
+  // parked B.
+  unsigned btrace = 0;
+  if (p.carry_groups && p.byte_groups.trace && p.data_ports.trace) {
+    btrace = p.interleave            ? (p.max_outstanding > 1 && !p.response_direct ? 2U : 1U)
+             : p.max_outstanding < 2 ? 1U
+                                     : 2U;
+    if (p.max_outstanding > 1 && (p.merger_hints || p.interleave))
+      btrace += 1;
+  }
   const bool joined = p.interleave && p.max_outstanding > 1;
   // An AXI3 target with several bursts keeps the W entry beat's WID; behind the response merger
   // the parked B keeps its ID, result and user field.
@@ -2690,12 +2744,13 @@ std::pair<unsigned, unsigned> axi4_outlet_outstanding_bits(const Axi4OutletProfi
   const unsigned b_staged = p.response_direct ? staging
                             : joined          ? staging + 3 + p.source_bits + p.id_bits
                                               : 2 * staging;
-  const unsigned write = p.max_outstanding < 2
-                             ? descriptor + p.data_bits + groups + p.data_bits / 8 + 2 + user
-                             : descriptor + p.data_bits + groups + p.data_bits / 8 + b_staged +
-                                   p.max_outstanding * write_slot + (p.interleave ? 1 : 2) * user +
-                                   (p.axi3 ? axi4_outlet_id_bits(p) : 0U) + parked +
-                                   (owned ? p.source_bits + p.id_bits + 1 : 0U);
+  const unsigned write =
+      btrace + (p.max_outstanding < 2
+                    ? descriptor + p.data_bits + groups + p.data_bits / 8 + 2 + user
+                    : descriptor + p.data_bits + groups + p.data_bits / 8 + b_staged +
+                          p.max_outstanding * write_slot + (p.interleave ? 1 : 2) * user +
+                          (p.axi3 ? axi4_outlet_id_bits(p) : 0U) + parked +
+                          (owned ? p.source_bits + p.id_bits + 1 : 0U));
   // Read: per queue entry the descriptor, then the beat address and the staged beats (result,
   // data, address): two, or one behind a merge. In interleave mode with several bursts each entry
   // keeps its first beat's user and no beat address (the R pipe and the joined stage hold two).

@@ -563,3 +563,25 @@ TEST_CASE("AXI5 unique ID and loopback ports return the request values", "[axi5]
   wide.initiators[0].axi5->read_loop_width = 9;
   CHECK(has(refused(wide), "NCL_AXI5_PROPERTIES", "initiators[0].axi5.read_loop_width"));
 }
+
+TEST_CASE("AXI5 trace ports carry the request bit and follow the data", "[axi5]") {
+  using namespace nocloom;
+  auto d = parsed(with("axi5"));
+  d.initiators[0].axi5.emplace().trace = true;
+  d.targets[0].axi5.emplace().trace = true;
+  const auto r = generate(d);
+  REQUIRE(r);
+  const auto &rtl = artifact(r.value(), ".v");
+  for (const auto *port :
+       {" nl_i_cpu_awtrace,", " nl_i_cpu_artrace,", " nl_i_cpu_wtrace,", " nl_i_cpu_btrace,",
+        " nl_i_cpu_rtrace,", " nl_t_ram_awtrace,", " nl_t_ram_artrace,", " nl_t_ram_wtrace,",
+        " nl_t_ram_btrace,", " nl_t_ram_rtrace,"})
+    CHECK(rtl.find(port) != std::string::npos);
+  CHECK(rtl.find("nl_i_dma_awtrace") == std::string::npos);
+  auto wide = d;
+  wide.initiators[0].data_width = 512;
+  wide.initiators[0].max_outstanding.reset();
+  CHECK(has(refused(wide), "NCL_AXI5_DATA_WIDTH", "initiators[0].data_width"));
+  wide.initiators[0].protocol = Protocol::Ace5Lite;
+  CHECK(has(refused(wide), "NCL_AXI5_DATA_WIDTH", "initiators[0].data_width"));
+}

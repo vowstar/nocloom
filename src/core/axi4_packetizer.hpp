@@ -109,6 +109,9 @@ struct Axi4PacketizerProfile : ComponentProfileBase {
   // Move each byte group of the data_user field (message.hpp point 20) with its data byte through
   // packing, gathering and replay; otherwise a converted beat carries zero groups.
   bool carry_groups = false;
+  // With carry_groups, the trace bit of a group: the B of a burst's last packet leaves with the
+  // trace bits of every packet's B (OR).
+  std::optional<unsigned> group_trace_bit;
   unsigned response_user_bits = 0;
   unsigned level_bits = 0; // request scheduling level (message.hpp point 15)
   // Above one, single-packet bursts pass independently; splitting, folding or

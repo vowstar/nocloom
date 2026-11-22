@@ -888,7 +888,7 @@ struct InitiatorLowering {
   }
   // RUSER (the response user field low, the data user bits of the beat's groups above), RPOISON
   // and RTRACE of the R face. A failed or local beat (rresp[1]) returns zero groups.
-  void read_group_outputs(ValueId local, ValueId rresp) {
+  void read_group_outputs(ValueId local, ValueId rresp, ValueId request = {}) {
     if (!p.data_ports.any()) {
       user_output("ruser", r_rsp_user, local);
       return;
@@ -915,10 +915,13 @@ struct InitiatorLowering {
       axi_output("rpoison", r_rsp_groups && g.poison
                                 ? groups::granules(l, staged, be_bits, g.bits(), g.poison_bit())
                                 : l.num((be_bits + 7) / 8, 0));
+    // RTRACE is the request's ARTRACE OR the trace bits of the transfer's bytes.
     if (p.data_ports.trace)
-      axi_output("rtrace", r_rsp_groups && g.trace
-                               ? groups::any_bit(l, staged, be_bits, g.bits(), g.trace_bit())
-                               : zero);
+      axi_output("rtrace",
+                 l.either(r_rsp_groups && g.trace
+                              ? groups::any_bit(l, staged, be_bits, g.bits(), g.trace_bit())
+                              : zero,
+                          p.echo.trace ? request : zero));
   }
   void apb_data_user_face(ValueId address, ValueId strobes);
   void apb_data_user_tail(ValueId answer, ValueId read_valid);
@@ -934,6 +937,16 @@ struct InitiatorLowering {
   ValueId w_b_full{}, w_b_id{}, w_bvalid{};
   // The staged B and R beat's echoes (Axi4InitiatorProfile::echo).
   ValueId w_b_echo{}, r_rsp_echo{};
+  // The staged B's trace bit from its byte groups (BTRACE of the target, or of any packet).
+  std::optional<ValueId> w_b_trace;
+  ValueId response_trace() {
+    const auto &g = p.byte_groups;
+    return groups::any_bit(l, w_wrsp_in.at("data_user"), be_bits, g.bits(), g.trace_bit());
+  }
+  // AxTRACE of a request from its echo value, zero without trace.
+  ValueId request_trace(ValueId echo, bool write) {
+    return p.echo.trace ? l.b.slice(echo, p.echo.bits(write) - 1, 1) : zero;
+  }
   // BIDUNQ and BLOOP, or RIDUNQ and RLOOP, of a response from its echo value.
   void echo_outputs(const std::string &ch, ValueId echo) {
     const bool write = ch == "b";
@@ -944,6 +957,10 @@ struct InitiatorLowering {
       axi_output(ch + "idunq", l.b.slice(echo, at++, 1));
     if (const auto loop = p.echo.loop(write))
       axi_output(ch + "loop", l.b.slice(echo, at, loop));
+    // BTRACE is the request's AxTRACE OR the trace bit the write response brings back.
+    if (write && p.echo.trace)
+      axi_output("btrace", w_b_trace ? l.either(request_trace(echo, true), *w_b_trace)
+                                     : request_trace(echo, true));
   }
   ValueId r_rsp_id{}, r_beat{}, r_local_burst{}, r_offered{}, r_face_local{}, r_rvalid{};
   ValueId return_room(ValueId full, ValueId pop) {
@@ -951,6 +968,7 @@ struct InitiatorLowering {
   }
   void write_response_valid();
   void read_response_valid();
+  void read_response_held(ValueId local_code);
 
   // Write-side handles handed from write_issue to write_complete.
   AddressFace w_aw{};
@@ -1127,10 +1145,16 @@ struct InitiatorLowering {
         f.user = p.user_flags.empty() ? meta : l.b.concat(meta, f.user);
       }
     }
-    // The AXI5 request ports, and their attributes above the other user bits.
-    auto block = axi5::source_attributes(
-        l, p.axi5_attributes, p.axi5_ports, f.prot,
-        [&](const std::string &signal, unsigned bits) { return axi_input(ch + signal, bits); });
+    // The AXI5 request ports, and their attributes above the other user bits. AxTRACE is also
+    // stored with the request.
+    std::optional<ValueId> trace_port;
+    auto block = axi5::source_attributes(l, p.axi5_attributes, p.axi5_ports, f.prot,
+                                         [&](const std::string &signal, unsigned bits) {
+                                           const auto port = axi_input(ch + signal, bits);
+                                           if (signal == "trace")
+                                             trace_port = port;
+                                           return port;
+                                         });
     shareable_face(ch, f, block);
     if (block)
       f.user = p.user_bits == p.axi5_attributes.bits() ? *block : l.b.concat(*block, f.user);
@@ -1144,6 +1168,8 @@ struct InitiatorLowering {
         add(axi_input(ch + "idunq", 1));
       if (const auto loop = p.echo.loop(ch == "aw"))
         add(axi_input(ch + "loop", loop));
+      if (p.echo.trace)
+        add(trace_port ? *trace_port : axi_input(ch + "trace", 1));
       f.echo = *echo;
     }
     f.valid = axi_input(ch + "valid", 1);
@@ -1529,6 +1555,8 @@ void InitiatorLowering::write_issue() {
   w_bresp_reg = l.state("wr.bresp", 2);
   if (p.response_user_bits)
     w_buser_reg = l.state("wr.b_user", p.response_user_bits);
+  if (p.echo.trace && p.carry_groups && p.byte_groups.trace)
+    w_b_trace = l.state("wr.b_trace", 1);
 
   w_idle = l.eq(w_wr_state, 0);
   const auto beats = l.eq(w_wr_state, 1);
@@ -1803,6 +1831,9 @@ void InitiatorLowering::write_complete() {
           *w_buser_reg,
           l.b.select(wrsp_fire, w_wrsp_in.at("user"),
                      l.b.select(local_fill, l.b.constant(p.response_user_bits, 0), *w_buser_reg)));
+    if (w_b_trace)
+      l.b.update(*w_b_trace,
+                 l.b.select(wrsp_fire, response_trace(), l.b.select(local_fill, zero, *w_b_trace)));
     if (p.id_bits)
       l.b.update(w_b_id, l.b.select(wrsp_fire, multi ? response_id(w_wrsp_in) : w_cap.id_reg,
                                     l.b.select(local_fill, w_cap.id_reg, w_b_id)));
@@ -1823,6 +1854,9 @@ void InitiatorLowering::write_complete() {
                  l.b.select(wrsp_fire, w_wrsp_in.at("user"),
                             l.b.select(w_last_absorb, l.b.constant(p.response_user_bits, 0),
                                        *w_buser_reg)));
+    if (w_b_trace)
+      l.b.update(*w_b_trace, l.b.select(wrsp_fire, response_trace(),
+                                        l.b.select(w_last_absorb, zero, *w_b_trace)));
   }
   if (multi) {
     // The poison is known when the burst leaves the issue stage
@@ -2092,6 +2126,73 @@ void InitiatorLowering::read_response_valid() {
   }
 }
 
+void InitiatorLowering::read_response_held(ValueId local_code) {
+  // The R face passes staged beats and owns its ID: the burst's end at the staging lets the next
+  // burst issue while its last beat waits for RREADY. A local answer takes the face once no
+  // beat is staged.
+  const auto raccept = l.bind("rr.accept", l.both(r_rvalid, r_rready));
+  const auto rrsp_ready =
+      l.both(l.reset, l.either(r_idle, l.both(r_stream, return_room(r_rsp_full, raccept))));
+  const auto rrsp_load = l.bind("rr.rsp_load", l.both(l.both(r_rrsp_valid, rrsp_ready), r_stream));
+  const auto last_beat = l.eq(r_remaining, 0);
+  auto tail_saved = zero, tail_in_staging = zero;
+  if (p.local_decode_miss) {
+    // Like a network tail, a miss tail frees the issue stage even under R back-pressure.
+    const auto saved = l.state("rr.miss_tail", 1);
+    const auto miss = p.slverr_only ? one : l.b.slice(local_code, 0, 1);
+    tail_saved = l.every(std::array{l.reset, r_face_local, last_beat, miss, l.inv(r_rready)});
+    l.b.update(saved, l.pick(rrsp_load, zero, l.either(saved, tail_saved)));
+    tail_in_staging = l.both(r_rsp_full, saved);
+  }
+  const auto network_last = reuse_read_count() ? r_rrsp_in.at("last") : last_beat;
+  auto done =
+      l.either(l.both(rrsp_load, network_last), l.both(l.both(raccept, r_face_local), last_beat));
+  if (p.local_decode_miss)
+    done = l.either(done, tail_saved);
+  l.b.update(r_rr_state,
+             l.b.select(r_start, l.b.select(r_emit_fire, l.b.constant(2, 2), l.b.constant(2, 1)),
+                        l.b.select(l.both(r_emitting, l.inv(r_sent)), l.b.constant(2, 3),
+                                   l.b.select(r_emit_fire, l.b.constant(2, 2),
+                                              l.b.select(done, l.b.constant(2, 0), r_rr_state)))));
+  const auto count_step = reuse_read_count() ? l.both(raccept, r_face_local)
+                                             : l.either(rrsp_load, l.both(raccept, r_face_local));
+  update_read_count(count_step);
+  const auto stage = p.local_decode_miss ? l.either(rrsp_load, tail_saved) : rrsp_load;
+  l.b.update(
+      r_rsp_full,
+      l.b.select(stage, one, l.b.select(l.both(raccept, l.inv(r_face_local)), zero, r_rsp_full)));
+  stage_beat(rrsp_load);
+  if (p.id_bits)
+    l.b.update(r_rsp_id, l.b.select(stage, r_cap.id_reg, r_rsp_id));
+  if (p.echo.bits(false))
+    l.b.update(r_rsp_echo, l.b.select(stage, r_cap.echo_reg, r_rsp_echo));
+  l.b.output("nl_rrsp_ready", rrsp_ready, "rrsp", "ready");
+  r_arready = l.both(l.reset, l.either(r_taken, l.both(r_emitting, l.inv(r_sent))));
+  r_ar_fire = l.bind("rr.ar_fire", l.both(r_ar.valid, r_arready));
+  axi_output("arready", r_arready);
+  axi_output("rvalid", r_rvalid);
+  const auto face_local =
+      p.local_decode_miss ? l.either(r_face_local, tail_in_staging) : r_face_local;
+  const auto face_error =
+      local_miss_decerr() ? local_response(l.either(tail_in_staging, l.b.slice(local_code, 0, 1)))
+                          : local_code;
+  axi_output("rdata", l.b.select(face_local, l.b.constant(p.data_bits, 0), r_rsp_data));
+  const auto rresp =
+      l.b.select(face_local, face_error,
+                 map_result(l, r_rsp_result, r_rsp_error, p.slverr_only, r_rsp_exclusive));
+  axi_output("rresp", rresp);
+  axi_output("rlast", l.bind("rr.rlast",
+                             l.b.select(r_face_local, last_beat,
+                                        p.local_decode_miss ? l.either(tail_in_staging, r_rsp_last)
+                                                            : r_rsp_last)));
+  if (p.id_bits)
+    axi_output("rid", l.b.select(r_face_local, r_cap.id_reg, r_rsp_id));
+  const auto echo =
+      p.echo.bits(false) ? l.b.select(r_face_local, r_cap.echo_reg, r_rsp_echo) : zero;
+  echo_outputs("r", echo);
+  read_group_outputs(face_local, rresp, request_trace(echo, false));
+}
+
 void InitiatorLowering::read_response() {
   const auto &d = r_cap.d;
   auto local_code = l.num(2, 2);
@@ -2176,79 +2277,16 @@ void InitiatorLowering::read_response() {
       axi_output("rlast", rlast);
     if (p.id_bits && !p.lite)
       axi_output("rid", l.bind("rr.face_id", l.b.select(r_face_local, r_cap.id_reg, r_rsp_id)));
-    if (p.echo.bits(false))
-      echo_outputs("r", l.b.select(r_face_local, r_cap.echo_reg, r_rsp_echo));
-    read_group_outputs(r_face_local, rresp);
+    const auto echo =
+        p.echo.bits(false) ? l.b.select(r_face_local, r_cap.echo_reg, r_rsp_echo) : zero;
+    echo_outputs("r", echo);
+    read_group_outputs(r_face_local, rresp, request_trace(echo, false));
     // A tracked engine never reaches the APB tail (an APB face holds at most one
     // burst), so this return is the final finish of lower_axi4_initiator.
     return;
   }
   if (held) {
-    // The R face passes staged beats and owns its ID: the burst's end at the staging lets the next
-    // burst issue while its last beat waits for RREADY. A local answer takes the face once no
-    // beat is staged.
-    const auto raccept = l.bind("rr.accept", l.both(r_rvalid, r_rready));
-    const auto rrsp_ready =
-        l.both(l.reset, l.either(r_idle, l.both(r_stream, return_room(r_rsp_full, raccept))));
-    const auto rrsp_load =
-        l.bind("rr.rsp_load", l.both(l.both(r_rrsp_valid, rrsp_ready), r_stream));
-    const auto last_beat = l.eq(r_remaining, 0);
-    auto tail_saved = zero, tail_in_staging = zero;
-    if (p.local_decode_miss) {
-      // Like a network tail, a miss tail frees the issue stage even under R back-pressure.
-      const auto saved = l.state("rr.miss_tail", 1);
-      const auto miss = p.slverr_only ? one : l.b.slice(local_code, 0, 1);
-      tail_saved = l.every(std::array{l.reset, r_face_local, last_beat, miss, l.inv(r_rready)});
-      l.b.update(saved, l.pick(rrsp_load, zero, l.either(saved, tail_saved)));
-      tail_in_staging = l.both(r_rsp_full, saved);
-    }
-    const auto network_last = reuse_read_count() ? r_rrsp_in.at("last") : last_beat;
-    auto done =
-        l.either(l.both(rrsp_load, network_last), l.both(l.both(raccept, r_face_local), last_beat));
-    if (p.local_decode_miss)
-      done = l.either(done, tail_saved);
-    l.b.update(
-        r_rr_state,
-        l.b.select(r_start, l.b.select(r_emit_fire, l.b.constant(2, 2), l.b.constant(2, 1)),
-                   l.b.select(l.both(r_emitting, l.inv(r_sent)), l.b.constant(2, 3),
-                              l.b.select(r_emit_fire, l.b.constant(2, 2),
-                                         l.b.select(done, l.b.constant(2, 0), r_rr_state)))));
-    const auto count_step = reuse_read_count() ? l.both(raccept, r_face_local)
-                                               : l.either(rrsp_load, l.both(raccept, r_face_local));
-    update_read_count(count_step);
-    const auto stage = p.local_decode_miss ? l.either(rrsp_load, tail_saved) : rrsp_load;
-    l.b.update(
-        r_rsp_full,
-        l.b.select(stage, one, l.b.select(l.both(raccept, l.inv(r_face_local)), zero, r_rsp_full)));
-    stage_beat(rrsp_load);
-    if (p.id_bits)
-      l.b.update(r_rsp_id, l.b.select(stage, r_cap.id_reg, r_rsp_id));
-    if (p.echo.bits(false))
-      l.b.update(r_rsp_echo, l.b.select(stage, r_cap.echo_reg, r_rsp_echo));
-    l.b.output("nl_rrsp_ready", rrsp_ready, "rrsp", "ready");
-    r_arready = l.both(l.reset, l.either(r_taken, l.both(r_emitting, l.inv(r_sent))));
-    r_ar_fire = l.bind("rr.ar_fire", l.both(r_ar.valid, r_arready));
-    axi_output("arready", r_arready);
-    axi_output("rvalid", r_rvalid);
-    const auto face_local =
-        p.local_decode_miss ? l.either(r_face_local, tail_in_staging) : r_face_local;
-    const auto face_error =
-        local_miss_decerr() ? local_response(l.either(tail_in_staging, l.b.slice(local_code, 0, 1)))
-                            : local_code;
-    axi_output("rdata", l.b.select(face_local, l.b.constant(p.data_bits, 0), r_rsp_data));
-    const auto rresp =
-        l.b.select(face_local, face_error,
-                   map_result(l, r_rsp_result, r_rsp_error, p.slverr_only, r_rsp_exclusive));
-    axi_output("rresp", rresp);
-    axi_output("rlast", l.bind("rr.rlast", l.b.select(r_face_local, last_beat,
-                                                      p.local_decode_miss
-                                                          ? l.either(tail_in_staging, r_rsp_last)
-                                                          : r_rsp_last)));
-    if (p.id_bits)
-      axi_output("rid", l.b.select(r_face_local, r_cap.id_reg, r_rsp_id));
-    if (p.echo.bits(false))
-      echo_outputs("r", l.b.select(r_face_local, r_cap.echo_reg, r_rsp_echo));
-    read_group_outputs(face_local, rresp);
+    read_response_held(local_code);
     return;
   }
   // Response beat skid buffer with flow-through; RLAST is forwarded from the fragment's last
@@ -2289,7 +2327,7 @@ void InitiatorLowering::read_response() {
   if (p.id_bits && !p.lite)
     axi_output("rid", d.id);
   echo_outputs("r", d.echo);
-  read_group_outputs(r_errstream, rresp);
+  read_group_outputs(r_errstream, rresp, request_trace(d.echo, false));
 }
 void InitiatorLowering::apb_tail() {
   if (p.apb) {

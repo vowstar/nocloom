@@ -1156,7 +1156,11 @@ void PacketizerLowering::write_response() {
     else
       b_ready = l.both(b_ready, l.inv(hold)), b_passes = l.both(b_passes, l.inv(hold));
   }
-  ValueId held = l.num(2, 0), held_error = zero;
+  ValueId held = l.num(2, 0), held_error = zero, held_trace = zero;
+  const auto trace_now = p.group_trace_bit
+                             ? groups::any_bit(l, wb.at("data_user"), bytes,
+                                               p.data_user_bits_per_byte, *p.group_trace_bit)
+                             : zero;
   ValueId current = zero, current_split = zero, hit_split = zero;
   for (unsigned k = 0; k < contexts; ++k) {
     const auto name = "w.context" + std::to_string(k);
@@ -1178,6 +1182,12 @@ void PacketizerLowering::write_response() {
                                  l.pick(absorb, l.either(acc_error, wb.at("error")), acc_error)));
     current = l.either(current, cur);
     held = l.pick(hit, acc, held), held_error = l.either(held_error, l.both(hit, acc_error));
+    if (p.group_trace_bit) {
+      const auto acc_trace = l.state(name + ".trace", 1);
+      l.b.update(acc_trace,
+                 l.pick(load_k, zero, l.pick(absorb, l.either(acc_trace, trace_now), acc_trace)));
+      held_trace = l.either(held_trace, l.both(hit, acc_trace));
+    }
   }
   const auto final_b = l.either(l.inv(mine), final_any), b_fire = l.both(b_valid, b_ready);
   auto counts = l.both(l.both(staged, current), l.inv(current_split));
@@ -1187,6 +1197,10 @@ void PacketizerLowering::write_response() {
   Fields wr = wb;
   wr["result"] = merge(held, wb.at("result"));
   wr["error"] = l.either(held_error, wb.at("error"));
+  if (p.group_trace_bit)
+    wr["data_user"] =
+        l.either(wb.at("data_user"), groups::flags(l, held_trace, bytes, p.data_user_bits_per_byte,
+                                                   *p.group_trace_bit));
   io.out("up_wrsp", "valid", l.both(b_passes, final_b));
   io.out("down_wrsp", "ready", b_ready);
   io.fields_out("up_wrsp", wr, p.data_bits, false);

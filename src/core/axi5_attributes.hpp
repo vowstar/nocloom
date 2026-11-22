@@ -31,6 +31,7 @@ std::optional<ValueId> source_attributes(logic::Logic &l, const Axi5Attributes &
   const auto nsaid = read(ports.nsaid, "nsaid", 4), pbha = read(ports.pbha, "pbha", 4);
   const auto subsystem = read(ports.subsystem_id, "subsysid", ports.subsystem_id);
   const auto mpam = read(ports.mpam, "mpam", ports.mpam);
+  const auto trace = read(ports.trace, "trace", 1);
   std::vector<ValueId> fields;
   if (a.nsaid)
     fields.push_back(nsaid.value_or(l.num(4, 0)));
@@ -42,6 +43,8 @@ std::optional<ValueId> source_attributes(logic::Logic &l, const Axi5Attributes &
   if (a.mpam)
     fields.push_back(mpam ? mpam_resize(l, *mpam, a.mpam)
                           : l.b.concat(l.num(a.mpam - 1, 0), l.b.slice(prot, 1, 1)));
+  if (a.trace)
+    fields.push_back(trace.value_or(l.num(1, 0)));
   if (fields.empty())
     return std::nullopt;
   return std::accumulate(std::next(fields.begin()), fields.end(), fields.front(),
@@ -49,7 +52,7 @@ std::optional<ValueId> source_attributes(logic::Logic &l, const Axi5Attributes &
 }
 // The AXI5 request ports of a target from the attributes at bit `offset` of the request user field.
 // emit(name, value) drives one port. A target port wider than its field takes zeros above it.
-// Without a field, NSAID, PBHA and the subsystem ID are zero and MPAM carries MPAM_NS from
+// Without a field, NSAID, PBHA, the subsystem ID and AxTRACE are zero and MPAM carries MPAM_NS from
 // protection bit 1.
 template <class Emit>
 void target_attributes(logic::Logic &l, const Axi5Attributes &a, const Axi5RequestPorts &ports,
@@ -61,7 +64,7 @@ void target_attributes(logic::Logic &l, const Axi5Attributes &a, const Axi5Reque
     return value;
   };
   const auto nsaid = field(a.nsaid), pbha = field(a.pbha);
-  const auto subsystem = field(a.subsystem_id), mpam = field(a.mpam);
+  const auto subsystem = field(a.subsystem_id), mpam = field(a.mpam), trace = field(a.trace);
   if (ports.nsaid)
     emit("nsaid", nsaid.value_or(l.num(4, 0)));
   if (ports.pbha)
@@ -72,6 +75,8 @@ void target_attributes(logic::Logic &l, const Axi5Attributes &a, const Axi5Reque
   if (ports.mpam)
     emit("mpam", mpam ? mpam_resize(l, *mpam, ports.mpam)
                       : l.b.concat(l.num(ports.mpam - 1, 0), l.b.slice(protection, 1, 1)));
+  if (ports.trace)
+    emit("trace", trace.value_or(l.num(1, 0)));
 }
 } // namespace axi5
 } // namespace nocloom::detail

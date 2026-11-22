@@ -76,6 +76,7 @@ Axi5RequestPorts axi5_request_ports(const std::optional<Axi5Properties> &propert
   ports.subsystem_value = p.subsystem_id.value_or(0);
   ports.nsaid = p.nsaid;
   ports.pbha = p.pbha;
+  ports.trace = p.trace;
   ports.prot = p.prot;
   ports.priv_inst = p.priv_inst;
   ports.pas = p.pas_width == 1;
@@ -107,7 +108,8 @@ Axi5DataPorts axi5_data_ports(const std::optional<Axi5Properties> &axi5, unsigne
   return axi5 ? Axi5DataPorts{data_user_bits, axi5->poison, axi5->trace} : Axi5DataPorts{};
 }
 Axi5EchoPorts axi5_echo_ports(const std::optional<Axi5Properties> &axi5) {
-  return axi5 ? Axi5EchoPorts{axi5->unique_id, axi5->write_loop_width, axi5->read_loop_width}
+  return axi5 ? Axi5EchoPorts{axi5->unique_id, axi5->write_loop_width, axi5->read_loop_width,
+                              axi5->trace}
               : Axi5EchoPorts{};
 }
 bool axi4_port(std::optional<Protocol> protocol) {
@@ -394,6 +396,7 @@ void plan_axi5_attributes(NetworkPlan &plan) {
     a.subsystem_id = std::max(
         {a.subsystem_id, p.subsystem_id, static_cast<unsigned>(std::bit_width(p.subsystem_value))});
     a.mpam = std::max(a.mpam, p.mpam);
+    a.trace = std::max(a.trace, p.trace ? 1U : 0U);
     a.domain = std::max(a.domain, p.domain ? 2U : 0U);
     a.snoop = std::max(a.snoop, p.domain && p.write_snoop ? 1U : 0U);
   };
@@ -404,7 +407,8 @@ void plan_axi5_attributes(NetworkPlan &plan) {
   auto &a = plan.axi5_attributes;
   for (const auto member :
        {&Axi5Attributes::nsaid, &Axi5Attributes::pbha, &Axi5Attributes::subsystem_id,
-        &Axi5Attributes::mpam, &Axi5Attributes::domain, &Axi5Attributes::snoop})
+        &Axi5Attributes::mpam, &Axi5Attributes::trace, &Axi5Attributes::domain,
+        &Axi5Attributes::snoop})
     a.*member = targets.*member ? sources.*member : 0U;
   plan.burst_user_bits += a.bits();
 }

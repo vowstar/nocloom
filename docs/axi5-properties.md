@@ -27,6 +27,7 @@ packet splitting and clock domain crossings.
 | PBHA_Support | AWPBHA and ARPBHA go with each packet of the request |
 | USER_DATA_WIDTH | `data_user_width` gives WUSER and the data part of RUSER. Each data byte carries its own group of user bits. See [data side](axi5.md#data-side) |
 | Poison | `poison` gives WPOISON and RPOISON. Each data byte carries a poison bit. See [data side](axi5.md#data-side) |
+| Trace_Signals | `trace` gives the five trace signals. AWTRACE and ARTRACE go with each packet. WTRACE and RTRACE follow the data bytes. BTRACE and RTRACE at an initiator include the trace bit of the request. See [trace](axi5.md#trace) |
 
 ## Interpreted properties
 
@@ -73,7 +74,6 @@ packet splitting and clock domain crossings.
 
 | Property | Reason |
 | --- | --- |
-| Trace_Signals | The network rejects this property |
 | Wakeup_Signals | The network has no clock or power control that uses AWAKEUP |
 | QoS_Accept | The network has no function that uses VAWQOSACCEPT or VARQOSACCEPT |
 | Busy_Support | The network has no rule to combine the BBUSY and RBUSY values of split packets |

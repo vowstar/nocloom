@@ -378,7 +378,7 @@ foreach(axi5_mode IN ITEMS switch clocked)
     LABELS "rtl;axi5;focused;ci" WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 endforeach()
 # AXI5 data side: every byte group bit through width conversion, packet splitting and a crossing.
-foreach(axi5_mode IN ITEMS widths split net64 clocked)
+foreach(axi5_mode IN ITEMS widths split net64 clocked ace5_lite)
   add_test(NAME axi5_data_${axi5_mode}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/axi5_data_bench.py
       --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/axi5_data_${axi5_mode}

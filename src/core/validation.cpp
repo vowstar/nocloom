@@ -1265,9 +1265,8 @@ void check_axi5(Checks &c, std::optional<Protocol> protocol,
               ". The network issues bursts of every shape");
   // Properties that later network functions carry.
   for (const auto &[key, set, property] :
-       {std::tuple{"trace", p.trace, "Trace_Signals"},
-        {"max_transaction_bytes", !initiator && p.max_transaction_bytes != 4096,
-         "Max_Transaction_Bytes below 4096 at a target"}})
+       {std::tuple{"max_transaction_bytes", !initiator && p.max_transaction_bytes != 4096,
+                   "Max_Transaction_Bytes below 4096 at a target"}})
     if (set)
       c("NCL_AXI5_UNSUPPORTED", at + "." + key,
         std::string("The network does not support ") + property);

@@ -61,6 +61,19 @@ inline ValueId any_bit(logic::Logic &l, ValueId value, unsigned bytes, unsigned 
     members.push_back(l.b.slice(flags, b, 1));
   return l.any(members);
 }
+// Groups whose bit `bit` is `flag` and whose other bits are zero.
+inline ValueId flags(logic::Logic &l, ValueId flag, unsigned bytes, unsigned bits, unsigned bit) {
+  std::optional<ValueId> group;
+  if (bit)
+    group = l.num(bit, 0);
+  group = group ? l.b.concat(flag, *group) : flag;
+  if (bit + 1 < bits)
+    group = l.b.concat(l.num(bits - bit - 1, 0), *group);
+  auto out = *group;
+  for (unsigned b = 1; b < bytes; ++b)
+    out = l.b.concat(*group, out);
+  return out;
+}
 // The groups of a data word from a port value per part: user (k bits per byte, or none for zero),
 // poison (one bit per eight-byte granule) and trace (one bit), each byte's group masked by its
 // strobe.

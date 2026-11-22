@@ -250,6 +250,8 @@ Result<MessageLayout> describe_messages(MessageParameters parameters);
 //    side ports (Axi4InitiatorProfile::carry_groups) clears the group of an unstrobed byte, and
 //    the width converters, the packet splitter and the target merge of such endpoints move each
 //    group with its byte (a failed beat's groups are zero); elsewhere they send zero groups.
+//    A write response carries the target's BTRACE in the trace bit of every group, and the
+//    packet splitter and the width clamp OR the trace bits of a burst's packets and pieces.
 //
 // Burst capability of one endpoint. id_bits is the AxID field width (0..16;
 // zero omits the id field and the ID ports entirely). packet_len_bits counts

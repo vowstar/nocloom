@@ -115,6 +115,8 @@ unsigned outlet_engine_bits(const NetworkPlan &plan, const std::string &target,
   outlet.response_user_bits = plan.burst_response_user_bits;
   outlet.response_user_port_bits = plan.target(target).response_user_bits;
   outlet.data_user_bits_per_byte = plan.data_user_bits_per_byte;
+  outlet.byte_groups = plan.byte_groups;
+  outlet.data_ports = axi5_data_ports(plan.target(target).axi5, plan.target(target).data_user_bits);
   outlet.carry_groups =
       data_side(plan, plan.target(target).axi5, plan.target(target).data_user_bits);
   outlet.axi3 = plan.target(target).axi3;
@@ -318,6 +320,10 @@ struct Obligations {
               echo * (1 + (sp.engine_slots > 1 ? sp.engine_slots : 0));
           source_state.source_return[direction] += echo;
         }
+      // The staged B's trace bit of an AXI5 face with trace in a network that carries it.
+      if (axi5_echo_ports(sp.axi5).trace && plan.byte_groups.trace &&
+          data_side(plan, sp.axi5, sp.data_user_bits))
+        source_state.source_return[0] += 1;
       // The staged R beat's data user bits of an APB5 face, the byte groups of an AXI5 face.
       if (sp.apb && sp.data_user_bits)
         source_state.source_return[1] += 4 * plan.byte_groups.user;
