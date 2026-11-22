@@ -10,6 +10,7 @@
 #include "exclusive_monitor.hpp"
 #include "fifo_levels.hpp"
 #include "ir_component.hpp"
+#include "ir_cone.hpp"
 #include "link_pipeline.hpp"
 #include "network_plan_profiles.hpp"
 #include "piece_count.hpp"
@@ -2657,6 +2658,9 @@ private:
         hints["write_miss_entered"] = *(side.miss_entered = c.wire(1));
       splitter = c.import_endpoint(admitted(lower_axi4_packetizer(packets)), key + "/packets/", "",
                                    "", faces, {}, hints);
+      if (packetize_write)
+        check_passed_fields(sp, "packet splitter", init_wreq, front_wreq);
+      check_passed_fields(sp, "packet splitter", init_rreq, front_rreq);
     }
     if (convert) {
       auto lowered_converter = admitted(lower_axi4_width_clamp(clamp_profile(plan, si, true)));
@@ -2686,6 +2690,8 @@ private:
                                      {"down_rreq", &rreq_ep},
                                      {"down_rrsp", &side.rrsp_ep}},
                                     {}, finals);
+      check_passed_fields(sp, "width clamp", front_wreq, wreq_ep);
+      check_passed_fields(sp, "width clamp", front_rreq, rreq_ep);
       drive_read_wake(sp, read_wake, converter, splitter);
     }
     if (packetize_write)
@@ -2707,6 +2713,24 @@ private:
     sides.push_back(std::move(side));
   }
 
+  // The packet splitter and the width clamp pass on every request field they take that is not
+  // constant zero: a field one dropped would reach the frame as zero. The clamp of a source
+  // without an AxQOS map drops its level, which the initiator holds at zero (the frame stamps a
+  // fixed level).
+  void check_passed_fields(const SourcePlan &sp, const std::string &stage, const Channel &up,
+                           const Channel &down) const {
+    const bool unmapped_clamp = stage == "width clamp" && sp.qos.axqos_map.empty();
+    for (std::size_t i = 0; i < c.endpoint_request_fields.size(); ++i) {
+      const auto &name = c.endpoint_request_fields[i].first;
+      const auto taken = up.data[i].index;
+      const bool carried =
+          c.driven_wires.contains(taken) &&
+          evaluate_cone(c.b.ir, taken, {}, {}, {}, true) != std::optional<std::uint64_t>{0};
+      if (carried && !c.driven_wires.contains(down.data[i].index) &&
+          !(unmapped_clamp && name == "level"))
+        throw std::logic_error("The " + stage + " of " + sp.name + " drops request field " + name);
+    }
+  }
   // With error codes a read's dropped words reach the response valid: a gate's wake reads the
   // occupancy it implies instead, off the first beat's result and the ID's decode. Clock stays on a
   // little longer; no state differs.

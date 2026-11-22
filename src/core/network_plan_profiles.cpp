@@ -782,6 +782,9 @@ Axi4WidthClampProfile clamp_profile(const NetworkPlan &plan, unsigned index, boo
            endpoint_word(plan, plan.targets[pair.target].name) * 8 < source.engine_bits;
   });
   profile.exclusive = plan.exclusive;
+  // A mapped source's level rides every piece (message.hpp point 15). Any other source's level
+  // is zero from its initiator, and its frame stamps a fixed level, so the clamp omits it.
+  profile.level_bits = source.qos.axqos_map.empty() ? 0 : plan.burst_level_bits;
   profile.max_outstanding = source.engine_slots;
   profile.tag_bits = profile.max_outstanding > 1 ? plan.burst_tag_bits : 0;
   profile.packet_depth = source.packets ? 4 : 1;

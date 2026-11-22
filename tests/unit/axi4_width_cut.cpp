@@ -1,5 +1,9 @@
 #include "core/axi4_width_clamp.hpp"
 #include <catch2/catch_test_macros.hpp>
+#include <map>
+#include <set>
+#include <string>
+#include <vector>
 
 using namespace nocloom::detail;
 namespace {
@@ -93,4 +97,60 @@ TEST_CASE("Width clamp cutter has bounded geometry and deterministic structure",
   REQUIRE_FALSE(lower_axi4_width_cut(cut));
   cut.fixed_width = 2;
   REQUIRE(lower_axi4_width_cut(cut));
+}
+
+TEST_CASE("Width clamp passes the request scheduling level to every piece", "[axi4-width-cut]") {
+  // The inputs that reach an output port, through registers.
+  const auto reaching = [](const HardwareIR &ir, const std::string &output) {
+    std::set<std::string> inputs;
+    std::set<std::size_t> seen;
+    std::vector<ValueId> todo;
+    for (const auto &driver : ir.drivers)
+      if (ir.ports.at(driver.port.index).name == output)
+        todo.push_back(driver.value);
+    REQUIRE(todo.size() == 1);
+    while (!todo.empty()) {
+      const auto id = todo.back();
+      todo.pop_back();
+      if (!seen.insert(id.index).second)
+        continue;
+      const auto &v = ir.values.at(id.index);
+      if (v.op == Op::State)
+        todo.push_back(ir.states.at(v.state.index).next);
+      else if (v.op == Op::Input)
+        inputs.insert(ir.ports.at(v.input_port.index).name);
+      else
+        for (unsigned i = 0; i < operand_count(v.op); ++i)
+          todo.push_back(v.operands[i]);
+    }
+    return inputs;
+  };
+  for (unsigned outstanding : {1U, 4U})
+    for (unsigned level : {0U, 3U}) {
+      Axi4WidthClampProfile p{"unit", 3, 8, 32, 2, 64};
+      p.windows = {{{0x0, 0x10000}, 2}};
+      p.max_outstanding = outstanding;
+      p.tag_bits = outstanding > 1 ? 2 : 0;
+      p.level_bits = level;
+      const auto h = lower_axi4_width_clamp(p);
+      REQUIRE(h);
+      const auto &ir = h.value().ir;
+      std::map<std::string, unsigned> levels;
+      for (const auto &port : ir.ports)
+        if (port.signal == "level")
+          levels[port.endpoint] = port.width;
+      if (!level) {
+        CHECK(levels.empty());
+        continue;
+      }
+      // Requests carry it on both faces, responses not at all.
+      CHECK(levels == std::map<std::string, unsigned>{
+                          {"up_wreq", 3}, {"up_rreq", 3}, {"down_wreq", 3}, {"down_rreq", 3}});
+      // A write word takes the level of its source beat. A read piece takes its burst's, which
+      // the clamp holds while it sends the pieces.
+      CHECK(reaching(ir, "nl_down_wreq_level") == std::set<std::string>{"nl_up_wreq_level"});
+      const auto read = reaching(ir, "nl_down_rreq_level");
+      CHECK(read.contains("nl_up_rreq_level"));
+      CHECK_FALSE(read.contains("nl_up_wreq_level"));
+    }
 }

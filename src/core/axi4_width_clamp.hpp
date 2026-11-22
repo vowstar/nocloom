@@ -54,6 +54,8 @@ struct Axi4WidthCutProfile : ComponentProfileBase {
   unsigned user_bits = 0; // network user flags (message.hpp point 13), passed through
   unsigned data_user_bits_per_byte = 0;
   unsigned response_user_bits = 0;
+  // Request scheduling level (message.hpp point 15), passed through to every piece; zero omits it.
+  unsigned level_bits = 0;
   // Routing window and the log2 byte width of its target (2..log2(data/8)).
   std::vector<std::pair<AddressWindow, unsigned>> windows;
   // Every burst at this log2 byte width instead of the window table.
@@ -113,6 +115,7 @@ struct Axi4WidthClampProfile : ComponentProfileBase {
   unsigned user_bits = 0; // network user flags (message.hpp point 13), passed through
   unsigned data_user_bits_per_byte = 0;
   unsigned response_user_bits = 0;
+  unsigned level_bits = 0; // Axi4WidthCutProfile
   unsigned max_outstanding = 1;
   // Behind a splitter with read granule windows: hint read_taken_packet names the packet with which
   // a read leaves the port pipe (Axi4PacketWindow::read_granule).

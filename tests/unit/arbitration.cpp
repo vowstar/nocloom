@@ -1,4 +1,5 @@
 #include "core/axi_burst_charge.hpp"
+#include "core/exchange_composition.hpp"
 #include "core/ir_cone.hpp"
 #include "core/network_plan.hpp"
 #include "core/qos_budget.hpp"
@@ -11,6 +12,7 @@
 #include <nlohmann/json.hpp>
 #include <nocloom/config.hpp>
 #include <nocloom/generation.hpp>
+#include <set>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -777,6 +779,39 @@ TEST_CASE("AxQOS maps carry per-burst levels in request packets", "[fixed-qos]")
   deep.targets[0].max_outstanding = 2;
   deep.arbitration = ArbitrationPolicy::LevelRoundRobin;
   REQUIRE(generate(deep));
+  // A mapped source wider than its targets keeps its level through the width clamp: the request
+  // level at its network entry follows its AxQOS ports, with one burst or several in flight.
+  for (const unsigned outstanding : {1U, 4U}) {
+    auto wide = d;
+    wide.initiators[0].data_width = 64;
+    wide.initiators[0].max_outstanding = outstanding;
+    const auto plan = nocloom::detail::build_network_plan(wide);
+    REQUIRE(plan);
+    REQUIRE(plan.value().sources[0].clamp);
+    const auto hardware = nocloom::detail::lower_axi4_exchange_composition(plan.value());
+    REQUIRE(hardware);
+    const auto &ir = hardware.value().ir;
+    std::set<std::string> inputs;
+    std::set<std::size_t> seen;
+    std::vector<nocloom::detail::ValueId> todo{
+        hardware.value().bindings.at("source/s0/request.packet_level")};
+    while (!todo.empty()) {
+      const auto id = todo.back();
+      todo.pop_back();
+      if (!seen.insert(id.index).second)
+        continue;
+      const auto &v = ir.values.at(id.index);
+      if (v.op == nocloom::detail::Op::State)
+        todo.push_back(ir.states.at(v.state.index).next);
+      else if (v.op == nocloom::detail::Op::Input)
+        inputs.insert(ir.ports.at(v.input_port.index).name);
+      else
+        for (unsigned i = 0; i < nocloom::detail::operand_count(v.op); ++i)
+          todo.push_back(v.operands[i]);
+    }
+    CHECK(inputs.contains("nl_i_s0_awqos"));
+    CHECK(inputs.contains("nl_i_s0_arqos"));
+  }
   // Map domain: 2, 4, 8 or 16 nondecreasing levels of 0..7 on a full AXI initiator alone.
   for (const auto &map : std::vector<std::vector<unsigned>>{
            {1}, {0, 1, 2}, {0, 8}, {1, 0}, std::vector<unsigned>(32, 0)}) {
