@@ -737,6 +737,46 @@ def test_install_timeout(work):
         expect(str(error) == "slow_step: no result within 0.1 s", f"timeout text: {error}")
 
 
+def test_parallel_install_report(work):
+    from threading import Event
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    import install
+
+    target = Path(work) / "parallel-install"
+    finished = Event()
+
+    def infra(ctx, directory):
+        if not finished.wait(5):
+            raise install.Infra("second entry did not run")
+        raise install.Infra("consumer setup failed")
+
+    def success(ctx, directory):
+        finished.set()
+        return {"installed": True}
+
+    def failure(ctx, directory):
+        raise AssertionError("consumer output differs")
+
+    module = SimpleNamespace(ENTRIES=[("first", infra), ("second", success), ("third", failure)])
+    argv = ["install.py", "--case", "parallel.py", "--source", ".", "--build", ".",
+            "--compiler", "c++", "--generator", "Ninja", "--make-program", "ninja",
+            "--work", str(target), "--jobs", "2"]
+    ctx = SimpleNamespace(install=lambda: None, version="fixture")
+    with (patch.object(sys, "argv", argv), patch.object(install, "Context", return_value=ctx),
+          patch.object(install, "load", return_value=module)):
+        code = install.main()
+    result = json.loads((target / "results.json").read_text())
+    expect(code == result["exit"] == 2 and result.get("error") == "consumer setup failed",
+           "parallel install keeps infrastructure exit and detail")
+    rows = result["entries"]
+    expect([(row["name"], row["status"]) for row in rows]
+           == [("first", "ERROR"), ("second", "PASS"), ("third", "FAIL")],
+           "parallel install reports all statuses in case order")
+    expect([row.get("record") for row in rows if row["status"] == "PASS"]
+           == [{"installed": True}], "parallel install keeps successful entry records")
+
+
 def test_idle_function(work):
     """Every queue participates, including four-state values and the empty set."""
     directory = Path(work) / "idle-function"
@@ -836,6 +876,7 @@ def main():
     test_bench(a.fixture, work)
     test_idle_function(work)
     test_install_timeout(work)
+    test_parallel_install_report(work)
     test_rule_selection(work)
     test_throughput_selection(a.fixture, work)
     print("SELFTEST", "FAIL" if FAILS else "PASS", len(FAILS))

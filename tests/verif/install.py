@@ -11,10 +11,14 @@ AssertionError when its contract fails and returns a JSON-able record. A case fi
 
   python3 tests/verif/install.py --case FILE [--param KEY=VALUE]... --source DIR
          --build DIR --compiler CXX --generator G --make-program MAKE --work DIR
-         [--sim ENGINE] [--sim-config JSON]
+         [--jobs N] [--sim ENGINE] [--sim-config JSON]
+
+--jobs runs up to N entries at once (default: 1). Entries share the
+installation and each consumer build. Results follow case order.
 
 Exit code: 0 every entry passed, 1 one failed, 2 an installation, consumer
-build or case file error. results.json lists every entry.
+build or case file error. After setup succeeds, results.json lists every
+entry, including entry errors.
 """
 
 import argparse
@@ -24,9 +28,11 @@ import json
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import traceback
 import types
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -74,6 +80,7 @@ class Context:
         self.source = Path(args.source).resolve()
         self.prefix = root / "relocated"
         self.consumers = {}
+        self.consumer_lock = threading.Lock()
         self.cli = None
         self.version = None
 
@@ -114,8 +121,21 @@ class Context:
         """Builds one consumer from {destination: source path relative to the
         repository} with find_package of the relocated prefix only (the
         dependencies the package must not leak are disabled)."""
-        if name in self.consumers:
-            return self.consumers[name]
+        with self.consumer_lock:
+            if name not in self.consumers:
+                try:
+                    self.consumers[name] = self.build_consumer(name, files, component)
+                except Exception as error:
+                    self.consumers[name] = error
+                    raise
+            consumer = self.consumers[name]
+            if isinstance(consumer, Infra):
+                raise Infra(str(consumer))
+            if isinstance(consumer, Exception):
+                raise RuntimeError(f"consumer {name}: {consumer}") from consumer
+            return consumer
+
+    def build_consumer(self, name, files, component):
         directory = self.root / "consumer" / name
         directory.mkdir(parents=True)
         for destination, origin in files.items():
@@ -141,8 +161,7 @@ target_link_libraries(consumer PRIVATE {target})
             self.run(["cmake", "--build", directory / "build", "-j2"], "build", cwd=directory)
         except AssertionError as error:
             raise Infra(f"consumer {name}: {error}") from error
-        self.consumers[name] = directory / "build" / "consumer"
-        return self.consumers[name]
+        return directory / "build" / "consumer"
 
     def generate(self, config, out, label="cli-generate"):
         """The installed CLI on a YAML file or a definition dict."""
@@ -325,8 +344,11 @@ def main():
     for key in ("source", "build", "compiler", "generator", "make-program", "work"):
         p.add_argument("--" + key, required=True)
     p.add_argument("--toolchain")
+    p.add_argument("--jobs", type=int, default=1, help="entries run at once (default: 1)")
     sim_engine.add_arguments(p)
     a = p.parse_args()
+    if a.jobs < 1:
+        p.error("--jobs must be positive")
     top = Path(a.work).resolve()
     top.mkdir(parents=True, exist_ok=True)
     root = Path(tempfile.mkdtemp(prefix="run-", dir=top))
@@ -343,9 +365,28 @@ def main():
               f"{passed}/{planned or len(results['entries'])} entries passed")
         return code
 
-    failed = False
+    code = 0
     planned = 0
-    current = None
+
+    def run_entry(item):
+        name, entry = item
+        started = time.monotonic()
+        row = dict(name=name)
+        try:
+            directory = root / name
+            directory.mkdir()
+            row["record"] = entry(ctx, directory)
+            row["status"] = "PASS"
+        except AssertionError as error:
+            row["status"] = "FAIL"
+            row["detail"] = str(error)[-3000:]
+        except Infra as error:
+            row.update(status="ERROR", detail=str(error))
+        except Exception:
+            row.update(status="ERROR", detail=traceback.format_exc())
+        row["seconds"] = round(time.monotonic() - started, 3)
+        return row
+
     try:
         module = load(a.case, dict(kv.split("=", 1) for kv in a.param))
         ctx = Context(a, root)
@@ -354,31 +395,28 @@ def main():
         results["install_seconds"] = round(time.monotonic() - started, 3)
         results["version"] = ctx.version
         planned = len(module.ENTRIES)
-        for name, entry in module.ENTRIES:
-            current = name
-            directory = root / name
-            directory.mkdir()
-            started = time.monotonic()
-            row = dict(name=name)
-            try:
-                row["record"] = entry(ctx, directory)
-                row["status"] = "PASS"
-            except AssertionError as error:
-                row["status"] = "FAIL"
-                row["detail"] = str(error)[-3000:]
-                print(f"INSTALL FAIL {name}: {str(error)[-600:]}")
-                failed = True
-            row["seconds"] = round(time.monotonic() - started, 3)
-            results["entries"].append(row)
+        with ThreadPoolExecutor(max_workers=a.jobs) as pool:
+            rows = (pool.map if a.jobs > 1 else map)(run_entry, module.ENTRIES)
+            for row in rows:
+                results["entries"].append(row)
+                status = row["status"]
+                if status == "PASS":
+                    continue
+                print(f"INSTALL {status} {row['name']}: {row['detail'][-600:]}")
+                if status == "ERROR":
+                    results.setdefault("error", row["detail"])
+                    code = 2
+                else:
+                    code = max(code, 1)
     except Infra as error:
         results["error"] = str(error)
-        print(f"INSTALL ERROR {current or 'setup'}: {str(error)[-600:]}")
+        print(f"INSTALL ERROR setup: {str(error)[-600:]}")
         return save(2)
     except Exception:
         results["error"] = traceback.format_exc()
-        print(f"INSTALL ERROR {current or 'setup'}: {results['error'][-600:]}")
+        print(f"INSTALL ERROR setup: {results['error'][-600:]}")
         return save(2)
-    return save(1 if failed else 0)
+    return save(code)
 
 
 if __name__ == "__main__":

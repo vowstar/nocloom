@@ -272,11 +272,14 @@ nocloom_verif_case(NAME verif_install_examples LAYER install TIER focused TIMEOU
   TIMEOUT_REASON "installs once, builds four consumers and simulates ten example networks"
   PROCESSORS 2 FEATURES install examples MEMORY_MB 2048
   COMMAND ${NLV_INSTALL} --case ${NLV_CASES}/install_examples.py)
+# Run up to four shapes at once against the same installation and consumer.
 foreach(protocol IN ITEMS apb axi)
   nocloom_verif_case(NAME verif_install_scale_${protocol} LAYER install TIER release
     TIMEOUT 7200 TIMEOUT_REASON "six scale networks up to 256 sources and 256 targets or 64 clock domains, each compiled and simulated"
     PROCESSORS 4 FEATURES install examples large-network MEMORY_MB 8192
-    COMMAND ${NLV_INSTALL} --case ${NLV_CASES}/install_scale.py --param protocol=${protocol})
+    COMMAND ${NLV_INSTALL} --case ${NLV_CASES}/install_scale.py --param protocol=${protocol}
+      --jobs 4)
+  nocloom_test_memory(8192 verif_install_scale_${protocol})
 endforeach()
 
 # Clocked graphs: the three-source graph with selective pairs over switch
