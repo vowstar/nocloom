@@ -287,6 +287,12 @@ add_test(NAME c_header_compile COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOU
   --definition-generator $<TARGET_FILE:nocloom_c_header_definition>)
 set_tests_properties(c_header_compile PROPERTIES TIMEOUT 120
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} LABELS "integration;quick" PROCESSORS 1)
+add_test(NAME c_header_transactions COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run.py
+  --case c_header_transactions --cli $<TARGET_FILE:nocloom_cli> --source ${PROJECT_SOURCE_DIR}
+  --build ${PROJECT_BINARY_DIR} --work ${CMAKE_CURRENT_BINARY_DIR}/c_header
+  --definition-generator $<TARGET_FILE:nocloom_c_header_definition>)
+set_tests_properties(c_header_transactions PROPERTIES TIMEOUT 120
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} LABELS "integration;quick" PROCESSORS 1)
 add_executable(nocloom_log_mapping_definition log_mapping_definition.cpp)
 target_link_libraries(nocloom_log_mapping_definition PRIVATE nocloom_core)
 target_compile_options(nocloom_log_mapping_definition PRIVATE

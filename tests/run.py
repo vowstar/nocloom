@@ -354,6 +354,45 @@ def install():
             assert actual == expected and len(actual) == 7, "installed C header mismatch"
 
 
+# Error logs of the C header checks: four banks in a window of 1 MiB, then a window with a local
+# address that holds one bank or four banks across 4 KiB.
+LOG_BANKS = dict(local="[{offset: '0x1000'}]",
+                 cross="[{offset: '0x1000'}, {offset: '0x1200'}, "
+                       "{offset: '0x2000'}, {offset: '0xfffc0'}]")
+
+
+def c_header_logs(*groups):
+    """Generate the named error log definitions with their C headers."""
+    log_yaml = (definition(32, [("ram", 0, 0x1000)])
+                .replace("name: control", "name: logger_control") + """
+error_logging:
+  registers: {name: csr, base: '0x100000', size: '0x100000', clock_domain: main}
+  logs:
+    - name: errors
+      watch: [ram]
+      loggers: [{offset: '0x200'}, {offset: '0x500'},
+                {offset: '0x1000'}, {offset: '0xfffc0'}]
+""")
+    for group in groups:
+        text = log_yaml
+        if group != "logs":
+            text = re.sub(r"loggers: \[.*?\]", "loggers: " + LOG_BANKS[group], text, flags=re.S)
+            text = text.replace("size: '0x100000'", "size: '0x100000', local_address: '0x1000'")
+        source = ROOT / (group + ".yaml")
+        source.write_text(text)
+        run([CLI, "generate", source, "--c-header", "--out-dir", ROOT / group])
+
+
+def c_header_transactions():
+    """Software's view of a bank: the bench reads it at the addresses the C header gives, in the
+    CLI's output and in the output of the definition built through the library."""
+    c_header_logs("local")
+    run([args.definition_generator, ROOT / "direct"])
+    from log_mapping_bench import simulate
+    for output in (ROOT, ROOT / "direct"):
+        simulate(output / "local", [0x1000], header=True)
+
+
 def c_header():
     source = ROOT / "wide.yaml"
     source.write_text(definition(48, [("wide", 0x100000, 0x101000)])
@@ -367,28 +406,7 @@ def c_header():
          "--out-dir", ROOT / "wide"])
     folder = ROOT / "wide"
     header = folder / "nocloom_test_bus.control.addresses.h"
-    log_source = ROOT / "logs.yaml"
-    log_yaml = (definition(32, [("ram", 0, 0x1000)])
-                          .replace("name: control", "name: logger_control") + """
-error_logging:
-  registers: {name: csr, base: '0x100000', size: '0x100000', clock_domain: main}
-  logs:
-    - name: errors
-      watch: [ram]
-      loggers: [{offset: '0x200'}, {offset: '0x500'},
-                {offset: '0x1000'}, {offset: '0xfffc0'}]
-""")
-    log_source.write_text(log_yaml)
-    run([CLI, "generate", log_source, "--c-header", "--out-dir", ROOT / "logs"])
-    for group, offsets in (("local", "[{offset: '0x1000'}]"),
-                           ("cross", "[{offset: '0x1000'}, {offset: '0x1200'}, "
-                            "{offset: '0x2000'}, {offset: '0xfffc0'}]")):
-        local_yaml = re.sub(r"loggers: \[.*?\]", "loggers: " + offsets, log_yaml, flags=re.S)
-        local_yaml = local_yaml.replace("size: '0x100000'", "size: '0x100000', "
-                                       "local_address: '0x1000'")
-        local_source = ROOT / (group + ".yaml")
-        local_source.write_text(local_yaml)
-        run([CLI, "generate", local_source, "--c-header", "--out-dir", ROOT / group])
+    c_header_logs("logs", "local", "cross")
     cut_source = ROOT / "cut.yaml"
     cut_source.write_text(definition(32, [("ram", 0, 0x1000), ("gap", 0x1007d0, 0x1007d8)])
                           .replace("name: control", "name: logger_control") + """
@@ -455,9 +473,6 @@ CHECK(PART(0x87654321U, {layout}_RECORD_USER_FLAGS7) == 0x87654321U, "user flags
 int main(void) {{ return 0; }}
 """
     run([args.definition_generator, ROOT / "direct"])
-    from log_mapping_bench import simulate
-    for output in (ROOT, ROOT / "direct"):
-        simulate(output / "local", [0x1000], header=True)
     for group in ("wide", "logs", "local", "cross", "cut"):
         for generated in (ROOT / group).glob("*.h"):
             assert generated.read_bytes() == (ROOT / "direct" / group / generated.name).read_bytes()
