@@ -35,7 +35,8 @@ A value that breaks an `ace5_lite` rule gives `NCL_AXI5_PROPERTIES`. On both
 protocols, `write_snoop_width` and `read_snoop_width` are 0 or 4.
 `write_snoop_width: 5` and other values of `cache_line_bytes` give
 `NCL_AXI5_UNSUPPORTED`. The other fields of the `axi5` object have the same
-values and rules as on `axi5`.
+values and rules as on `axi5`. See [data side ports](axi5.md#data-side)
+and [transaction byte limits](axi5.md#constraints).
 
 ## Ports
 

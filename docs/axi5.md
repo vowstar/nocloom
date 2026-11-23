@@ -127,8 +127,7 @@ poison bits.
 
 AXI5 and ACE5-Lite endpoints with poison or trace ports are 32, 64 or 128
 bits wide. The same widths apply to AXI5 data user ports. Other widths give
-`NCL_AXI5_DATA_WIDTH`. ACE5-Lite has no data user ports. APB5 and AXI5 exchange
-data user bits by the same rules.
+`NCL_AXI5_DATA_WIDTH`. ACE5-Lite has no data user ports.
 
 ## Trace
 

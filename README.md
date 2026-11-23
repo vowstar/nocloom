@@ -106,10 +106,9 @@ See [Output files](docs/outputs.md) for each output file and its metadata.
 
 Without `cells` bindings, both lists contain behavioral models of the clock gate
 and the synchronizer. These models are for simulation only. For synthesis, bind
-the cells of your technology library as
-[Technology cells](docs/technology-cells.md) describes. A simulation with bound
-cells also needs the `library_cell_models` of the bundle or the models of your
-library.
+the cells of your technology library as [Technology cells](docs/technology-cells.md)
+describes. A simulation with bound cells also needs the `library_cell_models` of
+the bundle or the models of your library.
 
 Top-level `clock_gating: false` disables automatic gates and keeps synchronizers.
 For an FPGA, set it because the behavioral clock gate model contains a latch.
@@ -121,9 +120,8 @@ except for a stage inside a synchronizer. For example, `network.storage` lists
 the signals of each resource, such as `source/cpu/pipe/aw`. See
 [Map fields](docs/map-fields.md).
 
-With its default warning settings, Verilator reports `CMPCONST` and `UNSIGNED`
-warnings for most generated networks and exits with a nonzero code. Add
-`-Wno-CMPCONST -Wno-UNSIGNED` to the Verilator command.
+With default settings, Verilator reports `CMPCONST` and `UNSIGNED` warnings for
+most networks and exits with a nonzero code. Add `-Wno-CMPCONST -Wno-UNSIGNED`.
 
 For clock domain crossings, use `generate --cdc-constraints` and apply the
 [CDC constraints](docs/timing-constraints.md#cdc-constraints).
@@ -166,6 +164,7 @@ See [Documentation](#documentation) for field definitions and limits.
 | --- | --- |
 | Wishbone options | No LOCK or user tags. Burst tags require classic cycles. A tagged target cannot use timeout. Pipelined targets accept one request at a time. See [Wishbone](docs/wishbone.md) |
 | Other protocols | For example ACE, ACE5-LiteDVM, AXI5-Lite and APB2 initiators. ACE5-Lite DVM messages and cache maintenance. AXI5 atomic transactions and the other rejected properties of the [AXI5 property table](docs/axi5-properties.md) |
+| AXI5 data side widths | Poison, trace and data user ports on AXI5 and ACE5-Lite ports wider than 128 bits. Data user ports on ACE5-Lite. See [AXI5 data side](docs/axi5.md#data-side) |
 | TileLink | TL-UL targets support one message in flight and one flow. TL-UH targets support 1 to 16 packet contexts and one flow. Coherent channels are unsupported. TL-UH initiators deny atomic operations, so they do not conform to TL-UH. See [TileLink](docs/tilelink.md#errors-and-progress) for progress rules |
 | AHB5 optional signals | HEXCL, HEXOKAY and HAUSER, HWUSER, HRUSER and HBUSER are unsupported. See [AHB5 properties](docs/ahb.md#ahb5-basic-properties) |
 | AHB arbitration and responses | No multi-manager arbitration or HSPLIT. RETRY and SPLIT on two-bit `ahb_lite` targets fail the packet |
