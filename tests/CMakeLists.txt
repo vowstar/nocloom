@@ -4,6 +4,28 @@ endif()
 find_package(Catch2 3.4.0...<4 CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
+# CTest 3.28 runs the test that writes the resource specification first.
+if(CMAKE_VERSION VERSION_LESS 3.28)
+  message(FATAL_ERROR "The tests need CMake 3.28 or newer for memory reservations")
+endif()
+# A test that needs much memory under some simulation engine reserves it:
+# RESOURCE_GROUPS "memory_mib:N". tests/resource_spec.py writes the capacity
+# when CTest starts, so tests that together need more memory than the machine
+# has wait for each other. See tests/SUITES.md.
+set_property(GLOBAL PROPERTY NOCLOOM_TEST_MEMORY_LARGEST 0)
+function(nocloom_test_memory mib)
+  if(NOT mib MATCHES "^[1-9][0-9]*$")
+    message(FATAL_ERROR "nocloom_test_memory: ${mib} is not a positive number of MiB")
+  endif()
+  foreach(test IN LISTS ARGN)
+    set_property(TEST ${test} PROPERTY RESOURCE_GROUPS "memory_mib:${mib}")
+    set_property(TEST ${test} APPEND PROPERTY FIXTURES_REQUIRED nocloom_test_memory)
+  endforeach()
+  get_property(largest GLOBAL PROPERTY NOCLOOM_TEST_MEMORY_LARGEST)
+  if(mib GREATER largest)
+    set_property(GLOBAL PROPERTY NOCLOOM_TEST_MEMORY_LARGEST ${mib})
+  endif()
+endfunction()
 if(UNIX)
   add_test(NAME large_address_map_small_stack
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/large_address_maps.py
@@ -1520,6 +1542,21 @@ set_tests_properties(clock_qualified_period PROPERTIES WORKING_DIRECTORY ${CMAKE
 
 # Unified verification environment; see tests/verif/CMakeLists.txt.
 add_subdirectory(verif)
+# The resource specification for the memory reservations above.
+get_property(nocloom_memory_largest GLOBAL PROPERTY NOCLOOM_TEST_MEMORY_LARGEST)
+if(nocloom_memory_largest GREATER 0)
+  add_test(NAME test_memory_specification
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/resource_spec.py
+      --output ${CMAKE_CURRENT_BINARY_DIR}/test_memory.json --largest ${nocloom_memory_largest})
+  set_tests_properties(test_memory_specification PROPERTIES TIMEOUT 30 LABELS "unit;quick"
+    FIXTURES_SETUP nocloom_test_memory
+    GENERATED_RESOURCE_SPEC_FILE ${CMAKE_CURRENT_BINARY_DIR}/test_memory.json)
+endif()
+add_test(NAME test_memory_specification_contract
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/resource_spec_test.py
+    --work ${CMAKE_CURRENT_BINARY_DIR}/test_memory_specification_contract)
+set_tests_properties(test_memory_specification_contract PROPERTIES TIMEOUT 60
+  LABELS "unit;quick")
 nocloom_label_test_tiers()
 get_property(nocloom_ci_missing GLOBAL PROPERTY NOCLOOM_CI_MISSING)
 if(nocloom_ci_missing)

@@ -264,6 +264,28 @@ class SuiteContract(unittest.TestCase):
         self.assertGreater(r["peak_tree_rss_bytes"], 24 * 1024 * 1024)
         self.assertGreaterEqual(r["samples"], 2)
 
+    def test_instrument_preserves_resource_groups(self):
+        groups = [
+            {"requirements": [{".type": "memory_mib", "slots": 3072}]},
+            {"requirements": [{".type": "memory_mib", "slots": 1}, {".type": "gpus", "slots": 2}]},
+        ]
+        build = self.root / "ctest"
+        instrument([test("reserved", RESOURCE_GROUPS=groups)], build, self.root)
+        actual = json.loads(
+            subprocess.check_output(
+                ["ctest", "--test-dir", str(build), "--show-only=json-v1"]
+            )
+        )
+        p = {x["name"]: x["value"] for x in actual["tests"][0]["properties"]}
+        self.assertEqual(p["RESOURCE_GROUPS"], groups)
+        for index, wrong in enumerate(([], [{"requirements": []}],
+                                       [{"requirements": [{".type": "Memory", "slots": 1}]}],
+                                       [{"requirements": [{".type": "memory_mib", "slots": 0}]}])):
+            parent = self.root / f"wrong{index}"
+            parent.mkdir()
+            with self.assertRaises(ValueError):
+                instrument([test("wrong", RESOURCE_GROUPS=wrong)], parent / "ctest", self.root)
+
     def test_instrument_preserves_timeout_environment_and_space(self):
         t = test(
             "space name",

@@ -288,6 +288,26 @@ def cmake_quote(value):
     return "[" + eq + "[" + value + "]" + eq + "]"
 
 
+def resource_groups(groups):
+    """The CTest property text of RESOURCE_GROUPS as --show-only=json-v1 lists it."""
+    if not isinstance(groups, list) or not groups:
+        raise ValueError("Unsupported RESOURCE_GROUPS value")
+    texts = []
+    for group in groups:
+        needs = group.get("requirements") if isinstance(group, dict) else None
+        if not isinstance(needs, list) or not needs:
+            raise ValueError("Unsupported RESOURCE_GROUPS value")
+        parts = []
+        for need in needs:
+            kind, slots = need.get(".type"), need.get("slots")
+            if (not isinstance(kind, str) or not re.fullmatch(r"[a-z_][a-z0-9_]*", kind)
+                    or not isinstance(slots, int) or isinstance(slots, bool) or slots < 1):
+                raise ValueError("Unsupported RESOURCE_GROUPS value")
+            parts.append(f"{kind}:{slots}")
+        texts.append(",".join(parts))
+    return ";".join(texts)
+
+
 def instrument(selected, directory, default_cwd):
     directory.mkdir()
     records = directory.parent / "test-resources"
@@ -311,6 +331,8 @@ def instrument(selected, directory, default_cwd):
         )
         props = {"WORKING_DIRECTORY": str(default_cwd), **properties(test)}
         for key, value in props.items():
+            if key == "RESOURCE_GROUPS":
+                value = resource_groups(value)
             if isinstance(value, list):
                 if any(not isinstance(x, str) for x in value):
                     raise ValueError("Unsupported structured CTest property: " + key)

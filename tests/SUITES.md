@@ -24,6 +24,22 @@ self-test. It also runs asynchronous FIFO transactions with clock skew,
 jitter and one-sided resets. The release run adds the full FIFO clock ratio
 matrix and the comparison of generated files from two C++ compilers.
 
+## Memory reservations
+
+A test that needs much memory sets the CTest property
+`RESOURCE_GROUPS "memory_mib:N"`. N covers the largest memory of its process
+tree under Icarus Verilog, Verilator and an external simulator, with a margin.
+CTest first runs `test_memory_specification`, which writes the capacity in MiB.
+
+| Item | Rule |
+| --- | --- |
+| Capacity | The available memory, or the room under the cgroup memory limit when that is smaller, less the reserve |
+| Reserve | The larger of 10% of physical memory and 2 GiB |
+| Admission | A test waits while its reservation and those of the running tests exceed the capacity |
+| Largest test | When the largest reservation is above the capacity, the capacity becomes that reservation |
+| Override | `NOCLOOM_TEST_MEMORY_MIB` sets the capacity. With little memory, also run fewer jobs |
+| Specification file | The build tree supplies it, so CTest rejects `--resource-spec-file`. These tests need CMake 3.28 or newer |
+
 ## Daily and full verification
 
 Configure and build each simulation engine in a separate directory. Use one
@@ -32,10 +48,8 @@ The runner selects CTest entries and executes them. It does not install tools,
 copy sources, build NocLoom, or delete files.
 
 `suite_profiles.json` defines the daily selection. The full profile selects
-every entry in the configured CTest inventory.
-Missing daily entries fail selection. New entries belong to full until the
-policy includes them in daily.
-
+every entry in the configured CTest inventory. Missing daily entries fail
+selection. New entries belong to full until the policy includes them in daily.
 Fixtures and dependencies join the selection automatically.
 
 Use an explicit policy for a focused change. Include its affected full-only
@@ -67,12 +81,10 @@ python3 tests/run_suite.py --profile daily \
 ```
 
 One `--build` and `--engine` pair selects one engine. Omit `--run` to write
-`plan.json` without execution.
-The plan records selected and excluded entries, budgets, hashes, engines and
-build directories.
-
-Both engine inventories require identical test names. Bind their source inputs
-separately with a source manifest.
+`plan.json` without execution. The plan records selected and excluded entries,
+budgets, hashes, engines and build directories. Both engine inventories require
+identical test names. Bind their source inputs separately with a source
+manifest.
 
 Obtain a delegated cgroup v2 directory with the memory controller enabled before
 using the default protection.
@@ -125,13 +137,11 @@ memory availability and cgroup headroom constrain it.
 | Cgroup memory | Per-engine `memory.max` and `memory.swap.max=0` |
 
 The monitor samples once per second. OOM events retain their
-resource-interruption classification.
-
-Adjust `--max-jobs`, `--memory-per-slot-gib`, `--max-memory-gib`,
-`--cpu-fraction`, `--reserve-gib` and `--disk-reserve-gib` from observed
-headroom.
-Insufficient resources stop admission. A user-wide lock prevents overlapping
-invocations of this runner. Account for other jobs separately.
+resource-interruption classification. Adjust `--max-jobs`,
+`--memory-per-slot-gib`, `--max-memory-gib`, `--cpu-fraction`, `--reserve-gib`
+and `--disk-reserve-gib` from observed headroom. Insufficient resources stop
+admission. A user-wide lock prevents overlapping invocations of this runner.
+Account for other jobs separately.
 
 CTest timeouts, processors, locks, environment, fixtures and commands retain
 their configured meaning.
@@ -143,20 +153,16 @@ After `--ramp-seconds 30` of low CPU use and safe projected memory, admission
 increases by one slot per engine.
 
 Startup CPU allocation, `--max-jobs` and shared memory allocation remain
-ceilings.
-
-CPU pressure reduces admission. A projected reserve breach within 30 seconds or
-RSS above 70% pauses admission.
-Recovery starts at one slot. RSS estimates use a 1.5 safety factor per declared
-processor and never shrink during execution.
+ceilings. CPU pressure reduces admission. A projected reserve breach within 30
+seconds or RSS above 70% pauses admission. Recovery starts at one slot. RSS
+estimates use a 1.5 safety factor per declared processor and never shrink during
+execution.
 
 Slot planning uses at most 65% of each engine's memory allocation. The 85%
-emergency guard remains active.
-
-Admission changes occur between CTest batches. Dependencies and all members of
-one fixture stay together.
-An entry whose `PROCESSORS` exceeds admission can execute alone. Each engine
-executes one batch at a time.
+emergency guard remains active. Admission changes occur between CTest batches.
+Dependencies and all members of one fixture stay together. An entry whose
+`PROCESSORS` exceeds admission can execute alone. Each engine executes one batch
+at a time.
 
 `--scheduling fixed` uses one batch under the resource guards.
 
@@ -197,17 +203,14 @@ Longer entries are VERY_SLOW. `NOT_RUN` is UNMEASURED. A timeout gives a lower
 bound. These classes do not change profile membership.
 
 `SUMMARY.md` lists counts, non-passes and the ten largest time and
-sampled-memory values per engine.
-`results.json` binds each result to its resource record. Missing, duplicate or
-unexpected JUnit entries prevent success.
-
+sampled-memory values per engine. `results.json` binds each result to its
+resource record. Missing, duplicate or unexpected JUnit entries prevent success.
 `NOT_RUN` and profile exclusions never count as PASS.
 
-Copy the entire result directory and check `sha256sum -c MANIFEST.txt`.
-Collect required RTL, benches, checkers, logs, events and counterexample
-waveforms separately before removing build artifacts.
-
-The summary archive does not contain every nested case artifact.
+Copy the entire result directory and check `sha256sum -c MANIFEST.txt`. Collect
+required RTL, benches, checkers, logs, events and counterexample waveforms
+separately before removing build artifacts. The summary archive does not contain
+every nested case artifact.
 
 ## Runner checks
 

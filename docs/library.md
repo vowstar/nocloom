@@ -27,6 +27,7 @@ A build with `NOCLOOM_BUILD_TESTS` also needs these tools.
 
 | Tool | Required version |
 | --- | --- |
+| CMake | 3.28 or newer, for the memory reservations of tests |
 | Catch2 | 3.4.0 or newer within version 3 |
 | C compiler | C11, for generated header checks |
 | Python 3, Make, Icarus Verilog, Yosys, Verilator | No version check |
