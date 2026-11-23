@@ -98,6 +98,9 @@ endmodule
 """
 
 
+TOP = "nocloom_apb_write_contract"
+
+
 def definition(dialect):
     return dict(schema_version=10, name="apb_write_contract", address_width=32,
                 reset_ports=[dict(name="reset_n")], test_ports=[dict(name="test")],
@@ -116,20 +119,21 @@ def simulate(work, rtl, bench):
     return Simulation(work, "network.v").run()
 
 
-def run(cli, work, dialect):
+def generate(cli, work, dialect):
     cfg = work / "config.yaml"
     cfg.write_text(json.dumps(definition(dialect)))
     out = work / "generated"
     subprocess.run([cli, "generate", cfg, "--out-dir", out], timeout=20, check=True)
-    top = "nocloom_apb_write_contract"
-    rtl = generated_rtl(out / f"{top}.v")
     ready_ports = ", .nl_t_t0_pready(1'b1), .nl_t_t0_pslverr(1'b0)" if dialect == "apb3" else ""
-    bench = BENCH.replace("@READY@", ready_ports)
-    result = simulate(work, rtl, bench)
+    return out / f"{TOP}.v", BENCH.replace("@READY@", ready_ports)
+
+
+def scoreboard(work, generated, bench, dialect):
+    result = simulate(work, generated_rtl(generated), bench)
     assert result.returncode == 0, result.stdout
     assert "NOCLOOM_PASS apb-write-contract packets=5 accesses=16" in result.stdout, result.stdout
 
-    mapping = json.loads((out / f"{top}.map.json").read_text())
+    mapping = json.loads(generated.with_suffix(".map.json").read_text())
     # The scoreboard above checks these four claims against the target
     # accesses and packet responses, including when the first word fails.
     assert mapping["definition"]["contract"]["dedicated_dialects"][dialect]["write"] == (
@@ -137,14 +141,14 @@ def run(cli, work, dialect):
         "partial_word_skipped_and_contributes_SLVERR_later_full_words_execute"
     )
 
+
+def fault(work, generated, bench):
     # Suppress the first packet's accesses. The target sees no writes
     # following the rejected word, but the outlet still returns its response.
     bad, count = re.subn(r"(assign nl_t_t0_psel = )([^;]+);",
-                         r"\1(\2) & (nl_t_t0_paddr[31:4] != 28'd0);", rtl)
+                         r"\1(\2) & (nl_t_t0_paddr[31:4] != 28'd0);", generated_rtl(generated))
     assert count == 1
-    fault = work / "drop-following-writes"
-    fault.mkdir()
-    result = simulate(fault, bad, bench)
+    result = simulate(work, bad, bench)
     assert result.returncode != 0 and "ASSERT_FAIL:APB_WRITE_RESULT packet=0" in result.stdout, (
         result.stdout)
 
@@ -153,10 +157,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cli", type=Path, required=True)
     parser.add_argument("--work", type=Path, required=True)
+    parser.add_argument("--dialect", choices=("apb3", "apb2"), required=True)
+    # Each check compiles its own simulation, so CTest runs every dialect and
+    # check as a separate test.
+    parser.add_argument("--check", choices=("scoreboard", "fault"), required=True)
     args = parser.parse_args()
     args.work.mkdir(parents=True, exist_ok=True)
-    for dialect in ("apb3", "apb2"):
-        began = time.monotonic()
-        work = Path(tempfile.mkdtemp(prefix=dialect + "-", dir=args.work)).resolve()
-        run(args.cli.resolve(), work, dialect)
-        print(f"{dialect} {time.monotonic() - began:.3f}s")
+    began = time.monotonic()
+    work = Path(tempfile.mkdtemp(prefix=f"{args.dialect}-{args.check}-", dir=args.work)).resolve()
+    generated, bench = generate(args.cli.resolve(), work, args.dialect)
+    if args.check == "scoreboard":
+        scoreboard(work, generated, bench, args.dialect)
+    else:
+        fault(work, generated, bench)
+    print(f"{args.dialect} {args.check} {time.monotonic() - began:.3f}s")

@@ -931,11 +931,16 @@ target_sources(nocloom_unit PRIVATE unit/apb_burst_outlet.cpp)
 add_test(NAME apb_burst_outlet_structure COMMAND nocloom_unit "[apb-burst-outlet]")
 set_tests_properties(apb_burst_outlet_structure PROPERTIES TIMEOUT 60 LABELS "unit;quick")
 
-add_test(NAME apb_write_contract
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/apb_write_contract.py
-    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/apb_write_contract)
-set_tests_properties(apb_write_contract PROPERTIES
-  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 45 LABELS "rtl;quick;ci")
+foreach(dialect IN ITEMS apb3 apb2)
+  foreach(check IN ITEMS scoreboard fault)
+    add_test(NAME apb_write_contract_${dialect}_${check}
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/apb_write_contract.py
+        --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/apb_write_contract
+        --dialect ${dialect} --check ${check})
+    set_tests_properties(apb_write_contract_${dialect}_${check} PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 45 LABELS "rtl;quick;ci")
+  endforeach()
+endforeach()
 
 target_sources(nocloom_unit PRIVATE unit/apb_burst_example.cpp)
 nocloom_unit_shards(apb_burst_example_structure 4 120 "unit;quick" "[apb-burst-example]")
