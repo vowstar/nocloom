@@ -403,11 +403,16 @@ foreach(group IN ITEMS target_choice address_map protocol_and_qos)
     TIMEOUT 15 FEATURES errors MEMORY_MB 256 CONTRACTS FABRIC.ERR.DECODE_MISS
     COMMAND ${source_miss_fallback} --case paths --path-group ${group})
 endforeach()
-foreach(rate IN ITEMS zero nonzero)
-  nocloom_verif_case(NAME verif_source_miss_rate_${rate} LAYER rtl TIER focused
-    TIMEOUT 45 FEATURES apb qos MEMORY_MB 1024 CONTRACTS QOS.SHAPER.DECODE_MISS
-    COMMAND ${source_miss_fallback} --case ${rate})
-  set_property(TEST verif_source_miss_rate_${rate} APPEND PROPERTY LABELS edit)
+# A zero rate, a shaper and a scheduler, each with the generated network and with one whose
+# miss takes no charge: one simulation per test.
+foreach(rate IN ITEMS zero shaper scheduler)
+  foreach(variant IN ITEMS normal skip_miss_charge)
+    set(name verif_source_miss_rate_${rate}_${variant})
+    nocloom_verif_case(NAME ${name} LAYER rtl TIER focused
+      TIMEOUT 45 FEATURES apb qos MEMORY_MB 1024 CONTRACTS QOS.SHAPER.DECODE_MISS
+      COMMAND ${source_miss_fallback} --case ${rate} --variant ${variant})
+    set_property(TEST ${name} APPEND PROPERTY LABELS edit)
+  endforeach()
 endforeach()
 # Target IDs follow the map; requests of one ID wait, those of different IDs overtake.
 nocloom_verif_case(NAME verif_target_id_rule LAYER rtl TIER focused TIMEOUT 600

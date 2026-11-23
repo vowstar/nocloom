@@ -132,7 +132,9 @@ def skip_miss_charge(rtl, charge, use_scheduler):
     return rtl
 
 
-def check_rate(cli, work, kind):
+def check_rate(cli, work, kind, variant):
+    """Simulate one network: the generated one, or one whose miss takes no charge, which the
+    bench must refuse."""
     from sim_engine import Simulation, generated_rtl
 
     gen, mapping = generate(cli, work, kind)
@@ -147,38 +149,39 @@ def check_rate(cli, work, kind):
     tb = (tb.replace("@ZERO@", str(int(kind == "zero")))
           .replace("@SCHEDULER@", str(int(use_scheduler)))
           .replace("@CHARGE@", "dut." + charge).replace("@COUNTER@", "dut." + counter))
-    for variant in ("normal", "skip_miss_charge"):
-        run = work / variant
-        run.mkdir(exist_ok=True)
-        (run / "tb.sv").write_text(tb)
-        (run / "network.v").write_text(
-            rtl if variant == "normal" else skip_miss_charge(rtl, charge, use_scheduler))
-        result = Simulation(run, "network.v", success=("CHECK_PASS source_miss_rate",)).run()
-        print(f"{kind}/{variant}\n{result.stdout}", end="")
-        if variant == "normal":
-            assert result.returncode == 0, (kind, variant)
-        else:
-            failure = "COMPLETION_CHARGE" if use_scheduler else "EARLY_ADMISSION"
-            first = re.findall(r"^ASSERT_FAIL:SOURCE_MISS_RATE\.(\w+)$", result.stdout, re.M)
-            assert result.returncode != 0 and first == [failure], (kind, first)
+    run = work / variant
+    run.mkdir(exist_ok=True)
+    (run / "tb.sv").write_text(tb)
+    (run / "network.v").write_text(
+        rtl if variant == "normal" else skip_miss_charge(rtl, charge, use_scheduler))
+    result = Simulation(run, "network.v", success=("CHECK_PASS source_miss_rate",)).run()
+    print(f"{kind}/{variant}\n{result.stdout}", end="")
+    if variant == "normal":
+        assert result.returncode == 0, (kind, variant)
+    else:
+        failure = "COMPLETION_CHARGE" if use_scheduler else "EARLY_ADMISSION"
+        first = re.findall(r"^ASSERT_FAIL:SOURCE_MISS_RATE\.(\w+)$", result.stdout, re.M)
+        assert result.returncode != 0 and first == [failure], (kind, first)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cli", required=True)
     parser.add_argument("--work", type=Path, required=True)
-    parser.add_argument("--case", choices=("paths", "zero", "nonzero"), required=True)
+    parser.add_argument("--case", choices=("paths", "zero", "shaper", "scheduler"), required=True)
     parser.add_argument("--path-group", choices=PATH_GROUPS)
+    parser.add_argument("--variant", choices=("normal", "skip_miss_charge"))
     args = parser.parse_args()
     if args.path_group is not None and args.case != "paths":
         parser.error("--path-group requires --case paths")
+    if (args.variant is None) != (args.case == "paths"):
+        parser.error("--variant goes with every case but paths")
     args.work.mkdir(parents=True, exist_ok=True)
     work = Path(mkdtemp(dir=args.work.resolve(), prefix="run-"))
     if args.case == "paths":
         check_paths(args.cli, work, args.path_group)
     else:
-        for kind in ("zero",) if args.case == "zero" else ("shaper", "scheduler"):
-            check_rate(args.cli, work / kind, kind)
+        check_rate(args.cli, work / args.case, args.case, args.variant)
 
 
 if __name__ == "__main__":
