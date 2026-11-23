@@ -6,6 +6,7 @@ import re
 import signal
 import subprocess
 import tempfile
+import time
 
 
 def selector(maximum):
@@ -64,6 +65,8 @@ wire [12:0] saved_span=({5'd0,nl_probe_tl_x_packet_x_length}+1) << saved_size;
 wire [12:0] saved_address={1'b0,nl_probe_tl_x_packet_x_address};
 wire [10:0] message_beats=nl_probe_tl_x_size<=2 ? 1 : 11'd1 << (nl_probe_tl_x_size-2);
 wire [12:0] message_stride=13'd1 << (nl_probe_tl_x_size<2 ? nl_probe_tl_x_size : 2);
+wire [12:0] message_bytes=13'd1 << nl_probe_tl_x_size;
+wire [12:0] message_base=nl_probe_tl_x_base[12:0];
 wire [2:0] response_bytes=saved_stride-(nl_probe_tl_x_response_cursor & (saved_stride-1));
 wire [3:0] response_mask=((5'd1 << response_bytes)-1) << nl_probe_tl_x_response_cursor[1:0];
 wire [12:0] saved_skew=fixed_start-{1'b0,nl_probe_tl_x_packet_x_address};
@@ -143,6 +146,8 @@ always @* begin
         assert(buffered_end<=expected_top);
       end
     end else assert(expected_base+saved_span<=4096);
+    assert(buffered_end<=(saved_burst==1 ? expected_base+saved_span : expected_top));
+    if(nl_probe_tl_x_dfull && nl_probe_tl_x_message) assert(pop4(nl_probe_tl_x_dmask)<=message_stride);
     assert(remaining+pending_d+staged==owed);
     if(remaining!=0 || pending_d!=0) assert(expected_address==issued_end);
     assert(saved_size==nl_probe_tl_x_packet_x_size);
@@ -155,6 +160,12 @@ always @* begin
     assert(expected_address<=4096);
   end
   if(nl_probe_tl_x_message) begin
+    assert(nl_probe_tl_x_base[31:12]==0);
+    assert((message_base & (message_bytes-1))==0);
+    if(!nl_probe_tl_x_a_done) assert({1'b0,nl_probe_tl_x_cursor}==message_base);
+    if(nl_probe_tl_x_a_done && !nl_probe_tl_x_d_done) assert(received_end==message_base+message_bytes);
+    if(saved_burst!=1) assert(message_base>=expected_base && message_base+message_bytes<=expected_top);
+    else assert(message_base+message_bytes<=expected_base+saved_span);
     assert(nl_probe_tl_x_local_code==0);
     if(!nl_probe_tl_x_d_done) assert((nl_probe_tl_x_cursor & (message_stride-1))==0);
     assert(nl_probe_tl_x_a_left<=1);
@@ -186,11 +197,17 @@ always @(posedge nl_clk) if(nl_reset_n) begin
     expected_address<=saved_burst==0 && following==expected_top ? fixed_start :
                       saved_burst==2 && following==expected_top ? expected_base : following;
   end
-  if(nl_probe_tl_x_release) assert(remaining==0);
   cover(nl_probe_tl_x_release && saved_burst==2);
   cover(nl_probe_tl_x_release && saved_burst==0 && fixed_start[1:0]==3);
 end
-""" + f"always @* if(nl_probe_tl_x_message) begin assert(nl_probe_tl_x_size<={maximum.bit_length()-1}); assert(nl_probe_tl_x_d_left<={max(1,maximum//4)}); end\n"
+always @* begin
+  if(nl_reset_n && nl_probe_tl_x_release) assert(remaining==0);
+  if(nl_probe_tl_x_message) begin
+    assert(nl_probe_tl_x_size<=MAXIMUM_SIZE);
+    assert(nl_probe_tl_x_d_left<=MAXIMUM_BEATS);
+  end
+end
+""".replace("MAXIMUM_SIZE", str(maximum.bit_length() - 1)).replace("MAXIMUM_BEATS", str(max(1, maximum // 4)))
 
 
 def write_properties(maximum):
@@ -470,6 +487,93 @@ endmodule
 """
 
 
+def checks(text):
+    """Yield the block start, span and expression of each assertion in a combinational block."""
+    for block in re.finditer(r"always @\* begin", text):
+        depth = 0
+        for token in re.finditer(r"\bbegin\b|\bend\b", text[block.start():]):
+            depth += 1 if token[0] == "begin" else -1
+            if not depth:
+                stop = block.start() + token.start()
+                break
+        position = block.end()
+        while (start := text.find("assert(", position, stop)) >= 0:
+            depth, end = 1, start + len("assert(")
+            while depth:
+                depth += {"(": 1, ")": -1}.get(text[end], 0)
+                end += 1
+            position = text.index(";", end) + 1
+            yield block.end(), start, position, text[start + len("assert("):end - 1]
+
+
+def split_checks(text, groups):
+    """Return one harness per group that asserts its checks and assumes the others one cycle late.
+
+    Every group is proven from reset by its own base case and induction. If some check failed,
+    the first failing cycle would satisfy the hypothesis of the variant that asserts it, so all
+    variants passing proves every check, while each induction query stays small.
+    """
+    found = list(checks(text))
+    blocks = sorted({block for block, *_ in found})
+    variants = []
+    for group in range(min(groups, len(found))):
+        edits, held = [], []
+        for number, block in enumerate(blocks):
+            members = [(index, item) for index, item in enumerate(found) if item[0] == block]
+            name = f"nl_held{number}"
+            held.append(f"reg [{len(members) - 1}:0] {name};")
+            edits.append((block, block, f" {name}={{{len(members)}{{1'b1}}}};"))
+            for bit, (index, (_, start, end, expression)) in enumerate(members):
+                if index % groups != group:
+                    edits.append((start, end, f"{name}[{bit}]=({expression});"))
+        variant = text
+        for start, end, replacement in sorted(edits, reverse=True):
+            variant = variant[:start] + replacement + variant[end:]
+        earlier = " && ".join(f"(&nl_held{number})" for number in range(len(blocks)))
+        variant = variant.replace("reg started=0;", "\n".join(held) + "\nreg started=0;", 1)
+        variants.append(variant.replace("endmodule", f"""reg nl_held_before;
+always @(posedge nl_clk) nl_held_before<={earlier};
+always @* assume(nl_held_before);
+endmodule"""))
+    return variants
+
+
+def run_groups(work, body, jobs):
+    """Prove 16 groups of checks and the reachability targets as parallel tasks."""
+    variants = split_checks(body, 16)
+    tasks = [f"prove{number}" for number in range(len(variants))] + ["cover"]
+    for task, variant in zip(tasks, variants):
+        (work / f"{task}.sv").write_text(variant)
+    options = "".join(f"{task}: mode prove\n{task}: depth 4\n{task}: timeout 600\n" for task in tasks[:-1])
+    reads = "".join(f"{task}: read_verilog -formal -sv {task}.sv\n" for task in tasks[:-1])
+    (work / "safety.sby").write_text(
+        "[tasks]\n" + "\n".join(tasks) + "\n[options]\n" + options
+        + "cover: mode cover\ncover: depth 48\ncover: timeout 120\n[engines]\nsmtbmc z3\n"
+        + "[script]\nread_verilog -formal network.v\n" + reads
+        + "cover: read_verilog -formal -sv formal_top.sv\nprep -top formal_top\n[files]\nnetwork.v\n"
+        + "formal_top.sv\n" + "".join(f"{task}.sv\n" for task in tasks[:-1]))
+    return run_tasks(work, "safety", tasks, jobs, 660)
+
+
+def run_tasks(work, name, tasks, jobs, limit):
+    """Run the tasks of NAME.sby and stop all of them once one task fails or the limit passes."""
+    states = [work / f"{name}_{task}" / "status" for task in tasks]
+    with open(work / f"{name}.log", "w") as log, subprocess.Popen(
+            ["sby", "-j", str(jobs), f"{name}.sby"], cwd=work, stdout=log, stderr=subprocess.STDOUT,
+            start_new_session=True) as process:
+        start = time.monotonic()
+        while process.poll() is None:
+            done = [words[0] for words in (state.read_text().split() for state in states if state.exists()) if words]
+            if any(status != "PASS" for status in done) or time.monotonic() - start > limit:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait()
+                break
+            time.sleep(1)
+    print((work / f"{name}.log").read_text(), work, flush=True)
+    passed = all(state.exists() and state.read_text().split()[0] == "PASS" for state in states)
+    return 0 if process.returncode == 0 and passed else 1
+
+
 def run(args):
     args.work.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="proof-", dir=args.work)).resolve()
@@ -480,6 +584,8 @@ def run(args):
     module = re.search(r"module\s+(\w+)", (work / "network.v").read_text())[1]
     body = selector(args.maximum) if args.kind == "selector" else endpoint(ports, module, args.maximum, args.kind=="footprint", args.kind=="write", args.kind=="errors")
     (work / "formal_top.sv").write_text(body)
+    if args.kind in ("footprint", "errors"):
+        return run_groups(work, body, args.jobs)
     script = """[tasks]
 prove
 cover
@@ -502,7 +608,7 @@ prep -top formal_top
 network.v
 formal_top.sv
 """
-    if args.kind in ("footprint", "write", "errors"):
+    if args.kind == "write":
         script = script.replace("prove: abc pdr", "prove: smtbmc z3")
         script = script.replace("prove: depth 32", "prove: depth 4")
     (work / "safety.sby").write_text(script)
@@ -535,6 +641,7 @@ def main():
     sizes.add_argument("--maximum", type=int, default=1024)
     sizes.add_argument("--maxima", type=int, nargs="+")
     sizes.add_argument("--all-maxima", action="store_true")
+    parser.add_argument("--jobs", type=int, default=4)
     args = parser.parse_args()
     maxima = [1 << n for n in range(2, 13)] if args.all_maxima else args.maxima or [args.maximum]
     for maximum in maxima:

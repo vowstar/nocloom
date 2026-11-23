@@ -116,7 +116,7 @@ foreach(kind IN ITEMS selector endpoint write)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 6000 PROCESSORS 1
     LABELS "formal;focused" RESOURCE_LOCK tilelink_formal)
 endforeach()
-# Each pair uses the same prove and cover tasks with its own input directory.
+# Each pair proves its checks in sixteen groups, four at a time, with its own input directory.
 foreach(kind IN ITEMS footprint errors)
   foreach(first IN ITEMS 4 16 64 256 1024 4096)
     set(name tilelink_uh_target_${kind}_formal)
@@ -131,9 +131,9 @@ foreach(kind IN ITEMS footprint errors)
     add_test(NAME ${name}
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_target_formal.py
         --fixture $<TARGET_FILE:nocloom_tilelink_uh_target_fixture>
-        --work ${CMAKE_CURRENT_BINARY_DIR}/${name} --kind ${kind} --maxima ${maxima})
+        --work ${CMAKE_CURRENT_BINARY_DIR}/${name} --kind ${kind} --maxima ${maxima} --jobs 4)
     set_tests_properties(${name} PROPERTIES
-      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 1500 PROCESSORS 2 LABELS "formal;focused")
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 600 PROCESSORS 4 LABELS "formal;focused")
   endforeach()
 endforeach()
 add_test(NAME tilelink_uh_target_contexts_formal
@@ -150,13 +150,16 @@ add_test(NAME tilelink_uh_target_ranges_formal
 set_tests_properties(tilelink_uh_target_ranges_formal PROPERTIES
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 1200 PROCESSORS 1
   LABELS "formal;focused" RESOURCE_LOCK tilelink_formal)
-add_test(NAME tilelink_uh_target_large_contexts_formal
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_contexts_formal.py
-    --fixture $<TARGET_FILE:nocloom_tilelink_uh_target_fixture>
-    --work ${CMAKE_CURRENT_BINARY_DIR}/tilelink_uh_target_large_contexts_formal --maximum 4096)
-set_tests_properties(tilelink_uh_target_large_contexts_formal PROPERTIES
-  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 1800 PROCESSORS 1
-  LABELS "formal;focused" RESOURCE_LOCK tilelink_formal)
+# Each pool size of the full packet maximum runs its tasks four at a time.
+foreach(capacity IN ITEMS 2 3 4 16)
+  add_test(NAME tilelink_uh_target_large_contexts_formal_c${capacity}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_contexts_formal.py
+      --fixture $<TARGET_FILE:nocloom_tilelink_uh_target_fixture>
+      --work ${CMAKE_CURRENT_BINARY_DIR}/tilelink_uh_target_large_contexts_formal_c${capacity}
+      --capacity ${capacity} --maximum 4096 --jobs 4)
+  set_tests_properties(tilelink_uh_target_large_contexts_formal_c${capacity} PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 600 PROCESSORS 4 LABELS "formal;focused")
+endforeach()
 # The nineteen networks simulate four at a time on the processors the entry reserves.
 add_test(NAME tilelink_uh_target_contexts
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_contexts.py

@@ -1,10 +1,9 @@
 """Context ranges, ownership and packet retirement on the generated target."""
 import argparse
-import os
 from pathlib import Path
-import signal
 import subprocess
 import tempfile
+from tilelink_uh_target_formal import run_tasks, split_checks
 
 
 def cover_guidance(capacity, scenario):
@@ -356,12 +355,12 @@ def ranges_harness(ports, capacity, maximum=1024):
         + "nocloom_tl_uh_outlet_probe dut(" + ",".join(connections) + ");\n"
         + "reg started=0; always @(posedge nl_clk) started<=1;\n"
         + "always @* assume(nl_reset_n==started);\n"
-        + "always @(posedge nl_clk) if(nl_reset_n) begin\n"
+        + "always @* begin if(nl_reset_n) begin\n"
         + f"assert(!nl_tl_a_valid || nl_tl_a_source<{capacity});\n"
         + f"assert(nl_probe_tl_x_free<{capacity});\n"
         + f"if(nl_tl_d_source>={capacity}) assert(!nl_tl_d_ready);\n"
         + "if(nl_probe_tl_x_d_active && nl_tl_d_source!=nl_probe_tl_x_d_owner) assert(!nl_tl_d_ready);\n"
-        + "\n".join(checks) + "\nend\nendmodule\n")
+        + "\n".join(checks) + "\nend end\nendmodule\n")
     return body.replace("<=256", "<=1024").replace("size<=10", "size<=12") if maximum > 1024 else body
 
 
@@ -417,7 +416,12 @@ def run(args, capacity):
                     str(capacity), str(16 if capacity==16 else (capacity-1).bit_length())], check=True, timeout=60)
     ports = [(n, int(w), int(i)) for n, w, i in
              (line.split() for line in (work / "ports.tsv").read_text().splitlines())]
-    (work / "formal_top.sv").write_text(ranges_harness(ports, capacity, args.maximum) if capacity==16 else harness(ports, capacity, maximum=args.maximum))
+    proof = ranges_harness(ports, capacity, args.maximum) if capacity==16 else harness(ports, capacity, maximum=args.maximum)
+    (work / "formal_top.sv").write_text(proof)
+    # The pool of sixteen proves its bounds in four groups, see split_checks.
+    proofs = split_checks(proof, 4) if capacity == 16 else [proof]
+    for number, variant in enumerate(proofs):
+        (work / f"prove{number}.sv").write_text(variant)
     scenarios = list(range(1) if capacity == 16 else range(4))
     if args.maximum > 1024:
         scenarios.append(4)
@@ -425,30 +429,19 @@ def run(args, capacity):
         body = (max_message_cover(ports, args.maximum) if scenario==4 else
                 full_pool_cover(ports, capacity) if capacity==16 else harness(ports, capacity, scenario, args.maximum))
         (work / f"cover{scenario}.sv").write_text(body)
-    tasks = ["prove"] + [f"cover{k}" for k in scenarios]
-    options = "\n".join(f"{task}: mode {'prove' if task=='prove' else 'cover'}\n"
-                        f"{task}: depth {3 if task=='prove' else 96}\n"
+    tasks = [f"prove{k}" for k in range(len(proofs))] + [f"cover{k}" for k in scenarios]
+    options = "\n".join(f"{task}: mode {'prove' if task.startswith('prove') else 'cover'}\n"
+                        f"{task}: depth {3 if task.startswith('prove') else 96}\n"
                         f"{task}: timeout 300" for task in tasks)
     reads = "\n".join(f"{task}: read_verilog -formal -sv "
-                      + ("formal_top.sv" if task=="prove" else f"-D NL_CONTEXT_COVER {task}.sv")
+                      + (f"{task}.sv" if task.startswith("prove") else f"-D NL_CONTEXT_COVER {task}.sv")
                       for task in tasks)
+    # Witness traces are simulated from the solver inputs instead of read back signal by signal.
     (work / "pool.sby").write_text("[tasks]\n" + "\n".join(tasks)
-        + "\n[options]\n" + options + "\n[engines]\nsmtbmc z3\n[script]\n"
+        + "\n[options]\nvcd_sim on\n" + options + "\n[engines]\nsmtbmc z3\n[script]\n"
         + "read_verilog -formal network.v\n" + reads + "\nprep -top formal_top -flatten\n[files]\n"
-        + "network.v\nformal_top.sv\n" + "\n".join(f"cover{k}.sv" for k in scenarios) + "\n")
-    with subprocess.Popen(["sby", "-j", "2", "pool.sby"], cwd=work, stdout=subprocess.PIPE,
-                          stderr=subprocess.STDOUT, text=True, start_new_session=True) as process:
-        try:
-            output, _ = process.communicate(timeout=1000)
-        except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGTERM)
-            output, _ = process.communicate()
-            print(output, work, flush=True)
-            return 1
-    print(output, work, flush=True)
-    return 0 if process.returncode == 0 and all(
-        (work / f"pool_{task}/status").read_text().split()[0] == "PASS"
-        for task in tasks) else 1
+        + "network.v\n" + "\n".join(f"{task}.sv" for task in tasks) + "\n")
+    return run_tasks(work, "pool", tasks, args.jobs, 1000)
 
 
 def main():
@@ -457,6 +450,7 @@ def main():
     parser.add_argument("--work", required=True, type=Path)
     parser.add_argument("--capacity", type=int)
     parser.add_argument("--maximum", type=int, default=1024)
+    parser.add_argument("--jobs", type=int, default=2)
     args = parser.parse_args()
     args.work.mkdir(parents=True, exist_ok=True)
     for capacity in ([args.capacity] if args.capacity else (2, 3, 4, 16) if args.maximum > 1024 else (2, 3, 4)):
