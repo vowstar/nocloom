@@ -13,7 +13,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from sim_engine import PASS_MARKERS, Simulation, selection
+from sim_engine import PASS_MARKERS, Simulation, generated_rtl, selection
 from cross_hardware_sim import simulate
 
 
@@ -171,6 +171,17 @@ class Contract(unittest.TestCase):
         self.assertEqual(len(receipt["inputs"]), 2)
         self.assertEqual(receipt["status"], "PASS")
 
+
+    def test_generated_rtl_appends_every_cell_model(self):
+        # A synchronous-reset network instantiates nocloom_synchronizer_sync_reset.
+        cells = ["nocloom_clock_gate", "nocloom_synchronizer", "nocloom_synchronizer_sync_reset"]
+        for cell in cells:
+            (self.work / (cell + ".v")).write_text(f"module {cell}; endmodule\n")
+        top = self.work / "nocloom_net.v"
+        top.write_text("module nocloom_net; nocloom_synchronizer_sync_reset u(); endmodule\n")
+        text = generated_rtl(top)
+        for cell in cells:
+            self.assertEqual(text.count(f"module {cell};"), 1, cell)
 
     def test_switch_marker_is_accepted(self):
         # A testbench that prints SWITCH_PASS and exits zero passes.

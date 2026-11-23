@@ -51,7 +51,8 @@ def generated_rtl(path):
     """A generated module's text followed by the cell models generated beside it, if any (the
     module instantiates them), so that one source file simulates the module."""
     path = Path(path)
-    cells = [path.parent / f"nocloom_{c}.v" for c in ("clock_gate", "synchronizer")]
+    cells = [path.parent / f"nocloom_{c}.v"
+             for c in ("clock_gate", "synchronizer", "synchronizer_sync_reset")]
     return path.read_text() + "".join(c.read_text() for c in cells if c.is_file() and c != path)
 
 
