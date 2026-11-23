@@ -1149,20 +1149,27 @@ add_test(NAME register_window_transactions
 set_tests_properties(register_window_transactions PROPERTIES TIMEOUT 180
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} LABELS "rtl;focused;ci" PROCESSORS 1
   RESOURCE_LOCK register_window_simulation)
-add_test(NAME log_bank_access
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/log_bank_access.py
-    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/log_bank_access
-    --case single --case parts --case audit32 --case sparse --case crossed)
-set_tests_properties(log_bank_access PROPERTIES TIMEOUT 120
-  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} LABELS "rtl;focused;ci" PROCESSORS 1
-  ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
-add_test(NAME log_bank_covered_access
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/log_bank_access.py
-    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/log_bank_covered_access
-    --case covered)
-set_tests_properties(log_bank_covered_access PROPERTIES TIMEOUT 30
-  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} LABELS "rtl;focused;ci" PROCESSORS 1
-  ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+# One network per test: each simulation compiles alone and the tests run in parallel.
+foreach(case IN ITEMS single backward audit32 sparse parts_none parts_audit parts_user
+    parts_whole parts_revision parts_chain parts_two parts_every crossed_1250_3333
+    crossed_3333_1250 crossed_2000_2000 crossed_1000_7919)
+  add_test(NAME log_bank_access_${case}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/log_bank_access.py
+      --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/log_bank_access
+      --case ${case})
+  set_tests_properties(log_bank_access_${case} PROPERTIES TIMEOUT 120
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} LABELS "rtl;focused;ci" PROCESSORS 1
+    ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+endforeach()
+foreach(case IN ITEMS default_bank fixed_bank cut_revision alarm_fault)
+  add_test(NAME log_bank_covered_access_${case}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/log_bank_access.py
+      --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/log_bank_covered_access
+      --case covered_${case})
+  set_tests_properties(log_bank_covered_access_${case} PROPERTIES TIMEOUT 30
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} LABELS "rtl;focused;ci" PROCESSORS 1
+    ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+endforeach()
 add_test(NAME log_bank_access_large
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/log_bank_access.py
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/log_bank_access_large

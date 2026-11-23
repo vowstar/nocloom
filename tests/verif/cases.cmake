@@ -788,11 +788,13 @@ nocloom_verif_case(NAME verif_service_target LAYER unit TIER focused TIMEOUT 600
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/service_target.py ${NLV_FIXTURE}
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_service_tb.sv)
 
-nocloom_verif_case(NAME log_clock_binding LAYER unit TIER focused TIMEOUT 45
-  FEATURES cdc ci MEMORY_MB 512
-  COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/log_clock.py
-    --cli $<TARGET_FILE:nocloom_cli>
-    --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_log_clock_tb.sv)
+foreach(binding IN ITEMS apb4_a_ram apb4_ram axi4_a_ram axi4_ram no_timeout)
+  nocloom_verif_case(NAME log_clock_binding_${binding} LAYER unit TIER focused TIMEOUT 45
+    FEATURES cdc ci MEMORY_MB 512
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/log_clock.py
+      --cli $<TARGET_FILE:nocloom_cli> --binding ${binding}
+      --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_log_clock_tb.sv)
+endforeach()
 nocloom_verif_case(NAME log_related_clocks LAYER unit TIER focused TIMEOUT 150
   FEATURES cdc ci MEMORY_MB 512
   COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/log_clock.py
@@ -814,11 +816,13 @@ nocloom_verif_case(NAME log_probe_drops LAYER unit TIER focused TIMEOUT 60
     --cli $<TARGET_FILE:nocloom_cli>
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_probe_drops_tb.sv)
 
-nocloom_verif_case(NAME log_bank_atomic LAYER unit TIER focused TIMEOUT 30 FEATURES verif ci
-  MEMORY_MB 512
-  COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/log_bank_atomic.py
-    --cli $<TARGET_FILE:nocloom_cli>
-    --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_log_bank_atomic_tb.sv)
+foreach(part IN ITEMS same_domain same_domain_axi5 crossed gated_window)
+  nocloom_verif_case(NAME log_bank_atomic_${part} LAYER unit TIER focused TIMEOUT 30
+    FEATURES verif ci MEMORY_MB 512
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/log_bank_atomic.py
+      --cli $<TARGET_FILE:nocloom_cli> --part ${part}
+      --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_log_bank_atomic_tb.sv)
+endforeach()
 
 # Register banks at their serial port: the unmodified netlist against the bench,
 # then each designated fault against the check that names it.

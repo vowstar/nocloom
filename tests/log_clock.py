@@ -236,6 +236,13 @@ def check_split_reset(args, work, ratio):
     print(f"{ratio or 'qualified'}: 27 reset trials, event phases {sorted(phases)}")
 
 
+# The bindings of a log beside a target on a divided clock, one network each: the protocol of the
+# watched target, the name of the divided target and whether that target has a timeout.
+BINDINGS = {f"{protocol}_{slow_name}": (protocol, slow_name, True)
+            for protocol in ("apb4", "axi4") for slow_name in ("a_ram", "ram")}
+BINDINGS["no_timeout"] = ("apb4", "ram", False)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cli", type=Path, required=True)
@@ -244,8 +251,11 @@ def main():
     parser.add_argument("--related", action="store_true")
     parser.add_argument("--split-reset", action="store_true")
     parser.add_argument("--wait-overflow", action="store_true")
+    parser.add_argument("--binding", choices=BINDINGS)
     sim_engine.add_arguments(parser)
     args = parser.parse_args()
+    if sum(map(bool, (args.related, args.split_reset, args.wait_overflow, args.binding))) != 1:
+        parser.error("give one of --binding, --related, --split-reset and --wait-overflow")
     args.work.mkdir(parents=True, exist_ok=True)
     root = Path(tempfile.mkdtemp(prefix="run-", dir=args.work))
     if args.wait_overflow:
@@ -265,10 +275,7 @@ def main():
             run(args, root / layout, "apb4", "ram", layout not in ("minimal", "qualified"), layout)
         check_rejections(args.cli, root)
         return
-    for protocol in ("apb4", "axi4"):
-        for slow_name in ("a_ram", "ram"):
-            run(args, root / f"{protocol}-{slow_name}", protocol, slow_name, True)
-    run(args, root / "no_timeout", "apb4", "ram", False)
+    run(args, root / args.binding, *BINDINGS[args.binding])
 
 
 if __name__ == "__main__":

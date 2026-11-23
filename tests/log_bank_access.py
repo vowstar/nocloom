@@ -581,14 +581,18 @@ def full(run, beats=False, records=True):
 
 
 def single(cli, root):
-    """One bank: access beats with and without a backward packet slot."""
-    clocks = (("main", "clk", None),)
+    """One bank: every check, with the access beats."""
     text, banks = definition("single", [1], revision=REVISION)
-    checks = full(Run(cli, root, "single", text, banks, clocks, 24, REVISION), beats=True)
+    return full(Run(cli, root, "single", text, banks, (("main", "clk", None),), 24, REVISION),
+                beats=True)
+
+
+def backward(cli, root):
+    """One bank behind a backward packet slot: the access beats stay the same."""
     text, banks = definition("backward", [1], backward_pipe=True)
-    run = Run(cli, root, "backward", text, banks, clocks, 24)
+    run = Run(cli, root, "backward", text, banks, (("main", "clk", None),), 24)
     run.latency()
-    return checks + run.simulate()
+    return run.simulate()
 
 
 def logs64(cli, root):
@@ -648,99 +652,115 @@ PARTS = dict(none=([1], (), None), audit=([1], ("audit_flags",), None),
              every=([3, 2], ("classes", "audit_flags", "user_flags", "whole_record"), REVISION))
 
 
-def parts(cli, root):
+def parts(name):
     """Each capability bit says what its bank has, alone and all together."""
-    total = 0
-    for name, (logs, has, revision) in PARTS.items():
+    logs, has, revision = PARTS[name]
+
+    def case(cli, root):
         text, banks = definition("parts_" + name, logs, parts=has, revision=revision)
         run = Run(cli, root, "parts_" + name, text, banks, (("main", "clk", None),), 24, revision)
         # The data path of a definition with user flags is AXI4 or its own initiator: the bench
         # leaves it idle and makes no record there.
-        total += full(run, records="user_flags" not in has)
-    return total
+        return full(run, records="user_flags" not in has)
+    return case
 
 
 RATIOS = ((1250, 3333), (3333, 1250), (2000, 2000), (1000, 7919))
 
 
-def crossed(cli, root):
-    """A log in another clock domain than the window, at several clock ratios."""
-    total = 0
-    for main, slow in RATIOS:
+def crossed(main, slow):
+    """A log in another clock domain than the window, at one clock ratio."""
+    def case(cli, root):
         name = f"crossed_{main}_{slow}"
         clocks = (("main", "clk", main), ("slow", "clk_slow", slow))
         text, banks = definition(name, [2], clocks=clocks, log_domain="slow")
-        total += full(Run(cli, root, name, text, banks, clocks, 24 + 16 * (slow // main + 1)))
-    return total
+        return full(Run(cli, root, name, text, banks, clocks, 24 + 16 * (slow // main + 1)))
+    return case
 
 
-def covered(cli, root):
-    """Covered words with automatic and explicit bank placement."""
-    checks = 0
+# Covered words with automatic and explicit bank placement: the loggers, the place the bank must
+# take, and the offset in the window that a one-word mapping of the watched target covers.
+COVERED = dict(default_bank=([1], 0x40, 4), fixed_bank=([[0]], 0, 4),
+               cut_revision=([1], 0x40, 0x1c))
+
+
+def covered_bench(cli, root, name):
+    """The run of one covered definition, with every access of its bench."""
+    offsets, expected, shadow = COVERED[name]
     enable = layout.put("alarm_enable", 1)
     clear = layout.put(layout.HELD, 1)
-    cases = (("default_bank", [1], 0x40, 4), ("fixed_bank", [[0]], 0, 4),
-             ("cut_revision", [1], 0x40, 0x1c))
-    for name, offsets, expected, shadow in cases:
-        text, banks = definition(name, offsets, revision=REVISION, parts=("classes",))
-        fault = WINDOW + shadow
-        text = text.replace("base: '0x0', size: '0x1000'",
-                            f"base: '{fault:#x}', size: '0x4'")
-        bank = banks[0]
-        bank.base = expected
-        run = Run(cli, root, name, text, banks, (("main", "clk", None),), 5,
-                  revision=REVISION, classes=True)
-        run.check_map()
-        record = run.records["csr"]
-        if expected:
-            assert "unreachable_words" not in record and "state_reachable" not in record
-            run.read("relocated revision", run.address(bank, layout.REVISION), REVISION)
-            run.read("original ID address is outside a bank", WINDOW, error=True)
-        else:
-            assert record["state_reachable"] is False
-            assert record["unreachable_words"] == {"cfg": [4]}
-        run.read("shadow selects RAM", fault, 0)
-        run.read("ID", run.address(bank), run.header(bank)[0])
-        if not expected:
-            run.write("shadowed STATE write selects RAM", fault, enable, 2)
-            run.lines.append("fail[0] = 1;")
-            run.emit("failed RAM access", 0, False, fault, error=True)
-            run.lines.append("fail[0] = 0;")
-            run.idle(run.wait)
-            run.alarm("shadowed STATE cannot enable alarm", False)
-            run.read("STATE still reads RAM", fault, 0)
-            run.read("captured address remains readable", run.address(bank, 8), shadow)
-            checks += run.simulate()
-            continue
-        run.store(bank, enable, 2, "enable alarm")
-        run.beats("enable cycles", BEATS["write"])
-        for phase, writing in (("first", False), ("second", True)):
-            run.lines.append("fail[0] = 1;")
-            run.emit(f"{phase} failed access", 0, writing, fault, error=True)
-            run.lines.append("fail[0] = 0;")
-            run.idle(run.wait)
-            run.alarm(f"{phase} alarm", True)
-            run.state(f"{phase} held", bank, held=1)
-            run.beats(f"{phase} STATE cycles", BEATS["read"])
-            run.read(f"{phase} captured address", run.address(bank, 8), fault & 0xff)
-            run.read(f"{phase} captured direction", run.address(bank, layout.STATE),
-                     layout.put("record_write", int(writing)), layout.mask("record_write"))
-            run.store(bank, clear, 1, "clear held")
-            run.idle(run.wait)
-            run.alarm(f"{phase} cleared alarm", False)
-            run.state(f"{phase} cleared held", bank)
-        unused = run.address(bank, 0x3c)
-        run.read("reserved word resets to zero", unused)
-        run.write("write reserved word", unused, 0xffffffff)
-        run.read("reserved word still reads zero", unused)
-        checks += run.simulate()
-        if name == "default_bank":
-            assert run.simulate(alarm_fault=True) == 2
-    return checks
+    text, banks = definition(name, offsets, revision=REVISION, parts=("classes",))
+    fault = WINDOW + shadow
+    text = text.replace("base: '0x0', size: '0x1000'",
+                        f"base: '{fault:#x}', size: '0x4'")
+    bank = banks[0]
+    bank.base = expected
+    run = Run(cli, root, name, text, banks, (("main", "clk", None),), 5,
+              revision=REVISION, classes=True)
+    run.check_map()
+    record = run.records["csr"]
+    if expected:
+        assert "unreachable_words" not in record and "state_reachable" not in record
+        run.read("relocated revision", run.address(bank, layout.REVISION), REVISION)
+        run.read("original ID address is outside a bank", WINDOW, error=True)
+    else:
+        assert record["state_reachable"] is False
+        assert record["unreachable_words"] == {"cfg": [4]}
+    run.read("shadow selects RAM", fault, 0)
+    run.read("ID", run.address(bank), run.header(bank)[0])
+    if not expected:
+        run.write("shadowed STATE write selects RAM", fault, enable, 2)
+        run.lines.append("fail[0] = 1;")
+        run.emit("failed RAM access", 0, False, fault, error=True)
+        run.lines.append("fail[0] = 0;")
+        run.idle(run.wait)
+        run.alarm("shadowed STATE cannot enable alarm", False)
+        run.read("STATE still reads RAM", fault, 0)
+        run.read("captured address remains readable", run.address(bank, 8), shadow)
+        return run
+    run.store(bank, enable, 2, "enable alarm")
+    run.beats("enable cycles", BEATS["write"])
+    for phase, writing in (("first", False), ("second", True)):
+        run.lines.append("fail[0] = 1;")
+        run.emit(f"{phase} failed access", 0, writing, fault, error=True)
+        run.lines.append("fail[0] = 0;")
+        run.idle(run.wait)
+        run.alarm(f"{phase} alarm", True)
+        run.state(f"{phase} held", bank, held=1)
+        run.beats(f"{phase} STATE cycles", BEATS["read"])
+        run.read(f"{phase} captured address", run.address(bank, 8), fault & 0xff)
+        run.read(f"{phase} captured direction", run.address(bank, layout.STATE),
+                 layout.put("record_write", int(writing)), layout.mask("record_write"))
+        run.store(bank, clear, 1, "clear held")
+        run.idle(run.wait)
+        run.alarm(f"{phase} cleared alarm", False)
+        run.state(f"{phase} cleared held", bank)
+    unused = run.address(bank, 0x3c)
+    run.read("reserved word resets to zero", unused)
+    run.write("write reserved word", unused, 0xffffffff)
+    run.read("reserved word still reads zero", unused)
+    return run
 
 
-CASES = dict(logs64=logs64, chain32=chain32, chains=chains, audit32=audit32, sparse=sparse, domains=domains, single=single,
-             crossed=crossed, parts=parts, covered=covered)
+def covered(name):
+    def case(cli, root):
+        return covered_bench(cli, root, name).simulate()
+    return case
+
+
+def covered_alarm_fault(cli, root):
+    """The bench of the default bank sees an alarm output that stays low."""
+    assert covered_bench(cli, root, "default_bank").simulate(alarm_fault=True) == 2
+    return 2
+
+
+# One case per definition, so that each test simulates one network.
+CASES = dict(logs64=logs64, chain32=chain32, chains=chains, audit32=audit32, sparse=sparse,
+             domains=domains, single=single, backward=backward,
+             **{"parts_" + name: parts(name) for name in PARTS},
+             **{f"crossed_{main}_{slow}": crossed(main, slow) for main, slow in RATIOS},
+             **{"covered_" + name: covered(name) for name in COVERED},
+             covered_alarm_fault=covered_alarm_fault)
 
 
 def main():

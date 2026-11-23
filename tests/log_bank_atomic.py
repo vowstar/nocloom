@@ -177,18 +177,23 @@ def check_read_wake(cli, work):
     print(f"read_wake: {checks} checks", flush=True)
 
 
+# Each part simulates one network, so that the parts run as tests of their own.
+PARTS = dict(same_domain=lambda args, work: run(args, work, crossed=False),
+             same_domain_axi5=lambda args, work: run(args, work, crossed=False, axi5=True),
+             crossed=lambda args, work: run(args, work, crossed=True),
+             gated_window=lambda args, work: check_read_wake(args.cli, work))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--cli", required=True)
     parser.add_argument("--work", required=True, type=Path)
     parser.add_argument("--bench", required=True, type=Path)
+    parser.add_argument("--part", required=True, choices=PARTS)
     args = parser.parse_args()
     args.work.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="run-", dir=args.work))
-    run(args, work / "same_domain", crossed=False)
-    run(args, work / "same_domain_axi5", crossed=False, axi5=True)
-    run(args, work / "crossed", crossed=True)
-    check_read_wake(args.cli, work / "gated_window")
+    PARTS[args.part](args, work / args.part)
 
 
 if __name__ == "__main__":
