@@ -580,7 +580,18 @@ def log_mapping():
     run([CLI, "generate", SOURCE / "tests/log_zero_shadow.yaml", "--out-dir", shadow,
          "--ipxact", "--address-table"])
     expected = json.loads((SOURCE / "tests/log_zero_shadow.json").read_text())
-    assert {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in shadow.iterdir()} == expected
+    # The bundle alone names the generator version: it must be the build's, and the digest covers
+    # every other byte. The definition gives the revision, so no other file follows the version.
+    version = run([CLI, "--version"]).stdout.strip()
+    field = json.dumps({"version": version})[1:-1].encode()
+    digests = {}
+    for path in shadow.iterdir():
+        data = path.read_bytes()
+        if path.name.endswith(".bundle.json"):
+            assert data.count(field) == 1 and json.loads(data)["version"] == version, path.name
+            data = data.replace(field, b'"version": ""')
+        digests[path.name] = hashlib.sha256(data).hexdigest()
+    assert digests == expected
     run([args.definition_generator, ROOT / "direct"])
     failures = []
     for group, banks in (("local", [0x1000]),

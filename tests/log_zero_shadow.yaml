@@ -16,6 +16,7 @@ targets:
     mappings: [{base: '0x100000', size: '0x1000'}]
 error_logging:
   registers: {name: csr, base: '0x100000', size: '0x100000', clock_domain: main}
+  revision: 16909060
   logs:
     - {name: errors, watch: [ram], loggers: [{offset: '0x2000'}]}
 connectivity: all
