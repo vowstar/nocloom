@@ -2378,9 +2378,6 @@ private:
   std::map<unsigned, std::pair<ValueId, ValueId>> observed_reads;
   // The targets that answer some source's decode misses, found once for all targets.
   std::optional<std::set<unsigned>> fallbacks;
-  // Per target, whether the response leaving it answers a decode miss (attach_target): it returns
-  // over its source's miss route.
-  std::map<std::string, ValueId> miss_answers;
 
   // Endpoint-layout field widths at one endpoint's data width; field order
   // does not depend on the width.
@@ -3599,8 +3596,9 @@ private:
         hit = c.and_(hit, c.eq(*target_path, *route.target_path));
       path = b.select(hit, b.constant(plan.burst_path_bits, value), path);
     }
-    // A miss answer, and a response of a flow pair the matrix leaves out (only a miss has one),
-    // returns over the source's miss route.
+    // A response of a flow pair the matrix leaves out (only a miss has one) returns over the
+    // source's miss route. A miss answer of a connected pair takes that pair's own route, behind
+    // the earlier responses of its AxID.
     for (unsigned si = 0; si < plan.sources.size(); ++si) {
       const auto &sp = plan.sources[si];
       const auto missed = miss_route(plan, sp.name);
@@ -3612,9 +3610,8 @@ private:
                (r.flows.empty() ||
                 std::ranges::find(r.flows, missed->source_path) != r.flows.end());
       });
-      const bool marked = miss_answers.contains(target) && sp.flows.size() > 1;
-      auto other = marked ? miss_answers.at(target) : c.bit(0);
-      bool any = marked;
+      auto other = c.bit(0);
+      bool any = false;
       const auto &tp = plan.target(target);
       for (unsigned f = 0; f < std::max<std::size_t>(1, sp.flows.size()); ++f)
         for (unsigned k = 0; k < tp.flows; ++k)
@@ -4341,10 +4338,6 @@ private:
     const auto segment = joined ? response_segment(t) : std::nullopt;
     if (plan.response_runs)
       t.wrap_end = c.wire(1);
-    // A default target takes a miss only when empty and nothing else until its answer has left:
-    // a response leaving while a miss is open and unanswered answers it (return_of).
-    if (t.miss_answer)
-      miss_answers[target] = c.and_(*t.miss_answer, c.not_(*t.miss_replied));
     // The feedback word holds the blocked output and the level of an offered response.
     std::optional<TargetLevelHint> pressed;
     std::optional<ValueId> feedback, next_offer, level;

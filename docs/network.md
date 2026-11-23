@@ -210,13 +210,13 @@ reachable by at least one connected initiator.
 Flow indices must fit their endpoint. An explicit route for an unconnected flow
 pair is rejected. Connectivity entry order does not affect generation.
 
-A miss sent to a target uses one flow pair for both routes, regardless of the
-original initiator flow. Without a named default target, it takes the mapping
-that owns the selected aligned block. With a named default, it takes that
-target's smallest reached mapping. Both cases use that mapping's target flow and
-the lowest initiator flow reaching it. The map lists admitted flow pairs and each
-route's flow indices. See
-[default-target selection](address-map.md#decode-misses).
+A miss request uses one flow pair, regardless of its initiator flow. Without a
+named [default target](address-map.md#decode-misses), it takes the mapping that
+owns the selected aligned block. With a named default, it takes that target's
+smallest reached mapping. Both cases use that mapping's target flow and the
+lowest initiator flow reaching it. The answer returns over its AxID's flow and
+that target flow, or over the miss's pair if that pair is unconnected. The map
+lists admitted flow pairs and each route's flow indices.
 
 ## Route and word behavior
 
