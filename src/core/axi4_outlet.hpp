@@ -128,6 +128,10 @@ struct Axi4OutletProfile {
   // (axi5_ports.hpp, the top axi5_attributes.bits() of user_bits).
   Axi5RequestPorts axi5_ports{};
   Axi5Attributes axi5_attributes{};
+  // Sources with seven-bit HPROT reaching the target's AxDOMAIN ports. The
+  // metadata offset points to HPROT[6] in the request user field.
+  std::vector<unsigned> ahb5_domain_sources{};
+  unsigned ahb5_shareable_offset = 0;
   // AWREGION and ARREGION: the AddressMapping::region of the mapping holding the request.
   bool region_port = false;
   // AWQOS and ARQOS: entry L for a request at scheduling level L (the request field of level_bits),

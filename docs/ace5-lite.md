@@ -100,18 +100,19 @@ write strobes are set. That is a rule for the initiator.
 
 | Case | Result |
 | --- | --- |
-| The initiator has no AxDOMAIN port | The domain comes from AxCACHE. AxCACHE[3:2] at `00` gives SYS (`11`). Other values give NSH (`00`). This follows the rule of Issue L, A8.3.4, for an interface without Domain signals. A note under table A8.5 says Shareable for Cacheable requests, and the network does not follow that note |
+| The initiator has neither AxDOMAIN nor seven-bit HPROT | The domain comes from AxCACHE. AxCACHE[3:2] at `00` gives SYS (`11`). Other values give NSH (`00`). This follows Issue L, A8.3.4 |
 | The initiator has no AxSNOOP port | The opcode is `0000` |
 | The target has no AxDOMAIN port | The target gets the request as a normal read or write. The domain and the WriteUniqueFull hint are not sent |
 | The target has no AxSNOOP port | The target gets the domain. A WriteUniqueFull arrives as a WriteUniquePtl |
 
-APB, AHB, Wishbone, TileLink, AXI3, AXI4 and AXI4-Lite initiators have no
-AxDOMAIN port. Their requests follow the first row. An APB initiator sends
-AxCACHE `0000`, so its requests are SYS.
+An APB initiator sends AxCACHE `0000`, so its requests are SYS. Four-bit AHB
+initiators also use the AxCACHE rule.
 
-A request without AxDOMAIN is never SH. An initiator that accesses memory that
-other initiators mark as Shareable must have the AxDOMAIN ports. Otherwise
-the coherent part of the system does not see its accesses as Shareable.
+Seven-bit AHB5 HPROT identifies Device memory with HPROT[3] low. Those
+requests are SYS. For Normal memory, HPROT[6] low gives Non-shareable (`00`)
+and HPROT[6] high gives Outer Shareable (`10`). The same rule applies to
+cacheable and non-cacheable Normal memory. The target keeps AxCACHE and
+drives AxSNOOP `0000` for these requests.
 
 ## Legal targets
 

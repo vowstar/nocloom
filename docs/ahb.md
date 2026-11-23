@@ -218,7 +218,7 @@ and set HPROT[6:5] to zero. Four-bit targets use the low four bits.
 | HPROT[3], Modifiable | AxCACHE[1] | AxCACHE[1] |
 | HPROT[4], Lookup | ARCACHE[3], AWCACHE[2] | AxCACHE[2] OR AxCACHE[3] |
 | HPROT[5], Allocate | ARCACHE[2], AWCACHE[3] | ARCACHE[2] on reads, AWCACHE[3] on writes |
-| HPROT[6], Shareable | No AXI4 port | Zero |
+| HPROT[6], Shareable | No AXI4 port. See [AxDOMAIN conversion](ace5-lite.md#initiators-and-targets-without-the-signals) | Zero |
 
 For four-bit AHB, Lookup follows HPROT[3] and Allocate is zero.
 Seven-bit HPROT[6:2] permits only the memory types below. Other encodings

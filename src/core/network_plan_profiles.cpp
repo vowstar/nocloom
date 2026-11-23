@@ -653,6 +653,17 @@ std::vector<unsigned> reaching_sources(const NetworkPlan &plan, const std::strin
       out.push_back(si);
   return out;
 }
+void set_ahb5_domain_sources(Axi4OutletProfile &profile, const NetworkPlan &plan,
+                             std::span<const unsigned> sources) {
+  if (!profile.axi5_ports.domain || !plan.ahb5)
+    return;
+  for (const auto si : sources)
+    if (plan.sources[si].ahb5 && plan.sources[si].hprot_bits == 7)
+      profile.ahb5_domain_sources.push_back(si);
+  // HPROT[6] is the last bit before HMASTER and the AXI5 attributes.
+  profile.ahb5_shareable_offset =
+      plan.burst_user_bits - plan.axi5_attributes.bits() - plan.hmaster_bits - 1;
+}
 // The exclusive windows of one source (axi4_initiator.hpp): the own window of every mapping of a
 // target with exclusive support it reaches, with that target's byte limit. An exclusive access
 // never exceeds 128 bytes nor 2^len target words (an AXI4 target's AxLEN, else the network length
@@ -1604,6 +1615,7 @@ Axi4OutletProfile axi4_outlet_profile(const NetworkPlan &plan, unsigned index) {
   profile.flows = tp.flows;
   profile.align_wrap = aligns_wrap_reads(plan, index);
   profile.id_sources = reaching_sources(plan, tp.name);
+  set_ahb5_domain_sources(profile, plan, profile.id_sources);
   if (folds_target_id(plan, index)) {
     // Transaction identities contain no mapping-block index.
     const auto &ids = plan.route_index.target_ids;

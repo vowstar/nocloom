@@ -1037,6 +1037,14 @@ foreach(ahb_mode IN ITEMS switch wide clocked ahb5 ahb5_clocked cache)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} PROCESSORS ${ahb_processors} RESOURCE_LOCK rtl_memory)
 endforeach()
 set_property(TEST ahb_initiator_ahb5 ahb_initiator_cache APPEND PROPERTY LABELS ci)
+foreach(mode IN ITEMS single mixed clocked)
+  add_test(NAME ahb5_domain_${mode}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/ahb5_domain.py
+      --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/ahb5_domain_${mode}
+      --mode ${mode})
+  set_tests_properties(ahb5_domain_${mode} PROPERTIES TIMEOUT 120 LABELS "rtl;ahb;focused;ci"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+endforeach()
 # AXI3 initiators: two-bit AxLOCK, WID, width conversion and exclusive pairs; AXI3
 # targets (axi3_target): WID in AW order with two bursts in flight, AxLOCK 0b01 in target mode.
 foreach(axi3_case IN ITEMS initiator_switch:switch initiator_wide:wide target:target)

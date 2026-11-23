@@ -390,12 +390,31 @@ struct EngineLowering {
                               : mapping_decode::local(l, address, address_bits, p.mappings);
   }
   Axi5Attributes axi5_used() const { return axi5_target_fields(p); }
+  // IHI 0033C, table 3-7: Device (HPROT[3] low) is System, otherwise
+  // HPROT[6] selects Outer Shareable or Non-shareable. AxCACHE[1] is HPROT[3].
+  ValueId request_domain(const Fields &f, unsigned at, unsigned direction) {
+    const auto cache = f.at("cache");
+    const auto device = l.inv(l.b.slice(cache, 1, 1));
+    const auto shared = l.b.slice(f.at("user"), p.ahb5_shareable_offset, 1);
+    const auto ahb_domain = l.b.concat(l.either(device, shared), device);
+    if (p.ahb5_domain_sources.size() == p.id_sources.size())
+      return ahb_domain;
+    const auto ahb_source =
+        std::accumulate(p.ahb5_domain_sources.begin(), p.ahb5_domain_sources.end(), zero,
+                        [&](ValueId found, unsigned si) {
+                          return l.either(found, l.eq(f.at("source"), 2 * si + direction));
+                        });
+    const auto other = p.axi5_attributes.domain
+                           ? l.b.slice(f.at("user"), at, p.axi5_attributes.domain)
+                           : shareable::default_domain(l, cache);
+    return l.b.select(ahb_source, ahb_domain, other);
+  }
   // A request packet's axi5 field: the attributes of its user field that the ports read. A
   // descriptor keeps it in place of the whole user field, and the domain and snoop fields apart.
-  void axi5_field(Fields &f) {
+  void axi5_field(Fields &f, unsigned direction) {
     const auto &all = p.axi5_attributes;
     const auto used = axi5_used();
-    if (!used.bits())
+    if (!used.bits() && p.ahb5_domain_sources.empty())
       return;
     std::optional<ValueId> word;
     unsigned at = p.user_bits - all.bits();
@@ -412,7 +431,9 @@ struct EngineLowering {
     }
     if (word)
       f["axi5"] = *word;
-    if (used.domain)
+    if (!p.ahb5_domain_sources.empty())
+      f["domain"] = request_domain(f, at, direction);
+    else if (used.domain)
       f["domain"] = l.b.slice(f.at("user"), at, all.domain);
     if (used.snoop)
       f["snoop"] = l.b.slice(f.at("user"), at + all.domain, all.snoop);
@@ -522,8 +543,8 @@ struct EngineLowering {
     // AxDOMAIN from the request, or from its AxCACHE without the domain field (docs/ace5-lite.md).
     if (ports.domain)
       out("axi", prefix + "domain",
-          freeze("domain",
-                 used.domain ? d.at("domain") : shareable::default_domain(l, d.at("cache"))));
+          freeze("domain", d.contains("domain") ? d.at("domain")
+                                                : shareable::default_domain(l, d.at("cache"))));
     if (prefix == "aw" ? ports.write_snoop : ports.read_snoop)
       out("axi", prefix + "snoop",
           prefix == "aw" ? freeze("snoop", write_opcode(d, sent)) : l.num(4, 0));
@@ -965,7 +986,7 @@ void EngineLowering::write_accept() {
     descriptor.emplace_back("lock");
   if ((!p.user.empty() && p.user_bits) || (owned && several))
     descriptor.emplace_back("user");
-  axi5_field(w);
+  axi5_field(w, 0);
   for (const auto *name : {"axi5", "domain", "snoop"})
     if (w.contains(name))
       descriptor.emplace_back(name);
@@ -1616,7 +1637,7 @@ void EngineLowering::read_accept() {
   r = request("rreq");
   if (target_id_bits && !several)
     r["target_id"] = descriptor_id(r, 1);
-  axi5_field(r);
+  axi5_field(r, 1);
   // A read carries no snoop bit: the write functions are done with the full descriptor.
   std::erase(descriptor, std::string("snoop"));
   rs.resize(depth);
@@ -2736,6 +2757,7 @@ std::pair<unsigned, unsigned> axi4_outlet_outstanding_bits(const Axi4OutletProfi
       address * (p.start_address ? 2 : 1) + p.packet_len_bits + 12 + p.id_bits + p.source_bits +
       (p.user.empty() && !(owned && p.max_outstanding > 1) ? 0 : p.user_bits) +
       axi5_target_fields(p).bits() + p.level_bits +
+      (!p.ahb5_domain_sources.empty() && !p.axi5_attributes.domain ? 2U : 0U) +
       (p.max_outstanding > 1 ? 0 : axi4_outlet_id_bits(p));
   const unsigned staging = 2 + 3 + p.source_bits + p.id_bits + address;
   const unsigned write_slot =

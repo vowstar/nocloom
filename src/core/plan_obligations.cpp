@@ -122,6 +122,8 @@ unsigned outlet_engine_bits(const NetworkPlan &plan, const std::string &target,
   outlet.axi3 = plan.target(target).axi3;
   outlet.axi5_ports = axi5_request_ports(plan.target(target).axi5);
   outlet.axi5_attributes = plan.axi5_attributes;
+  if (outlet.axi5_ports.domain && plan.ahb5)
+    set_ahb5_domain_sources(outlet, plan, reaching_sources(plan, target));
   outlet.axqos_levels = plan.target(target).axqos_levels;
   outlet.level_bits = outlet.axqos_levels.empty() ? 0 : plan.burst_level_bits;
   outlet.interleave = joined_target(plan, plan.target(target));

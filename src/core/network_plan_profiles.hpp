@@ -34,6 +34,8 @@ enum class ApertureQuery { Count, Presence };
 AddressHoles error_apertures(std::vector<ApertureBlock> blocks, unsigned bits, ApertureQuery query);
 std::optional<MissRoute> miss_route(const NetworkPlan &plan, const std::string &source);
 std::vector<unsigned> reaching_sources(const NetworkPlan &plan, const std::string &target);
+void set_ahb5_domain_sources(Axi4OutletProfile &profile, const NetworkPlan &plan,
+                             std::span<const unsigned> sources);
 unsigned least_target_id_bits(const TargetPlan &target);
 // Whether a target's AxID port carries the folded form instead of its layout's fields.
 bool folds_target_id(const NetworkPlan &plan, unsigned target);
