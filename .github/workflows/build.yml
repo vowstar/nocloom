@@ -19,8 +19,12 @@ env:
   # Ubuntu 24.04 packages. A build with tests requires every tool: configure
   # fails when one is missing.
   PACKAGES: >-
-    catch2 clang clang-format cmake cppcheck g++ iverilog libcli11-dev
+    catch2 clang clang-format cmake cppcheck g++ libcli11-dev
     libyaml-cpp-dev make ninja-build nlohmann-json3-dev python3 verilator yosys
+  IVERILOG_VERSION: "13.0"
+  # The Icarus Verilog cache key holds this source checksum and a hash of this
+  # file, which holds the build step. A change of either builds it again.
+  IVERILOG_SHA256: c897bbfa9848688982c6d5c30529fc29d68df0b9ff22ffa73bad89db73a7ce49
 
 jobs:
   lint:
@@ -72,11 +76,46 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y --no-install-recommends $PACKAGES
+    - &cache-iverilog
+      name: Cache Icarus Verilog
+      id: iverilog-cache
+      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+      with:
+        path: ${{ runner.temp }}/iverilog
+        key: ${{ runner.os }}-${{ runner.arch }}-ubuntu-24.04-iverilog-${{ env.IVERILOG_VERSION }}-${{ env.IVERILOG_SHA256 }}-${{ hashFiles('.github/workflows/build.yml') }}
+    - &build-iverilog
+      name: Build Icarus Verilog
+      if: steps.iverilog-cache.outputs.cache-hit != 'true'
+      run: |
+        sudo apt-get install -y --no-install-recommends autoconf bison flex gperf
+        release=${IVERILOG_VERSION//./_}
+        archive="$RUNNER_TEMP/iverilog.tar.gz"
+        curl --fail --location --retry 3 \
+          "https://github.com/steveicarus/iverilog/archive/refs/tags/v$release.tar.gz" \
+          --output "$archive"
+        echo "$IVERILOG_SHA256  $archive" |
+          sha256sum --check
+        tar -xzf "$archive" -C "$RUNNER_TEMP"
+        cd "$RUNNER_TEMP/iverilog-$release"
+        sh autoconf.sh
+        ./configure --prefix="$RUNNER_TEMP/iverilog"
+        make -j4
+        make install
+    - &use-iverilog
+      name: Use Icarus Verilog
+      run: |
+        version=$("$RUNNER_TEMP/iverilog/bin/iverilog" -V)
+        version=${version%%$'\n'*}
+        printf '%s\n' "$version"
+        if [[ "$version" != "Icarus Verilog version $IVERILOG_VERSION "* ]]; then
+          echo "::error::expected Icarus Verilog $IVERILOG_VERSION"
+          exit 1
+        fi
+        echo "$RUNNER_TEMP/iverilog/bin" >> "$GITHUB_PATH"
     - name: Tool versions
       run: |
         ${{ matrix.cxx }} --version
         cmake --version
-        iverilog -V | head -n 1
         yosys -V
         verilator --version
     - name: Configure
@@ -108,6 +147,9 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y --no-install-recommends $PACKAGES
+    - *cache-iverilog
+    - *build-iverilog
+    - *use-iverilog
     - name: Install cppcheck
       run: |
         archive="$RUNNER_TEMP/cppcheck.tar.gz"

@@ -30,7 +30,8 @@ A build with `NOCLOOM_BUILD_TESTS` also needs these tools.
 | CMake | 3.28 or newer, for the memory reservations of tests |
 | Catch2 | 3.4.0 or newer within version 3 |
 | C compiler | C11, for generated header checks |
-| Python 3, Make, Icarus Verilog, Yosys, Verilator | No version check |
+| Python 3, Make, Yosys, Verilator | No version check |
+| Icarus Verilog | CI uses 13.0. CMake checks only that the tool is present |
 | clang-format, cppcheck | No version check. The project uses clang-format 23.1 and cppcheck 2.21. Older versions can report differences |
 | A second C++20 compiler | Clang when the main compiler is GCC, GCC when it is Clang. No version check. `NOCLOOM_DETERMINISM_COMPILERS=OFF` removes this requirement |
 

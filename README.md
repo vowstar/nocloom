@@ -202,9 +202,9 @@ field path, a message, the file line and column when known, and a [diagnostic co
 ## Development
 
 Tests also need Catch2, Python 3, Make, Icarus Verilog, Yosys, Verilator,
-clang-format, cppcheck and a second C++20 compiler. A test builds the CLI with
-that compiler and compares outputs. Set `-DNOCLOOM_DETERMINISM_COMPILERS=OFF`
-to omit the test and its compiler requirement.
+clang-format, cppcheck and a second C++20 compiler. CI uses Icarus Verilog 13.0.
+A test builds the CLI with the second compiler and compares outputs. Set
+`-DNOCLOOM_DETERMINISM_COMPILERS=OFF` to omit the test and its compiler requirement.
 
 ```sh
 cmake -S . -B build -G Ninja -DNOCLOOM_BUILD_TESTS=ON -DNOCLOOM_BUILD_EXAMPLES=ON
