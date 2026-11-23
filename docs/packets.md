@@ -22,6 +22,8 @@ to that target.
 | APB, AXI4-Lite, Wishbone | 128 | Local address space |
 | TL-UH | `max_transfer_bytes` | Local address space |
 
+On AXI5 and ACE5-Lite targets, [`max_transaction_bytes`](axi5.md#constraints)
+can further reduce the packet byte limit and the boundary.
 Window alignment can further reduce the boundary. The alignment word is the
 larger endpoint word, with APB targets counting as 4 bytes. An initiator cannot
 reach a window smaller than that alignment word.

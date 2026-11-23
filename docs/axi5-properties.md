@@ -53,7 +53,7 @@ packet splitting and clock domain crossings.
 | REGION_Present | A target drives AxREGION from the address map window that the request hits. An initiator has no AxREGION port |
 | Exclusive_Accesses | The target field `exclusive` selects how the network serves exclusive accesses |
 | Consistent_DECERR | The validator checks each target that an initiator with `consistent_decerr: true` reaches |
-| Max_Transaction_Bytes | An initiator can have any value. A target has 4096 |
+| Max_Transaction_Bytes | An initiator's value is a declaration. A target's value bounds each packet to it, and each initiator that reaches it must send no larger FIXED burst |
 | Regular_Transactions_Only | An initiator can have any value. A target must have `false`, because packet splitting changes the shape of a burst |
 | Wrap_CLS_Modifiable | An initiator can have any value. A target must have `false`, because the network does not limit WRAP bursts to cache lines |
 | Fixed_Burst_Disable | An initiator can have any value. A target must have `false`, because an AXI target receives FIXED bursts |

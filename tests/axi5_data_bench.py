@@ -56,6 +56,21 @@ MODES = {
                  't64': ('axi5', 64, 'upt', {'max_outstanding': 4}),
                  't128': ('axi5', 128, 'up', {'read_side_effects': True})},
         limits=[('s64', 't128', 32)]),
+    # Targets with Max_Transaction_Bytes: packets stay within it. The 64-bit initiator declares 64
+    # bytes, so its FIXED bursts fit too.
+    'maxbytes': dict(
+        k=2, network=32, clocked=False,
+        sources={'s32': ('axi5', 32, 'upt', {}),
+                 's64': ('axi5', 64, 'upt', {'axi5': {'max_transaction_bytes': 64},
+                                             'max_outstanding': 4}),
+                 's128': ('axi5', 128, 'up', {})},
+        targets={'m64': ('axi5', 64, 'upt', {'axi5': {'max_transaction_bytes': 64}}),
+                 'm32': ('axi5', 32, 'up', {'axi5': {'max_transaction_bytes': 128},
+                                            'max_outstanding': 2}),
+                 't128': ('axi5', 128, 'upt', {})},
+        limits=[],
+        reach={'s32': ['m64', 'm32', 't128'], 's64': ['m64', 'm32', 't128'],
+               's128': ['t128']}),
     # Two clock domains, a 64-bit pair without conversion and a 128-bit initiator into 32 bits.
     'clocked': dict(
         k=1, network=32, clocked=True,
@@ -76,6 +91,18 @@ def data_side(entry, ports, bits, k):
         entry.setdefault('axi5', {})['poison'] = True
     if 't' in ports:
         entry.setdefault('axi5', {})['trace'] = True
+
+
+def merge(entry, extra):
+    for key, value in extra.items():
+        if key == 'axi5':
+            entry.setdefault('axi5', {}).update(value)
+        else:
+            entry[key] = value
+
+
+def most_bytes(endpoint):
+    return endpoint[3].get('axi5', {}).get('max_transaction_bytes', 4096)
 
 
 def has(endpoint, part):
@@ -108,7 +135,7 @@ def configuration(mode):
         entry = {'name': name, 'clock_domain': src_domain, 'protocol': protocol,
                  'data_width': bits, 'id_width': 2, 'len_width': 8}
         data_side(entry, ports, bits, m['k'])
-        entry.update(extra)
+        merge(entry, extra)
         cfg['initiators'].append(entry)
     for index, (name, (protocol, bits, ports, extra)) in enumerate(m['targets'].items()):
         base = (index + 1) * BASES
@@ -116,7 +143,7 @@ def configuration(mode):
                  'data_width': bits, 'id_width': 4, 'len_width': 8, 'attributes': 'amba',
                  'mappings': [{'base': hex(base), 'size': hex(BASES), 'local_address': hex(base)}]}
         data_side(entry, ports, bits, m['k'])
-        entry.update(extra)
+        merge(entry, extra)
         cfg['targets'].append(entry)
     if m['clocked']:
         def graph(entries, exits, src, dst):
@@ -150,6 +177,9 @@ def transactions(mode, seed):
             tbits = m['targets'][target][1]
             size = random.randint(0, beat_log) if j % 3 else beat_log
             length = random.choice((0, 1, 2, 3, 5, 7, 8, 15))
+            # A source that declares Max_Transaction_Bytes sends no larger burst.
+            while (length + 1) << size > most_bytes(m['sources'][s]):
+                length = (length + 1) // 2 - 1
             burst = 1
             if j % 5 in (2, 3) and length in (1, 3, 7, 15):
                 burst = 2
@@ -169,6 +199,9 @@ def transactions(mode, seed):
                 addr_lo, addr_hi = addr, addr + (1 << size)
             else:
                 addr = start + (random.randint(0, (1 << size) - 1) if j % 5 == 1 else 0)
+                # Some bursts start inside a 64-byte block, unless the source declares a maximum.
+                if j % 4 == 2 and most_bytes(m['sources'][s]) == 4096:
+                    addr += 0x30
             lo, hi = (start, start + span) if burst != 0 else (addr_lo, addr_hi)
             if burst == 1:
                 lo, hi = addr, ((addr >> size) << size) + span
@@ -184,7 +217,7 @@ def transactions(mode, seed):
         # conversion cuts it into pieces, so the target's BTRACE on the first piece must reach the
         # initiator through the merged B.
         for target in reach[s]:
-            if m['targets'][target][1] >= bits:
+            if m['targets'][target][1] >= bits or 16 * bits // 8 > most_bytes(m['sources'][s]):
                 continue
             for write in (True, False):
                 base = (targets.index(target) + 1) * BASES
@@ -405,6 +438,18 @@ end
             prdrive = (f"for (j = 0; j < {granules}; j = j + 1) {p}rpoison[j] = "
                        f"g >= 0 ? pfn(g, ((b & ~32'd{lanes - 1}) + 8 * j) >> 3, 5) : 1'b0;")
         resp_drive = f"{p}ruser[{rb - 1}:0] = tr[{ti}];" if rb else ''
+        # A target with Max_Transaction_Bytes gets no burst larger, nor one that crosses it.
+        most = e.get('axi5', {}).get('max_transaction_bytes', 4096)
+        size_check = ''
+        if most < 4096:
+            # The first byte of the burst's run: a WRAP's container base, else its aligned start.
+            first = ("(burst == 2'd2 ? a & ~(((len + 1) << size) - 1) : "
+                     "a & ~((32'd1 << size) - 1))")
+            size_check = (f"check(((len + 1) << size) <= {most} && (burst == 2'd0 || "
+                          f"({first} / {most}) == "
+                          f"(({first} + ((len + 1) << size) - 1) / {most})), "
+                          f"$sformatf(\"MAX_TRANSACTION {tname} %h len=%0d size=%0d burst=%0d\", "
+                          f"a, len, size, burst));")
         # AxTRACE comes from the request. WTRACE is the OR of the strobed bytes' trace bits, and
         # this target asserts BTRACE on a request's first packet when its flip bit is set.
         aw_trace = (f"check(g < 0 || {p}awtrace == (gt[g] & rq[g]), "
@@ -460,6 +505,7 @@ initial begin : write_{tname}
     g = find_{tname}(a, 1);
     check(g >= 0, $sformatf("AW_UNKNOWN {tname} %h", a));
     {aw_trace}
+    {size_check}
     if (g >= 0) hits[g] = hits[g] + 1;
     @(negedge {tclk}); {p}awready = 0; {p}wready = 1;
     for (k = 0; k <= len; k = k + 1) begin
@@ -498,6 +544,7 @@ initial begin : read_{tname}
     g = find_{tname}(a, 0);
     check(g >= 0, $sformatf("AR_UNKNOWN {tname} %h", a));
     {ar_trace}
+    {size_check}
     if (g >= 0) hits[g] = hits[g] + 1;
     @(negedge {tclk}); {p}arready = 0;
     for (k = 0; k <= len; k = k + 1) begin

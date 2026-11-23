@@ -633,3 +633,51 @@ TEST_CASE("Targets drive NSAID zero outside the Non-secure address space", "[axi
   prot.targets[0].axi5->priv_inst = false;
   CHECK_FALSE(zero(prot));
 }
+
+TEST_CASE("A target's Max_Transaction_Bytes holds every burst that reaches it", "[axi5]") {
+  using namespace nocloom;
+  auto d = parsed(with("axi5"));
+  d.initiators[0].max_outstanding.reset();
+  d.targets[0].axi5.emplace().max_transaction_bytes = 64; // a 32-bit target
+  // The 64-bit initiator can send a FIXED burst of 128 bytes.
+  CHECK(has(refused(d), "NCL_AXI5_PROPERTIES", "targets[0].axi5.max_transaction_bytes",
+            "Initiator cpu can send a FIXED burst of 128 bytes"));
+  auto declared = d;
+  declared.initiators[0].axi5.emplace().max_transaction_bytes = 64;
+  CHECK(generate(declared));
+  auto shorter = d;
+  shorter.initiators[0].len_width = 3; // eight transfers of 8 bytes
+  CHECK(generate(shorter));
+  auto wide = declared;
+  wide.initiators[0].data_width = 1024;
+  CHECK(has(refused(wide), "NCL_AXI5_PROPERTIES", "targets[0].axi5.max_transaction_bytes",
+            "one data word"));
+  // A value outside the range gives that diagnostic alone.
+  for (const unsigned bytes : {32U, 48U}) {
+    auto illegal = d;
+    illegal.targets[0].axi5->max_transaction_bytes = bytes;
+    const auto list = refused(illegal);
+    REQUIRE(list.size() == 1);
+    CHECK(has(list, "NCL_AXI5_PROPERTIES", "targets[0].axi5.max_transaction_bytes",
+              "power of two from 64 to 4096"));
+  }
+}
+
+TEST_CASE("ACE5-Lite uses the same target transaction byte limit as AXI5", "[axi5]") {
+  using namespace nocloom;
+  for (auto source : {Protocol::Axi5, Protocol::Ace5Lite}) {
+    for (auto target : {Protocol::Axi5, Protocol::Ace5Lite}) {
+      auto d = parsed(with("axi5"));
+      d.initiators[0].protocol = source;
+      d.initiators[0].max_outstanding.reset();
+      d.targets[0].protocol = target;
+      d.targets[0].axi5.emplace().max_transaction_bytes = 64;
+      const std::string field = "targets[0].axi5.max_transaction_bytes";
+      CHECK(has(refused(d), "NCL_AXI5_PROPERTIES", field, "FIXED burst of 128 bytes"));
+      d.initiators[0].axi5.emplace().max_transaction_bytes = 64;
+      CHECK(generate(d));
+      d.initiators[0].data_width = 1024;
+      CHECK(has(refused(d), "NCL_AXI5_PROPERTIES", field, "one data word"));
+    }
+  }
+}

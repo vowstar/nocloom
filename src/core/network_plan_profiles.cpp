@@ -825,6 +825,11 @@ static PacketLimits target_packet_defaults(const NetworkPlan &plan, std::size_t 
                         : 128;
   if (t.external_protocol == Protocol::TlUh)
     out.max_bytes = t.tl_max_transfer_bytes;
+  // An AXI5 target's Max_Transaction_Bytes bounds each packet and the block it stays in.
+  if (axi && t.axi5 && t.axi5->max_transaction_bytes < 4096) {
+    out.max_bytes = std::min<std::uint64_t>(out.max_bytes, t.axi5->max_transaction_bytes);
+    out.boundary_bytes = std::min<std::uint64_t>(out.boundary_bytes, t.axi5->max_transaction_bytes);
+  }
   return out;
 }
 // The largest WRAP container an AXI4 source sends, min(16, 2^AxLEN width) beats, and the largest

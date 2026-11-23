@@ -1263,13 +1263,6 @@ void check_axi5(Checks &c, std::optional<Protocol> protocol,
         c("NCL_AXI5_UNSUPPORTED", at + "." + key,
           std::string("A target port does not support ") + property +
               ". The network issues bursts of every shape");
-  // Properties that later network functions carry.
-  for (const auto &[key, set, property] :
-       {std::tuple{"max_transaction_bytes", !initiator && p.max_transaction_bytes != 4096,
-                   "Max_Transaction_Bytes below 4096 at a target"}})
-    if (set)
-      c("NCL_AXI5_UNSUPPORTED", at + "." + key,
-        std::string("The network does not support ") + property);
 }
 // The pair rules of the axi5 constraint properties (docs/axi5.md#constraints).
 void check_axi5_pairs(Checks &c) {
@@ -1315,6 +1308,39 @@ void check_axi5_pairs(Checks &c) {
       if (t.axi5->mpam == Axi5Mpam::PartId9 && s.axi5->mpam == Axi5Mpam::PartId12)
         c("NCL_AXI5_PROPERTIES", at + "mpam",
           "A 9-bit PARTID port cannot hold the 12-bit PARTID of initiator " + s.name);
+    }
+  }
+  // Max_Transaction_Bytes at a target (IHI 0022 Issue L, A3.1.3): Size x Length of every
+  // transaction is at most the value, also for a FIXED burst. The network cuts INCR and WRAP into
+  // packets. The admission rules check an exclusive burst as a whole. A FIXED burst also stays
+  // whole, so each initiator that reaches the target must send no larger FIXED burst.
+  for (std::size_t k = 0; k < d.targets.size(); ++k) {
+    const auto &t = d.targets[k];
+    if (!detail::axi5_port(t.protocol) || !t.axi5 || t.axi5->max_transaction_bytes >= 4096)
+      continue;
+    const auto most = t.axi5->max_transaction_bytes;
+    // An illegal value has its own diagnostic, and no pair rule names it.
+    if (!std::has_single_bit(most) || most < 64)
+      continue;
+    const auto at = "targets[" + std::to_string(k) + "].axi5.max_transaction_bytes";
+    const auto target_bytes = t.data_width.value_or(c.network_bits) / 8;
+    for (const auto &s : d.initiators) {
+      if (!connects(d, s.name, t.name))
+        continue;
+      const auto bytes = source_engine_width(s, c.source_bits) / 8;
+      if (std::max(bytes, target_bytes) > most) {
+        c("NCL_AXI5_PROPERTIES", at,
+          "max_transaction_bytes must hold one data word of the target and of initiator " + s.name);
+        continue;
+      }
+      const bool declares =
+          detail::axi5_port(s.protocol) && s.axi5 && s.axi5->max_transaction_bytes <= most;
+      const auto beats = std::min(16U, 1U << std::min(4U, s.len_width.value_or(8)));
+      if (full_axi(s.protocol) && s.len_width.value_or(8) && bytes * beats > most && !declares)
+        c("NCL_AXI5_PROPERTIES", at,
+          "Initiator " + s.name + " can send a FIXED burst of " + std::to_string(bytes * beats) +
+              " bytes, which the network does not cut. Declare max_transaction_bytes of " +
+              std::to_string(most) + " or less at the initiator");
     }
   }
   for (std::size_t k = 0; k < d.targets.size(); ++k) {

@@ -208,8 +208,20 @@ Some properties are rules about the transactions. The validator checks them.
 | --- | --- | --- |
 | `consistent_decerr` | The initiator returns DECERR on all read transfers of a 64-byte cache line or on none. Each target that it reaches must declare `consistent_decerr: true` or be a target whose errors the initiator receives as SLVERR. Each mapping must be at least 64 bytes. `slverr_only: true` also meets the property | The target declares that its subordinate meets the property |
 | `device_normal_independence` | A declaration. The network keeps the order of one ID | Each initiator that reaches the target must declare `true` |
-| `max_transaction_bytes` | A declaration. The network accepts every legal burst | Only 4096 |
+| `max_transaction_bytes` | A declaration: every transaction of the initiator is at most this size and does not cross a block of this size. See the FIXED burst rule below | Each packet to the target is at most this size and stays inside one block of this size |
 | `regular_only`, `wrap_line_only`, `no_fixed_bursts` | A declaration | Only `false`. Packet splitting and burst merging change the shape of a burst, and an AXI target receives FIXED bursts |
+
+Issue L, A3.1.3, counts Size x Length for every transaction, including FIXED
+bursts. An AXI5 or ACE5-Lite target's `max_transaction_bytes` bounds its INCR
+and WRAP packets. FIXED and exclusive bursts stay whole. An exclusive burst
+above the limit returns an error without target access.
+
+For each initiator that can send FIXED bursts to the target, the limit must
+fit 16 transfers of the initiator's data width. A shorter `len_width` reduces
+that count. An AXI5 or ACE5-Lite initiator can also declare
+`max_transaction_bytes` no larger than the target's limit.
+The limit must hold one data word of the target and of each initiator that
+reaches it. Other definitions give `NCL_AXI5_PROPERTIES`.
 
 APB, AHB, Wishbone and TileLink targets give SLVERR for their errors. AXI4,
 AXI3 and AXI4-Lite targets can give DECERR. See

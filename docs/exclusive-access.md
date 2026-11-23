@@ -6,7 +6,7 @@ A target selects `exclusive: none`, `network` or `target`.
 
 | Mode | Behavior |
 | --- | --- |
-| `none` | Perform the access normally and return OKAY. An exclusive write therefore reports exclusive failure |
+| `none` | Perform the access normally and return OKAY. An exclusive write therefore reports exclusive failure. An exclusive burst still stays in one packet or returns an error without target access, as [Packets](packets.md#bounded-packets) describes |
 | `network` | A monitor in the target adapter records reads and checks writes |
 | `target` | An AXI target receives AxLOCK and handles its own reservations |
 
