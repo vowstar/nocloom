@@ -805,6 +805,11 @@ struct EngineLowering {
   struct Offer {
     ValueId full{}, push{};
     Fields live;
+    // A direct outlet's local answer to a write head it takes now: pushed, it is offered from the
+    // pipe in the next cycle, so no answer leaves in the cycle its request enters.
+    std::optional<ValueId> wait{};
+    // The word the pipe offers at once: the push, unless it waits.
+    ValueId through(logic::Logic &g) const { return wait ? g.both(push, g.inv(*wait)) : push; }
   };
   Offer boffer, roffer;
   ValueId jfull{}, jwrite{}, jlast{}, b_held{}, bsilent_done{};
@@ -1420,6 +1425,8 @@ void EngineLowering::write_respond_several(ValueId bresp, ValueId bid, WriteFace
       live[name] = answered(name, pick(l, field(member), freed));
     live["address"] = answer_address;
     boffer = {bspare, bpush, live};
+    if (p.response_direct)
+      boffer.wait = refused;
   }
   const auto bs_stage = ilv ? Stage{} : stage(l, bf, bspare, bpush, bpop);
   if (!ilv)
@@ -1539,7 +1546,12 @@ void EngineLowering::write_respond_single(ValueId bresp, ValueId bid, WriteFace 
   if (ilv) {
     // The B pipe takes the B (or the local one); the joined stage takes it on, and the burst
     // keeps the main entry until its B leaves (join_responses).
-    const auto bnow = l.b.select(local_b, write_local_code(), bfired);
+    // A head refused as it enters answers by its own decode: the main entry takes it only now.
+    const auto local_code =
+        windowed ? l.b.select(head, l.b.select(head_missed, l.num(2, 1), l.num(2, 2)),
+                              write_local_code())
+                 : write_local_code();
+    const auto bnow = l.b.select(local_b, local_code, bfired);
     Fields live{{"result", bnow}};
     if (network)
       live["response_exclusive"] = l.both(aw.at("lock"), l.both(l.inv(excluded), l.eq(bnow, 0)));
@@ -1553,6 +1565,8 @@ void EngineLowering::write_respond_single(ValueId bresp, ValueId bid, WriteFace 
     const auto store = report_only ? l.both(bpush, l.inv(silent)) : bpush;
     bsilent_done = report_only ? l.both(bpush, silent) : zero;
     boffer = {bf, store, live};
+    if (p.response_direct)
+      boffer.wait = local_b;
     return;
   }
   // A refused burst's code is its own decode, kept in the main entry; only a B or a drained answer
@@ -2345,7 +2359,7 @@ void EngineLowering::join_responses() {
     std::vector<std::pair<ValueId, ValueId>> regs; // register, live value
   };
   auto piped = [&](const std::string &stem, const Offer &o) {
-    Pipe q{l.either(o.full, o.push), {}, {}};
+    Pipe q{l.either(o.full, o.through(l)), {}, {}};
     for (const auto &[name, v] : o.live) {
       const auto reg = l.state_like(stem + name, v);
       q.word[name] =
