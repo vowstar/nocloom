@@ -190,6 +190,135 @@ TEST_CASE("IP-XACT slave interface of an AHB initiator", "[ipxact]") {
     }
   }
 }
+TEST_CASE("IP-XACT address blocks keep TileLink target windows", "[ipxact]") {
+  const auto text = R"(schema_version: 10
+name: tilelink_windows
+address_width: 32
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains: [{name: main, clock_port: clk, reset_port: reset_n, test_port: test}]
+address_inputs: [{name: boot, width: 1, clock_domain: main}]
+address_selectors: [{name: alt, equals: {boot: 1}}]
+initiators:
+  - {name: cpu, clock_domain: main, protocol: axi4, data_width: 32}
+targets:
+  - {name: ram, clock_domain: main, protocol: tl_ul, data_width: 32,
+     mappings: [{base: '0x10000', size: '0x1000', local_address: '0x2000'},
+                {base: '0x20000', size: '0x2000', local_address: '0x4000', when: {alt: true}}]}
+  - {name: uart, clock_domain: main, protocol: apb4, data_width: 32, attributes: amba,
+     mappings: [{base: '0x30000', size: '0x1000'}]}
+connectivity: all
+output: {backend: verilog, language: verilog_2001}
+)";
+  auto d = parsed(text);
+  GenerationOptions options;
+  options.ipxact = true;
+  for (const auto protocol : {Protocol::TlUl, Protocol::TlUh}) {
+    CAPTURE(protocol);
+    d.targets.front().protocol = protocol;
+    const auto generated = generate(d, options);
+    REQUIRE(generated);
+    const auto &xml = file(generated.value(), "nocloom_tilelink_windows.ipxact.xml").text;
+    CHECK_FALSE(has(xml, "spirit:masterRef=\"ram\""));
+    CHECK_FALSE(has(xml, "<spirit:name>ram</spirit:name>"));
+    CHECK(has(xml, "<spirit:name>nl_t_ram_a_data</spirit:name>"));
+    CHECK(has(xml, "<spirit:memoryMapRef spirit:memoryMapRef=\"cpu_map\"/>"));
+    CHECK(has(xml, "<spirit:bridge spirit:masterRef=\"uart\" spirit:opaque=\"true\"/>"));
+    CHECK(has(xml, "<spirit:subspaceMap spirit:masterRef=\"uart\""));
+    CHECK(has(xml, "<spirit:addressBlock>\n"
+                   "        <spirit:name>cpu_ram_0x10000</spirit:name>\n"
+                   "        <spirit:baseAddress>0x10000</spirit:baseAddress>\n"
+                   "        <spirit:range>0x1000</spirit:range>\n"
+                   "        <spirit:width>32</spirit:width>\n"
+                   "        <spirit:vendorExtensions>\n"
+                   "          <nocloom:targetSegment xmlns:nocloom=\"urn:nocloom:ipxact\" "
+                   "addressSpaceRef=\"ram_space\" segmentRef=\"ram_segment0\"/>"));
+    CHECK(has(xml, "<spirit:memoryRemap spirit:state=\"alt\">\n"
+                   "        <spirit:name>cpu_map_alt</spirit:name>\n"
+                   "        <spirit:addressBlock>\n"
+                   "          <spirit:name>cpu_ram_0x20000</spirit:name>\n"
+                   "          <spirit:baseAddress>0x20000</spirit:baseAddress>\n"
+                   "          <spirit:range>0x2000</spirit:range>\n"
+                   "          <spirit:width>32</spirit:width>\n"
+                   "          <spirit:vendorExtensions>\n"
+                   "            <nocloom:targetSegment xmlns:nocloom=\"urn:nocloom:ipxact\" "
+                   "addressSpaceRef=\"ram_space\" segmentRef=\"ram_segment1\"/>"));
+    CHECK(has(xml, "<spirit:name>ram_segment1</spirit:name>\n"
+                   "          <spirit:addressOffset>0x4000</spirit:addressOffset>\n"
+                   "          <spirit:range>0x2000</spirit:range>"));
+  }
+}
+TEST_CASE("IP-XACT address blocks keep Wishbone target windows", "[ipxact]") {
+  const auto text = R"(schema_version: 10
+name: wishbone_windows
+address_width: 32
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains: [{name: main, clock_port: clk, reset_port: reset_n, test_port: test}]
+address_inputs: [{name: boot, width: 1, clock_domain: main}]
+address_selectors: [{name: alt, equals: {boot: 1}}]
+initiators:
+  - {name: cpu, clock_domain: main, protocol: axi4, data_width: 32}
+  - {name: dbg, clock_domain: main, protocol: wishbone, data_width: 32, address_unit: byte}
+targets:
+  - {name: ram, clock_domain: main, protocol: wishbone, data_width: 32, address_width: 16,
+     address_unit: byte,
+     mappings: [{base: '0x10000', size: '0x1000', local_address: '0x2000'},
+                {base: '0x20000', size: '0x2000', local_address: '0x4000', when: {alt: true}}]}
+  - {name: uart, clock_domain: main, protocol: apb4, data_width: 32, attributes: amba,
+     mappings: [{base: '0x30000', size: '0x1000'}]}
+connectivity:
+  cpu: [ram, uart]
+  dbg: [ram]
+output: {backend: verilog, language: verilog_2001}
+)";
+  GenerationOptions options;
+  options.ipxact = true;
+  const auto generated = generate(parsed(text), options);
+  REQUIRE(generated);
+  const auto &xml = file(generated.value(), "nocloom_wishbone_windows.ipxact.xml").text;
+  // Wishbone endpoints have no bus interface: no bridge, subspace map or interface names them.
+  CHECK_FALSE(has(xml, "spirit:masterRef=\"ram\""));
+  CHECK_FALSE(has(xml, "<spirit:name>ram</spirit:name>"));
+  CHECK_FALSE(has(xml, "<spirit:name>dbg</spirit:name>"));
+  CHECK(has(xml, "<spirit:name>nl_t_ram_dat_w</spirit:name>"));
+  CHECK(has(xml, "<spirit:memoryMapRef spirit:memoryMapRef=\"cpu_map\"/>"));
+  CHECK_FALSE(has(xml, "spirit:memoryMapRef=\"dbg_map\""));
+  CHECK(has(xml, "<spirit:bridge spirit:masterRef=\"uart\" spirit:opaque=\"true\"/>"));
+  CHECK(has(xml, "<spirit:subspaceMap spirit:masterRef=\"uart\""));
+  // Each initiator that reaches the target lists its windows as address blocks.
+  for (const std::string initiator : {"cpu", "dbg"}) {
+    CAPTURE(initiator);
+    CHECK(has(xml, "<spirit:name>" + initiator + "_map</spirit:name>"));
+    CHECK(has(xml, "<spirit:addressBlock>\n"
+                   "        <spirit:name>" +
+                       initiator +
+                       "_ram_0x10000</spirit:name>\n"
+                       "        <spirit:baseAddress>0x10000</spirit:baseAddress>\n"
+                       "        <spirit:range>0x1000</spirit:range>\n"
+                       "        <spirit:width>32</spirit:width>\n"
+                       "        <spirit:vendorExtensions>\n"
+                       "          <nocloom:targetSegment xmlns:nocloom=\"urn:nocloom:ipxact\" "
+                       "addressSpaceRef=\"ram_space\" segmentRef=\"ram_segment0\"/>"));
+    CHECK(has(xml, "<spirit:memoryRemap spirit:state=\"alt\">\n"
+                   "        <spirit:name>" +
+                       initiator +
+                       "_map_alt</spirit:name>\n"
+                       "        <spirit:addressBlock>\n"
+                       "          <spirit:name>" +
+                       initiator +
+                       "_ram_0x20000</spirit:name>\n"
+                       "          <spirit:baseAddress>0x20000</spirit:baseAddress>\n"
+                       "          <spirit:range>0x2000</spirit:range>\n"
+                       "          <spirit:width>32</spirit:width>\n"
+                       "          <spirit:vendorExtensions>\n"
+                       "            <nocloom:targetSegment xmlns:nocloom=\"urn:nocloom:ipxact\" "
+                       "addressSpaceRef=\"ram_space\" segmentRef=\"ram_segment1\"/>"));
+  }
+  CHECK(has(xml, "<spirit:name>ram_segment1</spirit:name>\n"
+                 "          <spirit:addressOffset>0x4000</spirit:addressOffset>\n"
+                 "          <spirit:range>0x2000</spirit:range>"));
+}
 TEST_CASE("IP-XACT bus interface per target flow", "[ipxact]") {
   // An APB target of two flows has two master interfaces, each with its port set and an address
   // space of its flow's windows; the initiators bridge to and map onto each.

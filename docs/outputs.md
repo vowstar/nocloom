@@ -200,6 +200,11 @@ to connected target manager interfaces. Targets have address spaces, one segment
 per distinct local interval, ending at the highest local segment. Initiator
 memory maps contain reached global windows in 8-bit address units.
 
+TileLink and Wishbone target windows use address blocks. A TileLink or Wishbone
+initiator has a memory map and no interface. Each block records its global base,
+range and width. The `targetSegment` element in the `urn:nocloom:ipxact`
+namespace links the block to its target address space and local segment.
+
 APB, AHB and AXI4-Lite targets with multiple flows have one bus interface per
 flow, named with that flow suffix. AXI targets use one interface with flow in
 the ID. The model has an RTL view and every top-level port. Clock drivers use

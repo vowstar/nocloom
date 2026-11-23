@@ -584,7 +584,7 @@ set_tests_properties(reserved_names PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT
   TIMEOUT 60 LABELS "unit;quick;ci")
 # The IEEE 1685-2009 schema is not part of the source tree. Point NOCLOOM_IPXACT_SCHEMA_DIR at an
 # unmodified copy of the published files (index.xsd and the files it includes) to register the
-# schema validation of every example's component.
+# schema validation of every example and test definition's component.
 set(NOCLOOM_IPXACT_SCHEMA_DIR "" CACHE PATH "IEEE 1685-2009 schema directory (index.xsd)")
 if(NOCLOOM_IPXACT_SCHEMA_DIR STREQUAL "")
   message(STATUS "NOT RUN: ipxact_schema (set NOCLOOM_IPXACT_SCHEMA_DIR to register it)")

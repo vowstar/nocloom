@@ -1,6 +1,7 @@
 #include "backends/clock_period_json.hpp"
 #include "backends/optional_outputs.hpp"
 #include "backends/output_license.hpp"
+#include "core/capability.hpp"
 #include "core/diagnostic.hpp"
 #include "nocloom/ipxact.hpp"
 #include <algorithm>
@@ -169,6 +170,10 @@ struct Endpoint {
   std::optional<unsigned> set = std::nullopt;
   // The definition field of its name.
   std::string field = {};
+
+  bool has_bus_interface() const {
+    return protocol != Protocol::Wishbone && !detail::tilelink_protocol(protocol);
+  }
 };
 // Whether a target of several flows has a port set per flow (an AXI4, AXI5, ACE5-Lite or AXI3
 // target carries the flow in AxID on its one set).
@@ -312,12 +317,10 @@ public:
     w_.leaf("library", o_.library);
     w_.leaf("name", map_.module);
     w_.leaf("version", o_.version.empty() ? std::string("1.0") : o_.version);
-    if (std::ranges::any_of(endpoints_, [](const Endpoint &e) {
-          return e.protocol != Protocol::TlUl && e.protocol != Protocol::TlUh;
-        })) {
+    if (std::ranges::any_of(endpoints_, &Endpoint::has_bus_interface)) {
       w_.open("busInterfaces");
       for (const auto &e : endpoints_)
-        if (e.protocol != Protocol::TlUl && e.protocol != Protocol::TlUh)
+        if (e.has_bus_interface())
           bus_interface(e);
       w_.close("busInterfaces");
     }
@@ -351,22 +354,20 @@ private:
       return !e.initiator && e.endpoint == w.target && (!e.set || *e.set == w.flow);
     });
   }
-  bool reaches(const std::string &initiator, const Window &w) const {
-    const auto source = std::ranges::find_if(
-        endpoints_, [&](const Endpoint &e) { return e.initiator && e.name == initiator; });
-    if (source->protocol == Protocol::Wishbone || interface_of(w).protocol == Protocol::Wishbone)
-      return false;
-    const auto at = map_.flows.find({initiator, w.target});
-    return map_.pairs.contains({initiator, w.target}) &&
+  bool reaches(const Endpoint &source, const Window &w) const {
+    const auto at = map_.flows.find({source.name, w.target});
+    return map_.pairs.contains({source.name, w.target}) &&
            (at == map_.flows.end() || at->second.contains(w.flow));
   }
-  // The target bus interfaces an initiator reaches, in name order.
-  std::vector<std::string> connected(const Endpoint &e) const {
+  bool has_reached_window(const Endpoint &e) const {
+    return std::ranges::any_of(map_.windows, [&](const Window &w) { return reaches(e, w); });
+  }
+  std::set<std::string> connected_masters(const Endpoint &e) const {
     std::set<std::string> out;
     for (const auto &w : map_.windows)
-      if (reaches(e.name, w))
-        out.insert(interface_of(w).name);
-    return {out.begin(), out.end()};
+      if (const auto &target = interface_of(w); target.has_bus_interface() && reaches(e, w))
+        out.insert(target.name);
+    return out;
   }
   // The local ranges a target bus interface answers, as its address space segments, in address
   // order.
@@ -410,8 +411,6 @@ private:
     w_.close("portMap");
   }
   void bus_interface(const Endpoint &e) {
-    if (e.protocol == Protocol::Wishbone)
-      return;
     const auto &bus = bus_type(e.protocol, e.initiator);
     w_.open("busInterface");
     w_.leaf("name", claim("bus interface", e.name, e.field));
@@ -419,14 +418,10 @@ private:
     w_.empty("abstractionType", vlnv("amba.com", bus.library, bus.abstraction, bus.version));
     if (e.initiator) {
       w_.open("slave");
-      if (!connected(e).empty())
+      if (has_reached_window(e))
         w_.empty("memoryMapRef", " spirit:memoryMapRef=\"" + e.name + "_map\"");
-      for (const auto &target : connected(e))
-        if (std::ranges::none_of(endpoints_, [&](const Endpoint &t) {
-              return t.name == target &&
-                     (t.protocol == Protocol::TlUl || t.protocol == Protocol::TlUh);
-            }))
-          w_.empty("bridge", " spirit:masterRef=\"" + target + "\" spirit:opaque=\"true\"");
+      for (const auto &target : connected_masters(e))
+        w_.empty("bridge", " spirit:masterRef=\"" + target + "\" spirit:opaque=\"true\"");
       w_.close("slave");
     } else {
       w_.open("master");
@@ -479,8 +474,8 @@ private:
   }
   // Every target has a write or a read data port.
   unsigned data_width(const Endpoint &e) const {
-    static const std::set<std::string> data = {"wdata", "pwdata", "hwdata",
-                                               "rdata", "prdata", "hrdata"};
+    static const std::set<std::string> data = {"wdata",  "pwdata", "hwdata", "rdata", "prdata",
+                                               "hrdata", "a_data", "d_data", "dat_w", "dat_r"};
     const auto at = std::ranges::find_if(map_.ports, [&](const Port &p) {
       return p.endpoint == endpoint_key(e) && data.contains(signal_of(e, p));
     });
@@ -537,39 +532,53 @@ private:
     }
     w_.close("remapStates");
   }
-  void subspace_map(const Endpoint &e, const std::string &scope, const Window &win) {
-    const auto &initiator = e.name;
-    const auto &face = interface_of(win).name;
-    const auto segment = segment_name(face, win.local, win.size);
+  void address_block(const Endpoint &target, const Window &win, const std::string &name,
+                     const std::string &segment) {
+    w_.open("addressBlock");
+    w_.leaf("name", name);
+    w_.leaf("baseAddress", hex(win.base));
+    w_.leaf("range", hex(win.size));
+    w_.leaf("width", std::to_string(data_width(target)));
+    w_.open("vendorExtensions");
+    w_.raw("<nocloom:targetSegment xmlns:nocloom=\"urn:nocloom:ipxact\" addressSpaceRef=\"" +
+           target.name + "_space\" segmentRef=\"" + segment + "\"/>");
+    w_.close("vendorExtensions");
+    w_.close("addressBlock");
+  }
+  void mapped_window(const Endpoint &e, const std::string &scope, const Window &win) {
+    const auto &target = interface_of(win);
+    const auto segment = segment_name(target.name, win.local, win.size);
+    const auto name = claim("subspace map of " + scope,
+                            e.name + "_" + target.name + "_" + hex(win.base), e.field);
+    if (!target.has_bus_interface()) {
+      address_block(target, win, name, segment);
+      return;
+    }
     w_.open("subspaceMap",
-            " spirit:masterRef=\"" + face + "\" spirit:segmentRef=\"" + segment + "\"");
-    w_.leaf("name", claim("subspace map of " + scope, initiator + "_" + face + "_" + hex(win.base),
-                          e.field));
+            " spirit:masterRef=\"" + target.name + "\" spirit:segmentRef=\"" + segment + "\"");
+    w_.leaf("name", name);
     w_.leaf("baseAddress", hex(win.base));
     w_.close("subspaceMap");
   }
   // Each initiator's memory map places every window of a connected target at its global base; a
   // conditional window sits in the memory remap of its condition's state.
   void memory_maps() {
-    bool any = false;
-    for (const auto &e : endpoints_)
-      any = any || (e.initiator && !connected(e).empty());
-    if (!any)
+    if (std::ranges::none_of(
+            endpoints_, [&](const Endpoint &e) { return e.initiator && has_reached_window(e); }))
       return;
     w_.open("memoryMaps");
     for (const auto &e : endpoints_) {
-      if (!e.initiator || connected(e).empty())
+      if (!e.initiator || !has_reached_window(e))
         continue;
       w_.open("memoryMap");
       const auto memory_map = claim("memory map", e.name + "_map", e.field);
       w_.leaf("name", memory_map);
       for (const auto &win : map_.windows)
-        if (win.when.empty() && reaches(e.name, win))
-          subspace_map(e, memory_map, win);
+        if (win.when.empty() && reaches(e, win))
+          mapped_window(e, memory_map, win);
       for (const auto &[name, state] : states()) {
         const auto in_state = [&](const Window &win) {
-          return !win.when.empty() && remap_state(d_, win.when)->name == name &&
-                 reaches(e.name, win);
+          return !win.when.empty() && remap_state(d_, win.when)->name == name && reaches(e, win);
         };
         if (std::ranges::none_of(map_.windows, in_state))
           continue;
@@ -578,7 +587,7 @@ private:
         w_.leaf("name", remap);
         for (const auto &win : map_.windows)
           if (in_state(win))
-            subspace_map(e, remap, win);
+            mapped_window(e, remap, win);
         w_.close("memoryRemap");
       }
       w_.leaf("addressUnitBits", "8");

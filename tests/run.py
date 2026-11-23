@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import shutil
 import sim_process
+from subprocess import TimeoutExpired
 import tempfile
 
 
@@ -611,31 +612,48 @@ error_logging:
     assert not failures, "\n".join(failures)
 
 
+def check_ipxact(config, schema):
+    folder = ROOT / config.relative_to(SOURCE)
+    folder.mkdir(parents=True)
+    plain, first, second = (folder / tag for tag in ("plain", "a", "b"))
+    run([CLI, "generate", config, "--out-dir", plain])
+    for output in (first, second):
+        run([CLI, "generate", config, "--out-dir", output, "--ipxact"])
+    before = {p.name: p.read_bytes() for p in plain.iterdir()}
+    after = {p.name: p.read_bytes() for p in first.iterdir()}
+    assert after == {p.name: p.read_bytes() for p in second.iterdir()}, config.name
+    added = set(after) - set(before)
+    assert len(added) == 1 and set(before) <= set(after), (config.name, added)
+    component = added.pop()
+    assert component.endswith(".ipxact.xml"), component
+    for name, text in before.items():
+        if name.endswith(".bundle.json"):
+            manifest = json.loads(text)
+            assert isinstance(manifest, dict) and isinstance(manifest.get("files"), list), name
+            manifest["files"].append({"path": component, "role": "ipxact_component"})
+            assert json.loads(after[name]) == manifest, config.name
+        else:
+            assert after[name] == text, (config.name, name)
+    run([args.xmllint, "--noout", "--schema", schema, first / component])
+
+
 def ipxact():
-    """Every example: IEEE 1685-2009 schema-valid component, other files unchanged, stable bytes."""
+    """Check schema validity, artifact stability and deterministic XML for each definition."""
     assert args.schema and args.xmllint, "--schema and --xmllint are required"
     schema = Path(args.schema) / "index.xsd"
-    for config in sorted((SOURCE / "examples").glob("*.yaml")):
-        plain, first, second = (ROOT / f"{config.stem}-{tag}" for tag in ("plain", "a", "b"))
-        run([CLI, "generate", config, "--out-dir", plain])
-        for folder in (first, second):
-            run([CLI, "generate", config, "--out-dir", folder, "--ipxact"])
-        before = {p.name: p.read_bytes() for p in plain.iterdir()}
-        after = {p.name: p.read_bytes() for p in first.iterdir()}
-        assert after == {p.name: p.read_bytes() for p in second.iterdir()}, config.name
-        added = set(after) - set(before)
-        assert len(added) == 1 and set(before) <= set(after), (config.name, added)
-        component = added.pop()
-        assert component.endswith(".ipxact.xml"), component
-        for name, text in before.items():
-            if name.endswith(".bundle.json"):
-                manifest = json.loads(text)
-                manifest["files"].append({"path": component, "role": "ipxact_component"})
-                assert json.loads(after[name]) == manifest, config.name
-            else:
-                assert after[name] == text, (config.name, name)
-        run([args.xmllint, "--noout", "--schema", schema, first / component])
-
+    configs = sorted(config for directory in ("examples", "tests")
+                     for config in (SOURCE / directory).rglob("*")
+                     if config.is_file() and config.suffix in (".yaml", ".yml"))
+    assert configs, "No definitions found"
+    failures = []
+    for config in configs:
+        try:
+            check_ipxact(config, schema)
+        except (AssertionError, OSError, TimeoutExpired, ValueError) as error:
+            failures.append(f"{config.relative_to(SOURCE)}: {error}")
+    assert not failures, (f"{len(failures)} of {len(configs)} definitions failed\n"
+                          + "\n".join(failures))
+    print(f"Checked {len(configs)} definitions")
 
 
 run([CLI, "--version"])
