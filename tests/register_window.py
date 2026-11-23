@@ -19,6 +19,7 @@ reg [3:0] strb = 0;
 wire ready, err, ram_sel;
 wire [31:0] rd;
 integer checks = 0;
+reg [133:0] requests [0:@COUNT@-1];
 nocloom_register_window dut(.clk(clk), .reset_n(reset_n), .test(1'b0),
   .nl_i_cfg_psel(sel), .nl_i_cfg_penable(en), .nl_i_cfg_pwrite(wr),
   .nl_i_cfg_paddr(addr), .nl_i_cfg_pwdata(wd), .nl_i_cfg_pstrb(strb),
@@ -28,10 +29,13 @@ nocloom_register_window dut(.clk(clk), .reset_n(reset_n), .test(1'b0),
 always @(posedge clk) if (reset_n && ram_sel) begin
   $display("CHECK_FAIL external_target"); $fatal(1);
 end
-task access(input w, input [31:0] a, input [31:0] d, input [3:0] s,
-            input bad, input [31:0] mask, input [31:0] expected);
+task access(input [133:0] request);
+reg w, bad;
+reg [31:0] a, d, mask, expected;
+reg [3:0] s;
 integer cycles;
 begin
+  {w, a, d, s, bad, mask, expected} = request;
   @(negedge clk);
   sel = 1; en = 0; wr = w; addr = a; wd = d; strb = w ? s : 0;
   @(negedge clk); en = 1;
@@ -49,9 +53,11 @@ begin
 end
 endtask
 initial begin
+  @REQUESTS@
   repeat(5) @(negedge clk); reset_n = 1;
   repeat(3) @(negedge clk);
-  @CHECKS@
+  for (integer i = 0; i < @COUNT@; i = i + 1)
+    access(requests[i]);
   $display("CHECK_PASS checks=%0d", checks);
   $finish;
 end
@@ -99,8 +105,9 @@ def transactions(folder, base, size, local, banks):
     checks = []
 
     def access(write, address, value=0, error=False, expected=0, strobes=0xf, mask=0xffffffff):
-        checks.append(f"access({int(write)}, 32'h{address:x}, 32'h{value:x}, 4'h{strobes:x}, "
-                      f"{int(error)}, 32'h{mask:x}, 32'h{expected:x});")
+        checks.append(f"requests[{len(checks)}] = {{1'b{int(write)}, 32'h{address:x}, "
+                      f"32'h{value:x}, 4'h{strobes:x}, 1'b{int(error)}, "
+                      f"32'h{mask:x}, 32'h{expected:x}}};")
 
     addresses = [base + bank - local for bank in banks]
     registers = [record["registers"] for record in records]
@@ -207,7 +214,8 @@ def transactions(folder, base, size, local, banks):
     for address, fields, offsets in zip(addresses, registers, places):
         for offset in offsets:
             access(False, address + offset, mask=bits(fields, offset, ("rw",)))
-    return BENCH.replace("@CHECKS@", "\n  ".join(checks)), len(checks)
+    return (BENCH.replace("@COUNT@", str(len(checks)))
+            .replace("@REQUESTS@", "\n  ".join(checks))), len(checks)
 
 
 def main():
