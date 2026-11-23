@@ -1,4 +1,4 @@
-/- GenericNoC: root module of the deadlock-freedom proofs. -/
+/- GenericNoC: root module of the transport model and its theorems. -/
 import GenericNoC.Core
 import GenericNoC.Model
 import GenericNoC.Witness
@@ -13,6 +13,7 @@ import GenericNoC.WormholeRules
 import GenericNoC.WormholeFast
 import GenericNoC.WormholeLive
 import GenericNoC.WormholeDone
+import GenericNoC.WormholeService
 import GenericNoC.Instances.TwoTargets
 import GenericNoC.Instances.MultiHop
 import GenericNoC.Instances.Requests

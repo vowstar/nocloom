@@ -18,6 +18,9 @@ import GenericNoC
 #print axioms Wormhole.liveWork_held
 #print axioms Wormhole.checked_instance_live_work_advances
 #print axioms Wormhole.checked_transaction_completes
+#print axioms Wormhole.serviceContinuation_of_finiteDrain
+#print axioms Wormhole.checked_deadlock_free_of_finiteDrain
+#print axioms Wormhole.no_serviceContinuation_of_short_request
 #print axioms Wormhole.waiting_has_budget
 #print axioms Wormhole.bound_no_contention
 #print axioms Wormhole.TwoTargets.holding_unprovable

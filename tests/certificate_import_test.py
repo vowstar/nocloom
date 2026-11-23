@@ -188,6 +188,11 @@ def check_proofs(source, work, graphs):
     for name, graph, options, valid in cases:
         converted, out = convert(source, work, name, graph, options)
         require(converted.returncode == 0, f'{name}: conversion failed: {converted.stderr}')
+        if name == 'Ordinary':
+            witness = (source / 'formal/lean/tests/short_request.lean').read_text(encoding='utf-8')
+            proof = out.read_text(encoding='utf-8')
+            out.write_text('import GenericNoC.WormholeService\n' + proof + '\n' + witness,
+                           encoding='utf-8')
         result = run(['lake', 'env', 'lean', str(out)], package, work / (name + '-lean.log'))
         text = result.stdout + result.stderr
         if valid:
@@ -195,6 +200,9 @@ def check_proofs(source, work, graphs):
             require((theorems == checks.WITHDRAWN_THEOREMS) == (name in ('Withdrawn', 'Shaped')),
                     f'{name}: wrong completion scope')
             wanted = {f'Generated.{name}.{t}' for t in theorems}
+            if name == 'Ordinary':
+                wanted.update({'Generated.Ordinary.no_service_continuation',
+                               'Generated.Ordinary.no_universal_finite_drain'})
             unwanted = {f'Generated.{name}.{t}' for t in absent}
             require(result.returncode == 0 and 'sorry' not in text
                     and not wanted - checks.listed(text) and not unwanted & checks.listed(text)

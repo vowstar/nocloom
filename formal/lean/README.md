@@ -5,16 +5,17 @@ that model. It also checks the rank certificate of each generated dependency
 file. Ranks that rise along every edge exclude a wait cycle. The tables also
 list the bounded solver checks and the netlist check of generated Verilog.
 
-The Lean kernel checks every proof, except in a dependency file above 3000
-distinct edges. There `native_decide` also trusts the Lean compiler. `lean-toolchain`
-pins the Lean version. `Fair` states the assumptions about a model run, see
-[Fair and generated Verilog](#fair-and-generated-verilog).
+For dependency files above 3000 distinct edges, `native_decide` trusts the
+Lean compiler as well as the kernel. `lean-toolchain` pins the Lean version. See
+[Fair and generated Verilog](#fair-and-generated-verilog) for run assumptions.
 
 ## What is checked
 
 | Claim | Object | Check | Limit |
 | --- | --- | --- | --- |
 | On a legal run that satisfies `Fair`, every live transaction ends and its words leave the network | The model built from the model table of one dependency file | `Wormhole.checked_transaction_completes` and `Wormhole.checked_transaction_delivered`, test `formal_lean` | The file must pass the rule check |
+| Every reachable state has a legal run through it that satisfies `Fair` on every suffix | The Wormhole model | `Wormhole.serviceContinuation_of_finiteDrain`, test `formal_lean` | Each reachable state needs a finite legal path to empty queues, free grants and no live transactions. Each response pool needs positive capacity. No model of a generated network is known to meet the drain premise, see the next row |
+| There is no fair continuation through the state after a non-tail request word is accepted with a declared count of one remaining word | The model of `examples/axi4_exchange.yaml` | `Wormhole.no_serviceContinuation_of_short_request`, test `dependency_certificate_lean` | Its tables pass the rank and rule checks and its `completion.applies` is true |
 | A dependency file whose ranks rise along every edge has no wait cycle, and its model table passes the rule check | `nocloom_<name>.dependency.json` | `tools/gen_instance.py` and `lake env lean`, tests `dependency_certificate_lean` and `formal_lean_examples` | Every example and the 11 liveness shapes. A file without a model table gets the certificate only |
 | A dependency file sets `completion.applies` to false for four conditions that break `Fair`. With a model table, the Lean file then states `completion_withdrawn` and not `completes` | The `completion` field of the dependency file | The `[dependency]` cases of tests `unit_*`, test `dependency_certificate_import` | The generator decides the field from the network plan. Lean does not check it |
 | Each `cross` slot can cross in the hardware. A `bound` source has one direction and no ID. The response release equals its release cone | The netlist that the generator prints as Verilog | Test `dependency_release_cone` and the `[dependency]` cases of tests `unit_*` | A structural comparison in one direction. Routes over a link with a pipe, width adapter or clock crossing are skipped, and so are the `scale_*` examples |
@@ -27,7 +28,7 @@ pins the Lean version. `Fair` states the assumptions about a model run, see
 | Statement | Status | Work needed for a proof |
 | --- | --- | --- |
 | Generated Verilog refines the model | No proof of `CircuitRefinementInv` for a network | A proof of it with a circuit invariant for a fixed small network |
-| Every generated network is free of deadlock | `ServiceContinuation` is open for `Wormhole` | A proof of `ServiceContinuation` for `Wormhole` and a refinement to Verilog |
+| Every generated Verilog network is free of deadlock | The checked AXI4 exchange model has a reachable state with no finite drain | A service continuation proof for the intended model states and refinement of the full network |
 | A network with unmet clauses in its `completion` field completes its transactions | No completion theorem is stated. The statement does not hold for every run | None. See [output files](../../docs/outputs.md#dependency-graph) for the settings that remove each unmet clause |
 | The four conditions of the `completion` field are all the ways generated logic breaks `Fair` | Each clause has a reason in the table below, not a proof | A proof of each clause for the arbiters, targets and clocks of generated Verilog |
 | A network without a model table completes its transactions | No model table, so no rule check and no theorem | A model that states more than 4096 endpoint pairs, several outputs for one destination, and bound sources with several paths |
@@ -138,6 +139,7 @@ between hold points is `unexplained` and fails the check.
 | `no_stall` | W2 and W3 exclude a held point stalling forever on a compliant run |
 | `advances_on_every_compliant_run` | A held point advances with its owner under W2 and W3 |
 | `deadlock_free` | W2, W3, W6 and W7 give pending work a compliant advancing run |
+| `Wormhole.checked_deadlock_free_of_finiteDrain` | Checked tables, positive response pool capacities and a finite drain from each reachable state give pending work a fair advancing run. No model of a generated network is known to meet the drain premise |
 | `Wormhole.structural` | A checked instance satisfies W2 |
 | `Wormhole.instanceLemmas` | `Fair` supplies W3 |
 | `Wormhole.liveWork_held` | Live work holds a point |
@@ -151,13 +153,11 @@ its word count and requires the last word to end it. Response injection requires
 the whole request to arrive first. Context accounting excludes ended
 transactions by definition, so it cannot expose a context leak.
 
-`CircuitRefinementInv` in `Refinement.lean` states refinement from a circuit.
-One circuit step maps to one or more model steps inside a circuit invariant.
+`CircuitRefinementInv` maps each circuit step to one or more model steps in an invariant.
 
 `map_legal` and `stall_map` carry a legal circuit run and a circuit stall to
-the model. `CircuitRefinement` is the case of one model step per circuit step.
-`ServiceContinuation` holds for `Toy`. `advances_on_every_compliant_run` does
-not require it.
+the model. `CircuitRefinement` uses one model step per circuit step.
+`Toy` satisfies `ServiceContinuation`.
 
 | Hardware detail | Model limitation |
 | --- | --- |
