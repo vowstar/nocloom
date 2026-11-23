@@ -497,6 +497,29 @@ TEST_CASE("Error log banks take distinct names", "[reserved-names]") {
            "error_logging.logs[2].loggers[1]");
 }
 
+TEST_CASE("Error log names are distinct before planning", "[reserved-names]") {
+  REQUIRE(nocloom::generate(parsed(logged)));
+  const auto text = replaced(logged, "name: faults", "name: errors");
+  const auto result = config::parse(text, "names.yaml");
+  REQUIRE(result);
+  const auto &input = result.value();
+  const auto check = [](const auto &outcome) {
+    REQUIRE_FALSE(outcome);
+    REQUIRE(outcome.diagnostics().size() == 1);
+    const auto &diagnostic = outcome.diagnostics().front();
+    CHECK(diagnostic.code == "NCL_NAME_OUTPUT_COLLISION");
+    CHECK(diagnostic.field == "error_logging.logs[1].name");
+    CHECK(diagnostic.message.find("errors") != std::string::npos);
+    REQUIRE(diagnostic.location);
+    CHECK(diagnostic.location->label == "names.yaml");
+    CHECK(diagnostic.location->line == 19);
+    CHECK(diagnostic.location->column == 14);
+  };
+  check(nocloom::make_plan(input.definition, &input.sources));
+  check(nocloom::validate(input.definition, {}, &input.sources));
+  check(nocloom::generate(input.definition, {}, &input.sources));
+}
+
 TEST_CASE("Names derived from 128-character names generate", "[reserved-names]") {
   const std::string log(128, 'e'), window(128, 'w'), endpoint(127, 'i');
   auto text = replaced(logged, "name: errors,", "name: " + log + ",");

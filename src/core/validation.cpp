@@ -685,10 +685,17 @@ void check_error_logging(Checks &c) {
   // of the first log takes the window's name, the first of a later log the log's name, and logger
   // n of a log <log>_<n>.
   const auto window = std::ranges::find_if(d.targets, &Target::log_registers);
-  std::set<std::string> banks;
-  for (std::size_t i = 0; i < logging.logs.size() && window != d.targets.end(); ++i) {
+  std::set<std::string> names, banks;
+  for (std::size_t i = 0; i < logging.logs.size(); ++i) {
     const auto &log = logging.logs[i];
     const auto at = "error_logging.logs[" + std::to_string(i) + "]";
+    if (!names.insert(log.name).second) {
+      c("NCL_NAME_OUTPUT_COLLISION", at + ".name",
+        "The error log name " + log.name + " is already used by an earlier log");
+      continue;
+    }
+    if (window == d.targets.end())
+      continue;
     for (std::size_t n = 0; n < std::max<std::size_t>(1, log.loggers.size()); ++n) {
       const auto bank = n ? log.name + "_" + std::to_string(n) : i ? log.name : window->name;
       if (!banks.insert(bank).second)
