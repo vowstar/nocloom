@@ -241,6 +241,17 @@ def network(args, case):
     return case["configuration"](**cfg)
 
 
+def simulation(root, args):
+    compile_argv = None
+    if args.mode != "off" and sim_engine.selection(args.sim) == "verilator":
+        # Initialize gated registers when the domain reset starts low.
+        compile_argv = sim_engine.verilator_command()
+        compile_argv.insert(1, "--x-initial-edge")
+    return sim_engine.Simulation(root, "network.v", engine=args.sim, config=args.sim_config,
+                                 compile_argv=compile_argv, compile_timeout=300,
+                                 run_timeout=args.run_timeout, success=("UH_PASS",))
+
+
 def run(args, case):
     root = Path(tempfile.mkdtemp(prefix="run-", dir=args.work)).resolve()
     cfg = network(args, case)
@@ -248,9 +259,7 @@ def run(args, case):
     body = args.env.read_text() + args.scenario.read_text()
     (root / "tb.sv").write_text(bench(mapping, cfg, body))
     (root / "network.v").write_text(rtl + checkers())
-    sim = sim_engine.Simulation(root, "network.v", engine=args.sim, config=args.sim_config,
-                                compile_timeout=300, run_timeout=args.run_timeout,
-                                success=("UH_PASS",))
+    sim = simulation(root, args)
     pairs = [case["PAIRS"][int(i)] for i in args.pairs.split(",")]
     seeds = [int(s) for s in args.seeds.split(",")]
     failed, reached = 0, set()
@@ -293,9 +302,7 @@ def negative(args, case, edits):
     body = args.env.read_text() + args.scenario.read_text()
     (root / "tb.sv").write_text(bench(mapping, cfg, body))
     (root / "network.v").write_text(faulted(rtl, bindings, *edits(cfg)) + checkers())
-    sim = sim_engine.Simulation(root, "network.v", engine=args.sim, config=args.sim_config,
-                                compile_timeout=300, run_timeout=args.run_timeout,
-                                success=("UH_PASS",))
+    sim = simulation(root, args)
     main, far, _ = case["PAIRS"][int(args.pairs.split(",")[0])]
     options = [f"+SEED={args.seeds.split(',')[0]}", f"+PM={main}", f"+PF={far}"]
     options += ["+" + o for o in args.plus]

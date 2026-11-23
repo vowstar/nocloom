@@ -50,23 +50,25 @@ def replace_model(body, protocol):
     else:
         model = r"""
   reg ahb_pending=0, ahb_write=0, error_phase=0;
-  integer ahb_address=0, ahb_size=0;
+  integer ahb_address=0, ahb_size=0, ahb_cycle=0;
   wire ahb_error=ahb_pending && (ahb_write ? aw_count==fail_b : (ahb_address & ~3)==fail_r);
+  // Change the stall pattern on the falling edge so both sides sample the same HREADY.
+  always @(negedge target_clk) ahb_cycle <= ahb_cycle+1;
   always @* begin
-    t_hreadyout=ahb_error ? error_phase : cycle%5!=0;
+    t_hreadyout=ahb_error ? error_phase : ahb_cycle%5!=0;
     t_hresp=ahb_error;
     t_hrdata=0;
     for(integer b=0;b<4;b=b+1) t_hrdata[b*8+:8]=memory[(ahb_address & ~3)+b];
   end
   always @(posedge target_clk) begin
-    if(!reset_n) begin ahb_pending=0; error_phase=0; end
+    if(!reset_n) begin ahb_pending<=0; error_phase<=0; end
     else begin
-      if(ahb_error && !error_phase) error_phase=1;
+      if(ahb_error && !error_phase) error_phase<=1;
       else if(t_hready) begin
-        error_phase=0;
+        error_phase<=0;
         if(ahb_pending) begin
           if(ahb_write) begin
-            aw_count=aw_count+1; w_count=w_count+1; b_count=b_count+1;
+            aw_count<=aw_count+1; w_count=w_count+1; b_count=b_count+1;
             for(integer b=0;b<(1<<ahb_size);b=b+1)
               memory[ahb_address+b]=t_hwdata[(ahb_address%4+b)*8+:8];
           end else begin
@@ -74,9 +76,9 @@ def replace_model(body, protocol):
             for(integer b=0;b<(1<<ahb_size);b=b+1) actual_reads[ahb_address+b]=actual_reads[ahb_address+b]+1;
           end
         end
-        ahb_pending=t_hsel && t_htrans[1];
-        if(ahb_pending) begin
-          ahb_address=t_haddr; ahb_size=t_hsize; ahb_write=t_hwrite;
+        ahb_pending<=t_hsel && t_htrans[1];
+        if(t_hsel && t_htrans[1]) begin
+          ahb_address<=t_haddr; ahb_size<=t_hsize; ahb_write<=t_hwrite;
           if(t_hsize>2 || t_haddr%(1<<t_hsize)) $fatal(1,"ASSERT_FAIL:UH.AHB.ADDRESS_SIZE");
         end
       end

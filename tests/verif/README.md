@@ -41,6 +41,13 @@ Text-fault probes read the module copy selected by `+NLV_FAULT`.
 A case's `oracle` checks additional behavior from the recorded events.
 `cases/ahb_shape.py` models AHB transfer shape independently.
 
+## Initial reset in gated TileLink UH tests
+
+The TileLink UH target gating and soak tests pass `--x-initial-edge` when
+the selected simulator is Verilator and clock gating is enabled. The option gives
+the synchronized reset an initial falling edge so it can reset registers
+behind a closed clock gate.
+
 ## Faults and offline checks
 
 | Fault kind | Operations |
