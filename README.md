@@ -12,7 +12,7 @@ YAML or C++.
 NocLoom generates synthesizable Verilog-2001 with switches, protocol adapters,
 width converters and clock domain crossings (CDC).
 
-NocLoom 0.4.0 is the latest release.
+NocLoom 0.5.0 is the latest release.
 
 ![A mixed-protocol SoC network with two clock domains.][soc]
 
