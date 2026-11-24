@@ -99,6 +99,10 @@ foreach(bits IN ITEMS 64 128 256 512 1024)
     COMMAND ${NLV_RUN} --case ${NLV_CASES}/axi4_width_cut.py --param data_bits=${bits}
       ${NLV_FIXTURE} --negative)
 endforeach()
+# Pair limits below an initiator's largest WRAP hold at the target.
+nocloom_verif_case(NAME verif_packet_caps_wrap LAYER rtl TIER focused TIMEOUT 300
+  FEATURES axi4 width ci MEMORY_MB 1024 CONTRACTS AXI.WIDTH.ENDPOINT
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/packet_caps_wrap.py --cli $<TARGET_FILE:nocloom_cli>)
 
 nocloom_verif_case(NAME verif_qos_outstanding LAYER rtl TIER focused TIMEOUT 300
   FEATURES axi4 qos arbiter MEMORY_MB 2048

@@ -176,7 +176,10 @@ target WRAP bound covers the largest WRAP container of its reaching initiators.
 Its packet limit and 16 AXI target words also bound it. The largest fitting
 power of two above one target word is supported. Otherwise WRAP is decomposed.
 
-Each pair then applies its own packet limit and the source's WRAP bound.
+Each pair then applies its own packet limit, boundary and the source's WRAP
+bound. A pair `max_bytes` or `boundary_bytes` below the initiator's largest
+WRAP container, `min(16, 2^len_width)` beats, also requires decomposition. A
+WRAP above the pair's WRAP bound then becomes INCR runs that obey the limit.
 
 If any reached target requires WRAP decomposition, the initiator enables that
 handling for all targets. A WRAP starting at its container base becomes INCR. An

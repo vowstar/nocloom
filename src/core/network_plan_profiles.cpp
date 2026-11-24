@@ -1046,6 +1046,16 @@ static void packet_windows(const NetworkPlan &plan, unsigned index,
     auto path = std::min(std::bit_floor(upper), limits.max_bytes);
     path = path > defaults.bytes ? path : 0;
     profile.decompose_wrap_bursts = profile.decompose_wrap_bursts || !path || source_wrap > path;
+    // Nothing behind the splitter keeps a pair limit below the target's own packet limit (an
+    // AXI4 target's AxLEN reach, which the width clamp and the target keep): such a limit cuts
+    // every WRAP above it, up to the largest the source sends.
+    const auto reach = target.axi_len_bits
+                           ? std::min<std::uint64_t>(defaults.bytes << *target.axi_len_bits, 4096)
+                           : defaults.max_bytes;
+    const auto kept = std::min(pair.max_bytes ? pair.max_bytes : reach,
+                               pair.boundary_bytes ? pair.boundary_bytes : reach);
+    profile.decompose_wrap_bursts =
+        profile.decompose_wrap_bursts || (kept < reach && largest > kept);
     const auto pack = std::min<std::uint64_t>(profile.data_bits / 8, defaults.bytes);
     const bool aligned = wrap_aligned(plan, index, pair.target);
     for (std::size_t m = 0; m < target.mappings.size(); ++m) {
@@ -1066,9 +1076,8 @@ static void packet_windows(const NetworkPlan &plan, unsigned index,
       // of the mapping (the smaller first).
       auto add = [&](const AddressWindow &window, std::uint64_t block) {
         const auto own = pair_limits(plan, pair, m, block);
-        const auto wrap = !path || !source_wrap ? 1
-                          : cut                 ? std::min({path, source_wrap, own.boundary_bytes})
-                                                : std::min(path, source_wrap);
+        const auto wrap =
+            !path || !source_wrap ? 1 : std::min({path, source_wrap, own.boundary_bytes});
         profile.decompose_wrap_bursts =
             profile.decompose_wrap_bursts || (cut && (sub ? largest : source_wrap) > wrap);
         across = across || (edge && largest > wrap);
