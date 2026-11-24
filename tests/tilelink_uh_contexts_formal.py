@@ -171,6 +171,21 @@ def harness(ports, capacity, scenario=None, maximum=1024):
                 f"if(!nl_reset_n || {slot}release) {age}<=0;\n"
                 f"else if({slot}accept) {age}<=nl_probe_tl_x_w_take && {older}busy && {older}write && !{older}release;\n"
                 f"else if({older}release) {age}<=0; end")
+            # A read with the source and ID of a live read waits for that read to release: its
+            # Get leaves later, so its response cannot overtake.
+            key = f"older_read_{k}_{j}"
+            remembered.append(f"reg {key}=0; always @(posedge nl_clk) begin\n"
+                f"if(!nl_reset_n || {slot}release) {key}<=0;\n"
+                f"else if({slot}accept) {key}<=!nl_probe_tl_x_w_take && {older}busy && !{older}write && !{older}release"
+                f" && {older}packet_x_id==nl_rreq_id && {older}packet_x_source==nl_rreq_source;\n"
+                f"else if({older}release) {key}<=0; end")
+            assertions.extend([
+                f"if({key}) assert({older}busy && !{older}write && {slot}busy && !{slot}write);",
+                f"if({key}) assert({older}packet_x_id=={slot}packet_x_id && {older}packet_x_source=={slot}packet_x_source);",
+                f"if({slot}busy && !{slot}write) assert({dep}[{j}]=={key});",
+                f"if({key}) assert(!{slot}message && !{slot}dfull && !{slot}rfull && !{slot}response_take"
+                f" && {slot}words_left==({{1'b0,{slot}packet_x_length}}+1));",
+            ])
             assertions.extend([
                 f"if({age}) assert({older}busy && {older}write);",
                 f"if({slot}busy && {slot}write) assert(nl_probe_tl_x_context{k}_x_response_dependencies[{j}]=={age});",
