@@ -5,7 +5,8 @@ Every test name in the claim tables must be a registered CTest test (a trailing 
 prefix). The shape count, default depth, handshake bound and hang shape count must equal those of
 tests/run_liveness_formal.py, and the edge limit that of tools/gen_instance.py. The table of Fair
 clauses must list exactly the fields of Fair, and the F labels must be the liveness test's. Every
-dotted Lean name and every structure named as open must exist in the Lean sources.
+dotted Lean name and every structure named as open must exist in the Lean sources. A
+theorem whose conclusion follows from its progress premises alone is not a checked claim.
 """
 import argparse
 import json
@@ -118,6 +119,17 @@ def main():
     in_script = set(re.findall(r'\bF\d\b', live.__doc__))
     if not assumed or assumed - in_script or {'F1', 'F2', 'F3', 'F4'} - assumed:
         failures.append('F labels differ: README %s, script %s' % (sorted(assumed), sorted(in_script)))
+    # The port completion theorems: their conclusion is the chain of their progress premises.
+    closure = re.search(r'theorem port_completes_of_progress\b(.*?):=', lean, re.S)
+    if not closure or re.search(r'\b(Config|wfCheck|checkRank|Covered|EdgeTable)\b', closure.group(1)):
+        failures.append('port_completes_of_progress is missing or takes model premises')
+    for name in ('checked_port_completes', 'checked_request_completes', 'port_completes_of_progress'):
+        if name in checked:
+            failures.append('%s is listed as checked, but follows from its progress premises' % name)
+    no_proof = section(readme, 'What has no proof')
+    if not all(name in no_proof for name in ('port_completes_of_progress',
+                                             'answer_alone_does_not_complete')):
+        failures.append('What has no proof does not name the port completion premises')
     for failure in failures:
         print('FAIL', failure)
     if failures:

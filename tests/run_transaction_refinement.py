@@ -9,8 +9,9 @@ import tempfile
 import time
 from pathlib import Path
 
-from assertion_solver import cover, prove, refute
+from assertion_solver import covers, prove, refute, run_all
 from run_netlist_roundtrip import LEAN
+from transaction_progress import CONTROLS, designs
 from run_read_refinement import (
     artifact, checked, check_axioms, clear_context, clock_port, instrument,
     port_for, prepare_lean, stuck, tuple_term,
@@ -101,6 +102,38 @@ def main (args : List String) : IO UInt32 := do
        ("read_payload", payloadGuard txMap.transport.responseIn.transfer txMap.responsePayload)] do
     IO.println (name ++ " " ++ g.render signal)
   return 0
+"""
+
+
+COMPLETION_PROOF = """
+theorem checkedCompletion {n : Netlist} (hw : TransactionRefinement.Run n txMap)
+    (progress : PortProgress hw.cycles) {t : Nat} (request : progress.sourceRequest t = true) :
+    ∃ u, t < u ∧ progress.sourceResponse u = true := by
+  open Generated.Transactions in
+  exact checked_port_completes (table := table) (node := node) pathValid hw.cycles
+    wf_ok (Wormhole.Import.capOf_pos caps_ok) hops_ok certificate
+    (Wormhole.checkCoverageFast_covered covered_ok) heads_ok
+    (Wormhole.Import.capOf_pos (by decide)) progress request
+
+private def stalled : Cycles where
+  occupied t := t != 0
+  request t := t == 0
+  response _ := false
+  initial := rfl
+  accepted t := by cases t <;> simp [stepOK]
+
+theorem stalled_lacks_progress : ¬ Nonempty (EndpointProgress stalled) := by
+  intro ⟨environment⟩
+  obtain ⟨issue, _, sent⟩ := environment.issue 0 rfl
+  obtain ⟨answer, _, seen⟩ := environment.answer issue sent
+  obtain ⟨response, _, fire⟩ := environment.forward answer seen
+  simp [stalled] at fire
+
+#print axioms checkedCompletion
+#print axioms stalled_lacks_progress
+#print axioms Wormhole.ReadRefinement.fair_of_endpoint_progress
+#print axioms Wormhole.ReadRefinement.port_completes_of_progress
+#print axioms Wormhole.ReadRefinement.answer_alone_does_not_complete
 """
 
 
@@ -270,7 +303,7 @@ def corrupt_port(rtl, port):
     return broken
 
 
-def fixture(cli, work, lean, width, synchronous):
+def fixture(cli, work, lean, width, synchronous, completion):
     base = Path(__file__).with_name("formal") / "axi4_read_refinement.yaml"
     config = base.read_text().replace("data_width: 32", f"data_width: {width}")
     config = config.replace("transport_word_bytes: 4", f"transport_word_bytes: {width // 8}")
@@ -296,13 +329,21 @@ def fixture(cli, work, lean, width, synchronous):
     instance = work / "Transactions.lean"
     checked([sys.executable, LEAN / "tools/gen_instance.py", artifact(gen, "dependency.json"),
              "Transactions", instance, "--kernel"])
-    instance.write_text("import NetlistCheck.Check\nimport NetlistCheck.TransactionRefinement\n" +
-                        instance.read_text() + proof_source(mapping))
+    imports = "import NetlistCheck.Check\nimport NetlistCheck.TransactionRefinement\n"
+    if completion:
+        imports += "import NetlistCheck.TransactionCompletion\n"
+    source = instance.read_text() + proof_source(mapping)
+    instance.write_text(imports + source + (COMPLETION_PROOF if completion else ""))
     result = checked(["lake", "env", "lean", "--run", instance,
                       rtl_path, netlist_path, fault_v, fault_n], lean)
     names = {"reset_sound", "kind_sound", "transfer_sound"}
-    check_axioms(result, {"checkedTransactionEdge"} |
-                 {f"NetlistCheck.TransactionRefinement.{name}" for name in names})
+    expected = {"checkedTransactionEdge"} | {f"NetlistCheck.TransactionRefinement.{name}" for name in names}
+    if completion:
+        expected.update({"checkedCompletion", "stalled_lacks_progress"} |
+                        {f"Wormhole.ReadRefinement.{name}" for name in (
+                            "fair_of_endpoint_progress", "port_completes_of_progress",
+                            "answer_alone_does_not_complete")})
+    check_axioms(result, expected)
     guards = dict(re.findall(r"^(\w+) (\([^\n]+)$", result, re.M))
     if set(guards) != {"context_steps", "transport_faces", "write_payload", "read_payload"}:
         raise RuntimeError(f"Missing cycle guards: {result}")
@@ -313,10 +354,16 @@ def fixture(cli, work, lean, width, synchronous):
         port_fault = corrupt_port(port_fault, monitor.port(side, signal))
     for name, design in (("design", rtl), ("fault", fault), ("port_fault", port_fault)):
         (work / f"{name}.sv").write_text(instrument(design, assertions))
+    if completion:
+        for name, design in designs(rtl, monitor, instrument).items():
+            (work / f"{name}.sv").write_text(design)
     (work / "proof.json").write_text(json.dumps({"module": mapping["module"],
                                                "clock": monitor.clock, "reset": monitor.reset}) + "\n")
-    refuted = solve(work, lean, gen, (rtl_path, netlist_path, fault_v, fault_n), mapping,
-                    netlist, assertions, port_fault, synchronous)
+    if completion:
+        refuted = solve_completion(work, synchronous)
+    else:
+        refuted = solve(work, lean, gen, (rtl_path, netlist_path, fault_v, fault_n), mapping,
+                        netlist, assertions, port_fault, synchronous)
     print(f"PASS {width}-bit transaction map, checked edge, rejected context fault, proof, covers "
           f"and {refuted} refuted controls")
 
@@ -384,18 +431,33 @@ def solve(work, lean, gen, files, mapping, netlist, assertions, port_fault, sync
     return len(faults) + len(wrong)
 
 
+def solve_completion(work, synchronous):
+    """Prove the progress assertions. On the asynchronous fixture, refute one
+    design for each progress step."""
+    proof = json.loads((work / "proof.json").read_text())
+    design = (work / "completion.sv").read_text()
+    jobs = [(prove, work, "completion", design, proof), *covers(work, "cover", design, proof)]
+    if not synchronous:
+        jobs += [(refute, work, name, (work / f"{name}.sv").read_text(), proof, expected)
+                 for name, expected in CONTROLS.items()]
+    run_all(jobs)
+    return 0 if synchronous else len(CONTROLS)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cli", type=Path, required=True)
     parser.add_argument("--work", type=Path, required=True)
+    parser.add_argument("--completion", action="store_true")
     args = parser.parse_args()
     args.work.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="check-", dir=args.work.resolve()))
     start = time.monotonic()
     lean = prepare_lean(work)
-    checked(["lake", "build", "+NetlistCheck.TransactionRefinement"], lean)
+    module = "TransactionCompletion" if args.completion else "TransactionRefinement"
+    checked(["lake", "build", "+NetlistCheck." + module], lean)
     for width, sync in ((32, False), (64, True)):
-        fixture(args.cli.resolve(), work / f"axi{width}", lean, width, sync)
+        fixture(args.cli.resolve(), work / f"axi{width}", lean, width, sync, args.completion)
     print(f"PASS transaction refinement ({time.monotonic() - start:.1f} s) in {work}")
 
 

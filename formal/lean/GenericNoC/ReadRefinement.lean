@@ -218,4 +218,40 @@ theorem step_sound {p : Path} {c : Config} (cfg : p.Valid c) {sample : Sample} {
   · exact ⟨σ, h, Or.inl rfl⟩
   · exact ⟨_, response_matches cfg h, Or.inr (response_steps cfg h)⟩
 
+/-- Tokens before the current one have left the model. -/
+def Archived (σ : St) (token : Nat) : Prop :=
+  ∀ k, k < token → σ.live k = false
+
+private theorem stutter_matches {p : Path} {σ : St} {b : Bool} {k : Nat}
+    (h : Matches p σ b k) : Matches p { σ with ev := none } b k := by
+  cases h
+  constructor <;> assumption
+
+/-- An idle edge uses a model stutter so the flattened run has a position for
+    every cycle. The stutter clears the last fire observation. -/
+theorem frame_sound {p : Path} {c : Config} (cfg : p.Valid c) {s : Sample} {σ : St} {k : Nat}
+    (matching : Matches p σ s.occupied k) (past : Archived σ k) (ok : stepOK s = true) :
+    ∃ σ' mid, GenericNoC.Steps (Step c) σ mid σ' ∧
+      Matches p σ' s.nextOccupied (if s.response then k + 1 else k) ∧
+      Archived σ' (if s.response then k + 1 else k) := by
+  rcases s with ⟨before, req, rsp, after⟩
+  cases before <;> cases req <;> cases rsp <;> cases after <;> simp [stepOK] at ok
+  · exact ⟨_, [], .last (.stutter σ), stutter_matches matching, past⟩
+  · obtain ⟨mid, steps⟩ := request_steps cfg matching
+    refine ⟨_, mid, steps, request_matches cfg matching, fun j hj => ?_⟩
+    change j < k at hj
+    have ne : j ≠ k := Nat.ne_of_lt hj
+    simpa [requestResult, requestWord, injected, granted, pop, place, cfg.requestEnd,
+      cfg.requestPool, upd, ne] using past j hj
+  · exact ⟨_, [], .last (.stutter σ), stutter_matches matching, past⟩
+  · obtain ⟨mid, steps⟩ := response_steps cfg matching
+    refine ⟨_, mid, steps, response_matches cfg matching, fun j hj => ?_⟩
+    change j < k + 1 at hj
+    have hjk : j ≤ k := by omega
+    rcases Nat.eq_or_lt_of_le hjk with rfl | lt
+    · simp [responseResult, responseWord, injected, granted, pop, place, cfg.responseEnd,
+        cfg.responseFree]
+    · simp [responseResult, responseWord, injected, granted, pop, place, cfg.responseEnd,
+        cfg.responseFree, upd, Nat.ne_of_lt lt, past j lt]
+
 end Wormhole.ReadRefinement

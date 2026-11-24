@@ -9,8 +9,8 @@ limit of one. The transport uses one ungated clock and one direct reset.
 The paths have no link pipes, width conversion or scheduling level bits.
 The target has no endpoint pipes, upsize adapter, read interleaving or timeout.
 
-The dependency model has one target pool and two routes. The routes have no
-continuations, and the model has no burst bounds.
+The dependency model has one target pool and two routes. The routes end at
+their first outputs. The model has no bound destinations.
 
 ## Map fields
 
@@ -67,5 +67,34 @@ kind and payload equality on accepted transfers. The transport model tracks
 control and tokens. The payload equality relates the observed netlist values.
 
 CTest `transaction_refinement` checks the map and the Lean edge theorem on
-32-bit and 64-bit direct AXI4 designs. Its cycle assertions use full-width
-transfers at address zero.
+the same two designs. Its cycle assertions use full-width transfers at address
+zero, and SymbiYosys proves them as above. On the 32-bit design the solver must
+find a counterexample for six changes. Three change the write context: cleared,
+never cleared or never changed. One flips a bit on each of four output ports.
+Two are wrong maps: read and write contexts swapped, and a payload pair on an
+unrelated value.
+
+## Completion with endpoint progress
+
+`Wormhole.ReadRefinement.checked_port_completes` gives a later initiator
+response for an accepted request on a checked direct trace. The requests are
+serialized until the initiator accepts its response. The conclusion follows
+from five progress premises alone, as `port_completes_of_progress` shows. The
+theorem also requires the dependency checks, but does not need them.
+
+The transport takes the source request and issues it at the target port. The
+target answers, and the transport takes the answer and returns it to the
+source. Only the answer is target behavior. `answer_alone_does_not_complete`
+gives a trace on which the target answers every request and no response comes.
+Neither the trace nor the model supplies the transport steps.
+
+CTest `transaction_completion` checks these theorems with the two direct
+designs. It adds assertions for the five progress steps and proves them with
+SymbiYosys as above. The assumptions give each endpoint handshake at most two
+cycles and each target answer one to three cycles. Each step must then occur
+within eight cycles.
+
+On the 32-bit design the solver must find a counterexample for five changes
+that each break one step. Four silence valid signals, and one removes the
+answer assumption of the target. No checked link carries the solver result into
+the premises of the Lean theorem.

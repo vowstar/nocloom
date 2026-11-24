@@ -23,20 +23,21 @@ Lean compiler as well as the kernel. `lean-toolchain` pins the Lean version. See
 | A known hang is detected | The `holding` release policy of `GenericNoC/Instances/TwoTargets.lean`, which keeps a grant across segments, the same fault in generated Verilog, and its graph form | `GenericNoC/Instances/TwoTargets.lean`, `GenericNoC/Instances/MultiHop.lean`, tests `liveness_formal_hang_*` and `hang_controls` | One fault on four shapes. Its graph form is a cycle on the same shapes. This does not describe every hang |
 | Each net and output port of the printed top module carries the netlist value of the module inputs, registers and cell outputs | Generated Verilog and its netlist, see [netlist](../../docs/netlist.md) | `NetlistCheck.check_sound`, test `netlist_roundtrip` | Every example and liveness shape. Registers, clock gates and synchronizer cells are compared one by one. Cell files are not read |
 | A checked edge takes zero or more transport steps and preserves the matching invariant | The [AXI4 read refinement map](../../docs/read-refinement.md) and its model | `NetlistCheck.ReadRefinement.edge_sound`, test `read_refinement` | Single-beat reads on a direct path. Lean evaluates the check on one idle edge. SymbiYosys proves the check on every edge of two designs under endpoint assumptions, see the next table |
-| A checked transaction edge preserves the transport invariant and its transferred payload | The [AXI4 transaction observations](../../docs/read-refinement.md) and their model | `NetlistCheck.TransactionRefinement.edge_sound`, test `transaction_refinement` | One single-beat read or write at a time on a direct path |
+| A checked transaction edge preserves the transport invariant and its transferred payload | The [AXI4 transaction observations](../../docs/read-refinement.md) and their model | `NetlistCheck.TransactionRefinement.edge_sound`, test `transaction_refinement` | One single-beat read or write at a time on a direct path. Lean evaluates the check on one idle edge. SymbiYosys proves the check on every edge of two designs under endpoint assumptions |
 
 ## What has no proof
 
 | Statement | Status | Work needed for a proof |
 | --- | --- | --- |
-| The generated Verilog of a direct AXI4 pair passes the edge check on every edge | Tests `read_refinement` and `transaction_refinement` prove the cycle assertions with SymbiYosys on two designs, without a depth bound but under endpoint assumptions. The tests rewrite the assertions for the solver. No checked link carries the result into Lean | A Lean statement of the solver result, or a refinement proof of the Verilog |
+| The generated Verilog of a direct AXI4 pair passes the edge check on every edge and meets the progress premises | Tests `read_refinement`, `transaction_refinement` and `transaction_completion` prove the cycle assertions with SymbiYosys on two designs, without a depth bound but under endpoint assumptions. The tests rewrite the assertions for the solver. No checked link carries the result into Lean | A Lean statement of the solver result, or a refinement proof of the Verilog |
+| An accepted port request on a direct trace gets its response from the model | `Wormhole.ReadRefinement.checked_port_completes` holds, but `Wormhole.ReadRefinement.port_completes_of_progress` gives its conclusion from the five progress premises alone. Four of them are transport progress, and `Wormhole.ReadRefinement.answer_alone_does_not_complete` shows that the trace and model do not supply them | A refinement that relates target port transfers to model steps |
 | The full generated network refines the model | No proof of `CircuitRefinementInv` for a network | A proof covering all transport paths and hardware features of the network |
 | Every generated Verilog network is free of deadlock | The checked AXI4 exchange model has a reachable state with no finite drain | A service continuation proof for the intended model states and refinement of the full network |
 | A network with unmet clauses in its `completion` field completes its transactions | No completion theorem is stated. The statement does not hold for every run | None. See [output files](../../docs/outputs.md#dependency-graph) for the settings that remove each unmet clause |
 | The four conditions of the `completion` field are all the ways generated logic breaks `Fair` | Each clause has a reason in the table below, not a proof | A proof of each clause for the arbiters, targets and clocks of generated Verilog |
 | A network without a model table completes its transactions | No model table, so no rule check and no theorem | A model that states more than 4096 endpoint pairs, several outputs for one destination, and bound sources with several paths |
 | Slot capacities and context counts equal the storage of generated Verilog | A rule derives them from the network plan. They are not compared with the Verilog | A comparison with the storage of generated Verilog |
-| Generated Verilog answers every request without a depth bound | Bounded checks only | Unbounded checks on the small shapes |
+| Generated Verilog answers every request without a depth bound | Bounded checks only, apart from the two direct AXI4 designs of test `transaction_completion` | Unbounded checks on the small shapes |
 | Data correctness and timing bounds | Outside the model | Transaction simulation checks data on its configurations. See [test suites](../../tests/SUITES.md) |
 
 ## Build and check
@@ -213,14 +214,12 @@ lake env lean OUT.lean
 | Edge `group` | Nonnegative integer. Only `0`, an ordinary edge, is supported |
 | Top-level `groups` | Absent or empty |
 
-Each edge points from a blocker to a blocked node. Source and destination are
-node indexes. The rule identifies the wait relation.
-The importer checks the fourth column, then removes duplicate edges.
-
-An edge with a nonzero group fails with `NCL_CERTIFICATE_ALTERNATIVE_GROUP`. An
-edge with a wrong column count or a group that is not a nonnegative integer
-fails with `NCL_CERTIFICATE_EDGE_FORMAT`. A nonempty top-level `groups` or a
-status other than `no_cycle` also fails conversion.
+Edges point from blocker to blocked node by index. The importer checks the rule
+group and removes duplicates. An edge with a nonzero group fails with
+`NCL_CERTIFICATE_ALTERNATIVE_GROUP`. An edge with a wrong column count or a
+group that is not a nonnegative integer fails with
+`NCL_CERTIFICATE_EDGE_FORMAT`. A nonempty top-level `groups` or a status other
+than `no_cycle` also fails conversion.
 
 A missing, malformed or contradictory `completion` field fails with
 `NCL_CERTIFICATE_SCOPE`. With a model table, `caps` and `pool_caps` must give a

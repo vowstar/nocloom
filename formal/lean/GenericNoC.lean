@@ -15,6 +15,7 @@ import GenericNoC.WormholeFast
 import GenericNoC.WormholeLive
 import GenericNoC.WormholeDone
 import GenericNoC.WormholeService
+import GenericNoC.TransactionCompletion
 import GenericNoC.Instances.TwoTargets
 import GenericNoC.Instances.MultiHop
 import GenericNoC.Instances.Requests
