@@ -9,6 +9,7 @@
 #include "nocloom/ipxact.hpp"
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <iterator>
@@ -1841,6 +1842,108 @@ TEST_CASE("Log placement follows the rule across random windows", "[error-log]")
     CHECK(std::set<std::uint64_t>(actual.begin(), actual.end()).size() == count);
     for (const auto at : actual)
       CHECK((at % 64 == 0 && at <= size - 64));
+  }
+}
+
+namespace {
+// A window in main and so many logs in slow, each watching a target of its own in main, on an
+// explicit graph of one node per direction.
+Definition remote_window_of(unsigned logs) {
+  std::string targets, logged, attached, returned, watched;
+  for (unsigned k = 0; k < logs; ++k) {
+    const auto t = "t" + std::to_string(k);
+    std::ostringstream base;
+    base << std::hex << k * 0x1000;
+    targets += "  - {name: " + t +
+               ", clock_domain: main, protocol: apb4, data_width: 32, attributes: amba, "
+               "mappings: [{base: '0x" +
+               base.str() + "', size: '0x1000'}]}\n";
+    logged += "    - {name: log" + std::to_string(k) + ", watch: [" + t +
+              "], clock_domain: slow, loggers: [{}]}\n";
+    attached += "      - {endpoint: " + t + ", node: q}\n";
+    returned += "      - {endpoint: " + t + ", node: p}\n";
+    watched += (k ? ", " : "") + t;
+  }
+  const auto text =
+      "schema_version: 10\nname: o\naddress_width: 32\nreset_ports: [{name: reset_n}]\n"
+      "test_ports: [{name: test}]\nclock_domains:\n"
+      "  - {name: main, clock_port: clk, reset_port: reset_n, test_port: test, period_ps: 1250}\n"
+      "  - {name: slow, clock_port: clk_slow, reset_port: reset_n, test_port: test, period_ps: "
+      "3333}\ninitiators:\n  - {name: cfg, clock_domain: main, protocol: apb4, data_width: 32}\n"
+      "  - {name: data, clock_domain: main, protocol: apb4, data_width: 32}\ntargets:\n" +
+      targets +
+      "error_logging:\n  registers: {name: csr, base: '0x100000', size: '0x100000', clock_domain: "
+      "main}\n  logs:\n" +
+      logged + "connectivity:\n  cfg: [csr]\n  data: [" + watched +
+      "]\ntopology:\n  request:\n    nodes: [{name: q, clock_domain: main}]\n    links: []\n"
+      "    entries:\n      - {endpoint: cfg, node: q}\n      - {endpoint: data, node: q}\n"
+      "    exits:\n      - {endpoint: csr, node: q}\n" +
+      attached +
+      "  response:\n    nodes: [{name: p, clock_domain: main}]\n    links: []\n    entries:\n"
+      "      - {endpoint: csr, node: p}\n" +
+      returned +
+      "    exits:\n      - {endpoint: cfg, node: p}\n      - {endpoint: data, node: p}\n"
+      "output: {backend: verilog, language: verilog_2001}\n";
+  auto parsed = config::parse(text);
+  REQUIRE(parsed);
+  return parsed.value().definition;
+}
+} // namespace
+
+TEST_CASE("The logs of a window in another domain share one crossing each way", "[error-log]") {
+  for (const unsigned logs : {1U, 2U, 3U, 5U, 64U}) {
+    const auto plan = build_network_plan(remote_window_of(logs));
+    INFO((plan ? std::string{} : plan.diagnostics().front().message));
+    REQUIRE(plan);
+    const auto &p = plan.value();
+    CHECK(p.target("csr").service->domain == "slow");
+    // A request word carries its log's branch beside it once there are two logs.
+    const auto branch_bits = logs > 1 ? static_cast<unsigned>(std::bit_width(logs - 1)) : 0U;
+    std::vector<std::pair<std::string, unsigned>> request{{"data", register_frame_word_bits},
+                                                          {"tail", 1}};
+    if (branch_bits)
+      request.emplace_back("branch", branch_bits);
+    std::set<std::string> serial, nodes;
+    unsigned payload = 0;
+    for (const auto &cut : p.cuts) {
+      const auto depth = std::get<AsyncClockCut>(cut.options).depth.depth;
+      payload += cut.payload_bits * (depth + 1);
+      if (cut.name.starts_with("cut/service/observe/"))
+        continue;
+      serial.insert(cut.name);
+      CHECK(cut.fields == (cut.name.ends_with("/request")
+                               ? request
+                               : std::vector<std::pair<std::string, unsigned>>{
+                                     {"data", register_frame_word_bits}, {"tail", 1}}));
+    }
+    CHECK(serial == std::set<std::string>{"cut/service/csr/request", "cut/service/csr/response"});
+    CHECK(p.fifo_payload_bits == payload);
+    // The crossings stand in the graph, which stays free of cycles. Past the request crossing no
+    // switch register waits: the crossing's output register holds the word for its bank.
+    for (const auto &n : p.dependency.nodes)
+      if (n.kind == "occupancy.crossing")
+        nodes.insert(n.binding);
+    CHECK(nodes.size() == logs + 2);
+    CHECK(nodes.contains("cut/service/csr/request"));
+    CHECK(nodes.contains("cut/service/csr/response"));
+    const auto outputs = std::ranges::count_if(
+        p.dependency.nodes, [](const auto &n) { return n.kind == "service.output"; });
+    CHECK(outputs == 0);
+    CHECK(p.dependency_report.cycle_sets == 0);
+    if (logs <= 5) {
+      // The serial path crosses before the switch, which holds no word, and each log has its
+      // serializer in the banks' domain.
+      const auto composed = lower_axi4_exchange_composition(p);
+      REQUIRE(composed);
+      const auto &bindings = composed.value().bindings;
+      CHECK(std::ranges::none_of(bindings, [](const auto &entry) {
+        return entry.first.find("switch.") != std::string::npos;
+      }));
+      CHECK(std::ranges::count_if(bindings, [](const auto &entry) {
+              return entry.first.starts_with("service/bank/csr/") && entry.first.ends_with("/word");
+            }) == logs);
+      CHECK(verify_axi4_exchange_composition(composed.value()));
+    }
   }
 }
 

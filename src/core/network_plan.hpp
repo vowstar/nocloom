@@ -143,7 +143,7 @@ struct ServicePlan {
   std::string domain{};
   bool operator==(const ServicePlan &) const = default;
 };
-// What a branch adds to the names of its crossings: nothing on a target of one branch.
+// What a branch adds to the names of its register stages: nothing on a target of one branch.
 inline std::string service_branch_suffix(const ServicePlan &service, unsigned branch) {
   return service.banks.back().branch == 0 ? std::string{} : "/branch" + std::to_string(branch);
 }

@@ -5051,66 +5051,21 @@ private:
       zone->wake.push_back(out_valid);
     std::vector<Imported> imported_banks;
     std::vector<BankRead> reads;
-    std::map<std::string, ValueId> switch_states;
-    if (banks.back().branch == 0) {
-      const BankRequest face{
-          [&](const std::string &signal) { return outlet.bound.at("bank_" + signal); },
-          outlet.bound.at("bank_out_ready")};
-      const BankOutputs answer{ready, out_valid, out_data, out_tail};
-      if (crossed)
-        import_crossed_branch(o, t, 0, face, answer, imported_banks);
-      else
-        import_branch(o, t, 0, face, answer, imported_banks, reads);
-    } else {
+    const BankRequest face{
+        [&](const std::string &signal) { return outlet.bound.at("bank_" + signal); },
+        outlet.bound.at("bank_out_ready")};
+    const BankOutputs answer{ready, out_valid, out_data, out_tail};
+    if (crossed)
+      import_crossed_window(o, t, face, answer, imported_banks);
+    else if (banks.back().branch == 0)
+      import_branch(o, t, 0, face, answer, imported_banks, reads);
+    else
       // The word register stands between the outlet and the branches.
-      const auto branch_count = banks.back().branch + 1;
-      const auto hardware = admitted(lower_service_switch("t" + std::to_string(o), branch_count));
-      std::vector<BankOutputs> branches;
-      std::ranges::generate_n(std::back_inserter(branches), branch_count, [&] {
-        return BankOutputs{c.wire(1), c.wire(1), c.wire(register_frame_word_bits), c.wire(1)};
-      });
-      Imported fabric;
-      std::map<std::string, ValueId> faces;
-      c.import_component(
-          hardware, t.key + "/switch/", fabric,
-          [&](const Port &port) -> ValueId {
-            const auto &signal = port.signal;
-            if (signal.starts_with("in_"))
-              return outlet.bound.at("bank_" + signal.substr(3));
-            const auto &branch =
-                branches.at(std::stoul(signal.substr(signal.find_first_of("0123456789"))));
-            if (signal.ends_with("_ready"))
-              return branch.ready;
-            return signal.ends_with("_valid")  ? branch.valid
-                   : signal.ends_with("_data") ? branch.data
-                                               : branch.tail;
-          },
-          [&](const Port &port, ValueId value) {
-            if (port.signal == "in_ready")
-              c.drive(ready, value);
-            else if (port.signal == "back_valid")
-              c.drive(out_valid, value);
-            else if (port.signal == "back_data")
-              c.drive(out_data, value);
-            else if (port.signal == "back_tail")
-              c.drive(out_tail, value);
-            else
-              faces[port.signal] = value;
-          });
-      for (unsigned k = 0; k < branch_count; ++k) {
-        const auto out = "out" + std::to_string(k) + "_";
-        const BankRequest face{[&](const std::string &signal) { return faces.at(out + signal); },
-                               outlet.bound.at("bank_out_ready")};
-        if (crossed)
-          import_crossed_branch(o, t, k, face, branches[k], imported_banks);
-        else
-          import_branch(o, t, k, face, branches[k], imported_banks, reads);
-      }
-      if (!crossed)
-        imported_banks.push_back(std::move(fabric));
-      else
-        switch_states = fabric.states;
-    }
+      imported_banks.push_back(import_service_switch(
+          o, t, face, answer,
+          [&](unsigned k, const BankRequest &branch, const BankOutputs &drives) {
+            import_branch(o, t, k, branch, drives, imported_banks, reads);
+          }));
     if (crossed)
       own_crossed_banks(o, imported_banks);
     else {
@@ -5140,8 +5095,6 @@ private:
       for (const auto &bank : imported_banks)
         for (const auto &[name, value] : bank.states)
           control.push_back(value);
-    for (const auto &[name, value] : switch_states)
-      control.push_back(value);
     const auto taken = outlet.bound.at("bus.taken");
     c.bind(t.key + "/bus.acquire", taken);
     c.bind(t.key + "/bus.release", taken);
@@ -5175,18 +5128,99 @@ private:
   const ClockCut &serial_cut(const std::string &segment) const {
     return *std::ranges::find(plan.cuts, "cut/" + segment, &ClockCut::name);
   }
-  // A branch of banks in another clock domain than its target's outlet: the serial words go through
-  // one crossing, the answer through another. The banks' registers answer to their own domain.
-  void import_crossed_branch(unsigned o, const TargetSide &t, unsigned branch,
-                             const BankRequest &from, const BankOutputs &to,
-                             std::vector<Imported> &imported) {
+  // What serves branch k of a switch: its request, and the wires of its answer to drive.
+  using BranchImport = std::function<void(unsigned, const BankRequest &, const BankOutputs &)>;
+  // The service switch in front of several branches of banks, and the branches' answers merged.
+  // Registered, it holds the word and the branch it goes to; unregistered, the register before it
+  // does. Returns the switch; its request comes as named and takes the merged answer's ready.
+  Imported import_service_switch(unsigned o, const TargetSide &t, const BankRequest &from,
+                                 const BankOutputs &to, const BranchImport &branch_of,
+                                 bool registered = true) {
+    const auto branch_count = plan.targets[o].service->banks.back().branch + 1;
+    const auto hardware =
+        admitted(lower_service_switch("t" + std::to_string(o), branch_count, registered));
+    std::vector<BankOutputs> branches;
+    std::ranges::generate_n(std::back_inserter(branches), branch_count, [&] {
+      return BankOutputs{c.wire(1), c.wire(1), c.wire(register_frame_word_bits), c.wire(1)};
+    });
+    Imported fabric;
+    std::map<std::string, ValueId> faces;
+    c.import_component(
+        hardware, t.key + "/switch/", fabric,
+        [&](const Port &port) -> ValueId {
+          const auto &signal = port.signal;
+          if (signal.starts_with("in_"))
+            return from.signal(signal.substr(3));
+          const auto &branch =
+              branches.at(std::stoul(signal.substr(signal.find_first_of("0123456789"))));
+          if (signal.ends_with("_ready"))
+            return branch.ready;
+          return signal.ends_with("_valid")  ? branch.valid
+                 : signal.ends_with("_data") ? branch.data
+                                             : branch.tail;
+        },
+        [&](const Port &port, ValueId value) {
+          if (port.signal == "in_ready")
+            c.drive(to.ready, value);
+          else if (port.signal == "back_valid")
+            c.drive(to.valid, value);
+          else if (port.signal == "back_data")
+            c.drive(to.data, value);
+          else if (port.signal == "back_tail")
+            c.drive(to.tail, value);
+          else
+            faces[port.signal] = value;
+        });
+    for (unsigned k = 0; k < branch_count; ++k) {
+      const auto out = "out" + std::to_string(k) + "_";
+      const BankRequest face{
+          [&faces, out](const std::string &signal) { return faces.at(out + signal); },
+          from.answer_ready};
+      branch_of(k, face, branches[k]);
+    }
+    return fabric;
+  }
+  // The serializer of a crossed answer: the sampled read word and the access's header, as frame
+  // words to the response crossing.
+  void import_read_frame(const std::string &id, const std::vector<BankRead> &reads,
+                         ValueId complete, ValueId header, ValueId ready, const BankOutputs &to,
+                         std::vector<Imported> &imported) {
+    const auto read = join_bank_reads(reads);
+    c.import_component(
+        admitted(lower_service_read_frame()), id, imported.emplace_back(),
+        [&](const Port &port) {
+          if (port.endpoint == "read")
+            return port.signal == "sample" ? read.sample : read.word;
+          if (port.endpoint == "access")
+            return port.signal == "complete" ? complete : header;
+          return ready;
+        },
+        [&](const Port &port, ValueId value) {
+          c.drive(port.signal == "valid"  ? to.valid
+                  : port.signal == "data" ? to.data
+                                          : to.tail,
+                  value);
+        });
+  }
+  // The banks of a window in another clock domain than its target's outlet. The serial words go
+  // through one crossing and the answers through another, however many logs the window serves.
+  // With several, each word carries its branch, and the crossing's output register holds the word
+  // that the switch steers to its branch. The banks' registers answer to their own domain.
+  void import_crossed_window(unsigned o, const TargetSide &t, const BankRequest &from,
+                             const BankOutputs &to, std::vector<Imported> &imported) {
     const auto &tp = plan.targets[o];
     const auto &service = *tp.service;
-    const auto stem = "service/" + tp.name + service_branch_suffix(service, branch);
+    const auto stem = "service/" + tp.name;
+    const bool branched = service.banks.back().branch != 0;
     const std::array<std::string, 2> ends{};
-    const Channel sent{from.signal("valid"), to.ready, {from.signal("data"), from.signal("tail")}};
+    Channel sent{from.signal("valid"), to.ready, {from.signal("data"), from.signal("tail")}};
+    std::vector<unsigned> widths{register_frame_word_bits, 1};
+    if (branched) {
+      sent.data.push_back(from.signal("branch"));
+      widths.push_back(b.ir.values.at(sent.data.back().index).width);
+    }
+    const auto request = c.cross_async(serial_cut(stem + "/request"), widths, sent, ends);
     const std::vector<unsigned> word{register_frame_word_bits, 1};
-    const auto request = c.cross_async(serial_cut(stem + "/request"), word, sent, ends);
     const auto answer = c.channel(word);
     const auto response = c.cross_async(serial_cut(stem + "/response"), word, answer, ends);
     c.drive(to.valid, response.valid);
@@ -5195,35 +5229,37 @@ private:
     c.drive(response.ready, from.answer_ready);
     const auto kept = std::pair{c.clock, c.reset};
     std::tie(c.clock, c.reset) = c.domains.at(service.domain);
-    std::vector<BankRead> reads;
-    const auto complete = c.wire(1), header = c.wire(register_frame_word_bits);
-    // There is one acknowledgement per admitted access. The serializer can always accept it:
-    // the next access starts only after the outlet has received the previous frame.
-    import_branch(o, t, branch,
-                  {[&request](const std::string &signal) {
-                     return signal == "valid"  ? request.valid
-                            : signal == "data" ? request.data[0]
-                                               : request.data[1];
-                   },
-                   b.constant(1, 1)},
-                  {request.ready, complete, header, c.wire(1)}, imported, reads);
-    const auto read = join_bank_reads(reads);
-    c.import_component(
-        admitted(lower_service_read_frame()),
-        t.key + service_branch_suffix(service, branch) + "/read_frame/", imported.emplace_back(),
-        [&](const Port &port) {
-          if (port.endpoint == "read")
-            return port.signal == "sample" ? read.sample : read.word;
-          if (port.endpoint == "access")
-            return port.signal == "complete" ? complete : header;
-          return answer.ready;
-        },
-        [&](const Port &port, ValueId value) {
-          c.drive(port.signal == "valid"  ? answer.valid
-                  : port.signal == "data" ? answer.data[0]
-                                          : answer.data[1],
-                  value);
-        });
+    // There is one acknowledgement per admitted access. A serializer can always accept it: the
+    // next access starts only after the outlet has received the previous frame.
+    const auto serve = [&](const std::string &id, unsigned k,
+                           const std::function<ValueId(const std::string &)> &word,
+                           const BankOutputs &answered) {
+      std::vector<BankRead> reads;
+      const auto complete = c.wire(1), header = c.wire(register_frame_word_bits);
+      const BankRequest face{word, b.constant(1, 1)};
+      const BankOutputs acknowledged{answered.ready, complete, header, c.wire(1)};
+      import_branch(o, t, k, face, acknowledged, imported, reads);
+      import_read_frame(id, reads, complete, header, answer.ready, answered, imported);
+    };
+    const auto crossed_word = [&request](const std::string &signal) {
+      return signal == "valid"  ? request.valid
+             : signal == "data" ? request.data[0]
+             : signal == "tail" ? request.data[1]
+                                : request.data.at(2);
+    };
+    const BankOutputs merged{request.ready, answer.valid, answer.data[0], answer.data[1]};
+    // With several logs each branch has its serializer next to its banks, and the switch merges
+    // the serializers' words. One packet is on the path, so one serializer speaks at a time.
+    if (branched)
+      imported.push_back(import_service_switch(
+          o, t, {crossed_word, b.constant(1, 1)}, merged,
+          [&](unsigned k, const BankRequest &face, const BankOutputs &answered) {
+            serve(t.key + service_branch_suffix(service, k) + "/read_frame/", k, face.signal,
+                  answered);
+          },
+          false));
+    else
+      serve(t.key + "/read_frame/", 0, crossed_word, merged);
     std::tie(c.clock, c.reset) = kept;
   }
   // Names the registers of banks in another domain than the target's.

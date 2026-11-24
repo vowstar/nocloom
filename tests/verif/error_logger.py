@@ -6,8 +6,10 @@ designated fault of the fault build (selection zero passes too) must fail on a c
 
   python3 tests/verif/error_logger.py --fixture FIXTURE --bench sv/nlv_logger_tb.sv
           --keep-bench sv/nlv_keep_logger_tb.sv --banks-bench sv/nlv_logger_banks_tb.sv
-          --crossed-bench sv/nlv_crossed_logger_tb.sv --work DIR [--jobs N]
-          [--sim ENGINE] [--sim-config JSON]
+          --crossed-bench sv/nlv_crossed_logger_tb.sv --shared-bench sv/nlv_shared_crossing_tb.sv
+          --work DIR [--labels LABEL,...] [--jobs N] [--sim ENGINE] [--sim-config JSON]
+
+Without --labels every configuration runs but those that run in a test of their own.
 
 Exit code: 0 every run met its expectation, 1 a run did not, 2 infrastructure error.
 """
@@ -494,6 +496,43 @@ for width in (8, 16):
 CROSSED_RATIOS = [("+SLOW_NS=33",), ("+SLOW_NS=3.1",), ("+SLOW_NS=10.7",)]
 
 
+def shared_definition():
+    """The crossed network with a second watched target, rom, on the data source."""
+    text = crossed_definition().replace("name: crossed", "name: shared")
+    rom = ("  - {name: rom, clock_domain: main, protocol: apb4, data_width: 32, address_width: 16, "
+           "attributes: amba, mappings: [{base: '0x10000', size: '0x1000'}]}\n")
+    text = text.replace("connectivity:\n", rom + "connectivity:\n", 1)
+    text = text.replace("  data: [ram]\n", "  data: [ram, rom]\n")
+    text = text.replace("      - {endpoint: ram, node: dq}\n",
+                        "      - {endpoint: ram, node: dq}\n      - {endpoint: rom, node: dq}\n")
+    return text.replace("      - {endpoint: ram, node: dp}\n",
+                        "      - {endpoint: ram, node: dp}\n      - {endpoint: rom, node: dp}\n")
+
+
+# Two logs in the banks' domain behind one crossing each way: errors on ram at 0x300, branch 0, and
+# others on rom at 0x100, branch 1.
+SHARED = dict(audit=None, error_logs=[
+    dict(name="errors", targets=["ram"], domain="slow", loggers=[dict(base=0x300, skipped=[])]),
+    dict(name="others", targets=["rom"], domain="slow", loggers=[dict(base=0x100, skipped=[])])])
+CONFIGS.append(dict(
+    label="shared", codes=False, skipped="", define="SHARED", top="shared", error_logs=SHARED,
+    shared=True, separate=True, faults=[
+        # The branch lost on the way into the crossing or ignored past it, or a read of the
+        # second bank that never samples its word.
+        dict(id="branch_lost", expect=("id_apart", "control_apart"),
+             **direct(SERIAL + "request/input.field2", const=0)),
+        dict(id="branch_ignored", expect=("id_apart", "control_apart"),
+             **direct(SERIAL + "request/output.field2", const=0)),
+        dict(id="other_read_lost", expect=("id_apart",),
+             **direct("burst_service/csr/bank1/access.read_sample", const=0)),
+        # An answer that ends early or a word of the merged answers lost.
+        dict(id="answer_short", expect=("timeout", "id_apart", "own_data_apart"),
+             **direct(SERIAL + "response/input.field1", const=1)),
+        dict(id="other_answer_lost", expect=("timeout",),
+             **direct("burst_service/csr/bank1/response.offer", const=0)),
+    ]))
+
+
 # A word of the bank by one field of it, and the fields the table puts in the same word.
 WORDS = dict(ID=("layout",),
              STATE=("record_held", "record_overflow", "alarm_enable", "wait_when_full",
@@ -540,6 +579,7 @@ def run_config(work, args, config):
     root.mkdir()
     (root / "network.yaml").write_text(
         keep_definition() if config.get("keep") else
+        shared_definition() if config.get("shared") else
         crossed_definition() if config.get("crossed") else
         banks_definition(not config["codes"]) if config.get("error_logs")
         else definition(not config["codes"]))
@@ -569,6 +609,7 @@ def run_config(work, args, config):
     effective = json.loads(map_path.read_text())["definition"]["error_logs"]["errors"]
     assert effective["serial_word_bits"] == config.get("serial_word_bits", 32)
     source = Path(args.keep_bench if config.get("keep") else
+                  args.shared_bench if config.get("shared") else
                   args.crossed_bench if config.get("crossed") else
                   args.banks_bench if config.get("error_logs") else args.bench)
     bench = (f"`define {config['define']}\n"
@@ -581,7 +622,8 @@ def run_config(work, args, config):
         # The nets of the first logger as LOG_<NET>, of the next in a chain as LOG1_<NET>,
         # of a crossed log's first sender as SENDER_<NET>, of a log's first probe in its
         # domain as PROBE_<NET>.
-        prefix = dict(record="LOG_", record1="LOG1_", sender="SENDER_", probe="PROBE_")
+        prefix = dict(record="LOG_", record1="LOG1_", sender="SENDER_", probe="PROBE_",
+                      bank="PATH_")
         groups = json.loads(path.read_text())["network"]["groups"]
         return "".join(f"`define {prefix[group['name']]}{name.upper()} {hierarchy}.{net}\n"
                        for group in groups if group["name"] in prefix
@@ -615,7 +657,7 @@ def run_config(work, args, config):
 
     label = config["label"]
     baseline = compile_(plain)
-    for options in CROSSED_RATIOS if config.get("crossed") else [()]:
+    for options in CROSSED_RATIOS if config.get("crossed") or config.get("shared") else [()]:
         good &= judge(baseline, f"{label}/baseline{''.join(options)}", options, None)
     sim = compile_(faulted)
     good &= judge(sim, f"{label}/fault_build_selection_0", ("+NLV_FAULT=0",), None)
@@ -626,9 +668,12 @@ def run_config(work, args, config):
 
 def run(work, args):
     """Run the configurations, args.jobs at a time; report them in their listed order."""
+    labels = set(args.labels.split(",")) if args.labels else None
+    configs = [config for config in CONFIGS
+               if ((config["label"] in labels) if labels else not config.get("separate"))]
     results = dict(schema=1, case="error_logger", runs=[], work=str(work))
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        outcomes = list(pool.map(lambda config: run_config(work, args, config), CONFIGS))
+        outcomes = list(pool.map(lambda config: run_config(work, args, config), configs))
     good = True
     for outcome in outcomes:
         print("\n".join(outcome["lines"]), flush=True)
@@ -646,6 +691,8 @@ def main():
     p.add_argument("--keep-bench", required=True)
     p.add_argument("--banks-bench", required=True)
     p.add_argument("--crossed-bench", required=True)
+    p.add_argument("--shared-bench", required=True)
+    p.add_argument("--labels", help="run only these configurations, by label")
     p.add_argument("--work", required=True)
     p.add_argument("--jobs", type=int, default=1, help="configurations run at once")
     sim_engine.add_arguments(p)

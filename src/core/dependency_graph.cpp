@@ -644,41 +644,43 @@ private:
   }
   // Whether a service target's banks are in another domain.
   bool serial_crossed(const TargetPlan &t) const {
-    return std::ranges::find(plan.cuts,
-                             "cut/service/" + t.name + service_branch_suffix(*t.service, 0) +
-                                 "/request",
-                             &ClockCut::name) != plan.cuts.end();
+    return std::ranges::find(plan.cuts, "cut/service/" + t.name + "/request", &ClockCut::name) !=
+           plan.cuts.end();
   }
-  // The bank waits behind a crossing of a branch of the serial path, when its domain is another.
-  bool bank_wait(const TargetPlan &t, unsigned branch, const char *way, std::uint32_t waiting) {
-    const auto component = "target/" + t.name;
-    const auto crossing = serial_crossing(
-        "service/" + t.name + service_branch_suffix(*t.service, branch) + "/" + way, component);
-    if (crossing) {
-      edge(node("env.bank_done", t.name, component), *crossing, DependencyRule::Occupancy);
-      edge(*crossing, waiting, DependencyRule::Occupancy);
-    }
-    return crossing.has_value();
+  // What waits behind a crossing of the serial path, when the banks' domain is another, and what
+  // the crossing waits for.
+  void crossing_wait(const TargetPlan &t, const char *way, std::uint32_t ahead,
+                     std::uint32_t waiting) {
+    const auto crossing =
+        serial_crossing("service/" + t.name + "/" + way, "target/" + t.name).value();
+    edge(ahead, crossing, DependencyRule::Occupancy);
+    edge(crossing, waiting, DependencyRule::Occupancy);
   }
   void target_side(const TargetPlan &t) {
     const auto component = "target/" + t.name;
     const auto pool = node("target.pool", t.name, component);
+    // Past a crossing the word waits in the crossing's output register for its bank, whatever its
+    // branch; one packet is on the path, so no other word contends for it.
     const bool crossed = t.service && serial_crossed(t);
-    if (!crossed || t.service->banks.back().branch == 0) {
-      if (!t.service || !crossed || !bank_wait(t, 0, "request", pool))
-        edge(node(t.service ? "env.bank_done" : "env.target_request", t.name, component), pool,
-             DependencyRule::Environment);
+    std::uint32_t crossing = pool;
+    if (crossed)
+      crossing = serial_crossing("service/" + t.name + "/request", component).value();
+    const auto done = node(t.service ? "env.bank_done" : "env.target_request", t.name, component);
+    if (crossed) {
+      edge(done, crossing, DependencyRule::Occupancy);
+      edge(crossing, pool, DependencyRule::Occupancy);
+    } else {
+      edge(done, pool, DependencyRule::Environment);
     }
     // The service switch's word register waits for its branch; one packet is on the path, so no
     // other input contends for it and the path leads on to nothing but the bank's answer.
-    if (t.service && t.service->banks.back().branch > 0)
+    if (!crossed && t.service && t.service->banks.back().branch > 0)
       for (const auto &bank : t.service->banks) {
         // One output per branch: its first bank names it.
         if (&bank != &t.service->banks.front() && bank.branch == (&bank - 1)->branch)
           continue;
         const auto output = node("service.output", bank.plan.name, component);
-        if (!crossed || !bank_wait(t, bank.branch, "request", output))
-          edge(node("env.bank_done", t.name, component), output, DependencyRule::Occupancy);
+        edge(node("env.bank_done", t.name, component), output, DependencyRule::Occupancy);
         edge(output, pool, DependencyRule::Occupancy);
       }
     for (const auto &pipe : t.pipes)
@@ -691,8 +693,7 @@ private:
     const auto component = "target/" + t.name;
     // A bank's bus is always done: its serial path answers one packet with no wait of its own.
     if (t.service && serial_crossed(t))
-      for (unsigned branch = 0; branch <= t.service->banks.back().branch; ++branch)
-        bank_wait(t, branch, "response", head);
+      crossing_wait(t, "response", node("env.bank_done", t.name, component), head);
     else
       edge(node(t.service ? "env.bank_done" : "env.target_response", t.name, component), head,
            DependencyRule::Environment);

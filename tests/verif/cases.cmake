@@ -868,7 +868,19 @@ nocloom_verif_case(NAME verif_error_logger LAYER unit TIER focused TIMEOUT 600 F
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_logger_tb.sv
     --keep-bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_keep_logger_tb.sv
     --banks-bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_logger_banks_tb.sv
-    --crossed-bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_crossed_logger_tb.sv --jobs 4)
+    --crossed-bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_crossed_logger_tb.sv
+    --shared-bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_shared_crossing_tb.sv --jobs 4)
+# Two logs in the banks' domain behind one crossing of the serial path each way: reads, writes and
+# clears of each bank while the banks' clock stops, two sources at once, and a reset at every
+# distance into an access.
+nocloom_verif_case(NAME verif_log_shared_crossing LAYER unit TIER focused TIMEOUT 300
+  FEATURES verif cdc MEMORY_MB 1024
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/error_logger.py ${NLV_FIXTURE}
+    --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_logger_tb.sv
+    --keep-bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_keep_logger_tb.sv
+    --banks-bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_logger_banks_tb.sv
+    --crossed-bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_crossed_logger_tb.sv
+    --shared-bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_shared_crossing_tb.sv --labels shared)
 nocloom_verif_case(NAME verif_service_target LAYER unit TIER focused TIMEOUT 600 FEATURES verif
   MEMORY_MB 1024
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/service_target.py ${NLV_FIXTURE}

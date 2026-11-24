@@ -47,12 +47,15 @@ Result<NodeHardware> lower_service_outlet(const ServiceOutletProfile &profile,
 Result<NodeHardware> lower_service_read_frame();
 // The service switch in front of several branches of banks: one serial word register, holding the
 // word and the branch it goes to, and the branches' answers merged. One packet is on the path at a
-// time, so an answer has no one to wait for.
+// time, so an answer has no one to wait for. Unregistered, it steers the word on its input, which
+// a register before it holds, to its branch in the same cycle.
 //
-// The module nocloom_service_switch_<name>: request hints in_valid, in_data, in_tail, in_branch
-// and in_ready; per branch k out<k>_valid, out<k>_data, out<k>_tail, out<k>_ready and
-// back<k>_valid, back<k>_data, back<k>_tail; answer hints back_valid, back_data, back_tail.
-Result<NodeHardware> lower_service_switch(const std::string &name, unsigned branches);
+// The module nocloom_service_switch_<name>, or nocloom_register_steer_<name> unregistered: request
+// hints in_valid, in_data, in_tail, in_branch and in_ready; per branch k out<k>_valid,
+// out<k>_data, out<k>_tail, out<k>_ready and back<k>_valid, back<k>_data, back<k>_tail; answer
+// hints back_valid, back_data, back_tail.
+Result<NodeHardware> lower_service_switch(const std::string &name, unsigned branches,
+                                          bool registered = true);
 // A register stage between two banks of a chain: a frame word and its tail mark leave it a cycle
 // after they enter, and no ready passes it. Its two places keep every word in order while the next
 // bank stalls.

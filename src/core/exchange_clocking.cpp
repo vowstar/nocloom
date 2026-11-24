@@ -157,13 +157,16 @@ void plan_serial_cuts(NetworkPlan &p, const std::map<std::string, DomainPlan> &d
   for (const auto &t : p.targets) {
     if (!t.service || t.service->domain.empty() || t.service->domain == owner("target/" + t.name))
       continue;
-    for (unsigned branch = 0; branch <= t.service->banks.back().branch; ++branch) {
-      const auto stem = "service/" + t.name + service_branch_suffix(*t.service, branch);
-      serial_cut(stem + "/request", owner("target/" + t.name), t.service->domain,
-                 {{"data", register_frame_word_bits}, {"tail", 1}});
-      serial_cut(stem + "/response", t.service->domain, owner("target/" + t.name),
-                 {{"data", register_frame_word_bits}, {"tail", 1}});
-    }
+    // One crossing each way serves every log of the window. With several logs a request word
+    // carries its log's branch of the service switch, which stands past the crossing.
+    std::vector<std::pair<std::string, unsigned>> request{{"data", register_frame_word_bits},
+                                                          {"tail", 1}};
+    if (const auto last = t.service->banks.back().branch; last != 0)
+      request.emplace_back("branch", static_cast<unsigned>(std::bit_width(last)));
+    serial_cut("service/" + t.name + "/request", owner("target/" + t.name), t.service->domain,
+               std::move(request));
+    serial_cut("service/" + t.name + "/response", t.service->domain, owner("target/" + t.name),
+               {{"data", register_frame_word_bits}, {"tail", 1}});
   }
   for (const auto &observer : p.error_logs) {
     const auto &log = observer.logger.name;

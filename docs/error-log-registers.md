@@ -162,7 +162,9 @@ Each read returns the whole word as sampled when its bank accepts the read
 request. A capture, clear or overflow cannot mix bytes from different cycles.
 Software that shares a bank must coordinate its clears across multiword reads.
 The bank samples an access on the log's clock. A window in another domain
-sends requests to the bank and receives responses through clock crossings.
+sends requests to the banks through one clock crossing and receives responses
+through another, however many logs it serves. With more than one log, each
+request word carries the index of its log across the crossing.
 
 The record words do not change while `record_held` is 1. Read them before the
 write that clears `record_held`. If the logger admits a record in that cycle,
@@ -230,6 +232,9 @@ each data word is its byte strobe. A separate tail signal marks the last word.
 
 In the register window's domain, banks return a header when the access
 completes, and the window stores the sampled read word. Across domains, the
-chain's serializer sends the header and the four sampled read bytes, most
-significant first. A write returns only the header. Crossed access time
-includes the two FIFO crossings and the serializer cycle.
+serializer of the log in the logs' domain sends the header and the four sampled
+read bytes, most significant first. A write returns only the header. Crossed
+access time includes the two FIFO crossings and the serializer cycle.
+
+With more than one log, the request crossing's output register holds each word
+while it goes to the banks of its log. No switch register adds a cycle.

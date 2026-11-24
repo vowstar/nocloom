@@ -218,7 +218,8 @@ Result<NodeHardware> lower_service_read_frame() {
   return l.finish("nocloom_service_read_frame");
 }
 
-Result<NodeHardware> lower_service_switch(const std::string &name, unsigned branches) {
+Result<NodeHardware> lower_service_switch(const std::string &name, unsigned branches,
+                                          bool registered) {
   if (branches < 2)
     return Result<NodeHardware>::failure(
         error("NCL_INTERNAL_PLAN", "service", "A service switch has at least two branches"));
@@ -234,10 +235,11 @@ Result<NodeHardware> lower_service_switch(const std::string &name, unsigned bran
   const auto in_valid = hint_in("in_valid", 1), in_tail = hint_in("in_tail", 1);
   const auto in_data = hint_in("in_data", word_bits);
   const auto in_branch = hint_in("in_branch", branch_bits);
-  const auto full = l.state("switch.full", 1);
-  const auto data = l.state("switch.data", word_bits);
-  const auto tail = l.state("switch.tail", 1);
-  const auto branch = l.state("switch.branch", branch_bits);
+  // Without the register the word on the input goes straight to its branch.
+  const auto full = registered ? l.state("switch.full", 1) : in_valid;
+  const auto data = registered ? l.state("switch.data", word_bits) : in_data;
+  const auto tail = registered ? l.state("switch.tail", 1) : in_tail;
+  const auto branch = registered ? l.state("switch.branch", branch_bits) : in_branch;
   std::vector<ValueId> readies, valids, words, ends;
   for (unsigned k = 0; k < branches; ++k) {
     const auto out = "out" + std::to_string(k), back = "back" + std::to_string(k);
@@ -252,19 +254,22 @@ Result<NodeHardware> lower_service_switch(const std::string &name, unsigned bran
     ends.push_back(l.both(answer, hint_in(back + "_tail", 1)));
   }
   const auto gone = l.any(readies);
-  const auto room = l.either(l.inv(full), gone);
-  hint_out("in_ready", room);
-  const auto load = l.both(in_valid, room);
-  b.update(full, l.either(load, l.both(full, l.inv(gone))));
-  b.update(data, l.pick(load, in_data, data));
-  b.update(tail, l.pick(load, in_tail, tail));
-  b.update(branch, l.pick(load, in_branch, branch));
+  if (registered) {
+    const auto room = l.either(l.inv(full), gone);
+    hint_out("in_ready", room);
+    const auto load = l.both(in_valid, room);
+    b.update(full, l.either(load, l.both(full, l.inv(gone))));
+    b.update(data, l.pick(load, in_data, data));
+    b.update(tail, l.pick(load, in_tail, tail));
+    b.update(branch, l.pick(load, in_branch, branch));
+  } else
+    hint_out("in_ready", gone);
   hint_out("back_valid", l.any(valids));
   hint_out("back_tail", l.any(ends));
   hint_out("back_data",
            std::accumulate(words.begin() + 1, words.end(), words.front(),
                            [&](ValueId joined, ValueId word) { return l.either(joined, word); }));
-  return l.finish("nocloom_service_switch_" + name);
+  return l.finish((registered ? "nocloom_service_switch_" : "nocloom_register_steer_") + name);
 }
 
 Result<NodeHardware> lower_service_stage() {

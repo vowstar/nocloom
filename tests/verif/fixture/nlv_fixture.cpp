@@ -1410,8 +1410,7 @@ std::vector<Component> service_network(const Params &p) {
     nets.push_back(Json::array({field, key + binding}));
   // Past a crossing: the serial words where the bank takes them, each crossing's hand-offs, and the
   // answer leaving the target.
-  const auto stem = "cut/service/" + param(p, "service", "");
-  if (const auto cut = stem + (h.bindings.contains(stem + "/request/read") ? "" : "/branch0");
+  if (const auto cut = "cut/service/" + param(p, "service", "");
       h.bindings.contains(cut + "/request/read")) {
     nets = Json::array();
     const auto request = cut + "/request/", response = cut + "/response/";
