@@ -13,6 +13,8 @@
 #include <nlohmann/json.hpp>
 #include <nocloom/config.hpp>
 #include <nocloom/generation.hpp>
+#include <numeric>
+#include <random>
 
 using namespace nocloom;
 using namespace nocloom::detail;
@@ -443,6 +445,157 @@ TEST_CASE("The network monitor keys by the owner flags", "[exclusive]") {
   for (const auto &name :
        ExclusiveMonitor::state_names("exclusive", ExclusiveMonitorProfile{2, 8, 32, {2, 0}}))
     CHECK(n.bindings.contains(name));
+}
+
+namespace {
+// One network monitor alone with free inputs, and its next state from given
+// slot contents: the reservation rules for every table size.
+struct MonitorBench {
+  static constexpr unsigned key_bits = 5, address_bits = 12;
+  struct Slot {
+    bool valid = false;
+    std::uint64_t key = 0, base = 0, log = 0;
+    bool operator==(const Slot &) const = default;
+  };
+  struct Request {
+    bool record = false, write = false;
+    std::uint64_t key = 0, base = 0, log = 0, low = 0, high = 0;
+  };
+  unsigned n;
+  logic::Logic l;
+  ValueId record, key, base, log, write, low, high;
+  explicit MonitorBench(unsigned slots) : n(slots) {
+    ExclusiveMonitor monitor(l, "exclusive",
+                             ExclusiveMonitorProfile{n, 8, address_bits, {}, 0, key_bits});
+    record = l.b.input("record", 1, "m", "record");
+    key = l.b.input("key", key_bits, "m", "key");
+    base = l.b.input("base", address_bits, "m", "base");
+    log = l.b.input("log", 3, "m", "log");
+    write = l.b.input("write", 1, "m", "write");
+    low = l.b.input("low", address_bits + 1, "m", "low");
+    high = l.b.input("high", address_bits + 1, "m", "high");
+    monitor.update(record, key, {base, log}, write, {low, high});
+  }
+  std::size_t state(const std::string &name) const {
+    return l.b.ir.values.at(l.bindings.at(name).index).state.index;
+  }
+  std::size_t port(ValueId v) const { return l.b.ir.values.at(v.index).input_port.index; }
+  // The slots after one cycle.
+  std::vector<Slot> next(const std::vector<Slot> &slots, std::uint64_t lfsr, const Request &r) {
+    ConeEvaluator::Words states{{state("exclusive.lfsr"), lfsr}};
+    const auto at = [](unsigned k, const char *field) {
+      return "exclusive.slot" + std::to_string(k) + "." + field;
+    };
+    for (unsigned k = 0; k < n; ++k) {
+      states[state(at(k, "valid"))] = slots[k].valid;
+      states[state(at(k, "key"))] = slots[k].key;
+      states[state(at(k, "base"))] = slots[k].base;
+      states[state(at(k, "log"))] = slots[k].log;
+    }
+    const ConeEvaluator::Words inputs{
+        {port(record), r.record}, {port(key), r.key}, {port(base), r.base}, {port(log), r.log},
+        {port(write), r.write},   {port(low), r.low}, {port(high), r.high}};
+    ConeEvaluator eval(l.b.ir);
+    const auto word = [&](const std::string &name) {
+      const auto value = eval(l.b.ir.states.at(state(name)).next.index, states, inputs, {}, true);
+      REQUIRE(value);
+      return *value;
+    };
+    std::vector<Slot> out(n);
+    for (unsigned k = 0; k < n; ++k)
+      out[k] = {word(at(k, "valid")) != 0, word(at(k, "key")), word(at(k, "base")),
+                word(at(k, "log"))};
+    return out;
+  }
+  // The rules: an exclusive read records into its key's slot, else the lowest
+  // free slot, else slot lfsr mod n; a write drops every reservation it
+  // overlaps; the recorded slot keeps its new reservation over the drop.
+  // The choice reads the table before the write's drops.
+  std::vector<Slot> model(std::vector<Slot> slots, std::uint64_t lfsr, const Request &r) const {
+    auto chosen =
+        std::ranges::find_if(slots, [&](const Slot &s) { return s.valid && s.key == r.key; });
+    if (chosen == slots.end())
+      chosen = std::ranges::find_if(slots, [](const Slot &s) { return !s.valid; });
+    if (chosen == slots.end())
+      chosen = slots.begin() + static_cast<std::ptrdiff_t>(lfsr % n);
+    for (auto &s : slots)
+      if (s.valid && r.write && r.low < s.base + (1U << s.log) && s.base < r.high)
+        s.valid = false;
+    if (r.record)
+      *chosen = {true, r.key, r.base, r.log};
+    return slots;
+  }
+};
+} // namespace
+
+TEST_CASE("Network monitors choose the reservation slot by owner, free slot, then LFSR",
+          "[exclusive]") {
+  std::mt19937_64 random(20261121);
+  const auto draw = [&](std::uint64_t bound) { return random() % bound; };
+  for (unsigned n = 1; n <= 16; ++n) {
+    INFO("slots " << n);
+    MonitorBench bench(n);
+    const auto expect = [&](const std::vector<MonitorBench::Slot> &slots, std::uint64_t lfsr,
+                            const MonitorBench::Request &r) {
+      CHECK(bench.next(slots, lfsr, r) == bench.model(slots, lfsr, r));
+    };
+    // A full table: distinct keys, so a new key evicts slot lfsr mod n for
+    // every LFSR value, and each held key finds its own slot.
+    std::vector<MonitorBench::Slot> full(n);
+    for (unsigned k = 0; k < n; ++k)
+      full[k] = {true, k, 0x100 + 0x10 * k, 3};
+    const MonitorBench::Request fresh{.record = true, .key = 0, .base = 0x800, .log = 2};
+    for (std::uint64_t lfsr = 0; lfsr < 32; ++lfsr) {
+      auto r = fresh;
+      r.key = n;
+      expect(full, lfsr, r);
+    }
+    for (unsigned k = 0; k < n; ++k) {
+      auto r = fresh;
+      r.key = k;
+      expect(full, 31 - k, r);
+      // The owner's slot wins over free slots below it.
+      auto sparse = full;
+      for (unsigned j = 0; j < k; ++j)
+        sparse[j].valid = false;
+      expect(sparse, 7, r);
+      // Free slots alone: the lowest free one, whatever free slots lie above it.
+      auto gaps = full;
+      gaps[k].valid = false;
+      if (k + 1 < n)
+        gaps[n - 1].valid = false;
+      r.key = 31;
+      expect(gaps, k, r);
+    }
+    // An empty table, no request, and a write that overlaps the slot recorded in the same cycle.
+    const std::vector<MonitorBench::Slot> empty(n);
+    expect(empty, 5, fresh);
+    expect(full, 5, {});
+    auto r = fresh;
+    r.write = true;
+    r.base = full[n - 1].base;
+    r.key = n - 1;
+    r.low = full[0].base;
+    r.high = full[n - 1].base + 4;
+    expect(full, 9, r);
+    // Random tables, one valid slot per key, with simultaneous writes.
+    for (unsigned trial = 0; trial < 300; ++trial) {
+      std::vector<MonitorBench::Slot> slots(n);
+      std::vector<std::uint64_t> keys(32);
+      std::iota(keys.begin(), keys.end(), 0);
+      std::ranges::shuffle(keys, random);
+      for (unsigned k = 0; k < n; ++k)
+        slots[k] = {draw(4) != 0, keys[k], draw(1U << 12) & ~std::uint64_t{7}, 3 + draw(5)};
+      MonitorBench::Request q{.record = draw(4) != 0,
+                              .write = draw(2) != 0,
+                              .key = draw(32),
+                              .base = draw(1U << 12),
+                              .log = draw(8)};
+      q.low = draw(1U << 12);
+      q.high = q.low + 1 + draw(256);
+      expect(slots, draw(32), q);
+    }
+  }
 }
 
 TEST_CASE("Target mode with a single source keeps the AxID width", "[exclusive]") {
