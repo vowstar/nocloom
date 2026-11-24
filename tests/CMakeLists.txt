@@ -148,7 +148,7 @@ add_test(NAME tilelink_uh_target_contexts_formal
     --fixture $<TARGET_FILE:nocloom_tilelink_uh_target_fixture>
     --work ${CMAKE_CURRENT_BINARY_DIR}/tilelink_uh_target_contexts_formal)
 set_tests_properties(tilelink_uh_target_contexts_formal PROPERTIES
-  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 1800 PROCESSORS 1
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 1800 PROCESSORS 2
   LABELS "formal;focused")
 nocloom_test_memory(1280 tilelink_uh_target_contexts_formal)
 add_test(NAME tilelink_uh_target_ranges_formal
@@ -156,7 +156,7 @@ add_test(NAME tilelink_uh_target_ranges_formal
     --fixture $<TARGET_FILE:nocloom_tilelink_uh_target_fixture>
     --work ${CMAKE_CURRENT_BINARY_DIR}/tilelink_uh_target_ranges_formal --capacity 16)
 set_tests_properties(tilelink_uh_target_ranges_formal PROPERTIES
-  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 1200 PROCESSORS 1
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 1200 PROCESSORS 2
   LABELS "formal;focused")
 nocloom_test_memory(1280 tilelink_uh_target_ranges_formal)
 # Each pool size of the full packet maximum runs its tasks four at a time.
