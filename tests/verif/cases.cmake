@@ -457,7 +457,7 @@ nocloom_verif_case(NAME verif_axi4_write_miss_answer LAYER rtl TIER focused TIME
 # The decode miss answers of a source of two flows: over their own flow's route, behind the
 # earlier answers of their AxID, or over the miss's flow pair where theirs is unconnected.
 nocloom_verif_case(NAME verif_miss_routes LAYER rtl TIER focused TIMEOUT 120
-  FEATURES axi4 errors MEMORY_MB 1024 CONTRACTS AXI.ERR.UNMAPPED_DECERR
+  FEATURES axi4 errors ci MEMORY_MB 1024 CONTRACTS AXI.ERR.UNMAPPED_DECERR
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/miss_routes.py --cli $<TARGET_FILE:nocloom_cli>)
 foreach(protocol IN ITEMS axi4 axi3 axi4_lite apb4 ahb_lite wishbone tl_ul)
   nocloom_verif_case(NAME verif_source_decode_miss_${protocol} LAYER rtl TIER focused
