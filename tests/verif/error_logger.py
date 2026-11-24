@@ -6,7 +6,8 @@ designated fault of the fault build (selection zero passes too) must fail on a c
 
   python3 tests/verif/error_logger.py --fixture FIXTURE --bench sv/nlv_logger_tb.sv
           --keep-bench sv/nlv_keep_logger_tb.sv --banks-bench sv/nlv_logger_banks_tb.sv
-          --crossed-bench sv/nlv_crossed_logger_tb.sv --work DIR [--sim ENGINE] [--sim-config JSON]
+          --crossed-bench sv/nlv_crossed_logger_tb.sv --work DIR [--jobs N]
+          [--sim ENGINE] [--sim-config JSON]
 
 Exit code: 0 every run met its expectation, 1 a run did not, 2 infrastructure error.
 """
@@ -17,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -530,98 +532,109 @@ def offsets(map_path):
     return "".join(lines)
 
 
-def run(work, args):
-    results = dict(schema=1, case="error_logger", runs=[], work=str(work))
-    good = True
-    for config in CONFIGS:
-        root = work / config["label"]
-        gen = root / "gen"
-        root.mkdir()
-        (root / "network.yaml").write_text(
-            keep_definition() if config.get("keep") else
-            crossed_definition() if config.get("crossed") else
-            banks_definition(not config["codes"]) if config.get("error_logs")
-            else definition(not config["codes"]))
-        spec = root / "faults.spec.json"
-        spec.write_text(json.dumps(dict(faults=[{k: v for k, v in f.items() if k != "expect"}
-                                                for f in config["faults"]])) + "\n")
-        params = ["--param", f"config={root / 'network.yaml'}", "--param", "service=csr",
-                  "--param", f"capture_class={int(config['codes'])}",
-                  "--param", f"artifacts={root / 'artifacts'}"]
-        if config.get("error_logs"):
-            (root / "error_logs.json").write_text(json.dumps(config["error_logs"]) + "\n")
-            params += ["--param", f"error_logs={root / 'error_logs.json'}"]
+def run_config(work, args, config):
+    """Generate, build and judge one configuration in its own directory."""
+    runs, lines, good = [], [], True
+    root = work / config["label"]
+    gen = root / "gen"
+    root.mkdir()
+    (root / "network.yaml").write_text(
+        keep_definition() if config.get("keep") else
+        crossed_definition() if config.get("crossed") else
+        banks_definition(not config["codes"]) if config.get("error_logs")
+        else definition(not config["codes"]))
+    spec = root / "faults.spec.json"
+    spec.write_text(json.dumps(dict(faults=[{k: v for k, v in f.items() if k != "expect"}
+                                            for f in config["faults"]])) + "\n")
+    params = ["--param", f"config={root / 'network.yaml'}", "--param", "service=csr",
+              "--param", f"capture_class={int(config['codes'])}",
+              "--param", f"artifacts={root / 'artifacts'}"]
+    if config.get("error_logs"):
+        (root / "error_logs.json").write_text(json.dumps(config["error_logs"]) + "\n")
+        params += ["--param", f"error_logs={root / 'error_logs.json'}"]
+    else:
+        params += ["--param", "watch=ram", "--param", "log_name=errors"]
+    if config["skipped"]:
+        params += ["--param", f"skipped={config['skipped']}"]
+    if config.get("serial_word_bits"):
+        params += ["--param", f"serial_word_bits={config['serial_word_bits']}"]
+    if config.get("keep"):
+        params += ["--param", "keep=0" if config.get("trimmed") else "keep=1"]
+    if config.get("audit"):
+        (root / "audit.json").write_text(json.dumps(config["audit"]) + "\n")
+        params += ["--param", f"audit={root / 'audit.json'}"]
+    subprocess.run([args.fixture, "service_network", str(gen), *params,
+                    "--faults", str(spec), "--probes"], check=True)
+    map_path = root / "artifacts" / f"nocloom_{config.get('top', 'logged')}.map.json"
+    effective = json.loads(map_path.read_text())["definition"]["error_logs"]["errors"]
+    assert effective["serial_word_bits"] == config.get("serial_word_bits", 32)
+    source = Path(args.keep_bench if config.get("keep") else
+                  args.crossed_bench if config.get("crossed") else
+                  args.banks_bench if config.get("error_logs") else args.bench)
+    bench = (f"`define {config['define']}\n"
+             f"`define TRIMMED_RECORD {int(config.get('trimmed', False))}\n"
+             + offsets(map_path) + source.read_text())
+    cells = (gen / "cells.v").read_text() if (gen / "cells.v").exists() else ""
+    plain = root / "plain"
+    plain.mkdir()
+    def observation(path, hierarchy):
+        # The nets of the first logger as LOG_<NET>, of the next in a chain as LOG1_<NET>,
+        # of a crossed log's first sender as SENDER_<NET>, of a log's first probe in its
+        # domain as PROBE_<NET>.
+        prefix = dict(record="LOG_", record1="LOG1_", sender="SENDER_", probe="PROBE_")
+        groups = json.loads(path.read_text())["network"]["groups"]
+        return "".join(f"`define {prefix[group['name']]}{name.upper()} {hierarchy}.{net}\n"
+                       for group in groups if group["name"] in prefix
+                       for name, net, _ in group["nets"])
+
+    (plain / "tb.sv").write_text(observation(gen / "probes.json", "dut") + bench)
+    (plain / "dut.v").write_text((gen / "network.v").read_text() + cells)
+    faulted = root / "faulted"
+    faulted.mkdir()
+    (faulted / "tb.sv").write_text(observation(gen / "faulted_probes.json", "dut.core") + bench)
+    components = json.loads((gen / "ports.json").read_text())
+    (faulted / "dut.v").write_text(
+        (gen / "faulted.v").read_text() + cells
+        + fl.wrapper(components, json.loads((gen / "faults.json").read_text())))
+
+    def compile_(where):
+        return sim_engine.Simulation(where, "dut.v", engine=args.sim, config=args.sim_config,
+                                   compile_timeout=300, run_timeout=120)
+
+    def judge(sim, name, options, expect):
+        result = sim.run(options)
+        failed = sorted({line.split()[1] for line in result.stdout.splitlines()
+                         if line.startswith("CHECK_FAIL ")})
+        if expect is None:
+            ok = result.returncode == 0 and not failed
         else:
-            params += ["--param", "watch=ram", "--param", "log_name=errors"]
-        if config["skipped"]:
-            params += ["--param", f"skipped={config['skipped']}"]
-        if config.get("serial_word_bits"):
-            params += ["--param", f"serial_word_bits={config['serial_word_bits']}"]
-        if config.get("keep"):
-            params += ["--param", "keep=0" if config.get("trimmed") else "keep=1"]
-        if config.get("audit"):
-            (root / "audit.json").write_text(json.dumps(config["audit"]) + "\n")
-            params += ["--param", f"audit={root / 'audit.json'}"]
-        subprocess.run([args.fixture, "service_network", str(gen), *params,
-                        "--faults", str(spec), "--probes"], check=True)
-        map_path = root / "artifacts" / f"nocloom_{config.get('top', 'logged')}.map.json"
-        effective = json.loads(map_path.read_text())["definition"]["error_logs"]["errors"]
-        assert effective["serial_word_bits"] == config.get("serial_word_bits", 32)
-        source = Path(args.keep_bench if config.get("keep") else
-                      args.crossed_bench if config.get("crossed") else
-                      args.banks_bench if config.get("error_logs") else args.bench)
-        bench = (f"`define {config['define']}\n"
-                 f"`define TRIMMED_RECORD {int(config.get('trimmed', False))}\n"
-                 + offsets(map_path) + source.read_text())
-        cells = (gen / "cells.v").read_text() if (gen / "cells.v").exists() else ""
-        plain = root / "plain"
-        plain.mkdir()
-        def observation(path, hierarchy):
-            # The nets of the first logger as LOG_<NET>, of the next in a chain as LOG1_<NET>,
-            # of a crossed log's first sender as SENDER_<NET>, of a log's first probe in its
-            # domain as PROBE_<NET>.
-            prefix = dict(record="LOG_", record1="LOG1_", sender="SENDER_", probe="PROBE_")
-            groups = json.loads(path.read_text())["network"]["groups"]
-            return "".join(f"`define {prefix[group['name']]}{name.upper()} {hierarchy}.{net}\n"
-                           for group in groups if group["name"] in prefix
-                           for name, net, _ in group["nets"])
+            ok = result.returncode != 0 and bool(set(failed) & set(expect))
+        runs.append(dict(run=name, ok=ok, failed=failed[:12], exit=result.returncode))
+        lines.append(f"{name}: {'OK' if ok else 'BAD'} failed={failed[:6]}")
+        return ok
 
-        (plain / "tb.sv").write_text(observation(gen / "probes.json", "dut") + bench)
-        (plain / "dut.v").write_text((gen / "network.v").read_text() + cells)
-        faulted = root / "faulted"
-        faulted.mkdir()
-        (faulted / "tb.sv").write_text(observation(gen / "faulted_probes.json", "dut.core") + bench)
-        components = json.loads((gen / "ports.json").read_text())
-        (faulted / "dut.v").write_text(
-            (gen / "faulted.v").read_text() + cells
-            + fl.wrapper(components, json.loads((gen / "faults.json").read_text())))
+    label = config["label"]
+    baseline = compile_(plain)
+    for options in CROSSED_RATIOS if config.get("crossed") else [()]:
+        good &= judge(baseline, f"{label}/baseline{''.join(options)}", options, None)
+    sim = compile_(faulted)
+    good &= judge(sim, f"{label}/fault_build_selection_0", ("+NLV_FAULT=0",), None)
+    for k, fault in enumerate(config["faults"], 1):
+        good &= judge(sim, f"{label}/{fault['id']}", (f"+NLV_FAULT={k}",), fault["expect"])
+    return dict(runs=runs, lines=lines, good=good, engine=sim.engine)
 
-        def compile_(where):
-            return sim_engine.Simulation(where, "dut.v", engine=args.sim, config=args.sim_config,
-                                       compile_timeout=300, run_timeout=120)
 
-        def judge(sim, name, options, expect):
-            result = sim.run(options)
-            failed = sorted({line.split()[1] for line in result.stdout.splitlines()
-                             if line.startswith("CHECK_FAIL ")})
-            if expect is None:
-                ok = result.returncode == 0 and not failed
-            else:
-                ok = result.returncode != 0 and bool(set(failed) & set(expect))
-            results["runs"].append(dict(run=name, ok=ok, failed=failed[:12],
-                                        exit=result.returncode))
-            print(f"{name}: {'OK' if ok else 'BAD'} failed={failed[:6]}")
-            return ok
-
-        label = config["label"]
-        baseline = compile_(plain)
-        for options in CROSSED_RATIOS if config.get("crossed") else [()]:
-            good &= judge(baseline, f"{label}/baseline{''.join(options)}", options, None)
-        sim = compile_(faulted)
-        results["engine"] = sim.engine
-        good &= judge(sim, f"{label}/fault_build_selection_0", ("+NLV_FAULT=0",), None)
-        for k, fault in enumerate(config["faults"], 1):
-            good &= judge(sim, f"{label}/{fault['id']}", (f"+NLV_FAULT={k}",), fault["expect"])
+def run(work, args):
+    """Run the configurations, args.jobs at a time; report them in their listed order."""
+    results = dict(schema=1, case="error_logger", runs=[], work=str(work))
+    with ThreadPoolExecutor(max_workers=args.jobs) as pool:
+        outcomes = list(pool.map(lambda config: run_config(work, args, config), CONFIGS))
+    good = True
+    for outcome in outcomes:
+        print("\n".join(outcome["lines"]), flush=True)
+        results["runs"] += outcome["runs"]
+        results["engine"] = outcome["engine"]
+        good &= outcome["good"]
     results["exit"] = 0 if good else 1
     return results
 
@@ -634,8 +647,11 @@ def main():
     p.add_argument("--banks-bench", required=True)
     p.add_argument("--crossed-bench", required=True)
     p.add_argument("--work", required=True)
+    p.add_argument("--jobs", type=int, default=1, help="configurations run at once")
     sim_engine.add_arguments(p)
     args = p.parse_args()
+    if args.jobs < 1:
+        p.error("--jobs must be positive")
     top = Path(args.work).resolve()
     top.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="run-", dir=top))

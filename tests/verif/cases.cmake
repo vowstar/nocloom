@@ -781,13 +781,14 @@ nocloom_verif_case(NAME verif_ahb_overlap_negative LAYER negative TIER focused T
 
 # The service target on the network: the unmodified netlist against the bench,
 # then each designated fault against the check that names it.
+# The eleven configurations run four at a time on the processors they reserve.
 nocloom_verif_case(NAME verif_error_logger LAYER unit TIER focused TIMEOUT 600 FEATURES verif
-  MEMORY_MB 1024
+  PROCESSORS 4 MEMORY_MB 1024
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/error_logger.py ${NLV_FIXTURE}
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_logger_tb.sv
     --keep-bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_keep_logger_tb.sv
     --banks-bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_logger_banks_tb.sv
-    --crossed-bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_crossed_logger_tb.sv)
+    --crossed-bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_crossed_logger_tb.sv --jobs 4)
 nocloom_verif_case(NAME verif_service_target LAYER unit TIER focused TIMEOUT 600 FEATURES verif
   MEMORY_MB 1024
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/service_target.py ${NLV_FIXTURE}
