@@ -155,7 +155,7 @@ def run(args, maximum):
     if args.gating:
         cfg["initiators"][0]["clock_gating"] = ENDPOINT_GATE_SETTINGS[args.gating]
     cfg["targets"][0].update(data_width=args.target_width, read_side_effects=True,
-                              max_outstanding=max(4, args.slots))
+                              max_outstanding=args.target_outstanding or max(4, args.slots))
     if args.all_maxima and not args.oversize:
         cfg["initiators"][0]["size_width"] = 2 if maximum<=8 else 3 if maximum<=128 else 4
     if args.target_protocol=="tl_ul":
@@ -202,17 +202,23 @@ def run(args, maximum):
     assert profile["internal_transaction_capacity"] == min(64, max(4, args.slots))
     assert mapping["definition"]["outstanding"]["initiators"]["s"] == args.slots
     fixture_rtl = None
-    if args.gating:
+    if args.gating or args.pool:
         probe_dir = work / "probes"
+        observe = ["--param", "observe=pool"] if args.pool else [
+            "--param", "observe=true", "--param", f"gate={args.gating}"]
         subprocess.run([str(args.fixture.resolve()), "tilelink_uh_probe", str(probe_dir),
-                        "--param", f"config={work / 'input.yaml'}", "--param", "observe=true",
-                        "--param", f"gate={args.gating}"], check=True)
+                        "--param", f"config={work / 'input.yaml'}", *observe], check=True)
         ports = json.loads((probe_dir / "ports.json").read_text())[0]["ports"]
         for port in ports:
             if port["endpoint"] == "probe":
                 mapping["ports"].append(dict(port, direction="input" if port["input"] else "output"))
         fixture_rtl = (probe_dir / "network.v").read_text() + (probe_dir / "cells.v").read_text()
     body = args.bench.read_text()
+    if args.pool:
+        if args.source_width > 8:
+            raise SystemExit("pool checks take source widths up to 8")
+        monitor = args.pool.read_text()
+        body = monitor.replace("@POOL_CAPACITY@", str(profile["internal_transaction_capacity"])) + body
     if args.extra:
         body = body.replace('    $display("UH_PASS', args.extra.read_text() + '\n    $display("UH_PASS')
     (work / "tb.sv").write_text(bench(mapping, body, cfg, args.windows, args.miss_last, args.bus_model))
@@ -245,6 +251,8 @@ def main():
     parser.add_argument("--fixture", type=Path)
     parser.add_argument("--bus-model", type=Path)
     parser.add_argument("--gating", choices=("independent", "combined"))
+    parser.add_argument("--pool", type=Path,
+                        help="Probe the shared request pool and add this per-cycle monitor")
     parser.add_argument("--axi-check", type=Path,
                         default=Path(__file__).parent / "sv/nlv_tl_uh_axi_check.sv")
     parser.add_argument("--maximum", type=int, default=1024)
@@ -253,6 +261,8 @@ def main():
     parser.add_argument("--slots", type=int, default=4)
     parser.add_argument("--target-protocol", choices=("axi4", "tl_ul", "apb4", "ahb_lite", "wishbone"), default="axi4")
     parser.add_argument("--target-width", type=int, default=32)
+    parser.add_argument("--target-outstanding", type=int,
+                        help="Target capacity (default: the larger of 4 and --slots)")
     parser.add_argument("--cdc", action="store_true")
     parser.add_argument("--windows", type=int, choices=(0,4), default=0)
     parser.add_argument("--miss-last", action="store_true")
@@ -261,6 +271,8 @@ def main():
     parser.add_argument("--back-to-back", action="store_true")
     sim_engine.add_arguments(parser)
     args = parser.parse_args()
+    if args.pool and args.gating:
+        parser.error("--pool and --gating select different probe sets")
     args.work.mkdir(parents=True, exist_ok=True)
     for maximum in ([1<<n for n in range(2,13)] if args.all_maxima else [args.maximum]):
         result = run(args, maximum)

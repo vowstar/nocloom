@@ -1237,6 +1237,30 @@ nocloom_verif_case(NAME verif_tilelink_uh_narrow LAYER rtl TIER focused TIMEOUT 
     --extra ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_narrow.svh)
 set_tests_properties(verif_tilelink_uh_narrow PROPERTIES RESOURCE_LOCK tilelink)
 
+nocloom_verif_case(NAME verif_tilelink_uh_pool LAYER rtl TIER focused TIMEOUT 300
+  FEATURES tilelink ci MEMORY_MB 1024 CONTRACTS TL.ACCESS
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh.py
+    --case ${NLV_CASES}/tilelink_uh.py --cli $<TARGET_FILE:nocloom_cli>
+    --maximum 4096 --slots 4 --target-outstanding 8 --fixture $<TARGET_FILE:nocloom_verif_fixture>
+    --pool ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_pool_monitor.svh
+    --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_regression_tb.svh
+    --extra ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_pool.svh)
+set_tests_properties(verif_tilelink_uh_pool PROPERTIES RESOURCE_LOCK tilelink)
+
+nocloom_verif_case(NAME verif_tilelink_uh_pool_ingress LAYER rtl TIER focused TIMEOUT 300
+  FEATURES tilelink ci MEMORY_MB 1536 CONTRACTS TL.ACCESS
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh.py
+    --case ${NLV_CASES}/tilelink_uh.py --cli $<TARGET_FILE:nocloom_cli>
+    --maximum 4096 --slots 8 --fixture $<TARGET_FILE:nocloom_verif_fixture>
+    --pool ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_pool_monitor.svh
+    --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_ingress_tb.svh)
+set_tests_properties(verif_tilelink_uh_pool_ingress PROPERTIES RESOURCE_LOCK tilelink)
+
+nocloom_verif_case(NAME tilelink_uh_pool_formal LAYER formal TIER formal TIMEOUT 1200
+  TIMEOUT_REASON "Bounded pool checks and reachability covers of a generated network"
+  FEATURES tilelink MEMORY_MB 4096
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_pool_formal.py ${NLV_FIXTURE})
+
 nocloom_verif_case(NAME verif_tilelink_uh_admission LAYER rtl TIER focused TIMEOUT 300
   FEATURES tilelink ci MEMORY_MB 1024 CONTRACTS TL.ACCESS
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh.py

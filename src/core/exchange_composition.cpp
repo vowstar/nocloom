@@ -1266,6 +1266,8 @@ public:
           bind(id + ".open" + std::to_string(i), open[i]);
         }
       p.incr = or_(starting, and_(sent, and_(held, and_(p.narrow_held, p.piece_wait))));
+      // Formal-observation anchor: a unit enters the pool.
+      bind(id + ".pool_admit", p.incr);
       const auto dir = field("write");
       const auto tag = out.plan.burst_tag_bits ? field("tag") : bit(0);
       rejoin_pool_units(p, slots, width, dir, tag, sent, starting, final_w, narrow);
@@ -1296,7 +1298,7 @@ public:
   // The response side of one source's pool (rejoin_requests): a response packet tail arriving
   // at the source frees its burst's unit when the burst splits into pieces (every piece's
   // tail), or when it is the burst's last unanswered packet after its final packet was sent.
-  void pool_answers(const Pool &p, const Channel &arriving, unsigned word) {
+  void pool_answers(const std::string &id, const Pool &p, const Channel &arriving, unsigned word) {
     const auto tail =
         and_(transfer(arriving), arriving.data[burst_field_index(true, word, "last")]);
     const auto source = arriving.data[burst_field_index(true, word, "source")];
@@ -1321,6 +1323,8 @@ public:
         b.update(u.whole, b.select(done, bit(0), or_(u.whole, u.fs)));
       }
     step_counter(p.count, p.incr, decr);
+    // Formal-observation anchor: a unit leaves the pool, before the counter's floor at zero.
+    bind(id + ".pool_release", decr);
     if (p.id_count.empty())
       return;
     // The ID table: the starting unit joins its key's entry or takes the lowest free one; the
@@ -5700,7 +5704,7 @@ private:
       }
       // A response packet tail at the source answers its burst's unit of the pool.
       if (side.pool)
-        c.pool_answers(*side.pool, arriving, word);
+        c.pool_answers("source/" + source + "/request", *side.pool, arriving, word);
     }
   }
 };

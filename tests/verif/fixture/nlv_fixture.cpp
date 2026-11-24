@@ -1570,6 +1570,19 @@ std::vector<Component> tilelink_uh_probe(const Params &params) {
   text << file.rdbuf();
   const auto d = take(config::parse(text.str()), "definition").definition;
   auto h = compose(d, "TileLink UH probes");
+  const auto probe = [&h](const std::string &port, const std::string &binding) {
+    const auto value = h.bindings.at(binding);
+    h.ir.ports.push_back({port, false, h.ir.values.at(value.index).width, "probe", binding});
+    h.ir.drivers.push_back({PortId{h.ir.ports.size() - 1}, value});
+  };
+  // The shared request pool of initiator s: its count, a unit entering, a unit leaving and a
+  // request packet offered at the network entry.
+  if (param(params, "observe", "false") == "pool") {
+    probe("probe_pool", "source/s/request.pool");
+    probe("probe_admit", "source/s/request.pool_admit");
+    probe("probe_release", "source/s/request.pool_release");
+    probe("probe_offer", "source/s/request.packet_valid");
+  }
   if (param(params, "observe", "false") == "true") {
     const auto gate =
         "gate/source/s" +
@@ -1578,11 +1591,8 @@ std::vector<Component> tilelink_uh_probe(const Params &params) {
              {"probe_idle", gate + ".idle"},
              {"probe_enable", gate + ".enable"},
              {"probe_collecting", "source/s/tl.collecting"},
-             {"probe_busy", "source/s/tl.busy"}}) {
-      const auto value = h.bindings.at(binding);
-      h.ir.ports.push_back({port, false, h.ir.values.at(value.index).width, "probe", binding});
-      h.ir.drivers.push_back({PortId{h.ir.ports.size() - 1}, value});
-    }
+             {"probe_busy", "source/s/tl.busy"}})
+      probe(port, binding);
   }
   return {{"dut", std::move(h.ir), std::move(h.bindings)}};
 }
