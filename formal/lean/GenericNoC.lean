@@ -3,6 +3,7 @@ import GenericNoC.Core
 import GenericNoC.Model
 import GenericNoC.Witness
 import GenericNoC.Refinement
+import GenericNoC.ReadRefinement
 import GenericNoC.Theorems
 import GenericNoC.Checkers
 import GenericNoC.Toy

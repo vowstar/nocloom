@@ -3,7 +3,7 @@
 This directory holds a Lean model of the NocLoom transport and theorems about
 that model. It also checks the rank certificate of each generated dependency
 file. Ranks that rise along every edge exclude a wait cycle. The tables also
-list the bounded solver checks and the netlist check of generated Verilog.
+list the solver checks and the netlist check of generated Verilog.
 
 For dependency files above 3000 distinct edges, `native_decide` trusts the
 Lean compiler as well as the kernel. `lean-toolchain` pins the Lean version. See
@@ -22,12 +22,14 @@ Lean compiler as well as the kernel. `lean-toolchain` pins the Lean version. See
 | While a request is open, some handshake occurs within 10 cycles | Generated Verilog of 11 AXI4 network shapes | Tests `liveness_formal_*` with SymbiYosys | A bounded check to depth 24 by default. A case name gives another depth, and L4 and L8_merged_contexts stop before most traffic ends. On L1 and L2, F1 to F4 are each needed, keep the states they must allow, and lose them in a stronger form. Data is not checked |
 | A known hang is detected | The `holding` release policy of `GenericNoC/Instances/TwoTargets.lean`, which keeps a grant across segments, the same fault in generated Verilog, and its graph form | `GenericNoC/Instances/TwoTargets.lean`, `GenericNoC/Instances/MultiHop.lean`, tests `liveness_formal_hang_*` and `hang_controls` | One fault on four shapes. Its graph form is a cycle on the same shapes. This does not describe every hang |
 | Each net and output port of the printed top module carries the netlist value of the module inputs, registers and cell outputs | Generated Verilog and its netlist, see [netlist](../../docs/netlist.md) | `NetlistCheck.check_sound`, test `netlist_roundtrip` | Every example and liveness shape. Registers, clock gates and synchronizer cells are compared one by one. Cell files are not read |
+| A checked edge takes zero or more transport steps and preserves the matching invariant | The [AXI4 read refinement map](../../docs/read-refinement.md) and its model | `NetlistCheck.ReadRefinement.edge_sound`, test `read_refinement` | Single-beat reads on a direct path. The test checks an idle edge and a context fault |
 
 ## What has no proof
 
 | Statement | Status | Work needed for a proof |
 | --- | --- | --- |
-| Generated Verilog refines the model | No proof of `CircuitRefinementInv` for a network | A proof of it with a circuit invariant for a fixed small network |
+| The generated Verilog of a direct AXI4 pair passes the edge check on every edge | Test `read_refinement` proves the cycle assertions with SymbiYosys on two designs, without a depth bound but under endpoint assumptions. The test rewrites the assertions for the solver. No checked link carries the result into Lean | A Lean statement of the solver result, or a refinement proof of the Verilog |
+| The full generated network refines the model | No proof of `CircuitRefinementInv` for a network | A proof covering all transport paths and hardware features of the network |
 | Every generated Verilog network is free of deadlock | The checked AXI4 exchange model has a reachable state with no finite drain | A service continuation proof for the intended model states and refinement of the full network |
 | A network with unmet clauses in its `completion` field completes its transactions | No completion theorem is stated. The statement does not hold for every run | None. See [output files](../../docs/outputs.md#dependency-graph) for the settings that remove each unmet clause |
 | The four conditions of the `completion` field are all the ways generated logic breaks `Fair` | Each clause has a reason in the table below, not a proof | A proof of each clause for the arbiters, targets and clocks of generated Verilog |
@@ -45,8 +47,7 @@ python3 tools/run_checks.py
 
 `run_checks.py` rejects missing `lean` or `lake` and another Lean version. It
 writes beneath `.lake/build/checks`, or `--work DIR`, and deletes nothing. CTest
-registers it as `formal_lean` and the netlist check as `netlist_roundtrip`, both
-in tier `release`.
+registers `formal_lean` and `netlist_roundtrip` in tier `release`.
 
 `dependency_certificate_import` (`quick`, `ci`) checks edge import without
 Lean. `dependency_certificate_lean` (`formal`, `release`) checks certificates
@@ -151,7 +152,8 @@ between hold points is `unexplained` and fails the check.
 A token denotes one transaction, not a reusable bus ID. `Step.inject` declares
 its word count and requires the last word to end it. Response injection requires
 the whole request to arrive first. Context accounting excludes ended
-transactions by definition, so it cannot expose a context leak.
+transactions by definition, so it cannot expose a context leak. A target that
+never answers violates `Fair`.
 
 `CircuitRefinementInv` maps each circuit step to one or more model steps in an invariant.
 
@@ -167,8 +169,6 @@ the model. `CircuitRefinement` uses one model step per circuit step.
 | Split packets | Pieces of one burst have no shared relation |
 | Source pools | Uninjected words hold no resource. Source grant retention while waiting for a pool is unchecked |
 | Gather, merge, ID tables, gating, wake-up, resets, width conversion and locked transfers | No corresponding model behavior |
-
-A target that never answers violates `Fair`.
 
 ## Trust and instances
 

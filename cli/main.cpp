@@ -34,6 +34,7 @@ int run(int argc, char **argv) {
   bool cdc_constraints = false;
   bool c_header = false;
   bool netlist = false;
+  bool refinement = false;
   bool path_report = false;
   nocloom::ValidationOptions limits;
   auto *validate = app.add_subcommand("validate", "Validate an interconnect definition");
@@ -52,6 +53,8 @@ int run(int argc, char **argv) {
                       "Request C headers for address windows and error log registers");
     command->add_flag("--netlist", netlist,
                       "Request the hardware that the Verilog prints as text records");
+    command->add_flag("--refinement", refinement,
+                      "Request a direct AXI4 read refinement map and its netlist");
     command->add_flag("--path-report", path_report,
                       "Request the link path report with its proposed stage lists");
     command->add_option("--cycle-limit", limits.cycle_limit,
@@ -106,6 +109,7 @@ int run(int argc, char **argv) {
   options.address_table = address_table;
   options.ipxact = ipxact;
   options.netlist = netlist;
+  options.refinement = refinement;
   options.path_report = path_report;
   if (*validate) {
     auto status = nocloom::validate(definition.definition, options, &definition.sources);

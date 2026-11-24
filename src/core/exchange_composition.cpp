@@ -2503,7 +2503,8 @@ bool holds_requests(const SourcePlan &sp, bool convert) {
 // transport, each target with its outlet, then the response transport back to the sources.
 class Lowering {
 public:
-  Lowering(const NetworkPlan &network, RegisterReset register_reset) : plan(network), b(c.b) {
+  Lowering(const NetworkPlan &network, RegisterReset register_reset, bool observe_refinement)
+      : plan(network), b(c.b), refinement(observe_refinement) {
     b.ir.name = "nocloom_" + plan.name;
     b.ir.synchronous_reset = register_reset == RegisterReset::Synchronous;
     c.out.plan = plan;
@@ -2557,6 +2558,15 @@ public:
 
 private:
   using Channels = std::map<std::string, Channel>;
+
+  void bind_refinement_face(const std::string &name, const Channel &ch, unsigned word,
+                            bool response) {
+    const auto id = "refinement/" + name + ".";
+    c.bind(id + "valid", ch.valid);
+    c.bind(id + "ready", ch.ready);
+    for (const auto *field : {"last", response ? "source" : "write"})
+      c.bind(id + field, ch.data[c.burst_field_index(response, word, field)]);
+  }
   struct SourceSide {
     Imported ep;
     Channel req_tr; // both directions, transport layout at the endpoint word; the writes alone
@@ -2618,6 +2628,7 @@ private:
   const NetworkPlan &plan;
   Compose c;
   Builder &b;
+  bool refinement;
   const BurstProfile burst = endpoint_burst(plan);
   std::vector<SourceSide> sides;
   // Error loggers: the bank's fields and controls, the events and context of observed targets.
@@ -4245,6 +4256,11 @@ private:
     Channels exits;
     const bool response = g.graph.response;
     const std::string prefix = g.scope();
+    if (refinement) {
+      const auto &entry = g.graph.entries.front();
+      bind_refinement_face(prefix + "entry", entries.at(entry.endpoint), word_at(entry.endpoint),
+                           response);
+    }
     // The destinations a switch input can carry, each with the output its routes leave by: those
     // of the admitted routes that enter the switch through it. Every packet on the input is bound
     // for one of them (the source completes every other access locally), so its decode compares
@@ -4366,6 +4382,11 @@ private:
             if (key.first == node)
               c.drive(incoming.at(key).ready, ready_bit);
       }
+    if (refinement) {
+      const auto &exit = g.graph.exits.front();
+      bind_refinement_face(prefix + "exit", exits.at(exit.endpoint), word_at(exit.endpoint),
+                           response);
+    }
     return exits;
   }
 
@@ -6157,6 +6178,8 @@ private:
     std::map<std::string, unsigned> target_ports;
     remove_one_way_ports(outlet, target_ports, profile.read_only, profile.write_only);
     const auto ep = import_outlet(o, t, outlet, target_ports);
+    if (refinement)
+      c.bind("refinement/context", ep.states.at("r.count"));
     if (const auto seen = observed_reads.find(o); seen != observed_reads.end()) {
       c.drive(seen->second.first, ep.axi.at("rvalid"));
       c.drive(seen->second.second, ep.axi.at("rready"));
@@ -6245,9 +6268,10 @@ private:
 } // namespace
 
 Result<ExchangeHardware> lower_axi4_exchange_composition(const NetworkPlan &plan,
-                                                         RegisterReset register_reset) {
+                                                         RegisterReset register_reset,
+                                                         bool refinement) {
   try {
-    return Lowering(plan, register_reset).run();
+    return Lowering(plan, register_reset, refinement).run();
   } catch (const std::logic_error &e) {
     return Result<ExchangeHardware>::failure(
         error("NCL_EXCHANGE_COMPOSE", "exchange.hardware", e.what()));

@@ -152,7 +152,7 @@ traffic crosses its boundary.
 | Transactions | Several AXI transactions in flight, exclusive access, target timeouts and an error response on a decode miss |
 | Scheduling | Fixed levels from 0 to 7 on [full AXI](docs/protocols.md), AHB-Lite and AHB5 sources to full AXI targets, or on 32-bit APB networks. Full AXI sources support AxQOS maps. AXI5, ACE5-Lite and AXI4 targets can drive AxQOS from the level. Full AXI and 32-bit APB sources support bandwidth limits |
 | Routing | NocLoom fixes each route at generation. It rejects routes that form a cycle of waits and [reports](docs/network.md#route-cycle-report) the routes of each wait |
-| Output files | Always: Verilog-2001 RTL and three JSON files, which are the map, the bundle and the dependency graph. Optional: IP-XACT (`--ipxact`), address table (`--address-table`), CDC constraints (`--cdc-constraints`), C headers (`--c-header`), netlist (`--netlist`) and path report (`--path-report`) |
+| Output files | Always: Verilog-2001 RTL and three JSON files, which are the map, the bundle and the dependency graph. Optional: IP-XACT (`--ipxact`), address table (`--address-table`), CDC constraints (`--cdc-constraints`), C headers (`--c-header`), netlist (`--netlist`), path report (`--path-report`) and read refinement map (`--refinement`) |
 | C++ library | In-memory generation, tree and mesh topology helpers, and a CMake package. The core library does no file I/O and prints nothing |
 
 See [Documentation](#documentation) for field definitions and limits.
@@ -224,7 +224,8 @@ The suite runner plans 8 GiB of memory per test slot and keeps 16 GiB or more
 free. [tests/VERIFICATION_POLICY.md](tests/VERIFICATION_POLICY.md) describes
 which tests a change needs. [formal/lean/README.md](formal/lean/README.md) lists
 what the Lean proofs and SymbiYosys checks of generated Verilog show, with tests
-and limits. No proof shows that generated Verilog refines the Lean model.
+and limits. [Read refinement](docs/read-refinement.md) lists the checks of one
+direct AXI4 initiator and target pair.
 
 Commit messages follow
 [Conventional Commits](https://www.conventionalcommits.org/). Add a

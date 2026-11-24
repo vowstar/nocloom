@@ -24,7 +24,8 @@ Related manuals: [CDC timing constraints](timing-constraints.md).
 | `nocloom_<name>.<initiator>.addresses.h` | Per-initiator address macros | `--c-header` |
 | `nocloom_<name>.error_logs.h` | Error log register macros | `--c-header` with error logs |
 | `nocloom_<name>.cdc.sdc` and `.cdc_preserve.txt` | Timing exceptions and preserve list | `--cdc-constraints` |
-| `nocloom_<name>.netlist.txt` | [Netlist](netlist.md) that the top module prints | `--netlist` |
+| `nocloom_<name>.netlist.txt` | [Netlist](netlist.md) that the top module prints | `--netlist` or `--refinement` |
+| `nocloom_<name>.refinement.json` | [AXI4 read refinement map](read-refinement.md) | `--refinement` |
 | `nocloom_<name>.path_report.json` | Link stages, path cycles, path delays and a stage plan, see [path report](path-report.md) | `--path-report` |
 
 The bundle records the generator version. Without `error_logging.revision`,

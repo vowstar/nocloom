@@ -6,6 +6,7 @@
 #include "cone_walk.hpp"
 #include "diagnostic.hpp"
 #include "network_plan_profiles.hpp"
+#include "read_refinement.hpp"
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -309,11 +310,18 @@ public:
   MapWriter(const NetworkPlan &network, const ExchangeHardware &hardware)
       : p(network), h(hardware), topology(Json::parse(network.topology_record)),
         generated_cells(cell_files(h.ir, p.cells)) {}
-  Result<ArtifactSet> run(Json *output_map, bool netlist) {
+  Result<ArtifactSet> run(Json *output_map, bool netlist, bool observe_refinement) {
     auto map = checked_map();
     if (!map)
       return Result<ArtifactSet>::failure(map.diagnostics());
-    auto out = artifacts(map.value(), netlist);
+    std::optional<Json> refinement;
+    if (observe_refinement) {
+      auto mapped = read_refinement_map(h);
+      if (!mapped)
+        return Result<ArtifactSet>::failure(mapped.diagnostics());
+      refinement = std::move(mapped).value();
+    }
+    auto out = artifacts(map.value(), netlist || observe_refinement, refinement);
     if (output_map)
       *output_map = std::move(map).value();
     return Result<ArtifactSet>::success(std::move(out));
@@ -2322,7 +2330,8 @@ private:
   }
   // A swappable cell model file instantiated by the module (the clock gate) joins the sources.
   // The netlist text, when requested, follows the cell files in the bundle.
-  ArtifactSet artifacts(const Json &map, bool netlist) const {
+  ArtifactSet artifacts(const Json &map, bool netlist,
+                        const std::optional<Json> &refinement) const {
     const auto &top = h.ir.name;
     const auto rtl = top + ".v", mapping = top + ".map.json", manifest = top + ".bundle.json",
                dependency = top + ".dependency.json";
@@ -2364,6 +2373,11 @@ private:
       bundle["files"].push_back({{"path", top + ".netlist.txt"}, {"role", "netlist"}});
       out.push_back({top + ".netlist.txt", emit_netlist(h.ir)});
     }
+    if (refinement) {
+      const auto path = top + ".refinement.json";
+      bundle["files"].push_back({{"path", path}, {"role", "refinement_map"}});
+      out.push_back({path, refinement->dump(2) + "\n"});
+    }
     out.push_back({manifest, bundle.dump(2) + "\n"});
     std::ranges::sort(out, {}, &Artifact::path);
     return license_output_json(std::move(out));
@@ -2373,20 +2387,29 @@ private:
 
 Status check_axi4_network(const NetworkPlan &p, const Definition &definition,
                           const GenerationOptions &options) {
-  auto lowered = lower_axi4_exchange_composition(p, options.register_reset);
+  if (options.refinement)
+    if (auto status = check_read_refinement_scope(p); !status)
+      return status;
+  auto lowered = lower_axi4_exchange_composition(p, options.register_reset, options.refinement);
   if (!lowered)
     return Status::failure(lowered.diagnostics());
   auto map = MapWriter(p, lowered.value()).checked_map();
   if (!map)
     return Status::failure(map.diagnostics());
+  if (options.refinement)
+    if (auto refinement = read_refinement_map(lowered.value()); !refinement)
+      return Status::failure(refinement.diagnostics());
   return process_optional_outputs(definition, options, map.value());
 }
 
 Result<ArtifactSet> emit_axi4_network(const NetworkPlan &p, RegisterReset register_reset,
-                                      Json *output_map, bool netlist) {
-  auto lowered = lower_axi4_exchange_composition(p, register_reset);
+                                      Json *output_map, bool netlist, bool refinement) {
+  if (refinement)
+    if (auto status = check_read_refinement_scope(p); !status)
+      return Result<ArtifactSet>::failure(status.diagnostics());
+  auto lowered = lower_axi4_exchange_composition(p, register_reset, refinement);
   if (!lowered)
     return Result<ArtifactSet>::failure(lowered.diagnostics());
-  return MapWriter(p, lowered.value()).run(output_map, netlist);
+  return MapWriter(p, lowered.value()).run(output_map, netlist, refinement);
 }
 } // namespace nocloom::detail

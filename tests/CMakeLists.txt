@@ -365,6 +365,11 @@ add_test(NAME netlist_roundtrip
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/netlist_roundtrip)
 set_tests_properties(netlist_roundtrip PROPERTIES TIMEOUT 900 LABELS "formal;release"
   PROCESSORS 1)
+add_test(NAME read_refinement
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_read_refinement.py
+    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/read_refinement)
+set_tests_properties(read_refinement PROPERTIES TIMEOUT 900 LABELS "formal;release"
+  PROCESSORS 1)
 add_executable(nocloom_certificate_graphs generate_certificate_graphs.cpp)
 target_link_libraries(nocloom_certificate_graphs PRIVATE nocloom_config)
 target_include_directories(nocloom_certificate_graphs PRIVATE ${PROJECT_SOURCE_DIR}/src)

@@ -1104,6 +1104,8 @@ struct GenerationOptions {
   // delays of Definition::link_timing and the proposed stage lists. Every other artifact but the
   // bundle keeps its bytes.
   bool path_report = false;
+  // Adds the read refinement map and the netlist it refers to for supported networks.
+  bool refinement = false;
 };
 using SourceMap = std::map<std::string, SourceLocation>;
 struct ParsedDefinition {

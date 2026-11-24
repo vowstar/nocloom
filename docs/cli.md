@@ -19,8 +19,8 @@ hardware, its map and the requested outputs. They report the same diagnostics
 for these checks. `validate` writes no files.
 
 Both commands take `--target verilog` and use it by default. They also accept
-`--ipxact`, `--address-table`, `--cdc-constraints`, `--c-header`, `--netlist`
-and `--path-report`.
+`--ipxact`, `--address-table`, `--cdc-constraints`, `--c-header`, `--netlist`,
+`--path-report` and `--refinement`.
 Each flag enables the checks for that output. `generate` also writes the
 requested [output files](outputs.md).
 

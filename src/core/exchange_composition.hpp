@@ -58,7 +58,8 @@ Status verify_axi4_exchange_obligations(const NetworkPlan &plan, bool clocked = 
 // every gate also opens while its domain reset is low.
 Result<ExchangeHardware>
 lower_axi4_exchange_composition(const NetworkPlan &plan,
-                                RegisterReset register_reset = RegisterReset::Asynchronous);
+                                RegisterReset register_reset = RegisterReset::Asynchronous,
+                                bool refinement = false);
 // Structural and resource-obligation checks over the burst composition, including the response-face
 // lifecycle anchor behind the return reservation.
 Status verify_axi4_exchange_composition(const ExchangeHardware &hardware);

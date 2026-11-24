@@ -51,8 +51,9 @@ Result<ArtifactSet> emit(const Plan &plan, const GenerationOptions &options) {
   const bool extra = options.cdc_constraints || options.c_header || options.address_table ||
                      options.ipxact || options.path_report;
   nlohmann::json map;
-  auto emitted = detail::emit_axi4_network(*plan.data_, options.register_reset,
-                                           extra ? &map : nullptr, options.netlist);
+  auto emitted =
+      detail::emit_axi4_network(*plan.data_, options.register_reset, extra ? &map : nullptr,
+                                options.netlist, options.refinement);
   if (!emitted || !extra)
     return emitted;
   auto &artifacts = emitted.value();

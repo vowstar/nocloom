@@ -158,6 +158,6 @@ theorem chunksMem_sound : ∀ {l : List Chunk} {e : Nat × Nat}, chunksMem l e =
 def chunkIndex (size : Nat) (rk : Nat → Nat) (l : List Chunk) :
     Index (EdgeTable.mk size (edgesOf l) rk) where
   mem := chunksMem l
-  sound e h := chunksMem_sound h
+  sound _ h := chunksMem_sound h
 
 end EdgeTable.Kernel

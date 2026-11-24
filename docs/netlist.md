@@ -18,8 +18,9 @@ prints, and rejects any other text.
 | Continuous assignments | One per value and output, in the form of its operation. The theorem `check_sound` proves that each net and output port then carries the netlist value of the module inputs, registers and cell outputs |
 | Registers, clock gates, synchronizer cells | Compared one by one with the netlist |
 
-The check does not read the cell files and does not relate the netlist to the
-transport model. CTest runs it as `netlist_roundtrip` on every example.
+The check covers the top module and netlist. Cell files are outside its
+scope. CTest runs `netlist_roundtrip` on every example. See the
+[read refinement map](read-refinement.md) for the transport step checker.
 
 ## Format
 
