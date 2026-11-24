@@ -19,6 +19,9 @@
 namespace nocloom::detail {
 namespace {
 using Json = nlohmann::json;
+const char *path_label(PathMode mode) {
+  return mode == PathMode::Shared ? "shared" : mode == PathMode::Separate ? "separate" : "mixed";
+}
 Json flow_indices(const std::map<std::string, unsigned> &first,
                   const std::map<std::string, unsigned> &counts) {
   Json out = Json::object();
@@ -171,6 +174,11 @@ Json arbitration_output(const NetworkPlan &p, const std::string &key, const Arbi
   // Separate read and write paths: the graph of the output carries one direction.
   if (p.exchange.separate())
     entry["carries"] = key.starts_with("r") ? "reads" : "writes";
+  if (p.exchange.mixed) {
+    const bool split = (a.response ? p.exchange.response : p.exchange.request)
+                           .graph.separate_nodes.contains(a.node);
+    entry["carries"] = !split ? "both" : key.ends_with("/read") ? "reads" : "writes";
+  }
   if (a.spec.policy == treadle::Policy::FixedPriority) {
     Json order = Json::array();
     for (unsigned r = 0; r < n; ++r)
@@ -193,6 +201,8 @@ Json arbitration_contract(const NetworkPlan &p) {
                                     ? "read_and_write_packets_take_separate_graphs_and_arbiters"
                                     : "read_and_write_packets_share_each_output_arbiter"}};
   contract["default"] = treadle::policy_name(p.arbitration.choose(0));
+  if (p.exchange.mixed)
+    contract["channels"] = "each_separate_switch_output_has_one_arbiter_per_direction";
   Json outputs = Json::array();
   bool environment = false;
   for (const auto &[key, a] : p.arbiters) {
@@ -488,7 +498,9 @@ private:
                         ? "explicit_independent_unique_route_graphs"
                         : "generated_one_switch_per_direction_connected_inputs_only"},
         {"arbitration", arbitration_contract(h.plan)},
-        {"progress", p.exchange.separate()
+        {"progress", p.exchange.mixed
+                         ? "mixed_routes_need_E1_E2_E3_at_shared_paths_and_endpoint_premises"
+                     : p.exchange.separate()
                          ? "separate_read_write_routes_need_endpoint_premises_at_shared_entries"
                          : "shared_read_write_routes_need_endpoint_premises_E1_E2_E3"},
         {"address_transform", "target_local_byte_offset_once"},
@@ -1596,6 +1608,12 @@ private:
                         "beat_by_beat_bursts_of_one_ID_never_interleave"},
           {"liveness", "head_of_line_blocking_a_burst_waiting_for_its_ID_or_an_ID_entry_holds_"
                        "every_later_burst_of_its_direction"}};
+      if (p.exchange.mixed) {
+        ordering["new_destination"] =
+            "a_burst_waits_for_the_last_response_of_its_ID_before_changing_destination";
+        ordering["id_table"] =
+            "direction_and_AXI_ID_share_the_table_a_new_key_waits_while_every_entry_is_busy";
+      }
       // The keys below appear only where their feature stands next to several
       // bursts per source.
       if (!h.plan.cuts.empty())
@@ -1774,7 +1792,9 @@ private:
                 {"definition", definition},
                 {"ports", Json::array()},
                 {"network",
-                 {{"read_write", p.exchange.separate() ? "separate" : "merged"},
+                 {{"read_write", p.exchange.mixed        ? "mixed"
+                                 : p.exchange.separate() ? "separate"
+                                                         : "merged"},
                   {"request_nodes", hardware_nodes("request")},
                   {"response_nodes", hardware_nodes("response")},
                   {"adapters", Json::array()},
@@ -1791,6 +1811,8 @@ private:
       network["read_request_nodes"] = hardware_nodes("request", "read_hardware_node");
       network["read_response_nodes"] = hardware_nodes("response", "read_hardware_node");
     }
+    if (p.exchange.mixed)
+      network["path_boundaries"] = path_boundaries();
     for (const auto &adapter : h.plan.adapters())
       network["adapters"].push_back({{"name", adapter.name},
                                      {"segment", adapter.segment},
@@ -1826,12 +1848,14 @@ private:
       const auto field = std::string(graph->graph.carried == Carried::Reads ? "read_" : "") +
                          (graph->graph.response ? "response_routes" : "request_routes");
       auto &routes = network[field] = Json::array();
-      std::ranges::transform(graph->routes, std::back_inserter(routes), [](const auto &r) {
+      std::ranges::transform(graph->routes, std::back_inserter(routes), [&](const auto &r) {
         Json row{{"entry", r.entry}, {"exit", r.exit}, {"hardware_nodes", r.nodes}};
         if (!r.flows.empty())
           row["source_paths"] = r.flows;
         if (r.target_path)
           row["target_path"] = *r.target_path;
+        if (p.exchange.mixed)
+          row["read_write"] = path_label(graph->route_mode(r));
         return row;
       });
     }
@@ -1870,6 +1894,25 @@ private:
                                     {"acquire", value_ref(store.acquire)},
                                     {"release", value_ref(store.release)}});
     return map;
+  }
+  Json path_boundaries() const {
+    Json boundaries = Json::array();
+    for (const auto &link : h.plan.links)
+      if (!link.read_lane)
+        for (const bool receiver : {false, true}) {
+          const bool from_split = receiver ? link.split : link.from_split;
+          const bool to_split = receiver ? link.to_split : link.split;
+          if (from_split == to_split)
+            continue;
+          Json row{{"link", link.name},
+                   {"side", receiver ? "receiver" : "sender"},
+                   {"clock_domain", receiver ? link.to_domain : link.from_domain},
+                   {"kind", to_split ? "split" : "join"}};
+          if (from_split)
+            row["resource"] = link.join_id(receiver);
+          boundaries.push_back(std::move(row));
+        }
+    return boundaries;
   }
   // A link with stage lists: the words at its positions and every stage in data flow order, each
   // with its side and clock domain; a pipe with its word, slots and origin.

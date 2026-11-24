@@ -612,7 +612,7 @@ Carried carried_by(const LinkPlan &link) {
   for (const auto carried : {Carried::Writes, Carried::Reads})
     if (link.name.starts_with(graph_scope(link.response, carried)))
       return carried;
-  return Carried::Both;
+  return !link.split ? Carried::Both : link.read_lane ? Carried::Reads : Carried::Writes;
 }
 const char *carried_name(Carried carried) {
   static constexpr std::array table{"both", "writes", "reads"};
@@ -704,9 +704,16 @@ struct RoutePath {
   std::vector<Flow> flows;
 };
 // Every route's links, each distinct sequence once with the flows that take it. A graph of
-// separate paths gives the paths of its direction.
+// separate paths gives the paths of its direction. A route of shared graphs that passes a link
+// with separate paths gives a write path and a read path, which takes the read links there.
 std::vector<RoutePath> route_paths(const NetworkPlan &plan) {
   std::map<std::tuple<bool, Carried, std::vector<std::string>>, std::set<Flow>> grouped;
+  const auto planned = [&](const std::string &name) -> const LinkPlan & {
+    const auto at = std::ranges::find(plan.links, name, &LinkPlan::name);
+    if (at == plan.links.end())
+      throw std::logic_error("A route passes an unplanned link " + name);
+    return *at;
+  };
   for (const auto *graph : plan.exchange.graphs()) {
     const bool response = graph->graph.response;
     const std::string prefix = graph->scope();
@@ -715,15 +722,18 @@ std::vector<RoutePath> route_paths(const NetworkPlan &plan) {
       for (std::size_t i = 0; i + 1 < r.nodes.size(); ++i)
         links.push_back(prefix + r.nodes[i] + ">" + r.nodes[i + 1]);
       links.push_back(prefix + r.nodes.back() + ">" + r.exit);
-      if (const auto unplanned = std::ranges::find_if(
-              links,
-              [&](const std::string &name) {
-                return std::ranges::find(plan.links, name, &LinkPlan::name) == plan.links.end();
-              });
-          unplanned != links.end())
-        throw std::logic_error("A route passes an unplanned link " + *unplanned);
-      grouped[{response, graph->graph.carried, links}].insert(
-          {response ? r.exit : r.entry, response ? r.entry : r.exit, r.flows, r.target_path});
+      auto reads = links;
+      bool split = false;
+      for (auto &name : reads)
+        if (planned(name).split) {
+          split = true;
+          name = planned(path_lane(name, true)).name;
+        }
+      const Flow flow{response ? r.exit : r.entry, response ? r.entry : r.exit, r.flows,
+                      r.target_path};
+      grouped[{response, split ? Carried::Writes : graph->graph.carried, links}].insert(flow);
+      if (split)
+        grouped[{response, Carried::Reads, reads}].insert(flow);
     }
   }
   std::vector<RoutePath> out;

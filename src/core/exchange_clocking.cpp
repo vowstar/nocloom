@@ -334,10 +334,19 @@ void plan_clocking(NetworkPlan &p) {
   plan_serial_cuts(p, domains);
   for (const auto *g : p.exchange.graphs())
     for (const auto &o : g->outputs)
-      if (o.inputs.size() > 1)
-        p.resource_domains.emplace("graph/" + g->scope() + o.node + ">" +
-                                       (o.endpoint ? "endpoint/" : "node/") + o.output,
-                                   owner(g->scope() + o.node));
+      if (o.inputs.size() > 1) {
+        const auto component = g->scope() + o.node;
+        const auto id =
+            "graph/" + component + ">" + (o.endpoint ? "endpoint/" : "node/") + o.output;
+        p.resource_domains.emplace(id, owner(component));
+        if (g->graph.separate_nodes.contains(o.node))
+          p.resource_domains.emplace(path_lane(id, true), owner(component));
+      }
+  for (const auto &link : p.links)
+    for (const bool receiver : {false, true})
+      if (link.joins(receiver))
+        p.resource_domains.emplace(link.join_id(receiver),
+                                   receiver ? link.to_domain : link.from_domain);
   endpoint_resource_domains(p, owner);
   // Each endpoint pipe (<endpoint>/pipe/<place>) in its endpoint's domain.
   auto pipes_in = [&](const std::vector<EndpointPipe> &pipes) {

@@ -156,11 +156,13 @@ port can remove.
 ## Separate read and write paths
 
 `carries` is `both` for a link or path of shared paths. With
-[separate paths](read-write-paths.md) it is `writes` or `reads` for a link or
-path of one direction. A configured link with separate paths is a write link
-and a read link in the report.
+[separate or mixed paths](read-write-paths.md) it is `writes` or `reads` for a
+link or path of one direction. A configured link with separate paths is a
+write link and a read link in the report. With mixed paths the read link has
+the suffix `/read`.
 
 One `link_timing` entry gives the estimates of both links, and the planner
 adds the same pipes to both. `added` lists the pipes of each link, and
 `bits_added` counts both. A latency limit applies to the write paths and to
-the read paths of its pair.
+the read paths of its pair. A join or split of mixed paths is not a stage.
+Include its delay in the allowance of its link end.

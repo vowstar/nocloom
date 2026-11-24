@@ -768,6 +768,13 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
     // An optional pipe of a link, an attachment or an endpoint.
     auto pipeline = [&](const YAML::Node &item, const std::string &field, const char *name,
                         LinkPipeline &out) { detail::pipeline(r, item, field, name, out); };
+    auto read_write_paths = [&](const YAML::Node &item, const std::string &field) {
+      const auto paths = r.field(item, "read_write", field);
+      const auto kind = r.string(paths, field);
+      if (kind != "shared" && kind != "separate")
+        r.fail("NCL_SCHEMA_TYPE", field, "Expected shared or separate", paths.Mark());
+      return kind == "separate" ? ReadWritePaths::Separate : ReadWritePaths::Shared;
+    };
     if (root["topology"]) {
       const auto topology = r.field(root, "topology", "topology");
       r.object(topology, "topology", {"request", "response", "routes"});
@@ -785,8 +792,10 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
           const auto item = nodes[i];
           r.object(item, field,
                    {"name", "transport_word_bytes", "clock_domain", "arbitration", "output_links",
-                    "input_links"});
+                    "input_links", "read_write"});
           ExchangeNode n{r.string(r.field(item, "name", field + ".name"), field + ".name")};
+          if (item["read_write"])
+            n.read_write = read_write_paths(item, field + ".read_write");
           if (item["transport_word_bytes"])
             n.transport_word_bytes =
                 r.integer(item["transport_word_bytes"], field + ".transport_word_bytes");
@@ -821,9 +830,12 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
           const auto field = path + ".links[" + std::to_string(i) + "]";
           const auto item = links[i];
           r.object(item, field,
-                   {"from", "to", "transport_word_bytes", "pipeline", "sender_pipeline", "stages"});
+                   {"from", "to", "transport_word_bytes", "pipeline", "sender_pipeline", "stages",
+                    "read_write"});
           ExchangeLink link{r.string(r.field(item, "from", field + ".from"), field + ".from"),
                             r.string(r.field(item, "to", field + ".to"), field + ".to")};
+          if (item["read_write"])
+            link.read_write = read_write_paths(item, field + ".read_write");
           if (item["transport_word_bytes"])
             link.transport_word_bytes =
                 r.integer(item["transport_word_bytes"], field + ".transport_word_bytes");
@@ -973,13 +985,8 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
         r.fail("NCL_SCHEMA_TYPE", "reset_coverage", "Expected all or minimal", registers.Mark());
       d.reset_coverage = kind == "all" ? ResetCoverage::All : ResetCoverage::Minimal;
     }
-    if (root["read_write"]) {
-      auto paths = r.field(root, "read_write", "read_write");
-      const auto kind = r.string(paths, "read_write");
-      if (kind != "shared" && kind != "separate")
-        r.fail("NCL_SCHEMA_TYPE", "read_write", "Expected shared or separate", paths.Mark());
-      d.read_write = kind == "separate" ? ReadWritePaths::Separate : ReadWritePaths::Shared;
-    }
+    if (root["read_write"])
+      d.read_write = read_write_paths(root, "read_write");
     if (root["cells"]) {
       // Each cell: module and role pin names, and tie for its other input pins.
       const auto cells = r.field(root, "cells", "cells");

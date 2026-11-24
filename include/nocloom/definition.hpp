@@ -793,6 +793,8 @@ struct ExchangeNode {
   std::optional<std::string> clock_domain = std::nullopt;
   // Per-output arbitration overrides; the other outputs follow the default.
   std::vector<OutputArbitration> arbitration = {};
+  // Absent inherits Definition::read_write.
+  std::optional<ReadWritePaths> read_write = std::nullopt;
   bool operator==(const ExchangeNode &) const = default;
 };
 // The side of a link's clock crossing: the sending switch's chain of width adapters, in its domain
@@ -822,6 +824,8 @@ struct ExchangeLink {
   LinkPipeline sender_pipeline{};
   // Stage lists, at most one per position.
   std::vector<LinkStages> stages = {};
+  // Absent inherits Definition::read_write.
+  std::optional<ReadWritePaths> read_write = std::nullopt;
   bool operator==(const ExchangeLink &) const = default;
 };
 struct ExchangeAttachment {

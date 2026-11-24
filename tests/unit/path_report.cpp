@@ -281,6 +281,69 @@ TEST_CASE("One link_timing entry plans the write and the read link of separate p
   CHECK(message("The read request path of s0 and t0 takes "));
 }
 
+TEST_CASE("Mixed paths report a write and a read path where a route passes a separate link",
+          "[path-report]") {
+  auto base = graph();
+  base.link_timing = timing({uniform(300, 500)});
+  auto d = base;
+  auto &nodes = d.topology->request.nodes;
+  std::ranges::find(nodes, std::string("merge"), &ExchangeNode::name)->read_write =
+      ReadWritePaths::Separate;
+  merge_branch(d).read_write = ReadWritePaths::Separate;
+  const auto shared = report_of(base), report = report_of(d);
+  // A separate link is two links, the read one with the suffix /read. Shared links stay one.
+  std::map<std::string, std::string> carries;
+  unsigned read_links = 0;
+  for (const auto &l : report["links"])
+    carries.emplace(l["link"].get<std::string>(), l["carries"].get<std::string>());
+  for (const auto &[name, direction] : carries)
+    if (name.ends_with("/read")) {
+      CHECK(direction == "reads");
+      CHECK(carries.at(name.substr(0, name.size() - 5)) == "writes");
+      ++read_links;
+    } else if (!carries.contains(name + "/read"))
+      CHECK(direction == "both");
+  CHECK(read_links == 1);
+  CHECK(report["links"].size() == shared["links"].size() + read_links);
+  // Every request route passes merge -> branch: one write path and one read path each. The
+  // response graph stays shared.
+  unsigned writes = 0, reads = 0, both = 0;
+  for (const auto &p : report["paths"]) {
+    const auto direction = p["carries"].get<std::string>();
+    unsigned on_read_links = 0;
+    for (const auto &l : p["links"]) {
+      const auto name = l.get<std::string>();
+      REQUIRE(carries.contains(name));
+      CHECK((carries.at(name) == "both" || carries.at(name) == direction));
+      on_read_links += name.ends_with("/read");
+    }
+    CHECK(on_read_links == (direction == "reads" ? 1U : 0U));
+    CHECK((p["graph"] == "response") == (direction == "both"));
+    ++(direction == "writes" ? writes : direction == "reads" ? reads : both);
+  }
+  CHECK(writes == reads);
+  CHECK(writes + both == shared["paths"].size());
+  // The entry of the separate link times and plans both of its links.
+  CHECK(std::count_if(report["links"].begin(), report["links"].end(),
+                      [](const Json &l) { return l.contains("timing"); }) == 2);
+  REQUIRE(report["plan"]["links"].size() == 1);
+  const auto &one = shared["plan"]["links"][0], &two = report["plan"]["links"][0];
+  CHECK(two["stages"] == one["stages"]);
+  CHECK(two["bits_added"].get<std::uint64_t>() == 2 * one["bits_added"].get<std::uint64_t>());
+  REQUIRE(two["added"].size() == 2 * one["added"].size());
+  CHECK(two["added"].back()["name"].get<std::string>().find("/read/") != std::string::npos);
+  auto plan = make_plan(d);
+  REQUIRE(plan);
+  const auto planned = plan_link_stages(plan.value());
+  REQUIRE(planned);
+  REQUIRE(generate(planned.value()));
+  const auto again = report_of(planned.value());
+  for (const auto &l : again["links"])
+    if (l.contains("timing"))
+      CHECK(l["timing"]["status"] == "met");
+  CHECK(again["plan"]["links"].empty());
+}
+
 TEST_CASE("Missing delays are unknown and named", "[path-report]") {
   auto d = graph();
   auto l = uniform(100, 400);

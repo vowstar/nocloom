@@ -1,9 +1,9 @@
 # Read and write paths
 
 By default (`read_write: shared`) reads and writes share the request graph and
-the response graph of the [network](network.md). With `read_write: separate`,
-NocLoom builds the configured topology twice. The write paths carry write
-requests and B responses. The read paths carry read requests and R responses.
+the response graph of the [network](network.md). With `read_write: separate`
+and no local overrides, NocLoom builds the topology twice. Write paths carry
+write requests and B responses. Read paths carry read requests and R responses.
 
 The write paths and the read paths each have their own switches, output
 arbiters, links, link pipes, width adapters and clock crossings. Both take the
@@ -82,10 +82,60 @@ must still do. It changes the requirements of
 | Accept responses without waiting for a later address or data handshake | Required |
 | The target eventually completes every accepted transfer | Required |
 
+## Mixed paths
+
+Set `read_write: shared` or `read_write: separate` on a node or link in
+`topology.request` or `topology.response`. Each setting overrides the
+top-level default for that item. Endpoint attachments follow their switch.
+A mirrored response graph copies the request nodes' and links' settings.
+
+NocLoom fixes these choices at generation. Both paths use the same topology
+routes. Address mapping and access checks follow the endpoint configuration.
+
+```yaml
+# In topology.request
+nodes:
+  - {name: fabric, read_write: separate}
+  - {name: peripheral}
+links:
+  - {from: fabric, to: peripheral}
+```
+
+With the default `shared`, this link takes one stream from two switch outputs.
+A boundary is a place where shared paths meet separate paths. A join takes the
+write path and the read path into a shared path. A split does the opposite. An
+endpoint connects to the write paths and to the read paths when either of its
+attachments uses separate paths. A boundary then joins or splits them at its
+shared attachment.
+
+A split selects the output path with the packet's direction field. A join
+uses round robin with the read path first after reset. A request grant holds
+through the last fragment of its packet. A response grant holds through the
+last fragment of its packet or segment. Both paths of a separate link take
+the configured widths, pipes and clock crossing. Each arbiter of a separate
+switch uses the configured output policy.
+
+Keep the [shared progress requirements](timeout-and-progress.md#shared-request-and-response-paths)
+at any shared switch, link or join that can block one direction behind the
+other. Supply W independently of read
+completion. Accept R independently of B. Accept W at the target
+independently of read completion. Apply the separate path table above
+when both routes for an endpoint pair are separate throughout. Other traffic
+can still occupy a shared endpoint's entries.
+
+The map sets `network.read_write` to `mixed`. The topology and each route
+record its effective mode. `network.path_boundaries` names the side, clock
+domain and kind of each boundary. A join also names its packet grant resource.
+Read path resources of a separate switch or link have the suffix `/read`.
+
+The dependency file includes shared resources, separate resources and join
+waits. The mixed transport model is omitted, so the completion theorems do
+not apply. Fixed priority outputs still report their unmet fairness premise.
+
 ## Unsupported options
 
-These options have no form for two paths. With `read_write: separate`, NocLoom
-rejects them with `NCL_READ_WRITE_PATHS`.
+NocLoom rejects these options with `NCL_READ_WRITE_PATHS` in a network that
+uses separate paths, including a network with mixed paths.
 
 | Option | Field |
 | --- | --- |
@@ -97,16 +147,27 @@ rejects them with `NCL_READ_WRITE_PATHS`.
 
 ## Outputs
 
-The map records `network.read_write` as `merged` or `separate`. With separate
-paths, `network.read_request_nodes`, `network.read_response_nodes`,
-`network.read_request_routes` and `network.read_response_routes` describe the
-read graphs. Each topology node also has its `read_hardware_node`. Each
-arbitrated output names the paths it serves in `carries`, as `writes` or
-`reads`. See [map fields](map-fields.md).
+The map records `network.read_write` as `merged` for shared paths, `separate`
+or `mixed`. The topology record `definition.topology` keeps the configuration
+values. Its `read_write` is `separate` or `mixed`. With mixed paths each node
+and link has `shared` or `separate`. See [map fields](map-fields.md).
 
-The [dependency file](outputs.md#dependency-graph) describes both copies. It
-has no transport model for the Lean certificate: `model_omitted` is
-`separate read and write paths`. Its exclusions name no liveness check.
+With separate paths, `network.read_request_nodes`,
+`network.read_response_nodes`, `network.read_request_routes` and
+`network.read_response_routes` describe the read graphs. Each topology node
+also has its `read_hardware_node`. Each arbitrated output names the paths it
+serves in `carries`, as `writes` or `reads`. The
+[path report](path-report.md) uses the same values for its links and paths.
+
+The [dependency file](outputs.md#dependency-graph) gives these
+`model_omitted` reasons. Neither mode has a transport model or an exclusion
+that names a liveness check. In `completion.unmet`, the read arbiter of an
+output has the subject of its write arbiter with the suffix `/read`.
+
+| Mode | `model_omitted` |
+| --- | --- |
+| `separate` | `separate read and write paths` |
+| `mixed` | `mixed read and write paths` |
 
 ## Area
 

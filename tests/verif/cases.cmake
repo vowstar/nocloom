@@ -128,13 +128,18 @@ nocloom_verif_case(NAME verif_rw_merge_separate_negative LAYER negative TIER foc
   CONTRACTS AXI.LIVE.PREMISES APB.TARGET.ACCESS
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/rw_merge.py --param paths=separate
     --cli $<TARGET_FILE:nocloom_cli> --negative)
+nocloom_verif_case(NAME verif_rw_merge_mixed_negative LAYER negative TIER focused TIMEOUT 600
+  FEATURES axi4 apb4 liveness ci MEMORY_MB 1024
+  CONTRACTS AXI.LIVE.PREMISES APB.TARGET.ACCESS
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/rw_merge.py --param paths=mixed
+    --cli $<TARGET_FILE:nocloom_cli> --negative)
 # A read beside a longer write to the same target: no slower than alone with
 # separate read and write paths, slower with shared paths.
 nocloom_verif_case(NAME verif_rw_latency LAYER rtl TIER focused TIMEOUT 300
   FEATURES axi4 MEMORY_MB 1024 CONTRACTS AXI.PATHS.SEPARATE AXI.ROUTE.LOCAL_OFFSET
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/rw_latency.py --cli $<TARGET_FILE:nocloom_cli>)
-# Network exclusive access at a one-entry target with shared and separate
-# paths: each exclusive write follows the R of its own exclusive read.
+# Network exclusive access at a one-entry target with shared, separate and
+# mixed paths: each exclusive write follows the R of its own exclusive read.
 nocloom_verif_case(NAME verif_rw_exclusive LAYER rtl TIER focused TIMEOUT 300
   FEATURES axi4 exclusive ci MEMORY_MB 1024 CONTRACTS AXI.PATHS.SEPARATE AXI.EXCL.MONITOR
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/rw_exclusive.py --cli $<TARGET_FILE:nocloom_cli>)

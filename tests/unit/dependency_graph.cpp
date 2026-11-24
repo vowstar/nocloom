@@ -1008,6 +1008,71 @@ TEST_CASE("Separate paths name the write and the read arbiter of an unmet output
   }
 }
 
+TEST_CASE("A join on one undivided stream does not block the other path", "[dependency]") {
+  // A wide source and an APB target behind two shared switches: a separate link between them
+  // divides one stream at qa and joins it at qb. A response grant there holds across a read.
+  const auto text = [](const std::string &qa, const std::string &link) {
+    return "{schema_version: 10, name: mix, address_width: 32, reset_ports: [{name: reset_n}],"
+           " test_ports: [{name: test}], clock_domains: [{name: main, clock_port: clk_main,"
+           " reset_port: reset_n, test_port: test}], initiators: [{name: s0, clock_domain: main,"
+           " protocol: axi4, data_width: 64, id_width: 2, len_width: 8, max_outstanding: 4}],"
+           " targets: [{name: t0, clock_domain: main, protocol: apb4, data_width: 32,"
+           " attributes: amba, mappings: [{base: '0x0', size: '0x1000'}]}], connectivity: all,"
+           " topology: {request: {nodes: [{name: qa" +
+           qa + "}, {name: qb}], links: [{from: qa, to: qb, read_write: separate" + link +
+           "}], entries: [{endpoint: s0, node: qa}], exits: [{endpoint: t0, node: qb}]},"
+           " response: mirror}, output: {backend: verilog, language: verilog_2001}}";
+  };
+  // The contention edges from a join grant: the words it keeps out of the join.
+  const auto kept_out = [](const NetworkPlan &plan) {
+    const auto &g = plan.dependency;
+    return std::ranges::count_if(g.edges, [&](const DependencyEdge &e) {
+      return e.rule == DependencyRule::Contention && g.nodes[e.from].kind == "join.held";
+    });
+  };
+  const auto one = plan_of(text("", ""));
+  CHECK(one.dependency_report.findings.empty());
+  CHECK(kept_out(one) == 0);
+  // A pipe stores words of each path, and a separate qa offers the paths from two arbiters.
+  const auto piped = plan_of(text("", ", pipeline: {slice: full}"));
+  CHECK(piped.dependency_report.findings.empty());
+  CHECK(kept_out(piped) == 4);
+  CHECK(kept_out(plan_of(text(", read_write: separate", ""))) == 2);
+}
+
+TEST_CASE("A target join on one undivided stream does not block the other path", "[dependency]") {
+  // Separate response paths make s0, s1 and t0 split endpoints. The request link into t0 comes
+  // from the shared switch q undivided, so t0 divides one stream and joins it again.
+  const auto text = [](const std::string &q) {
+    return "{schema_version: 10, name: mix, address_width: 32, reset_ports: [{name: reset_n}],"
+           " test_ports: [{name: test}], clock_domains: [{name: main, clock_port: clk_main,"
+           " reset_port: reset_n, test_port: test}], initiators: [{name: s0, clock_domain: main,"
+           " protocol: axi4, data_width: 32, id_width: 2, len_width: 8}, {name: s1,"
+           " clock_domain: main, protocol: axi4, data_width: 32, id_width: 2, len_width: 8}],"
+           " targets: [{name: t0, clock_domain: main, protocol: apb4, data_width: 32,"
+           " attributes: amba, mappings: [{base: '0x0', size: '0x1000'}]}], connectivity: all,"
+           " topology: {request: {nodes: [{name: q" +
+           q +
+           "}], links: [], entries: [{endpoint: s0, node: q}, {endpoint: s1, node: q}],"
+           " exits: [{endpoint: t0, node: q}]}, response: {nodes: [{name: r, read_write:"
+           " separate}], links: [], entries: [{endpoint: t0, node: r}], exits: [{endpoint:"
+           " s0, node: r}, {endpoint: s1, node: r}]}}, output: {backend: verilog,"
+           " language: verilog_2001}}";
+  };
+  const auto kept_out = [](const NetworkPlan &plan) {
+    const auto &g = plan.dependency;
+    return std::ranges::count_if(g.edges, [&](const DependencyEdge &e) {
+      return e.rule == DependencyRule::Contention && g.nodes[e.from].kind == "join.held" &&
+             g.nodes[e.to].kind == "target.join";
+    });
+  };
+  const auto one = plan_of(text(""));
+  CHECK(one.dependency_report.findings.empty());
+  CHECK(kept_out(one) == 0);
+  // From a separate q the two paths reach t0 from two arbiters.
+  CHECK(kept_out(plan_of(text(", read_write: separate"))) == 2);
+}
+
 TEST_CASE("Model capacities count the pipes in front of a slot and each target's contexts",
           "[dependency]") {
   const auto capacity = [](const DependencyModel &m, const std::string &slot,

@@ -22,6 +22,11 @@ std::string graph_scope(bool response, Carried carried);
 bool response_scope(std::string_view name);
 // Whether a name starts with the scope of some graph.
 bool graph_scoped(std::string_view name);
+inline std::string path_lane(const std::string &name, bool read) {
+  return read ? name + "/read" : name;
+}
+enum class PathMode { Shared, Separate, Mixed };
+PathMode path_mode(const Definition &d);
 // Private directed exchange planning objects.
 struct SwitchEdge {
   std::string from, to;
@@ -59,6 +64,8 @@ struct DirectedSwitchGraph {
   // The response graph: its exits are the initiators.
   bool response = false;
   Carried carried = Carried::Both;
+  std::set<std::string> separate_nodes = {};
+  std::set<std::pair<std::string, std::string>> separate_links = {};
   // The flow count of every initiator, and of every target, with more than one.
   std::map<std::string, unsigned> flows = {}, target_paths = {};
   // The flow pairs (initiator, target, initiator flow, target flow) of admitted pairs that the
@@ -76,6 +83,8 @@ struct SwitchOutputPlan {
 struct SwitchGraphPlan {
   DirectedSwitchGraph graph;
   std::string scope() const { return graph_scope(graph.response, graph.carried); }
+  bool split_at(const std::string &endpoint, bool entry) const;
+  PathMode route_mode(const SwitchRoute &route) const;
   // Topological when the graph is acyclic; a cyclic graph keeps the sorted switches.
   std::vector<std::string> topological_order;
   std::vector<SwitchRoute> routes;
@@ -90,6 +99,11 @@ struct ExchangePlan {
   // Separate paths: the reads, on graphs of the same topology; absent with shared paths.
   std::optional<SwitchGraphPlan> read_request = std::nullopt, read_response = std::nullopt;
   bool separate() const { return read_request.has_value(); }
+  bool mixed = false;
+  bool split_endpoint(const std::string &name, bool source) const {
+    return separate() ||
+           (mixed && (request.split_at(name, source) || response.split_at(name, !source)));
+  }
   // Every graph: the request graphs (writes before reads), then the response graphs.
   std::vector<const SwitchGraphPlan *> graphs() const {
     std::vector<const SwitchGraphPlan *> all{&request};

@@ -141,7 +141,7 @@ void plan_links(NetworkPlan &plan) {
     const std::string entry = response ? "target/" : "source/";
     const std::string exit = response ? "source/" : "target/";
     auto add = [&](const std::string &from_kind, const std::string &from,
-                   const std::string &to_kind, const std::string &to) {
+                   const std::string &to_kind, const std::string &to, bool split) {
       const auto name = prefix + from + ">" + to;
       const auto edge = std::ranges::find(edges, name, &LinkPlan::name);
       auto &link = edge == edges.end() ? plan.links.emplace_back() : plan.links.emplace_back(*edge);
@@ -151,14 +151,30 @@ void plan_links(NetworkPlan &plan) {
       std::tie(link.to, link.to_bytes, link.to_domain) = object(to_kind, to);
       link.edge_bytes = edge_word(link.from_bytes, link.to_bytes, period(link.from_domain),
                                   period(link.to_domain));
+      if (plan.exchange.mixed) {
+        const auto endpoint_mode = [&](const std::string &kind, const std::string &id) {
+          return kind == prefix ? g.separate_nodes.contains(id)
+                                : plan.exchange.split_endpoint(id, kind == "source/");
+        };
+        link.from_split = endpoint_mode(from_kind, from);
+        link.split = split;
+        link.to_split = endpoint_mode(to_kind, to);
+      }
       link_stages(link);
+      if (split) {
+        auto read = link;
+        read.name = path_lane(name, true);
+        read.read_lane = true;
+        link_stages(read);
+        plan.links.push_back(std::move(read));
+      }
     };
     for (const auto &a : g.entries)
-      add(entry, a.endpoint, prefix, a.node);
+      add(entry, a.endpoint, prefix, a.node, g.separate_nodes.contains(a.node));
     for (const auto &e : g.edges)
-      add(prefix, e.from, prefix, e.to);
+      add(prefix, e.from, prefix, e.to, g.separate_links.contains({e.from, e.to}));
     for (const auto &a : g.exits)
-      add(prefix, a.node, exit, a.endpoint);
+      add(prefix, a.node, exit, a.endpoint, g.separate_nodes.contains(a.node));
   }
 }
 // A component the plan admits; a failed lowering is a composition fault.
@@ -2214,6 +2230,8 @@ void plan_arbiters(NetworkPlan &plan) {
         for (const auto &order = request->second.priority; const auto &candidate : o.inputs)
           a.spec.rank.push_back(
               static_cast<unsigned>(std::ranges::find(order, candidate) - order.begin()));
+      if (graph->graph.separate_nodes.contains(o.node))
+        plan.arbiters.emplace(path_lane(key, true), a);
       plan.arbiters.emplace(key, std::move(a));
     }
 }
@@ -2241,6 +2259,7 @@ Status plan_composition(NetworkPlan &plan) {
     exchange.value().read_request = std::move(reads.value().request);
     exchange.value().read_response = std::move(reads.value().response);
   }
+  exchange.value().mixed = plan.exchange.mixed;
   plan.exchange = std::move(exchange.value());
   build_route_index(plan);
   plan_arbiters(plan);
@@ -2346,6 +2365,9 @@ Status plan_composition(NetworkPlan &plan) {
       (std::ranges::any_of(plan.targets,
                            [&](const TargetPlan &t) { return interleaved_target(plan, t); }) &&
        (plan.response_runs ||
+        std::ranges::any_of(
+            plan.links,
+            [](const LinkPlan &l) { return l.response && (l.joins(false) || l.joins(true)); }) ||
         std::ranges::any_of(plan.arbiters, [](const auto &a) { return a.second.response; })));
   for (unsigned si = 0; si < plan.sources.size(); ++si) {
     // AXI4-Lite sources issue single beats: nothing to cut. A packet table below its alignment
@@ -2517,6 +2539,23 @@ public:
   Result<ExchangeHardware> run() {
     for (unsigned si = 0; si < plan.sources.size(); ++si)
       attach_source(si);
+    if (plan.exchange.mixed)
+      transport_mixed();
+    else
+      transport_uniform();
+    c.gate_regions();
+    c.out.ir = std::move(b.ir);
+    if (auto status = order_exchange_ir(c.out); !status)
+      return Result<ExchangeHardware>::failure(status.diagnostics());
+    if (auto status = verify_network_decode(c.out); !status)
+      return Result<ExchangeHardware>::failure(status.diagnostics());
+    if (auto status = verify_axi4_exchange_composition(c.out); !status)
+      return Result<ExchangeHardware>::failure(status.diagnostics());
+    return Result<ExchangeHardware>::success(std::move(c.out));
+  }
+
+private:
+  void transport_uniform() {
     Channels entries, responses;
     for (unsigned si = 0; si < plan.sources.size(); ++si)
       entries.emplace(plan.sources[si].name, sides[si].req_tr);
@@ -2545,18 +2584,8 @@ public:
       attach_error_logs();
       return_responses(compose_transport(x.response, responses));
     }
-    c.gate_regions();
-    c.out.ir = std::move(b.ir);
-    if (auto status = order_exchange_ir(c.out); !status)
-      return Result<ExchangeHardware>::failure(status.diagnostics());
-    if (auto status = verify_network_decode(c.out); !status)
-      return Result<ExchangeHardware>::failure(status.diagnostics());
-    if (auto status = verify_axi4_exchange_composition(c.out); !status)
-      return Result<ExchangeHardware>::failure(status.diagnostics());
-    return Result<ExchangeHardware>::success(std::move(c.out));
   }
 
-private:
   using Channels = std::map<std::string, Channel>;
 
   void bind_refinement_face(const std::string &name, const Channel &ch, unsigned word,
@@ -2567,6 +2596,38 @@ private:
     for (const auto *field : {"last", response ? "source" : "write"})
       c.bind(id + field, ch.data[c.burst_field_index(response, word, field)]);
   }
+
+  struct PathChannels {
+    Channel first;
+    std::optional<Channel> read;
+    const Channel &lane(bool reads) const { return reads ? read.value() : first; }
+  };
+  using Paths = std::map<std::string, PathChannels>;
+  void transport_mixed() {
+    Paths entries, responses;
+    for (unsigned si = 0; si < plan.sources.size(); ++si)
+      entries.emplace(plan.sources[si].name, PathChannels{sides[si].req_tr, sides[si].read_tr});
+    const auto arrivals = compose_transport_paths(plan.exchange.request, entries);
+    for (unsigned o = 0; o < plan.targets.size(); ++o) {
+      const auto &name = plan.targets[o].name;
+      const auto &arrival = arrivals.at(name);
+      if (arrival.read) {
+        const auto sent = attach_target_paths(o, arrival.first, *arrival.read);
+        responses.emplace(name, PathChannels{sent[0], sent[1]});
+      } else {
+        responses.emplace(name, PathChannels{attach_target(o, arrival.first), std::nullopt});
+      }
+    }
+    const auto returned = compose_transport_paths(plan.exchange.response, responses);
+    Channels writes, reads;
+    for (const auto &[name, path] : returned) {
+      writes.emplace(name, path.first);
+      if (path.read)
+        reads.emplace(name, *path.read);
+    }
+    return_responses(writes, reads);
+  }
+
   struct SourceSide {
     Imported ep;
     Channel req_tr; // both directions, transport layout at the endpoint word; the writes alone
@@ -3285,7 +3346,7 @@ private:
       c.drive(*side.read_taken,
               c.or_(c.and_(c.transfer(framed[1]), reads_by_granule ? read_taken : final[1]),
                     convert ? converter.bound.at("r.local_take") : c.bit(0)));
-    if (plan.exchange.separate()) {
+    if (plan.exchange.split_endpoint(sp.name, true)) {
       split_source(si, side, framed, final, held_back, convert, converter, splitter);
       return;
     }
@@ -4144,8 +4205,8 @@ private:
   // of each; a request destination split over several outputs also compares the source flow.
   ValueId switch_select(const SwitchGraphPlan &g, const std::string &node, const std::string &input,
                         const SwitchOutputPlan &output, ValueId route, ValueId source,
-                        std::optional<ValueId> path,
-                        const std::map<std::string, Leaving> &carried) {
+                        std::optional<ValueId> path, const std::map<std::string, Leaving> &carried,
+                        bool read) {
     const bool response = g.graph.response;
     const auto key = (output.endpoint ? "endpoint/" : "node/") + output.output;
     // Request destinations are targets, each flow of a target of several (destination()).
@@ -4226,8 +4287,9 @@ private:
     // destination self-check over this switch's own logic.
     if (!response &&
         std::ranges::any_of(plan.sources, [](const auto &s) { return s.outstanding > 1; })) {
-      const auto at = "decode/graph/" + g.scope() + node + ">" +
-                      (output.endpoint ? "endpoint/" : "node/") + output.output;
+      const auto at = path_lane("decode/graph/" + g.scope() + node + ">" +
+                                    (output.endpoint ? "endpoint/" : "node/") + output.output,
+                                read);
       c.bind(at + ".select/" + input, selected);
       c.bind(at + ".route/" + input, route);
       if (!split.empty())
@@ -4249,23 +4311,155 @@ private:
     c.bind(at + ".flow" + std::to_string(k), field("source"));
     c.bind(at + ".first" + std::to_string(k), field("first"));
   }
+  using SwitchInput = std::pair<std::string, std::string>;
+  using SwitchChannels = std::map<SwitchInput, PathChannels>;
+  using SwitchReadies = std::map<SwitchInput, std::array<ValueId, 2>>;
+  using SwitchRoutes = std::map<SwitchInput, std::map<std::string, Leaving>>;
+
+  // One physical switch output chooses its destination candidates and grants one packet.
+  Channel switch_output(const SwitchGraphPlan &g, const SwitchOutputPlan &output,
+                        const SwitchRoutes &carried, const SwitchChannels &incoming,
+                        SwitchReadies &readies, bool read) {
+    const auto &node = output.node;
+    const bool response = g.graph.response;
+    const auto prefix = g.scope();
+    const auto at = path_lane(
+        prefix + node + ">" + (output.endpoint ? "endpoint/" : "node/") + output.output, read);
+    const auto widths = c.burst_fragment_widths(response, word_of(node));
+    const auto last = c.burst_field_index(response, word_of(node), "last");
+    const bool routed = response || plan.target_bits;
+    const auto route =
+        routed ? c.burst_field_index(response, word_of(node), response ? "source" : "target") : 0;
+    c.select_object(prefix + node);
+    // An arbiter's state moves only while a candidate is valid.
+    auto *gated = output.inputs.size() > 1 ? c.region(prefix + node) : nullptr;
+    const auto first = b.ir.states.size();
+    std::vector<Channel> candidates;
+    for (const auto &key : output.inputs) {
+      const auto &in = incoming.at({node, key}).lane(read);
+      c.consume(gated, prefix + node, in.valid);
+      const auto &leaving = carried.at({node, key});
+      // The source flow field, compared only where routes toward one target split.
+      const bool split = std::ranges::any_of(
+          leaving, [](const auto &destination) { return destination.second.size() > 1; });
+      const auto selected = switch_select(
+          g, node, key, output, routed ? in.data[route] : c.bit(0),
+          split ? in.data[c.burst_field_index(false, word_of(node), "source")] : c.bit(0),
+          split && plan.burst_path_bits
+              ? std::optional{in.data[c.burst_field_index(response, word_of(node), "path")]}
+              : std::nullopt,
+          leaving, read);
+      auto filtered = c.channel(widths);
+      c.drive(filtered.valid, c.and_(in.valid, selected));
+      for (std::size_t f = 0; f < widths.size(); ++f)
+        c.drive(filtered.data[f], in.data[f]);
+      // An input presses only the output its packet takes.
+      if (in.level_hint)
+        filtered.level_hint = c.masked(*in.level_hint, selected);
+      readies.at({node, key})[read] =
+          c.or_(readies.at({node, key})[read], c.and_(selected, filtered.ready));
+      // The hop of this input through this output and its selection, named for inspection.
+      const auto hop = "graph/" + at + ".hop/" + key;
+      c.bind(hop + ".valid", filtered.valid);
+      c.bind(hop + ".ready", filtered.ready);
+      c.bind(hop + ".select", selected);
+      name_candidate(hop.substr(0, hop.find(".hop/")), output, candidates.size(), in, response,
+                     word_of(node));
+      candidates.push_back(filtered);
+    }
+    auto sink = c.channel(widths);
+    const auto id = "graph/" + at;
+    const auto arbiter = plan.arbiters.find(at);
+    if ((arbiter == plan.arbiters.end()) != (candidates.size() < 2))
+      throw std::logic_error("Unplanned arbiter at " + id);
+    c.graph_merge(id, candidates, sink, last,
+                  arbiter == plan.arbiters.end() ? treadle::Spec{} : arbiter->second.spec,
+                  response);
+    if (gated)
+      gated->claim(b, first);
+    // A single candidate passes through: the sink keeps its producer.
+    const auto from =
+        c.producers[incoming.at({node, output.inputs.front()}).lane(read).valid.index];
+    c.producers[sink.valid.index] = output.inputs.size() > 1 ? prefix + node : from;
+    // A source takes its responses without arbitration: their pressure ends at the exit.
+    if (response && output.endpoint)
+      sink.level_hint.reset();
+    return sink;
+  }
+
+  // A splitter uses the direction field to route each fragment.
+  PathChannels divide_paths(const Channel &in, bool response, unsigned word) {
+    const auto field = in.data[c.burst_field_index(response, word, response ? "source" : "write")];
+    const auto read = response ? b.slice(field, 0, 1) : c.not_(field);
+    Channel writes{c.and_(in.valid, c.not_(read)), c.wire(1), in.data};
+    Channel reads{c.and_(in.valid, read), c.wire(1), in.data};
+    c.drive(in.ready, b.select(read, reads.ready, writes.ready));
+    const auto owner = c.producers[in.valid.index];
+    for (const auto *lane : {&writes, &reads})
+      c.producers[lane->valid.index] = owner;
+    return {writes, reads};
+  }
+
+  PathChannels adapt_paths(const LinkPlan &planned, PathChannels paths, bool receiver) {
+    const bool split = receiver ? planned.to_split : planned.split;
+    if (paths.read.has_value() == split)
+      return paths;
+    const auto word = receiver ? planned.to_bytes : planned.from_bytes;
+    if (split)
+      return divide_paths(paths.first, planned.response, word);
+    const auto &owner = receiver ? planned.to : planned.from;
+    c.select_object(owner);
+    auto *region = c.region(owner);
+    const auto first = b.ir.states.size();
+    for (const auto *lane : {&paths.first, &*paths.read})
+      c.consume(region, owner, lane->valid);
+    auto joined = c.like(paths.first);
+    c.graph_merge(planned.join_id(receiver), {*paths.read, paths.first}, joined,
+                  c.burst_field_index(planned.response, word, "last"), treadle::Spec{},
+                  planned.response);
+    if (region)
+      region->claim(b, first);
+    c.producers[joined.valid.index] = owner;
+    return {joined, std::nullopt};
+  }
+
+  PathChannels lower_paths_link(const LinkPlan &planned, PathChannels paths) {
+    if (!plan.exchange.mixed)
+      return {c.lower_link(planned, paths.first), std::nullopt};
+    paths = adapt_paths(planned, std::move(paths), false);
+    paths.first = c.lower_link(planned, paths.first);
+    if (paths.read)
+      paths.read = c.lower_link(link(path_lane(planned.name, true)), *paths.read);
+    return adapt_paths(planned, std::move(paths), true);
+  }
+
+  Channels compose_transport(const SwitchGraphPlan &g, const Channels &entries) {
+    Paths paths;
+    for (const auto &[name, channel] : entries)
+      paths.emplace(name, PathChannels{channel, std::nullopt});
+    Channels exits;
+    for (const auto &[name, channel] : compose_transport_paths(g, paths))
+      exits.emplace(name, channel.first);
+    return exits;
+  }
+
   // One direction's transport graph from its entries to its exits: each switch output arbitrates
   // the packets its inputs select for it (reads and writes together), each link takes its planned
   // stages.
-  Channels compose_transport(const SwitchGraphPlan &g, const Channels &entries) {
-    Channels exits;
+  Paths compose_transport_paths(const SwitchGraphPlan &g, const Paths &entries) {
+    Paths exits;
     const bool response = g.graph.response;
     const std::string prefix = g.scope();
     if (refinement) {
       const auto &entry = g.graph.entries.front();
-      bind_refinement_face(prefix + "entry", entries.at(entry.endpoint), word_at(entry.endpoint),
-                           response);
+      bind_refinement_face(prefix + "entry", entries.at(entry.endpoint).first,
+                           word_at(entry.endpoint), response);
     }
     // The destinations a switch input can carry, each with the output its routes leave by: those
     // of the admitted routes that enter the switch through it. Every packet on the input is bound
     // for one of them (the source completes every other access locally), so its decode compares
     // only these windows or sources.
-    std::map<std::pair<std::string, std::string>, std::map<std::string, Leaving>> carried;
+    SwitchRoutes carried;
     for (const auto &route : g.routes) {
       // A response's return path, else the request flows of the route (flow 0 for one).
       const auto tags = response              ? std::vector<unsigned>{return_path(g, route)}
@@ -4279,14 +4473,14 @@ private:
                                                  : "endpoint/" + route.exit]
                      .insert({route.entry, tag});
     }
-    std::map<std::pair<std::string, std::string>, Channel> incoming;
+    SwitchChannels incoming;
     for (const auto &a : g.graph.entries)
       incoming.emplace(
           std::pair{a.node, "endpoint/" + a.endpoint},
-          c.lower_link(link(prefix + a.endpoint + ">" + a.node), entries.at(a.endpoint)));
+          lower_paths_link(link(prefix + a.endpoint + ">" + a.node), entries.at(a.endpoint)));
     // Each output once its inputs exist: one pass in topological order, or more over a cyclic
     // graph (planning admits one only when no route chains its cycle).
-    std::map<std::pair<std::string, std::string>, ValueId> readies;
+    SwitchReadies readies;
     std::set<const SwitchOutputPlan *> done;
     for (std::size_t pass = 0; done.size() < g.outputs.size(); ++pass)
       for (const auto &node : g.topological_order) {
@@ -4300,91 +4494,37 @@ private:
             ready.push_back(&output);
         if (ready.empty())
           continue;
-        const auto widths = c.burst_fragment_widths(response, word_of(node));
-        // A node's packet tail marker and route field (requests the target, responses the flow);
-        // a single target takes no request route field.
-        const auto last = c.burst_field_index(response, word_of(node), "last");
-        const auto field = response ? "source" : "target";
-        const bool routed = response || plan.target_bits;
-        const auto route = routed ? c.burst_field_index(response, word_of(node), field) : 0;
         for (const auto &[key, ch] : incoming)
-          if (key.first == node && !readies.contains(key))
-            readies.emplace(key, c.bit(0));
+          if (key.first == node && !readies.contains(key)) {
+            const auto zero = c.bit(0);
+            readies.emplace(key, std::array{zero, zero});
+          }
         for (const auto *at_output : ready) {
           const auto &output = *at_output;
           done.insert(at_output);
-          c.select_object(prefix + node);
-          // An arbiter's state moves only while a candidate is valid.
-          auto *gated = output.inputs.size() > 1 ? c.region(prefix + node) : nullptr;
-          const auto first = b.ir.states.size();
-          std::vector<Channel> candidates;
-          for (const auto &key : output.inputs) {
-            const auto &in = incoming.at({node, key});
-            c.consume(gated, prefix + node, in.valid);
-            const auto &leaving = carried.at({node, key});
-            // The source flow field, compared only where routes toward one target split.
-            const bool split = std::ranges::any_of(
-                leaving, [](const auto &destination) { return destination.second.size() > 1; });
-            const auto selected = switch_select(
-                g, node, key, output, routed ? in.data[route] : c.bit(0),
-                split ? in.data[c.burst_field_index(false, word_of(node), "source")] : c.bit(0),
-                split && plan.burst_path_bits
-                    ? std::optional{in.data[c.burst_field_index(response, word_of(node), "path")]}
-                    : std::nullopt,
-                leaving);
-            auto filtered = c.channel(widths);
-            c.drive(filtered.valid, c.and_(in.valid, selected));
-            for (std::size_t f = 0; f < widths.size(); ++f)
-              c.drive(filtered.data[f], in.data[f]);
-            // An input presses only the output its packet takes.
-            if (in.level_hint)
-              filtered.level_hint = c.masked(*in.level_hint, selected);
-            readies.at({node, key}) =
-                c.or_(readies.at({node, key}), c.and_(selected, filtered.ready));
-            // The hop of this input through this output and its selection, named for inspection.
-            const auto hop = "graph/" + prefix + node + ">" +
-                             (output.endpoint ? "endpoint/" : "node/") + output.output + ".hop/" +
-                             key;
-            c.bind(hop + ".valid", filtered.valid);
-            c.bind(hop + ".ready", filtered.ready);
-            c.bind(hop + ".select", selected);
-            name_candidate(hop.substr(0, hop.find(".hop/")), output, candidates.size(), in,
-                           response, word_of(node));
-            candidates.push_back(filtered);
-          }
-          auto sink = c.channel(widths);
-          const auto at =
-              prefix + node + ">" + (output.endpoint ? "endpoint/" : "node/") + output.output;
-          const auto id = "graph/" + at;
-          const auto arbiter = plan.arbiters.find(at);
-          if ((arbiter == plan.arbiters.end()) != (candidates.size() < 2))
-            throw std::logic_error("Unplanned arbiter at " + id);
-          c.graph_merge(id, candidates, sink, last,
-                        arbiter == plan.arbiters.end() ? treadle::Spec{} : arbiter->second.spec,
-                        response);
-          if (gated)
-            gated->claim(b, first);
-          // A single candidate passes through: the sink keeps its producer.
-          const auto from = c.producers[incoming.at({node, output.inputs.front()}).valid.index];
-          c.producers[sink.valid.index] = output.inputs.size() > 1 ? prefix + node : from;
-          // A source takes its responses without arbitration: their pressure ends at the exit.
-          if (response && output.endpoint)
-            sink.level_hint.reset();
-          const auto tail = c.lower_link(link(prefix + node + ">" + output.output), sink);
+          PathChannels sink{switch_output(g, output, carried, incoming, readies, false),
+                            std::nullopt};
+          if (g.graph.separate_nodes.contains(node))
+            sink.read = switch_output(g, output, carried, incoming, readies, true);
+          auto tail = lower_paths_link(link(prefix + node + ">" + output.output), sink);
           if (output.endpoint)
-            exits.emplace(output.output, tail);
+            exits.emplace(output.output, std::move(tail));
           else
-            incoming.emplace(std::pair{output.output, "node/" + node}, tail);
+            incoming.emplace(std::pair{output.output, "node/" + node}, std::move(tail));
         }
         if (std::ranges::none_of(
                 g.outputs, [&](const auto &o) { return o.node == node && !done.contains(&o); }))
           for (const auto &[key, ready_bit] : readies)
-            if (key.first == node)
-              c.drive(incoming.at(key).ready, ready_bit);
+            if (key.first == node) {
+              const auto &input = incoming.at(key);
+              c.drive(input.first.ready, ready_bit[0]);
+              if (input.read)
+                c.drive(input.read->ready, ready_bit[1]);
+            }
       }
     if (refinement) {
       const auto &exit = g.graph.exits.front();
-      bind_refinement_face(prefix + "exit", exits.at(exit.endpoint), word_at(exit.endpoint),
+      bind_refinement_face(prefix + "exit", exits.at(exit.endpoint).first, word_at(exit.endpoint),
                            response);
     }
     return exits;
@@ -6226,8 +6366,7 @@ private:
   }
 
   // The response transport's exits split by direction into each source's response faces.
-  void return_responses(const Channels &returns,
-                        const std::optional<Channels> &read_returns = std::nullopt) {
+  void return_responses(const Channels &returns, const Channels &read_returns = {}) {
     for (unsigned si = 0; si < plan.sources.size(); ++si) {
       const auto &source = plan.sources[si].name;
       const auto &side = sides[si];
@@ -6237,12 +6376,14 @@ private:
       // read and write paths each direction arrives on its own.
       const auto &arriving = returns.at(source);
       c.consume(c.region("source/" + source), "source/" + source, arriving.valid);
-      if (read_returns)
-        c.consume(c.region("source/" + source), "source/" + source, read_returns->at(source).valid);
+      const auto read = read_returns.find(source);
+      const bool split = read != read_returns.end();
+      if (split)
+        c.consume(c.region("source/" + source), "source/" + source, read->second.valid);
       const auto faces =
-          read_returns
+          split
               ? std::array{c.one_side(arriving, 0, c.bit(1), 0, true, word),
-                           c.one_side(read_returns->at(source), 1, c.bit(1), 0, true, word)}
+                           c.one_side(read->second, 1, c.bit(1), 0, true, word)}
               : c.steer(arriving,
                         c.eq(arriving.data[c.burst_field_index(true, word, "source")], 2 * si + 1),
                         {c.bit(1), c.bit(1)}, 0, true, word);
@@ -6258,8 +6399,8 @@ private:
         c.bind(at + ".return_error", ep.data[c.endpoint_field_index(true, "error")]);
       }
       // A response packet tail at the source answers its burst's unit of the pool.
-      if (side.pool && read_returns)
-        c.pool_answers_split(*side.pool, {arriving, read_returns->at(source)}, word);
+      if (side.pool && split)
+        c.pool_answers_split(*side.pool, {arriving, read->second}, word);
       else if (side.pool)
         c.pool_answers("source/" + source + "/request", *side.pool, arriving, word);
     }

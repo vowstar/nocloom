@@ -1231,7 +1231,7 @@ bool lite_target(const NetworkPlan &plan, const std::string &target) {
   return plan.target(target).protocol == Protocol::Axi4Lite;
 }
 bool joins_paths(const NetworkPlan &plan, const TargetPlan &target) {
-  return plan.exchange.separate() &&
+  return plan.exchange.split_endpoint(target.name, false) &&
          (ahb_target(plan, target.name) || apb_target(plan, target.name) ||
           lite_target(plan, target.name));
 }
@@ -1604,7 +1604,7 @@ Axi4OutletProfile axi4_outlet_profile(const NetworkPlan &plan, unsigned index) {
   profile.response_direct = joins_directly(tp);
   profile.response_run_bits = plan.response_run_bits();
   // Separate read and write paths offer both heads at once.
-  profile.separate = plan.exchange.separate();
+  profile.separate = plan.exchange.split_endpoint(tp.name, false);
   profile.one_head = profile.merged && profile.interleave && tp.outstanding == 1 &&
                      !profile.separate && std::ranges::none_of(tp.pipes, [](const EndpointPipe &e) {
                        return e.name.ends_with("/pipe/dispatch");

@@ -70,9 +70,10 @@ crosses one request and one response switch. 2 * 20 * 2 = 80 cycles, plus a
 from nlverif import config as nlconfig
 
 PARAMS = globals().get("PARAMS", {})
-SEPARATE = PARAMS.get("paths", "shared") == "separate"
-if PARAMS.get("paths", "shared") not in ("shared", "separate"):
-    raise ValueError("paths is shared or separate")
+PATHS = PARAMS.get("paths", "shared")
+if PATHS not in ("shared", "separate", "mixed"):
+    raise ValueError("paths is shared, separate or mixed")
+SEPARATE = PATHS != "shared"
 
 CONFIG = dict(
     schema_version=10, name="rw_merge", address_width=32,
@@ -89,13 +90,24 @@ CONFIG = dict(
     output=dict(backend="verilog", language="verilog_2001"))
 
 if SEPARATE:
-    CONFIG = dict(CONFIG, read_write="separate",
+    CONFIG = dict(CONFIG, read_write="separate" if PATHS == "separate" else "shared",
                   initiators=[dict(i, max_outstanding=4) for i in CONFIG["initiators"]],
                   targets=[dict(t, max_outstanding=2) if t["protocol"] == "axi4" else t
                            for t in CONFIG["targets"]])
 
 # The same network with a second source s1 for the endpoint loops.
 LOOP_CONFIG = dict(CONFIG, initiators=CONFIG["initiators"] + [dict(CONFIG["initiators"][0], name="s1")])
+
+if PATHS == "mixed":
+    for config in (CONFIG, LOOP_CONFIG):
+        config["topology"] = dict(
+            request=dict(
+                nodes=[dict(name="fabric", read_write="separate"), dict(name="peripheral")],
+                links=[{"from": "fabric", "to": "peripheral"}],
+                entries=[dict(endpoint=i["name"], node="fabric") for i in config["initiators"]],
+                exits=[dict(endpoint="t0", node="fabric"), dict(endpoint="t1", node="fabric"),
+                       dict(endpoint="t2", node="peripheral")]),
+            response="mirror")
 
 T0, T1, T2 = 0x0, 0x10000, 0x20000
 LIMIT = 2000   # cycles a wait of this case may take before it is a hang

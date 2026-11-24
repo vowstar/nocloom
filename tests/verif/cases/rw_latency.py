@@ -61,6 +61,45 @@ def configuration(paths):
 SEPARATE, SHARED = configuration('separate'), configuration('shared')
 
 
+def mixed_configuration(clocked=False):
+    config = configuration('shared')
+    config['topology'] = {}
+    config['targets'][1]['max_outstanding'] = 4
+    fast = dict(name='fast', read_write='separate', clock_domain='main')
+    fabric = dict(name='fabric', read_write='separate', clock_domain='main')
+    bridge = dict(name='bridge', read_write='separate', clock_domain='main')
+    peripheral = dict(name='peripheral', clock_domain='main')
+    if clocked:
+        config['clock_domains'].append(dict(name='slow', clock_port='clk_slow',
+                                            reset_port='reset_n', test_port='test'))
+        peripheral.update(clock_domain='slow', transport_word_bytes=8)
+        config['targets'][1]['clock_domain'] = 'slow'
+    sources = [dict(endpoint=n, node='fabric') for n in ('r0', 'w0')]
+    destinations = [dict(endpoint='t0', node='fast'), dict(endpoint='t1', node='peripheral')]
+    for direction in ('request', 'response'):
+        request = direction == 'request'
+        pairs = [('fabric', 'fast', True), ('fabric', 'bridge', False),
+                 ('bridge', 'peripheral', True)]
+        links = []
+        for left, right, split in pairs:
+            start, end = (left, right) if request else (right, left)
+            link = {'from': start, 'to': end}
+            if split:
+                link['read_write'] = 'separate'
+            if clocked and 'peripheral' in (start, end):
+                link['pipeline'] = dict(slice='forward')
+            links.append(link)
+        config['topology'][direction] = dict(
+            nodes=[fast, fabric, bridge, peripheral], links=links,
+            entries=sources if request else destinations,
+            exits=destinations if request else sources)
+    return config
+
+
+MIXED = mixed_configuration()
+CLOCKED = mixed_configuration(clocked=True)
+
+
 def model(config):
     return dict(routes=nlconfig.routes(config), keeps_decerr=nlconfig.keeps_decerr(config),
                 targets=nlconfig.targets(config))
@@ -110,24 +149,59 @@ def oracle(checker, events, sources, targets):
     return out
 
 
+BFMS = [dict(name=n, kind="axi_master", endpoint="initiator:" + n) for n in ('r0', 'w0')]
+BFMS += [dict(name=n, kind="axi_slave", endpoint="target:" + n, salt=k + 1)
+         for k, n in enumerate(('t0', 't1'))]
 CASE = dict(
     name="rw_latency",
     contracts=["AXI.PATHS.SEPARATE", "AXI.ROUTE.LOCAL_OFFSET"],
     dut=dict(source="cli", config=SEPARATE),
-    bfms=[dict(name=n, kind="axi_master", endpoint="initiator:" + n) for n in ('r0', 'w0')]
-    + [dict(name=n, kind="axi_slave", endpoint="target:" + n, salt=k + 1)
-       for k, n in enumerate(('t0', 't1'))],
+    bfms=BFMS,
     model=model(SEPARATE),
     max_cycles=20000,
     oracle=oracle,
     configs=[dict(label=""),
              dict(label="shared", dut=dict(source="cli", config=SHARED), model=model(SHARED),
-                  scenario_args=dict(shared=True))],
+                  scenario_args=dict(shared=True)),
+             dict(label="mixed", dut=dict(source="cli", config=MIXED), model=model(MIXED),
+                  scenario_args=dict(mixed=True)),
+             dict(label="mixed_clocked", dut=dict(source="cli", config=CLOCKED),
+                  model=model(CLOCKED), scenario_args=dict(mixed=True),
+                  main_clock="main", clocks=dict(main=10.0, slow=17.0),
+                  bfms=[dict(p, clock="slow" if p["name"] == "t1" else "main") for p in BFMS])],
     faults=[],
 )
 
 
-def scenario(t, seed, shared=False):
+def reset_boundaries(t):
+    """Reset with an offered W fragment and an AR waiting behind its packet."""
+    t.ready("t1", "w", "last_hold")
+    first = t.snap("t1", "w")
+    t.write("w0", TURN_AT + 0x400, beats=32, id=2)
+    t.wait("t1", "w", ">=", 1, since=first, limit=LIMIT, label="BOUNDARY_WRITE")
+    before = t.snap("t1", "ar")
+    t.read("r0", TURN_AT + 0x800, beats=4, id=1)
+    t.delay(30)
+    t.expect_now("t1", "ar", "==", 0, since=before, label="BOUNDARY_HOLDS_PACKET")
+    t.reset(6)
+    t.delay(5)
+    t.ready("r0", "r", "beats", 2)
+    first = t.snap("r0", "r")
+    t.read("r0", TURN_AT + 0xa00, beats=32, id=1)
+    t.wait("r0", "r", "==", 2, since=first, limit=LIMIT, label="BOUNDARY_READ")
+    t.delay(30)
+    t.expect_now("r0", "r", "==", 2, since=first, label="BOUNDARY_READ_STALLED")
+    t.reset(6)
+    t.delay(5)
+    t.ready("t1", "w", "modulo", 3, 0)
+    t.ready("r0", "r", "modulo", 4, 0)
+    t.ready("w0", "b", "modulo", 3, 0)
+    t.write("w0", TURN_AT + 0xc00, beats=8, id=2)
+    t.read("r0", TURN_AT + 0xc00, beats=8, id=1)
+    t.drain(limit=LIMIT, label="BOUNDARY_AFTER_RESET")
+
+
+def scenario(t, seed, shared=False, mixed=False):
     del shared  # the oracle judges the configurations apart
     t.reset(4)
     t.delay(2)
@@ -149,7 +223,7 @@ def scenario(t, seed, shared=False):
     t.wait("w0", "b", "==", 1, since=b0, limit=LIMIT, label="WRITE_DONE")
     t.ready("t0", "w", "always")
     t.drain(label="DRAIN_BESIDE")
-    # Phase 3: turns at the one entry of t1.
+    # Phase 3: turns beside eight single-beat writes to t1.
     t.mark("phase", 3)
     t.set("t1", "b_lat", 8)
     aw0, r0 = t.snap("t1", "aw"), t.snap("r0", "rlast")
@@ -162,4 +236,6 @@ def scenario(t, seed, shared=False):
     # Read back the write.
     t.read("w0", WRITE_AT, beats=WRITE_BEATS, id=1)
     t.drain(limit=LIMIT, label="DRAIN_READBACK")
+    if mixed:
+        reset_boundaries(t)
     t.end()

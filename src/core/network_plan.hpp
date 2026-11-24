@@ -378,6 +378,13 @@ struct LinkPlan {
   // then the output word of each of its adapters.
   std::vector<unsigned> sender_words, receiver_words;
   std::vector<StagePlan> stages;
+  bool from_split = false, split = false, to_split = false, read_lane = false;
+  bool joins(bool receiver) const {
+    return !read_lane && (receiver ? split && !to_split : from_split && !split);
+  }
+  std::string join_id(bool receiver) const {
+    return "join/" + name + (receiver ? "/receiver" : "/sender");
+  }
   unsigned crossing_bytes() const { return word.value_or(edge_bytes); }
   bool operator==(const LinkPlan &) const = default;
 };

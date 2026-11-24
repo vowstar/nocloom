@@ -519,17 +519,33 @@ struct Obligations {
         if (o.inputs.size() > 1) {
           const auto id = "graph/" + g->scope() + o.node + ">" +
                           (o.endpoint ? "endpoint/" : "node/") + o.output;
-          resource(id, "packet_grant", 0, "selected input packet", "tail fragment accepted");
-          wait(id, init, CrossWaitKind::Startup, "common reset release");
-          for (const auto &destination : o.destinations)
-            for (const auto *operation : operations)
-              wait(id,
-                   response ? flow_id(destination, operation) + "/return"
-                            : "burst_service/" + destination + "/" + operation,
-                   response ? CrossWaitKind::ReservedWrite : CrossWaitKind::Capacity,
-                   "packet ownership releases after the selected destination accepts its tail");
+          if (g->graph.separate_nodes.contains(o.node)) {
+            output_grant(id, o, response, {"write"});
+            output_grant(path_lane(id, true), o, response, {"read"});
+          } else {
+            output_grant(id, o, response, operations);
+          }
         }
     }
+    for (const auto &link : plan.links)
+      for (const bool receiver : {false, true})
+        if (link.joins(receiver)) {
+          const auto id = link.join_id(receiver);
+          resource(id, "packet_grant", 0, "selected input packet", "tail fragment accepted");
+          wait(id, init, CrossWaitKind::Startup, "common reset release");
+        }
+  }
+  void output_grant(const std::string &id, const SwitchOutputPlan &o, bool response,
+                    const std::vector<const char *> &operations) {
+    resource(id, "packet_grant", 0, "selected input packet", "tail fragment accepted");
+    wait(id, init, CrossWaitKind::Startup, "common reset release");
+    for (const auto &destination : o.destinations)
+      for (const auto *operation : operations)
+        wait(id,
+             response ? flow_id(destination, operation) + "/return"
+                      : "burst_service/" + destination + "/" + operation,
+             response ? CrossWaitKind::ReservedWrite : CrossWaitKind::Capacity,
+             "packet ownership releases after the selected destination accepts its tail");
   }
   void links() {
     // Link stages are inventoried without wait edges. A serializer or deserializer subdivides one

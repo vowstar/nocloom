@@ -749,6 +749,26 @@ void admit_graph_pairs(NetworkPlan &plan, const Definition &d) {
   }
 }
 
+void record_topology_routes(const ExchangeTopology &topology, nlohmann::json &topology_record) {
+  // The explicit routes as written, by pair and flow pair.
+  auto routes = topology.routes;
+  std::ranges::sort(routes, {}, [](const ExchangeRoute &r) {
+    return std::tie(r.initiator, r.target, r.source_path, r.target_path);
+  });
+  for (const auto &route : routes) {
+    nlohmann::json row = {{"initiator", route.initiator}, {"target", route.target}};
+    if (route.source_path)
+      row["source_path"] = route.source_path;
+    if (route.target_path)
+      row["target_path"] = route.target_path;
+    for (const auto &[key, path] :
+         {std::pair{"request", &route.request}, {"response", &route.response}})
+      if (!path->empty())
+        row[key] = *path;
+    topology_record["routes"].push_back(std::move(row));
+  }
+}
+
 void plan_graphs(NetworkPlan &plan, const Definition &d) {
   const auto topology = d.topology ? *d.topology : [&] {
     ExchangeTopology generated;
@@ -768,9 +788,10 @@ void plan_graphs(NetworkPlan &plan, const Definition &d) {
     topology_record["generated"] = "one_switch_per_direction";
   // Separate read and write paths take the topology twice: the write graphs keep the record, the
   // read graphs add their hardware node to it.
-  const auto carried = d.read_write == ReadWritePaths::Separate
-                           ? std::vector{Carried::Writes, Carried::Reads}
-                           : std::vector{Carried::Both};
+  const auto mode = path_mode(d);
+  plan.exchange.mixed = mode == PathMode::Mixed;
+  const auto carried = mode == PathMode::Separate ? std::vector{Carried::Writes, Carried::Reads}
+                                                  : std::vector{Carried::Both};
   auto convert = [&](ExchangeGraph graph, const std::string &direction, Carried carries,
                      DirectedSwitchGraph &result) {
     const bool response = direction == "response";
@@ -800,6 +821,12 @@ void plan_graphs(NetworkPlan &plan, const Definition &d) {
         topology_record[direction]["nodes"][n]["read_hardware_node"] = id;
       record["nodes"].push_back(
           {{"name", node.name}, {"hardware_node", id}, {"transport_word_bytes", word}});
+      if (plan.exchange.mixed) {
+        const bool split = node.read_write.value_or(d.read_write) == ReadWritePaths::Separate;
+        if (split)
+          result.separate_nodes.insert(id);
+        record["nodes"].back()["read_write"] = split ? "separate" : "shared";
+      }
       if (plan.placement) {
         plan.placement->objects[scope + id] = node.clock_domain.value();
         record["nodes"].back()["clock_domain"] = *node.clock_domain;
@@ -827,6 +854,12 @@ void plan_graphs(NetworkPlan &plan, const Definition &d) {
       const auto &from = identities.at(edge.from), &to = identities.at(edge.to);
       result.edges.push_back({from, to});
       nlohmann::json link = {{"from", edge.from}, {"to", edge.to}};
+      if (plan.exchange.mixed) {
+        const bool split = edge.read_write.value_or(d.read_write) == ReadWritePaths::Separate;
+        if (split)
+          result.separate_links.emplace(from, to);
+        link["read_write"] = split ? "separate" : "shared";
+      }
       auto &planned = plan.links.emplace_back();
       planned.name = scope + from + ">" + to;
       if ((planned.word = edge.transport_word_bytes))
@@ -889,6 +922,8 @@ void plan_graphs(NetworkPlan &plan, const Definition &d) {
           fixed.target_path = route.target_path;
       }
   };
+  if (plan.exchange.mixed)
+    topology_record["read_write"] = "mixed";
   if (carried.size() > 1) {
     plan.exchange.read_request.emplace();
     plan.exchange.read_response.emplace();
@@ -902,23 +937,7 @@ void plan_graphs(NetworkPlan &plan, const Definition &d) {
             (reads ? *plan.exchange.read_response : plan.exchange.response).graph);
   }
   std::ranges::sort(plan.nodes, {}, &NodePlan::id);
-  // The explicit routes as written, by pair and flow pair.
-  auto routes = topology.routes;
-  std::ranges::sort(routes, {}, [](const ExchangeRoute &r) {
-    return std::tie(r.initiator, r.target, r.source_path, r.target_path);
-  });
-  for (const auto &route : routes) {
-    nlohmann::json row = {{"initiator", route.initiator}, {"target", route.target}};
-    if (route.source_path)
-      row["source_path"] = route.source_path;
-    if (route.target_path)
-      row["target_path"] = route.target_path;
-    for (const auto &[key, path] :
-         {std::pair{"request", &route.request}, {"response", &route.response}})
-      if (!path->empty())
-        row[key] = *path;
-    topology_record["routes"].push_back(std::move(row));
-  }
+  record_topology_routes(topology, topology_record);
   plan.topology_record = topology_record.dump();
   admit_graph_pairs(plan, d);
 }

@@ -52,15 +52,14 @@ std::optional<unsigned> owning(const std::vector<unsigned> &owner,
 // decodes (message.hpp point 16) and the switches' own logic on that index.
 std::optional<unsigned> decision(const ExchangeHardware &h, ConeEvaluator &evaluate,
                                  const SwitchGraphPlan &g, const std::string &source,
-                                 std::uint64_t address, unsigned flow) {
+                                 std::uint64_t address, unsigned flow, bool read) {
   const auto entry = std::ranges::find(g.graph.entries, source, &SwitchAttachment::endpoint);
   if (entry == g.graph.entries.end())
     return std::nullopt;
   std::uint64_t route = 0;
   if (h.plan.target_bits) {
     // The write face's decode, the read face's on the read paths.
-    const auto at =
-        "source/" + source + (g.graph.carried == Carried::Reads ? "/read.route_" : "/write.route_");
+    const auto at = "source/" + source + (read ? "/read.route_" : "/write.route_");
     const auto t = h.bindings.find(at + "target"), a = h.bindings.find(at + "address");
     if (t == h.bindings.end() || a == h.bindings.end())
       return std::nullopt;
@@ -76,8 +75,9 @@ std::optional<unsigned> decision(const ExchangeHardware &h, ConeEvaluator &evalu
     for (const auto &o : g.outputs) {
       if (o.node != node || std::ranges::find(o.inputs, key) == o.inputs.end())
         continue;
-      const auto at = "decode/graph/" + g.scope() + node + ">" +
-                      (o.endpoint ? "endpoint/" : "node/") + o.output;
+      const auto at = path_lane("decode/graph/" + g.scope() + node + ">" +
+                                    (o.endpoint ? "endpoint/" : "node/") + o.output,
+                                read && g.graph.separate_nodes.contains(node));
       const auto s = h.bindings.find(at + ".select/" + key),
                  r = h.bindings.find(at + ".route/" + key),
                  from = h.bindings.find(at + ".source/" + key),
@@ -91,7 +91,8 @@ std::optional<unsigned> decision(const ExchangeHardware &h, ConeEvaluator &evalu
         pinned[from->second.index] =
             2 * static_cast<std::uint64_t>(
                     std::ranges::find(h.plan.sources, source, &SourcePlan::name) -
-                    h.plan.sources.begin());
+                    h.plan.sources.begin()) +
+            read;
       if (path != h.bindings.end())
         pinned[path->second.index] = flow;
       const auto hit = evaluate(s->second.index, {}, {}, pinned);
@@ -129,8 +130,12 @@ struct Decisions {
       for (unsigned flow = 0;
            !g->graph.response && flow < std::max<std::size_t>(1, sp.flows.size()); ++flow)
         if (flows >> flow & 1) {
-          const auto here = decision(h, select, *g, sp.name, address, flow);
+          const auto here =
+              decision(h, select, *g, sp.name, address, flow, g->graph.carried == Carried::Reads);
           out = !out || *out == here ? here : std::nullopt;
+          if (h.plan.exchange.mixed &&
+              decision(h, select, *g, sp.name, address, flow, true) != here)
+            out = std::nullopt;
         }
     return it->second = out.value_or(std::nullopt);
   }

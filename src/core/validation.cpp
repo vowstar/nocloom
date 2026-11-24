@@ -2342,7 +2342,7 @@ void check_endpoint_gating(Checks &c) {
 // (an issue, arrival, dispatch or response pipe) have no form for two paths.
 void check_read_write(Checks &c) {
   const auto &d = c.d;
-  if (d.read_write != ReadWritePaths::Separate)
+  if (detail::path_mode(d) == detail::PathMode::Shared)
     return;
   const auto reject = [&](const std::string &field, const std::string &what) {
     c("NCL_READ_WRITE_PATHS", field, what + " does not support separate read and write paths");

@@ -40,6 +40,13 @@ Capacity). Phase 6 swaps the directions: six writes of s0 press and one AW
 reaches t1 before the AR of s1. With shared paths the requests arrive in
 order on one path and need no turn: the companion checks at most TURNS
 handshakes before the one that waits.
+
+The configuration "mixed" runs the same phases with shared paths but for t0:
+the shared switch of the sources divides the packets for t0 onto a separate
+link with a forward slice on each path, which leads to the separate switch of
+t0. A write packet can then wait in the write path while a miss passes on
+the read path. t1 keeps shared faces, so its turns are judged as with shared
+paths.
 """
 
 import sys
@@ -81,6 +88,33 @@ def configuration(paths):
 
 SEPARATE, SHARED = configuration('separate'), configuration('shared')
 
+
+def mixed_configuration():
+    """Shared paths but for t0: a separate link with a forward slice leads to its separate
+    switch."""
+    config = configuration('shared')
+    nodes = [dict(name='fabric', clock_domain='main'),
+             dict(name='fast', read_write='separate', clock_domain='main'),
+             dict(name='peripheral', clock_domain='main')]
+    sources = [dict(endpoint=n, node='fabric') for n in ('s0', 's1')]
+    destinations = [dict(endpoint='t0', node='fast'), dict(endpoint='t1', node='peripheral')]
+    config['topology'] = {}
+    for direction in ('request', 'response'):
+        request = direction == 'request'
+        links = []
+        for far in ('fast', 'peripheral'):
+            start, end = ('fabric', far) if request else (far, 'fabric')
+            link = {'from': start, 'to': end}
+            if far == 'fast':
+                link.update(read_write='separate', pipeline=dict(slice='forward'))
+            links.append(link)
+        config['topology'][direction] = dict(
+            nodes=nodes, links=links, entries=sources if request else destinations,
+            exits=destinations if request else sources)
+    return config
+
+
+MIXED = mixed_configuration()
 
 
 def model(config):
@@ -158,6 +192,8 @@ CASE = dict(
     oracle=oracle,
     configs=[dict(label=""),
              dict(label="shared", dut=dict(source="cli", config=SHARED), model=model(SHARED),
+                  scenario_args=dict(shared=True)),
+             dict(label="mixed", dut=dict(source="cli", config=MIXED), model=model(MIXED),
                   scenario_args=dict(shared=True))],
     faults=[],
 )

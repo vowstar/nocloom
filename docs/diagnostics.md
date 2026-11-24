@@ -111,7 +111,7 @@ See [protocols](protocols.md), [transactions](transactions.md),
 | `NCL_SWITCH_IDENTITY` | A topology direction attaches an endpoint more than once in `entries` or in `exits`, or an attachment has an invalid endpoint name |
 | `NCL_SWITCH_EDGE_DUPLICATE` | Two links of one topology direction have the same `from` and `to` |
 | `NCL_SWITCH_PAIR` | A connected endpoint has no attachment in a topology direction, or no connected pair uses an attachment |
-| `NCL_READ_WRITE_PATHS` | `read_write: separate` with an option that has no form for [separate paths](read-write-paths.md) |
+| `NCL_READ_WRITE_PATHS` | A network with [separate or mixed paths](read-write-paths.md) uses an option that is unavailable with separate paths |
 | `NCL_AXI4_TOPOLOGY` | A topology direction has no node or more than 128 nodes. A node name is invalid or repeated. A node of a clocked graph has no `clock_domain`. A link or attachment names an absent node. A pipe selects an unknown `slice`, sets `ungated: true` without a slot or sets `bypass_port` without a forward slot |
 | `NCL_REFINEMENT_SCOPE` | The requested [read refinement map](read-refinement.md) cannot describe the generated hardware |
 | `NCL_AXI4_EXCHANGE_PROFILE` | `transport_word_bytes` of a node or link is not 4, 8, 16 or 32 |

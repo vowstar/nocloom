@@ -20,6 +20,38 @@ bool graph_scoped(std::string_view name) {
   return response_scope(name) || name.starts_with("req/") || name.starts_with("wreq/") ||
          name.starts_with("rreq/");
 }
+PathMode path_mode(const Definition &d) {
+  if (!d.topology)
+    return d.read_write == ReadWritePaths::Shared ? PathMode::Shared : PathMode::Separate;
+  const auto uses = [&](ReadWritePaths paths) {
+    const auto matches = [&](const auto &item) {
+      return item.read_write.value_or(d.read_write) == paths;
+    };
+    for (const auto *g : {&d.topology->request, &d.topology->response})
+      if (std::ranges::any_of(g->nodes, matches) || std::ranges::any_of(g->links, matches))
+        return true;
+    return false;
+  };
+  if (!uses(ReadWritePaths::Separate))
+    return PathMode::Shared;
+  return uses(ReadWritePaths::Shared) ? PathMode::Mixed : PathMode::Separate;
+}
+bool SwitchGraphPlan::split_at(const std::string &endpoint, bool entry) const {
+  const auto &attachments = entry ? graph.entries : graph.exits;
+  return std::ranges::any_of(attachments, [&](const auto &a) {
+    return a.endpoint == endpoint && graph.separate_nodes.contains(a.node);
+  });
+}
+PathMode SwitchGraphPlan::route_mode(const SwitchRoute &route) const {
+  unsigned split = 0;
+  for (std::size_t i = 0; i < route.nodes.size(); ++i) {
+    split += graph.separate_nodes.contains(route.nodes[i]);
+    if (i)
+      split += graph.separate_links.contains({route.nodes[i - 1], route.nodes[i]});
+  }
+  const auto elements = 2 * route.nodes.size() - 1;
+  return !split ? PathMode::Shared : split == elements ? PathMode::Separate : PathMode::Mixed;
+}
 namespace {
 Diagnostic invalid(std::string code, std::string field, std::string message) {
   return error(std::move(code), std::move(field), std::move(message));

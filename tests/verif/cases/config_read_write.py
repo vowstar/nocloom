@@ -32,6 +32,50 @@ def paths(value):
     return cfg
 
 
+def local_paths(separate):
+    cfg = copy.deepcopy(BASE)
+    for direction in ("request", "response"):
+        request = direction == "request"
+        source = [{"endpoint": s, "node": "fabric"} for s in ("s0", "s1")]
+        target = [{"endpoint": "t0", "node": "fabric"},
+                  {"endpoint": "t1", "node": "peripheral"}]
+        node = {"name": "fabric", "read_write": "separate" if separate else "shared"}
+        start, end = ("fabric", "peripheral") if request else ("peripheral", "fabric")
+        link = {"from": start, "to": end}
+        if separate and not request:
+            link["read_write"] = "separate"
+        if separate and request:
+            node["arbitration"] = [dict(output="node/peripheral", policy="fixed_priority",
+                                        priority=["endpoint/s0", "endpoint/s1"])]
+        cfg.setdefault("topology", {})[direction] = dict(
+            nodes=[node, {"name": "peripheral"}], links=[link],
+            entries=source if request else target, exits=target if request else source)
+    return cfg
+
+
+def mixed_outputs(mapping, out, peers):
+    network = mapping["network"]
+    assert network["read_write"] == "mixed", "network.read_write is not mixed"
+    assert {r["read_write"] for r in network["request_routes"]} == {"mixed", "separate"}, "route modes"
+    boundaries = network["path_boundaries"]
+    assert {(b["kind"], b["side"]) for b in boundaries} == {
+        ("join", "sender"), ("split", "sender")}, "boundary modes"
+    graph = json.loads(next(out.glob("*.dependency.json")).read_text())
+    assert graph["model_omitted"] == "mixed read and write paths", "mixed dependency model"
+    assert not graph["completion"]["applies"], "mixed completion applicability"
+    assert all(x["liveness"] == "" for x in graph["excluded"]), "dependency exclusions"
+    for boundary in boundaries:
+        if boundary["kind"] != "join":
+            continue
+        resource = boundary["resource"]
+        grants = {n["key"].removeprefix(resource) for n in graph["nodes"]
+                  if n.get("binding") == resource and n["kind"] == "join.held"}
+        assert grants == {"/read", "/write"}, "join grants in dependency graph"
+    unmet = [p["subject"] for p in graph["completion"]["unmet"] if p["clause"] == "arb_fair"]
+    assert unmet == ["request/fabric>node/peripheral",
+                     "request/fabric>node/peripheral/read"], "fixed priority premises"
+
+
 def separate_outputs(mapping, out, peers):
     network = mapping["network"]
     assert network["read_write"] == "separate", "network.read_write is not separate"
@@ -71,7 +115,56 @@ CASES = [
                      "dependency model")]),
     dict(name="value", config=paths("both"), expect="reject", code="NCL_SCHEMA_TYPE",
          field="read_write"),
+    dict(name="local_default", config=local_paths(False), expect="accept", commands=("generate",)),
+    dict(name="mixed", config=local_paths(True), expect="accept",
+         commands=("validate", "generate"), check=mixed_outputs,
+         mutations=[
+             ("missing_boundary", edit_json("*.map.json",
+                                             lambda m: m["network"]["path_boundaries"].pop()),
+              "boundary modes"),
+             ("completion", edit_json("*.dependency.json",
+                                       lambda g: g["completion"].update(applies=True)),
+              "mixed completion applicability"),
+             ("join_grant", edit_json("*.dependency.json",
+                                     lambda g: next(n for n in g["nodes"]
+                                                    if n["kind"] == "join.held").pop("binding")),
+              "join grants in dependency graph"),
+         ]),
 ]
+
+for object_type in ("nodes", "links"):
+    cfg = local_paths(False)
+    cfg["topology"]["request"][object_type][0]["read_write"] = "both"
+    CASES.append(dict(name=f"local_value_{object_type}", config=cfg, expect="reject",
+                      code="NCL_SCHEMA_TYPE", field=f"topology.request.{object_type}[0].read_write"))
+
+cfg = local_paths(False)
+for graph in cfg["topology"].values():
+    for node in graph["nodes"]:
+        node.pop("read_write", None)
+CASES.append(dict(name="local_default_omitted", config=cfg, expect="accept",
+                  commands=("generate",), same_as="local_default"))
+
+for mode, peer in (("shared", "local_default"), ("separate", "global_separate")):
+    cfg = local_paths(False)
+    for graph in cfg["topology"].values():
+        for item in graph["nodes"] + graph["links"]:
+            item["read_write"] = mode
+    cfg["read_write"] = "separate" if mode == "shared" else "shared"
+    if mode == "separate":
+        global_cfg = local_paths(False)
+        global_cfg["read_write"] = "separate"
+        for graph in global_cfg["topology"].values():
+            for node in graph["nodes"]:
+                node.pop("read_write", None)
+        CASES.append(dict(name=peer, config=global_cfg, expect="accept", commands=("generate",)))
+    CASES.append(dict(name=f"all_local_{mode}", config=cfg, expect="accept",
+                      commands=("generate",), same_as=peer))
+
+cfg = local_paths(True)
+cfg["initiators"][1]["qos"] = dict(levels=dict(read=1, write=0))
+CASES.append(dict(name="mixed_levels", config=cfg, expect="reject",
+                  code="NCL_READ_WRITE_PATHS", field="initiators[1].qos"))
 
 
 def refused(name, field, change):

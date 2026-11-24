@@ -1,5 +1,5 @@
-"""Network exclusive access at a one-entry AXI4 target with shared and separate
-read and write paths (public CLI).
+"""Network exclusive access at a one-entry AXI4 target with shared, separate and
+mixed read and write paths (public CLI).
 
 AXI4 sources s0 and s1 keep four bursts each. The AXI4 target t0 keeps one
 burst and has a network exclusive monitor. Each exclusive write starts only
@@ -14,7 +14,7 @@ it.
      write must fail (OKAY, no byte written).
 With separate paths a write can pass a read that waits for t0, so these
 phases check that a source that keeps the A7.2.2 order still gets the
-monitor's answer with both path configurations.
+monitor's answer on every path configuration.
 """
 
 import sys
@@ -48,7 +48,32 @@ def configuration(paths):
     return endpoint_ports(config, id_width=2, len_width=8)
 
 
-SHARED, SEPARATE = configuration('shared'), configuration('separate')
+def mixed_configuration():
+    """Shared paths but for t0: a separate link with a forward slice leads to its separate
+    switch, so a write packet for t0 can pass a read packet that waits."""
+    config = configuration('shared')
+    nodes = [dict(name='fabric', clock_domain='main'),
+             dict(name='fast', read_write='separate', clock_domain='main'),
+             dict(name='peripheral', clock_domain='main')]
+    sources = [dict(endpoint=n, node='fabric') for n in ('s0', 's1')]
+    destinations = [dict(endpoint='t0', node='fast'), dict(endpoint='t1', node='peripheral')]
+    config['topology'] = {}
+    for direction in ('request', 'response'):
+        request = direction == 'request'
+        links = []
+        for far in ('fast', 'peripheral'):
+            start, end = ('fabric', far) if request else (far, 'fabric')
+            link = {'from': start, 'to': end}
+            if far == 'fast':
+                link.update(read_write='separate', pipeline=dict(slice='forward'))
+            links.append(link)
+        config['topology'][direction] = dict(
+            nodes=nodes, links=links, entries=sources if request else destinations,
+            exits=destinations if request else sources)
+    return config
+
+
+SHARED, SEPARATE, MIXED = configuration('shared'), configuration('separate'), mixed_configuration()
 
 
 def model(config):
@@ -68,7 +93,8 @@ CASE = dict(
     max_cycles=20000,
     configs=[dict(label=""),
              dict(label="separate", dut=dict(source="cli", config=SEPARATE),
-                  model=model(SEPARATE))],
+                  model=model(SEPARATE)),
+             dict(label="mixed", dut=dict(source="cli", config=MIXED), model=model(MIXED))],
     faults=[],
 )
 

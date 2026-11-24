@@ -534,7 +534,7 @@ void apply_node_pipes(const Reader &r, const std::string &path,
 }
 
 // response: mirror, or {mirror: {rename_suffix, link_overrides}}. Nodes keep
-// the request order, name, transport_word_bytes and clock_domain (no
+// the request order, name, transport_word_bytes, clock_domain and read_write (no
 // arbitration); the i-th link reverses the i-th request link and swaps
 // pipeline with sender_pipeline; entries are the request exits and exits the
 // request entries, each with its pipeline. Overrides then replace the fields
@@ -579,10 +579,15 @@ ExchangeGraph mirror(Reader &r, const ExchangeGraph &request, const YAML::Node &
   };
   ExchangeGraph g;
   for (const auto &n : request.nodes)
-    g.nodes.push_back({rename(n.name), n.transport_word_bytes, n.clock_domain, {}});
+    g.nodes.push_back({rename(n.name), n.transport_word_bytes, n.clock_domain, {}, n.read_write});
   for (const auto &l : request.links)
-    g.links.push_back(
-        {rename(l.to), rename(l.from), l.transport_word_bytes, l.sender_pipeline, l.pipeline});
+    g.links.push_back({rename(l.to),
+                       rename(l.from),
+                       l.transport_word_bytes,
+                       l.sender_pipeline,
+                       l.pipeline,
+                       {},
+                       l.read_write});
   for (const auto &a : request.exits)
     g.entries.push_back({a.endpoint, rename(a.node), a.pipeline});
   for (const auto &a : request.entries)
