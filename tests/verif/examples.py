@@ -14,6 +14,7 @@ def main():
     parser.add_argument("--config-case", required=True)
     parser.add_argument("--traffic-case", required=True)
     parser.add_argument("--work", required=True)
+    parser.add_argument("--jobs", type=int, default=1, help="feature networks simulated at once")
     args = parser.parse_args()
     here = Path(__file__).resolve().parent
     work = Path(args.work)
@@ -26,7 +27,8 @@ def main():
     env["NOCLOOM_EXAMPLE_CONFIG_ROOT"] = (work / "config/latest.txt").read_text().strip()
     traffic = subprocess.run([
         sys.executable, str(here / "nlverif/run.py"), "--case", args.traffic_case,
-        "--cli", args.cli, "--fixture", args.fixture, "--work", str(work / "traffic")], env=env)
+        "--cli", args.cli, "--fixture", args.fixture, "--work", str(work / "traffic"),
+        "--jobs", str(args.jobs)], env=env)
     return traffic.returncode
 
 

@@ -54,8 +54,9 @@ foreach(first IN ITEMS read write lock oversize narrow)
       --first ${first})
   set_tests_properties(ahb_reset_release_${first} PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 300 PROCESSORS 1
-    LABELS "rtl;focused;ci" RESOURCE_LOCK ahb_initiator
+    LABELS "rtl;focused;ci"
     ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+  nocloom_test_memory(1024 ahb_reset_release_${first})
 endforeach()
 add_executable(nocloom_clamp_read_fixture clamp_read_fixture.cpp)
 target_link_libraries(nocloom_clamp_read_fixture PRIVATE nocloom_core)
@@ -71,8 +72,9 @@ foreach(bits IN ITEMS 64 128)
         --bits ${bits} --mode ${mode})
     set_tests_properties(axi4_clamp_refused_${bits}_${mode} PROPERTIES
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 300 PROCESSORS 1
-      LABELS "rtl;focused;ci" RESOURCE_LOCK width_stress
+      LABELS "rtl;focused;ci"
       ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+    nocloom_test_memory(1024 axi4_clamp_refused_${bits}_${mode})
   endforeach()
 endforeach()
 add_test(NAME exclusive_axi3_cache
@@ -80,28 +82,32 @@ add_test(NAME exclusive_axi3_cache
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/exclusive_axi3_cache)
 set_tests_properties(exclusive_axi3_cache PROPERTIES
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 300 PROCESSORS 1
-  LABELS "rtl;exclusive;focused;ci" RESOURCE_LOCK exclusive_regression
+  LABELS "rtl;exclusive;focused;ci"
   ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+nocloom_test_memory(3584 exclusive_axi3_cache)
 add_test(NAME exclusive_local_alias
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/exclusive_alias.py
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/exclusive_local_alias)
 set_tests_properties(exclusive_local_alias PROPERTIES
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 300 PROCESSORS 1
-  LABELS "rtl;exclusive;focused;ci" RESOURCE_LOCK exclusive_regression
+  LABELS "rtl;exclusive;focused;ci"
   ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+nocloom_test_memory(3584 exclusive_local_alias)
 add_test(NAME exclusive_derived_owner
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/exclusive_derived_owner.py
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/exclusive_derived_owner)
 set_tests_properties(exclusive_derived_owner PROPERTIES TIMEOUT 30 PROCESSORS 1
-  LABELS "rtl;exclusive;edit" RESOURCE_LOCK exclusive_regression
+  LABELS "rtl;exclusive;edit"
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+nocloom_test_memory(3584 exclusive_derived_owner)
 add_test(NAME exclusive_packet_limits
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/exclusive_limits.py
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/exclusive_packet_limits)
 set_tests_properties(exclusive_packet_limits PROPERTIES
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 600 PROCESSORS 1
-  LABELS "rtl;exclusive;focused;ci" RESOURCE_LOCK exclusive_regression
+  LABELS "rtl;exclusive;focused;ci"
   ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+nocloom_test_memory(3584 exclusive_packet_limits)
 add_executable(nocloom_tilelink_uh_target_fixture tilelink_uh_target_fixture.cpp)
 target_link_libraries(nocloom_tilelink_uh_target_fixture PRIVATE nocloom_core)
 target_include_directories(nocloom_tilelink_uh_target_fixture PRIVATE ${PROJECT_SOURCE_DIR}/src)
@@ -114,7 +120,8 @@ foreach(kind IN ITEMS selector endpoint write)
       --work ${CMAKE_CURRENT_BINARY_DIR}/tilelink_uh_target_${kind}_formal --kind ${kind} --all-maxima)
   set_tests_properties(tilelink_uh_target_${kind}_formal PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 6000 PROCESSORS 1
-    LABELS "formal;focused" RESOURCE_LOCK tilelink_formal)
+    LABELS "formal;focused")
+  nocloom_test_memory(1280 tilelink_uh_target_${kind}_formal)
 endforeach()
 # Each pair proves its checks in sixteen groups, four at a time, with its own input directory.
 foreach(kind IN ITEMS footprint errors)
@@ -142,14 +149,16 @@ add_test(NAME tilelink_uh_target_contexts_formal
     --work ${CMAKE_CURRENT_BINARY_DIR}/tilelink_uh_target_contexts_formal)
 set_tests_properties(tilelink_uh_target_contexts_formal PROPERTIES
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 1800 PROCESSORS 1
-  LABELS "formal;focused" RESOURCE_LOCK tilelink_formal)
+  LABELS "formal;focused")
+nocloom_test_memory(1280 tilelink_uh_target_contexts_formal)
 add_test(NAME tilelink_uh_target_ranges_formal
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_contexts_formal.py
     --fixture $<TARGET_FILE:nocloom_tilelink_uh_target_fixture>
     --work ${CMAKE_CURRENT_BINARY_DIR}/tilelink_uh_target_ranges_formal --capacity 16)
 set_tests_properties(tilelink_uh_target_ranges_formal PROPERTIES
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 1200 PROCESSORS 1
-  LABELS "formal;focused" RESOURCE_LOCK tilelink_formal)
+  LABELS "formal;focused")
+nocloom_test_memory(1280 tilelink_uh_target_ranges_formal)
 # Each pool size of the full packet maximum runs its tasks four at a time.
 foreach(capacity IN ITEMS 2 3 4 16)
   add_test(NAME tilelink_uh_target_large_contexts_formal_c${capacity}
@@ -159,6 +168,7 @@ foreach(capacity IN ITEMS 2 3 4 16)
       --capacity ${capacity} --maximum 4096 --jobs 4)
   set_tests_properties(tilelink_uh_target_large_contexts_formal_c${capacity} PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 600 PROCESSORS 4 LABELS "formal;focused")
+  nocloom_test_memory(1536 tilelink_uh_target_large_contexts_formal_c${capacity})
 endforeach()
 # The nineteen networks simulate four at a time on the processors the entry reserves.
 add_test(NAME tilelink_uh_target_contexts
@@ -167,23 +177,26 @@ add_test(NAME tilelink_uh_target_contexts
     --work ${CMAKE_CURRENT_BINARY_DIR}/tilelink_uh_target_contexts --jobs 4)
 set_tests_properties(tilelink_uh_target_contexts PROPERTIES
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 600 PROCESSORS 4
-  LABELS "rtl;focused;ci" RESOURCE_LOCK tilelink
+  LABELS "rtl;focused;ci"
   ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+nocloom_test_memory(4352 tilelink_uh_target_contexts)
 add_test(NAME tilelink_uh_target_ownership
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_ownership.py
     --fixture $<TARGET_FILE:nocloom_tilelink_uh_target_fixture>
     --work ${CMAKE_CURRENT_BINARY_DIR}/tilelink_uh_target_ownership)
 set_tests_properties(tilelink_uh_target_ownership PROPERTIES
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 600 PROCESSORS 1
-  LABELS "rtl;focused;ci" RESOURCE_LOCK tilelink
+  LABELS "rtl;focused;ci"
   ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+nocloom_test_memory(3584 tilelink_uh_target_ownership)
 add_test(NAME tilelink_uh_target_read_rotation
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_target_read_rotation.py
     --cli $<TARGET_FILE:nocloom_cli> --fixture $<TARGET_FILE:nocloom_verif_fixture>
     --work ${CMAKE_CURRENT_BINARY_DIR}/tilelink_uh_target_read_rotation)
 set_tests_properties(tilelink_uh_target_read_rotation PROPERTIES
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 60
-  LABELS "rtl;edit" RESOURCE_LOCK tilelink)
+  LABELS "rtl;edit")
+nocloom_test_memory(3584 tilelink_uh_target_read_rotation)
 foreach(kind IN ITEMS read_release read_random write_random)
   add_test(NAME tilelink_uh_target_${kind}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_target_ordering.py
@@ -191,8 +204,9 @@ foreach(kind IN ITEMS read_release read_random write_random)
       --work ${CMAKE_CURRENT_BINARY_DIR}/tilelink_uh_target_${kind} --case ${kind})
   set_tests_properties(tilelink_uh_target_${kind} PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 300 PROCESSORS 1
-    LABELS "rtl;focused;ci" RESOURCE_LOCK tilelink
+    LABELS "rtl;focused;ci"
     ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+  nocloom_test_memory(3584 tilelink_uh_target_${kind})
 endforeach()
 foreach(capacity IN ITEMS 1 3)
   add_test(NAME tilelink_uh_target_timeout_${capacity}
@@ -202,8 +216,9 @@ foreach(capacity IN ITEMS 1 3)
       --capacity ${capacity})
   set_tests_properties(tilelink_uh_target_timeout_${capacity} PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 300 PROCESSORS 1
-    LABELS "rtl;focused;ci" RESOURCE_LOCK tilelink
+    LABELS "rtl;focused;ci"
     ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+  nocloom_test_memory(3584 tilelink_uh_target_timeout_${capacity})
 endforeach()
 # A context watchdog counts slave waits only: network stalls stay quiet and slave stalls expire
 # at the exact cycle. The long case keeps the 1024-cycle stalls. The negative case runs three
@@ -226,8 +241,9 @@ foreach(kind IN ITEMS 1 2 16 long negative)
       ${watchdog_arguments})
   set_tests_properties(tilelink_uh_target_watchdog_${kind} PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} TIMEOUT 600 PROCESSORS 1
-    LABELS "${watchdog_labels}" RESOURCE_LOCK tilelink
+    LABELS "${watchdog_labels}"
     ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+  nocloom_test_memory(3584 tilelink_uh_target_watchdog_${kind})
 endforeach()
 foreach(kind IN ITEMS apb3 apb4 apb5 wb_classic wb_pipelined ahb_lite tl_ul
                       axi3 axi4 axi3_multi axi4_multi axi4_lite)
@@ -302,8 +318,8 @@ add_test(NAME log_mapping_transactions COMMAND ${Python3_EXECUTABLE} ${CMAKE_CUR
   --build ${PROJECT_BINARY_DIR} --work ${CMAKE_CURRENT_BINARY_DIR}/log_mapping
   --definition-generator $<TARGET_FILE:nocloom_log_mapping_definition>)
 set_tests_properties(log_mapping_transactions PROPERTIES TIMEOUT 180
-  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} LABELS "rtl;focused;ci" PROCESSORS 1
-  RESOURCE_LOCK log_mapping_simulation)
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} LABELS "rtl;focused;ci" PROCESSORS 1)
+nocloom_test_memory(1536 log_mapping_transactions)
 add_test(NAME canonical_ir COMMAND nocloom_unit "[canonical]")
 set_tests_properties(canonical_ir PROPERTIES TIMEOUT 60 LABELS "unit;quick")
 add_test(NAME connectivity_structure COMMAND nocloom_unit "[connectivity]")
@@ -327,6 +343,7 @@ foreach(part IN ITEMS "prove_l1;^L1_prove$" "prove_l2;^L2_prove$" "prove_l3;^L3_
       --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/liveness_formal_${part_name}
       --only "${part_regex}")
   set_tests_properties(liveness_formal_${part_name} PROPERTIES TIMEOUT 3600 LABELS "formal;liveness")
+  nocloom_test_memory(2816 liveness_formal_${part_name})
 endforeach()
 add_test(NAME liveness_formal_driver
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_liveness_formal.py
@@ -369,7 +386,8 @@ foreach(case IN ITEMS import lean)
       --work ${CMAKE_CURRENT_BINARY_DIR}/dependency_certificate_${case} --case ${certificate_case})
   set_tests_properties(dependency_certificate_${case} PROPERTIES
     TIMEOUT ${certificate_timeout} PROCESSORS 1 LABELS "${certificate_labels}"
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} RESOURCE_LOCK dependency_certificate)
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+  nocloom_test_memory(2048 dependency_certificate_${case})
 endforeach()
 # Every example and liveness shape through the Lean certificate check.
 add_test(NAME formal_lean_examples
@@ -687,10 +705,10 @@ set_tests_properties(async_fifo_faults async_fifo_receive_faults async_fifo_rese
 add_test(NAME endpoint_clock_gating_transactions
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/clock_gate_bench.py
     --cli $<TARGET_FILE:nocloom_cli>
-    --work ${CMAKE_CURRENT_BINARY_DIR}/endpoint_clock_gating_transactions)
-set_tests_properties(endpoint_clock_gating_transactions PROPERTIES TIMEOUT 600 PROCESSORS 2
-  RESOURCE_LOCK endpoint_clock_gating LABELS "rtl;cdc;clock-gating;ci"
+    --work ${CMAKE_CURRENT_BINARY_DIR}/endpoint_clock_gating_transactions --jobs 4)
+set_tests_properties(endpoint_clock_gating_transactions PROPERTIES TIMEOUT 600 PROCESSORS 4 LABELS "rtl;cdc;clock-gating;ci"
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+nocloom_test_memory(4352 endpoint_clock_gating_transactions)
 add_test(NAME address_selector_span
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/address_selector_span.py
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/address_selector_span)
@@ -1020,7 +1038,8 @@ foreach(apb_mode IN ITEMS graph tree clocked funnel apb4_tree timeout selective 
 endforeach()
 set_tests_properties(apb_initiator_apb5 apb_initiator_apb5_clocked
   apb_initiator_apb5_data apb_initiator_apb5_data_clocked PROPERTIES
-  LABELS "rtl;axi4;apb;focused;ci" PROCESSORS 2 RESOURCE_LOCK apb5_user)
+  LABELS "rtl;axi4;apb;focused;ci" PROCESSORS 2)
+nocloom_test_memory(2048 apb_initiator_apb5 apb_initiator_apb5_clocked apb_initiator_apb5_data apb_initiator_apb5_data_clocked)
 # AHB-Lite initiators: every HBURST, BUSY, ERROR, early ends and width conversion.
 foreach(ahb_mode IN ITEMS switch wide clocked ahb5 ahb5_clocked cache)
   set(ahb_jobs)
@@ -1034,7 +1053,8 @@ foreach(ahb_mode IN ITEMS switch wide clocked ahb5 ahb5_clocked cache)
       --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/ahb_initiator_${ahb_mode}
       --mode ${ahb_mode} ${ahb_jobs})
   set_tests_properties(ahb_initiator_${ahb_mode} PROPERTIES TIMEOUT 1800 LABELS "rtl;axi4;ahb;focused"
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} PROCESSORS ${ahb_processors} RESOURCE_LOCK rtl_memory)
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} PROCESSORS ${ahb_processors})
+  nocloom_test_memory(9472 ahb_initiator_${ahb_mode})
 endforeach()
 set_property(TEST ahb_initiator_ahb5 ahb_initiator_cache APPEND PROPERTY LABELS ci)
 foreach(mode IN ITEMS single mixed clocked)
@@ -1161,8 +1181,8 @@ add_test(NAME register_window_transactions
     --fixture $<TARGET_FILE:nocloom_register_window_definition>
     --work ${CMAKE_CURRENT_BINARY_DIR}/register_window)
 set_tests_properties(register_window_transactions PROPERTIES TIMEOUT 180
-  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} LABELS "rtl;focused;ci" PROCESSORS 1
-  RESOURCE_LOCK register_window_simulation)
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} LABELS "rtl;focused;ci" PROCESSORS 1)
+nocloom_test_memory(2560 register_window_transactions)
 # One network per test: each simulation compiles alone and the tests run in parallel.
 foreach(case IN ITEMS single backward audit32 sparse parts_none parts_audit parts_user
     parts_whole parts_revision parts_chain parts_two parts_every crossed_1250_3333
@@ -1307,7 +1327,8 @@ add_test(NAME link_pipeline_static_bypass
     --cli $<TARGET_FILE:nocloom_cli> --static-bypass
     --work ${CMAKE_CURRENT_BINARY_DIR}/link_pipeline_static_bypass)
 set_tests_properties(link_pipeline_static_bypass PROPERTIES
-  TIMEOUT 300 LABELS "rtl;axi4;focused;ci" PROCESSORS 2 RESOURCE_LOCK link_pipeline)
+  TIMEOUT 300 LABELS "rtl;axi4;focused;ci" PROCESSORS 2)
+nocloom_test_memory(1024 link_pipeline_static_bypass)
 add_test(NAME link_pipeline_stage_lists
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_link_pipeline.py
     --cli $<TARGET_FILE:nocloom_cli> --stage-lists
@@ -1573,6 +1594,8 @@ endforeach()
 set_tests_properties(clock_edge_constraints clock_edge_constraints_chain_2_3
   clock_edge_constraints_chain_1_2_2 PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   TIMEOUT 390 LABELS "rtl;focused;ci" ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+nocloom_test_memory(1792 clock_edge_constraints clock_edge_constraints_chain_2_3
+  clock_edge_constraints_chain_1_2_2)
 add_test(NAME clock_edge_constraints_deep_chain
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/clock_edge_constraints.py
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/clock_edge_constraints_deep_chain

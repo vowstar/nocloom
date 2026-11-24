@@ -6,7 +6,7 @@ sel=0 event hash equal to the baseline and every designated RTL fault.
   python3 tests/verif/nlverif/run.py --case CASE.py --work DIR
          [--param KEY=VALUE]... [--cli PATH] [--fixture PATH] [--negative]
          [--only ID,...] [--sim ENGINE] [--sim-config JSON]
-         [--register-reset asynchronous|synchronous] [--read-write shared|separate]
+         [--register-reset asynchronous|synchronous] [--read-write shared|separate] [--jobs N]
 
 A case module sees the --param values as the dict PARAMS when it loads (one
 case file serves several registered widths or modes). A case may list
@@ -16,6 +16,7 @@ runs on the first). --register-reset generates every DUT with that register rese
 output.register_reset, the fixture's register_reset parameter) instead of as the case states.
 --read-write generates every DUT from its CLI configuration with that read_write (a fixture
 DUT is an infrastructure error).
+--jobs runs that many baseline configurations at once and reports them in their listed order.
 
 Exit code: 0 every variant met its expectation, 1 a judgment failed,
 2 infrastructure (generation, compile, tool) error. Only the exit code and
@@ -32,6 +33,8 @@ import sys
 import tempfile
 import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -495,8 +498,12 @@ def main():
     p.add_argument("--param", action="append", default=[])
     p.add_argument("--register-reset", choices=("asynchronous", "synchronous"))
     p.add_argument("--read-write", choices=("shared", "separate"))
+    p.add_argument("--jobs", type=int, default=1,
+                   help="configurations whose baselines run at once")
     sim_engine.add_arguments(p)
     args = p.parse_args()
+    if args.jobs < 1:
+        p.error("--jobs must be positive")
     global REGISTER_RESET, READ_WRITE
     REGISTER_RESET = args.register_reset
     READ_WRITE = args.read_write
@@ -535,20 +542,40 @@ def main():
             # one sets negative_runs_all, or negative_run on a configuration).
             configs = configs[:1] + [c for c in configs[1:] if c.get("negative_run")]
             seeds = seeds[:1]
-        states, failed = [], False
-        for k, config in enumerate(configs):
+        def baseline(config):
             merged = dict(case, **{key: v for key, v in config.items()
                                    if key not in ("label", "seeds", "negative_run")})
             label = config.get("label", "")
             own = (config.get("seeds", seeds)
                    if args.seed is None and (not args.negative or runs_all)
                    else seeds)
-            st = run_baseline(args, module, merged, work / (label or "main"), label, own,
-                              results)
-            if st["infra"]:
-                return save(2)
-            failed = failed or st["failed"]
-            states.append((st, merged, label))
+            part = results
+            if args.jobs > 1:
+                # The DUT can update its model. Each worker owns its case and results.
+                merged = deepcopy(merged)
+                part = dict(timings={}, inputs={}, variants=[])
+            try:
+                st = run_baseline(args, module, merged, work / (label or "main"), label, own, part)
+                return st, merged, label, part, None
+            except Exception as error:
+                return None, merged, label, part, error
+
+        states, failed = [], False
+        with ThreadPoolExecutor(max_workers=args.jobs) as pool:
+            runs = (pool.map if args.jobs > 1 else map)(baseline, configs)
+            for st, merged, label, part, error in runs:
+                if part is not results:
+                    results["timings"].update(part["timings"])
+                    results["inputs"].update(part["inputs"])
+                    results["variants"].extend(part["variants"])
+                    if "engine" in part:
+                        results["engine"] = part["engine"]
+                if error is not None:
+                    raise error
+                if st["infra"]:
+                    return save(2)
+                failed = failed or st["failed"]
+                states.append((st, merged, label))
         if not args.negative:
             return save(1 if failed else 0)
         # The negative control runs on the main configuration, or on every one

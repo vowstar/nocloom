@@ -346,6 +346,7 @@ endmodule
 def endpoint_diff_cases(cli, root):
     from itertools import combinations
     root.mkdir(exist_ok=True)
+    lines = []
     for kind in ('initiators', 'targets'):
         paths = {}
         for mode in (None, *ENDPOINT_GATE_SETTINGS):
@@ -362,7 +363,8 @@ def endpoint_diff_cases(cli, root):
                                     capture_output=True, text=True, timeout=120)
             expected = 0 if left is None else 4
             assert result.returncode == expected, (kind, left, right, result.stdout, result.stderr)
-            print(f'PASS diff {kind} {left} {right} exit={expected}', flush=True)
+            lines.append(f'PASS diff {kind} {left} {right} exit={expected}')
+    return lines
 
 
 def ahb_configuration(mode):
@@ -376,54 +378,52 @@ def ahb_configuration(mode):
     return cfg
 
 
-def named_endpoint_cases(cli, root):
+def named_endpoint_case(cli, root, graph, mode):
     from copy import deepcopy
     from sim_engine import generated_rtl
-    for graph in (False, True):
-        source, target = ('transport_edge', 'protocol_edge') if graph else ('protocol', 'transport')
-        for mode in (None, 'independent', 'combined', 'transport'):
-            work = root / f'names_{int(graph)}_{mode}'
-            work.mkdir()
-            cfg = endpoint_configuration(mode, graph)
-            cfg['initiators'][0]['name'] = source
-            cfg['targets'][0]['name'] = target
-            if mode is None:
-                for kind in ('initiators', 'targets'):
-                    cfg[kind][0].pop('clock_gating')
-            if graph:
-                for direction in ('request', 'response'):
-                    for kind in ('entries', 'exits'):
-                        for attachment in cfg['topology'][direction][kind]:
-                            attachment['endpoint'] = source if attachment['endpoint'] == 's' else target
-            else:
-                cfg.pop('topology')
-            definition = work / 'definition.yaml'
-            definition.write_text(json.dumps(cfg))
-            result = subprocess.run([cli, 'generate', str(definition), '--out-dir', str(work / 'out')],
-                                    capture_output=True, text=True, timeout=120)
-            assert result.returncode == 0, result.stderr
-            mapping = json.loads((work / 'out/nocloom_endpoint_gates.map.json').read_text())
-            gates = mapping['network']['clock_gates']
-            expected = (4 if mode in (None, 'independent') else 2) + (2 if graph else 0)
-            assert len(gates) == expected, gates
-            rtl = generated_rtl(work / 'out/nocloom_endpoint_gates.v')
-            synchronous_cell = work / 'out/nocloom_synchronizer_sync_reset.v'
-            if synchronous_cell.is_file():
-                rtl += synchronous_cell.read_text()
-            assert len(re.findall(r'^nocloom_clock_gate nl_internal_', rtl, re.M)) == expected
-            bench_map = deepcopy(mapping)
-            for gate in bench_map['network']['clock_gates']:
-                if 'initiator' in gate:
-                    gate['initiator'] = 's'
-                if 'target' in gate:
-                    gate['target'] = 't'
-            tb = endpoint_bench(bench_map, graph).replace('nl_i_s_', f'nl_i_{source}_').replace(
-                'nl_t_t_', f'nl_t_{target}_')
-            (work / 'network.v').write_text(rtl)
-            (work / 'tb.sv').write_text(bind_gate_clocks(tb, rtl, gates))
-            result = Simulation(work, 'network.v').run()
-            assert result.returncode == 0, (work / 'simulation.log').read_text()
-            print(f'PASS names graph={graph} mode={mode}', flush=True)
+    source, target = ('transport_edge', 'protocol_edge') if graph else ('protocol', 'transport')
+    work = root / f'names_{int(graph)}_{mode}'
+    work.mkdir()
+    cfg = endpoint_configuration(mode, graph)
+    cfg['initiators'][0]['name'] = source
+    cfg['targets'][0]['name'] = target
+    if mode is None:
+        for kind in ('initiators', 'targets'):
+            cfg[kind][0].pop('clock_gating')
+    if graph:
+        for direction in ('request', 'response'):
+            for kind in ('entries', 'exits'):
+                for attachment in cfg['topology'][direction][kind]:
+                    attachment['endpoint'] = source if attachment['endpoint'] == 's' else target
+    else:
+        cfg.pop('topology')
+    definition = work / 'definition.yaml'
+    definition.write_text(json.dumps(cfg))
+    result = subprocess.run([cli, 'generate', str(definition), '--out-dir', str(work / 'out')],
+                            capture_output=True, text=True, timeout=120)
+    assert result.returncode == 0, result.stderr
+    mapping = json.loads((work / 'out/nocloom_endpoint_gates.map.json').read_text())
+    gates = mapping['network']['clock_gates']
+    expected = (4 if mode in (None, 'independent') else 2) + (2 if graph else 0)
+    assert len(gates) == expected, gates
+    rtl = generated_rtl(work / 'out/nocloom_endpoint_gates.v')
+    synchronous_cell = work / 'out/nocloom_synchronizer_sync_reset.v'
+    if synchronous_cell.is_file():
+        rtl += synchronous_cell.read_text()
+    assert len(re.findall(r'^nocloom_clock_gate nl_internal_', rtl, re.M)) == expected
+    bench_map = deepcopy(mapping)
+    for gate in bench_map['network']['clock_gates']:
+        if 'initiator' in gate:
+            gate['initiator'] = 's'
+        if 'target' in gate:
+            gate['target'] = 't'
+    tb = endpoint_bench(bench_map, graph).replace('nl_i_s_', f'nl_i_{source}_').replace(
+        'nl_t_t_', f'nl_t_{target}_')
+    (work / 'network.v').write_text(rtl)
+    (work / 'tb.sv').write_text(bind_gate_clocks(tb, rtl, gates))
+    result = Simulation(work, 'network.v').run()
+    assert result.returncode == 0, (work / 'simulation.log').read_text()
+    return [f'PASS names graph={graph} mode={mode}']
 
 
 def ahb_bench(mapping):
@@ -616,72 +616,85 @@ def bind_gate_clocks(tb, rtl, gates):
     return tb
 
 
-def endpoint_cases(cli, root):
+def endpoint_case(cli, root, mode, settings, crossing):
     from sim_engine import generated_rtl
+    partial_ungate = crossing and mode in ('protocol', 'open')
+    work = root / f'{mode}_{int(crossing)}'
+    work.mkdir(exist_ok=True)
+    definition = work / 'definition.yaml'
+    definition.write_text(json.dumps(endpoint_configuration(mode, crossing, partial_ungate)))
+    result = subprocess.run([cli, 'generate', str(definition), '--out-dir', str(work / 'out')],
+                            capture_output=True, text=True, timeout=120)
+    assert result.returncode == 0, result.stderr
+    mapping = json.loads((work / 'out/nocloom_endpoint_gates.map.json').read_text())
+    bundle = json.loads((work / 'out/nocloom_endpoint_gates.bundle.json').read_text())
+    assert bundle['definition'] == mapping['definition']
+    gates = mapping['network']['clock_gates']
+    zones = {zone for zone in ('protocol', 'transport') if settings[zone]}
+    expected = 1 if settings['single_gate'] else len(zones)
+    for kind, name in [('initiator', 's'), ('target', 't')]:
+        owned = [g for g in gates if g.get(kind) == name]
+        assert len(owned) == expected, owned
+        record = mapping['network']['endpoint_clock_gating'][kind][name]
+        assert record == dict(
+            **settings, gate_count=expected,
+            protocol_clock='gated' if settings['protocol'] else 'domain',
+            transport_clock='gated' if settings['transport'] else 'domain'), record
+        assert {g['zone'] for g in owned} == ({'shared'} if settings['single_gate'] else zones)
+        assert all(g['zones'] == (['protocol', 'transport'] if settings['single_gate']
+                                 else [g['zone']]) for g in owned), owned
+        assert {z for g in owned for z in g['zones']} == zones
+    rtl = generated_rtl(work / 'out/nocloom_endpoint_gates.v')
+    synchronous_cell = work / 'out/nocloom_synchronizer_sync_reset.v'
+    if synchronous_cell.is_file():
+        rtl += synchronous_cell.read_text()
+    tb = endpoint_bench(mapping, crossing, partial_ungate)
+    tb = bind_gate_clocks(tb, rtl, gates)
+    (work / 'network.v').write_text(rtl)
+    (work / 'tb.sv').write_text(tb)
+    result = Simulation(work, 'network.v').run()
+    assert result.returncode == 0, (work / 'simulation.log').read_text()
+    return [f'PASS {mode} crossing={crossing}']
+
+
+def ahb_case(cli, root, mode):
+    from sim_engine import generated_rtl
+    work = root / f'ahb_{mode}'
+    work.mkdir()
+    definition = work / 'definition.yaml'
+    definition.write_text(json.dumps(ahb_configuration(mode)))
+    result = subprocess.run([cli, 'generate', str(definition), '--out-dir', str(work / 'out')],
+                            capture_output=True, text=True, timeout=120)
+    assert result.returncode == 0, result.stderr
+    mapping = json.loads((work / 'out/nocloom_endpoint_gates.map.json').read_text())
+    bundle = json.loads((work / 'out/nocloom_endpoint_gates.bundle.json').read_text())
+    assert bundle['definition'] == mapping['definition']
+    rtl = generated_rtl(work / 'out/nocloom_endpoint_gates.v')
+    tb = bind_gate_clocks(ahb_bench(mapping), rtl, mapping['network']['clock_gates'])
+    (work / 'network.v').write_text(rtl)
+    (work / 'tb.sv').write_text(tb)
+    result = Simulation(work, 'network.v').run()
+    assert result.returncode == 0, (work / 'simulation.log').read_text()
+    return [f'PASS ahb {mode}']
+
+
+def endpoint_cases(cli, root, jobs=1):
+    """Every endpoint case in its own directory, jobs at a time, reported in listed order."""
+    from concurrent.futures import ThreadPoolExecutor
+    import tempfile
     root = Path(root).resolve()
     root.mkdir(parents=True, exist_ok=True)
-    import tempfile
     root = Path(tempfile.mkdtemp(prefix="run-", dir=root))
-    for mode, settings in ENDPOINT_GATE_SETTINGS.items():
-        for crossing in (False, True):
-            partial_ungate = crossing and mode in ('protocol', 'open')
-            work = root / f'{mode}_{int(crossing)}'
-            work.mkdir(exist_ok=True)
-            definition = work / 'definition.yaml'
-            definition.write_text(json.dumps(endpoint_configuration(mode, crossing, partial_ungate)))
-            result = subprocess.run([cli, 'generate', str(definition), '--out-dir', str(work / 'out')],
-                                    capture_output=True, text=True, timeout=120)
-            assert result.returncode == 0, result.stderr
-            mapping = json.loads((work / 'out/nocloom_endpoint_gates.map.json').read_text())
-            bundle = json.loads((work / 'out/nocloom_endpoint_gates.bundle.json').read_text())
-            assert bundle['definition'] == mapping['definition']
-            gates = mapping['network']['clock_gates']
-            zones = {zone for zone in ('protocol', 'transport') if settings[zone]}
-            expected = 1 if settings['single_gate'] else len(zones)
-            for kind, name in [('initiator', 's'), ('target', 't')]:
-                owned = [g for g in gates if g.get(kind) == name]
-                assert len(owned) == expected, owned
-                record = mapping['network']['endpoint_clock_gating'][kind][name]
-                assert record == dict(
-                    **settings, gate_count=expected,
-                    protocol_clock='gated' if settings['protocol'] else 'domain',
-                    transport_clock='gated' if settings['transport'] else 'domain'), record
-                assert {g['zone'] for g in owned} == ({'shared'} if settings['single_gate'] else zones)
-                assert all(g['zones'] == (['protocol', 'transport'] if settings['single_gate']
-                                         else [g['zone']]) for g in owned), owned
-                assert {z for g in owned for z in g['zones']} == zones
-            rtl = generated_rtl(work / 'out/nocloom_endpoint_gates.v')
-            synchronous_cell = work / 'out/nocloom_synchronizer_sync_reset.v'
-            if synchronous_cell.is_file():
-                rtl += synchronous_cell.read_text()
-            tb = endpoint_bench(mapping, crossing, partial_ungate)
-            tb = bind_gate_clocks(tb, rtl, gates)
-            (work / 'network.v').write_text(rtl)
-            (work / 'tb.sv').write_text(tb)
-            result = Simulation(work, 'network.v').run()
-            assert result.returncode == 0, (work / 'simulation.log').read_text()
-            print(f'PASS {mode} crossing={crossing}', flush=True)
-    endpoint_diff_cases(cli, root / 'diff')
-    named_endpoint_cases(cli, root)
-    for mode in (None, 'independent', 'combined', 'transport'):
-        work = root / f'ahb_{mode}'
-        work.mkdir()
-        definition = work / 'definition.yaml'
-        definition.write_text(json.dumps(ahb_configuration(mode)))
-        result = subprocess.run([cli, 'generate', str(definition), '--out-dir', str(work / 'out')],
-                                capture_output=True, text=True, timeout=120)
-        assert result.returncode == 0, result.stderr
-        mapping = json.loads((work / 'out/nocloom_endpoint_gates.map.json').read_text())
-        bundle = json.loads((work / 'out/nocloom_endpoint_gates.bundle.json').read_text())
-        assert bundle['definition'] == mapping['definition']
-        rtl = generated_rtl(work / 'out/nocloom_endpoint_gates.v')
-        tb = bind_gate_clocks(ahb_bench(mapping), rtl, mapping['network']['clock_gates'])
-        (work / 'network.v').write_text(rtl)
-        (work / 'tb.sv').write_text(tb)
-        result = Simulation(work, 'network.v').run()
-        assert result.returncode == 0, (work / 'simulation.log').read_text()
-        print(f'PASS ahb {mode}', flush=True)
-
+    cases = [(endpoint_case, cli, root, mode, settings, crossing)
+             for mode, settings in ENDPOINT_GATE_SETTINGS.items() for crossing in (False, True)]
+    cases.append((endpoint_diff_cases, cli, root / 'diff'))
+    cases += [(named_endpoint_case, cli, root, graph, mode) for graph in (False, True)
+              for mode in (None, 'independent', 'combined', 'transport')]
+    cases += [(ahb_case, cli, root, mode) for mode in (None, 'independent', 'combined', 'transport')]
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        for lines in pool.map(lambda case: case[0](*case[1:]), cases):
+            for line in lines:
+                print(line, flush=True)
 
 
 if __name__ == '__main__':
@@ -689,5 +702,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cli', required=True)
     parser.add_argument('--work', required=True)
+    parser.add_argument('--jobs', type=int, default=1, help='cases run at once')
     args = parser.parse_args()
-    endpoint_cases(args.cli, args.work)
+    if args.jobs < 1:
+        parser.error('--jobs must be positive')
+    endpoint_cases(args.cli, args.work, args.jobs)

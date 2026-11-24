@@ -242,7 +242,9 @@ nocloom_verif_case(NAME verif_examples LAYER structure TIER focused TIMEOUT 1200
   PROCESSORS 2 FEATURES examples determinism MEMORY_MB 2048
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/examples.py
     --cli $<TARGET_FILE:nocloom_cli> ${NLV_FIXTURE}
-    --config-case ${NLV_CASES}/config_examples.py --traffic-case ${NLV_CASES}/example_features.py)
+    --config-case ${NLV_CASES}/config_examples.py --traffic-case ${NLV_CASES}/example_features.py
+    --jobs 2)
+nocloom_test_memory(2816 verif_examples)
 # The two-domain SoC definition with every connected initiator-target pair.
 nocloom_verif_case(NAME verif_soc_mixed LAYER rtl TIER focused TIMEOUT 300
   FEATURES examples axi4 ahb apb cdc width MEMORY_MB 2048
@@ -870,6 +872,7 @@ nocloom_verif_case(NAME verif_error_logger LAYER unit TIER focused TIMEOUT 600 F
     --banks-bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_logger_banks_tb.sv
     --crossed-bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_crossed_logger_tb.sv
     --shared-bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_shared_crossing_tb.sv --jobs 4)
+nocloom_test_memory(3840 verif_error_logger)
 # Two logs in the banks' domain behind one crossing of the serial path each way: reads, writes and
 # clears of each bank while the banks' clock stops, two sources at once, and a reset at every
 # distance into an access.
@@ -972,17 +975,17 @@ nocloom_verif_case(NAME verif_wishbone_classic LAYER rtl TIER focused TIMEOUT 60
   FEATURES wishbone ci MEMORY_MB 2048
   CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.ERR.READ_ZERO AXI.W.UNSTROBED_ZERO AXI.TIMEOUT.EXACT
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/wishbone.py --cli $<TARGET_FILE:nocloom_cli>)
-set_tests_properties(verif_wishbone_classic PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_test_memory(2560 verif_wishbone_classic)
 nocloom_verif_case(NAME verif_wishbone_idle LAYER rtl TIER focused TIMEOUT 180
   FEATURES wishbone clock_gating ci MEMORY_MB 1024
   CONTRACTS AXI.ROUTE.LOCAL_OFFSET
   COMMAND ${Python3_EXECUTABLE} ${NLV_CASES}/wishbone_idle.py ${NLV_FIXTURE})
-set_tests_properties(verif_wishbone_idle PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_test_memory(2560 verif_wishbone_idle)
 nocloom_verif_case(NAME verif_wishbone_classic_negative LAYER negative TIER focused TIMEOUT 600
   FEATURES wishbone MEMORY_MB 2048
   CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.W.UNSTROBED_ZERO AXI.TIMEOUT.EXACT
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/wishbone.py --cli $<TARGET_FILE:nocloom_cli> --negative)
-set_tests_properties(verif_wishbone_classic_negative PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_test_memory(2560 verif_wishbone_classic_negative)
 
 nocloom_verif_case(NAME verif_wishbone_configuration LAYER config TIER focused TIMEOUT 180
   FEATURES wishbone ci MEMORY_MB 512
@@ -990,27 +993,27 @@ nocloom_verif_case(NAME verif_wishbone_configuration LAYER config TIER focused T
 nocloom_verif_case(NAME verif_wishbone_checker LAYER unit TIER focused TIMEOUT 180
   FEATURES wishbone ci MEMORY_MB 512
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/wishbone_check.py)
-set_tests_properties(verif_wishbone_checker PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_test_memory(2560 verif_wishbone_checker)
 nocloom_verif_case(NAME verif_wishbone_pipelined LAYER rtl TIER focused TIMEOUT 600
   FEATURES wishbone ci MEMORY_MB 2048
   CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.ERR.READ_ZERO AXI.W.UNSTROBED_ZERO
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/wishbone_pipelined.py --cli $<TARGET_FILE:nocloom_cli>)
-set_tests_properties(verif_wishbone_pipelined PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_test_memory(2560 verif_wishbone_pipelined)
 nocloom_verif_case(NAME verif_wishbone_pipelined_negative LAYER negative TIER release TIMEOUT 600
   FEATURES wishbone MEMORY_MB 2048
   CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.W.UNSTROBED_ZERO
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/wishbone_pipelined.py --cli $<TARGET_FILE:nocloom_cli> --negative)
-set_tests_properties(verif_wishbone_pipelined_negative PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_test_memory(2560 verif_wishbone_pipelined_negative)
 nocloom_verif_case(NAME verif_wishbone_pipelined_short_faults LAYER negative TIER focused TIMEOUT 180
   FEATURES wishbone ci MEMORY_MB 2048
   CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.W.UNSTROBED_ZERO
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/wishbone_pipelined.py --cli $<TARGET_FILE:nocloom_cli>
     --negative --param short=true)
-set_tests_properties(verif_wishbone_pipelined_short_faults PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_test_memory(2560 verif_wishbone_pipelined_short_faults)
 nocloom_verif_case(NAME verif_wishbone_pipelined_checker LAYER unit TIER focused TIMEOUT 180
   FEATURES wishbone ci MEMORY_MB 512
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/wishbone_pipelined_check.py)
-set_tests_properties(verif_wishbone_pipelined_checker PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_test_memory(2560 verif_wishbone_pipelined_checker)
 nocloom_verif_case(NAME verif_wishbone_pipelined_configuration LAYER config TIER focused TIMEOUT 180
   FEATURES wishbone ci MEMORY_MB 512
   COMMAND ${NLV_CONFIG} --case ${NLV_CASES}/config_wishbone_pipelined.py
@@ -1019,7 +1022,7 @@ nocloom_verif_case(NAME verif_tilelink_gate LAYER rtl TIER focused TIMEOUT 300
   FEATURES tilelink clock_gating ci MEMORY_MB 1024
   CONTRACTS TL.ACCESS AXI.CLOCK.GATE
   COMMAND ${Python3_EXECUTABLE} ${NLV_CASES}/tilelink_gate.py --cli $<TARGET_FILE:nocloom_cli>)
-set_tests_properties(verif_tilelink_gate PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_gate)
 
 foreach(scenario IN ITEMS single flood)
   nocloom_verif_case(NAME verif_tilelink_arbitration_${scenario} LAYER rtl TIER focused TIMEOUT 300
@@ -1027,7 +1030,7 @@ foreach(scenario IN ITEMS single flood)
     CONTRACTS TL.ACCESS
     COMMAND ${Python3_EXECUTABLE} ${NLV_CASES}/tilelink_arbitration.py
       --cli $<TARGET_FILE:nocloom_cli> --scenario ${scenario})
-  set_tests_properties(verif_tilelink_arbitration_${scenario} PROPERTIES RESOURCE_LOCK tilelink)
+  nocloom_test_memory(3584 verif_tilelink_arbitration_${scenario})
 endforeach()
 
 # Each maximum uses a separate network and work directory.
@@ -1046,7 +1049,7 @@ nocloom_verif_case(NAME verif_tilelink_uh_target_single_maximum LAYER rtl TIER f
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_target_tb.svh
     --cli $<TARGET_FILE:nocloom_cli>
     --work ${CMAKE_CURRENT_BINARY_DIR}/uh_target_single_maximum --capacity 1 --maximum 1024)
-set_tests_properties(verif_tilelink_uh_target_single_maximum PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_target_single_maximum)
 foreach(capacity IN ITEMS 1 3)
   nocloom_verif_case(NAME verif_tilelink_uh_target_wrap_${capacity} LAYER rtl TIER focused TIMEOUT 300
     FEATURES tilelink ci MEMORY_MB 2048 CONTRACTS TL.ACCESS
@@ -1055,7 +1058,7 @@ foreach(capacity IN ITEMS 1 3)
       --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_target_tb.svh
       --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/uh_target_wrap_${capacity}
       --capacity ${capacity} --maximum 4 --wrap-regression)
-  set_tests_properties(verif_tilelink_uh_target_wrap_${capacity} PROPERTIES RESOURCE_LOCK tilelink)
+  nocloom_test_memory(3584 verif_tilelink_uh_target_wrap_${capacity})
 endforeach()
 nocloom_verif_case(NAME verif_tilelink_uh_target_contexts LAYER rtl TIER focused TIMEOUT 600
   FEATURES tilelink MEMORY_MB 2048 CONTRACTS TL.ACCESS
@@ -1064,7 +1067,7 @@ nocloom_verif_case(NAME verif_tilelink_uh_target_contexts LAYER rtl TIER focused
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_target_tb.svh
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/uh_target_contexts
     --maximum 64 --capacity 3)
-set_tests_properties(verif_tilelink_uh_target_contexts PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_target_contexts)
 nocloom_verif_case(NAME verif_tilelink_uh_target_high_address LAYER rtl TIER focused TIMEOUT 600
   FEATURES tilelink MEMORY_MB 2048
   CONTRACTS TL.ACCESS
@@ -1072,7 +1075,7 @@ nocloom_verif_case(NAME verif_tilelink_uh_target_high_address LAYER rtl TIER foc
     --case ${NLV_CASES}/tilelink_uh_target.py
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_target_tb.svh
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/uh_target_high --high-address)
-set_tests_properties(verif_tilelink_uh_target_high_address PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_target_high_address)
 
 # TL-UH target packet contexts under seeded AXI4 tapes of several IDs. Each
 # sweep entry runs five seeds on one build.
@@ -1082,11 +1085,11 @@ set(uh_interleave_case ${uh_interleave} --case ${NLV_CASES}/tilelink_uh_target_i
 nocloom_verif_case(NAME verif_tilelink_uh_target_interleave LAYER rtl TIER focused TIMEOUT 300
   FEATURES tilelink ci MEMORY_MB 2048 CONTRACTS TL.ACCESS
   COMMAND ${uh_interleave_case} --batches 2 --seeds 1,2)
-set_tests_properties(verif_tilelink_uh_target_interleave PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_target_interleave)
 nocloom_verif_case(NAME verif_tilelink_uh_target_miss LAYER rtl TIER focused TIMEOUT 300
   FEATURES tilelink ci MEMORY_MB 2048 CONTRACTS TL.ACCESS
   COMMAND ${uh_interleave_case} --profile miss --other --batches 2 --seeds 1)
-set_tests_properties(verif_tilelink_uh_target_miss PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_target_miss)
 foreach(profile IN ITEMS interleave miss)
   set(uh_fault_args --batches 0)
   if(profile STREQUAL "miss")
@@ -1096,7 +1099,7 @@ foreach(profile IN ITEMS interleave miss)
     TIMEOUT 300 FEATURES tilelink ci MEMORY_MB 2048 CONTRACTS TL.ACCESS
     COMMAND ${uh_interleave} --case ${NLV_CASES}/tilelink_uh_target_interleave_negative.py
       --negative ${uh_fault_args})
-  set_tests_properties(verif_tilelink_uh_target_${profile}_negative PROPERTIES RESOURCE_LOCK tilelink)
+  nocloom_test_memory(3584 verif_tilelink_uh_target_${profile}_negative)
 endforeach()
 # width:contexts:message bytes, then width:contexts:default target for the
 # decode miss tapes beside a second target.
@@ -1132,12 +1135,12 @@ set(NLV_UH_GATING ${NLV_UH_GATED} --case ${NLV_CASES}/tilelink_uh_target_gating.
 nocloom_verif_case(NAME verif_tilelink_uh_target_gating LAYER rtl TIER focused TIMEOUT 300
   FEATURES tilelink cdc ci MEMORY_MB 1024 CONTRACTS TL.ACCESS AXI.CLOCK.GATE
   COMMAND ${NLV_UH_GATING} --network k3 --mode independent --pairs 1,6,9,13 --all-classes)
-set_tests_properties(verif_tilelink_uh_target_gating PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_target_gating)
 nocloom_verif_case(NAME verif_tilelink_uh_target_gating_faults LAYER negative TIER focused TIMEOUT 300
   FEATURES tilelink cdc ci MEMORY_MB 1024 CONTRACTS TL.ACCESS AXI.CLOCK.GATE
   COMMAND ${NLV_UH_GATING} --network k3 --mode independent --pairs 12 --negative
     --fixture $<TARGET_FILE:nocloom_verif_fixture>)
-set_tests_properties(verif_tilelink_uh_target_gating_faults PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_target_gating_faults)
 foreach(network IN ITEMS k1 k3 k16)
   foreach(mode IN ITEMS independent combined transport)
     foreach(half IN ITEMS even odd)
@@ -1167,12 +1170,12 @@ nocloom_verif_case(NAME verif_tilelink_uh_target_soak LAYER rtl TIER focused TIM
   FEATURES tilelink cdc ci MEMORY_MB 1024 CONTRACTS TL.ACCESS
   COMMAND ${NLV_UH_SOAK} --network k3 --mode independent --pairs 0,1 --seeds 1
     --plus GOAL=12000 --plus LONG=12)
-set_tests_properties(verif_tilelink_uh_target_soak PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_target_soak)
 nocloom_verif_case(NAME verif_tilelink_uh_target_soak_faults LAYER negative TIER focused TIMEOUT 300
   FEATURES tilelink cdc ci MEMORY_MB 1024 CONTRACTS TL.ACCESS
   COMMAND ${NLV_UH_SOAK} --network k3 --mode independent --pairs 0 --seeds 1 --negative
     --plus GOAL=30000 --fixture $<TARGET_FILE:nocloom_verif_fixture>)
-set_tests_properties(verif_tilelink_uh_target_soak_faults PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_target_soak_faults)
 foreach(config IN ITEMS k1:transport k3:combined k16:independent k3:off k16:off)
   string(REPLACE ":" ";" uh_config "${config}")
   list(GET uh_config 0 network)
@@ -1206,13 +1209,14 @@ foreach(pair IN ITEMS tl_ul:tl_ul tl_ul:axi4 axi4:tl_ul tl_ul:apb4 apb4:tl_ul tl
     CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.ERR.READ_ZERO AXI.W.UNSTROBED_ZERO TL.ACCESS
     COMMAND ${NLV_RUN} --case ${NLV_CASES}/tilelink.py --cli $<TARGET_FILE:nocloom_cli>
       --param source=${source} --param target=${target})
-  set_tests_properties(verif_tilelink_${source}_${target} PROPERTIES RESOURCE_LOCK tilelink)
+  nocloom_test_memory(3584 verif_tilelink_${source}_${target})
 endforeach()
 nocloom_verif_case(NAME verif_tilelink_cdc LAYER rtl TIER focused TIMEOUT 300
   FEATURES tilelink cdc MEMORY_MB 1024
   CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.ERR.READ_ZERO AXI.W.UNSTROBED_ZERO TL.ACCESS
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/tilelink.py --cli $<TARGET_FILE:nocloom_cli> --param cdc=1)
-set_tests_properties(verif_tilelink_cdc PROPERTIES RESOURCE_LOCK tilelink LABELS "rtl;focused;tilelink;cdc;ci")
+set_tests_properties(verif_tilelink_cdc PROPERTIES LABELS "rtl;focused;tilelink;cdc;ci")
+nocloom_test_memory(3584 verif_tilelink_cdc)
 foreach(group IN ITEMS fields options source_limits target_limits small_capacity
     capacity_9_10 capacity_11_12 capacity_13_14 capacity_15_16 clocked_targets)
   nocloom_verif_case(NAME verif_tilelink_config_${group} LAYER config TIER quick TIMEOUT 120
@@ -1224,22 +1228,22 @@ nocloom_verif_case(NAME verif_tilelink_negative LAYER negative TIER focused TIME
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_negative.py
     --peer ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_peer_tb.sv
     --case ${NLV_CASES}/tilelink.py --cli $<TARGET_FILE:nocloom_cli> --negative)
-set_tests_properties(verif_tilelink_negative PROPERTIES
-  RESOURCE_LOCK tilelink LABELS "negative;focused;tilelink;ci")
+set_tests_properties(verif_tilelink_negative PROPERTIES LABELS "negative;focused;tilelink;ci")
+nocloom_test_memory(3584 verif_tilelink_negative)
 
 nocloom_verif_case(NAME verif_tilelink_source16 LAYER rtl TIER focused TIMEOUT 300
   FEATURES tilelink MEMORY_MB 1024
   CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.ERR.READ_ZERO AXI.W.UNSTROBED_ZERO TL.ACCESS
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/tilelink.py --cli $<TARGET_FILE:nocloom_cli>
     --param source_width=16)
-set_tests_properties(verif_tilelink_source16 PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_source16)
 
 nocloom_verif_case(NAME verif_tilelink_source0 LAYER rtl TIER focused TIMEOUT 300
   FEATURES tilelink MEMORY_MB 1024
   CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.ERR.READ_ZERO AXI.W.UNSTROBED_ZERO TL.ACCESS
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/tilelink.py --cli $<TARGET_FILE:nocloom_cli>
     --param source_width=0)
-set_tests_properties(verif_tilelink_source0 PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_source0)
 
 nocloom_verif_case(NAME verif_tilelink_uh_ingress LAYER rtl TIER focused TIMEOUT 300
   FEATURES tilelink ci MEMORY_MB 1024 CONTRACTS TL.ACCESS
@@ -1247,7 +1251,7 @@ nocloom_verif_case(NAME verif_tilelink_uh_ingress LAYER rtl TIER focused TIMEOUT
     --case ${NLV_CASES}/tilelink_uh.py --cli $<TARGET_FILE:nocloom_cli>
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_ingress_tb.svh
     --axi-check ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_axi_check.sv)
-set_tests_properties(verif_tilelink_uh_ingress PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_ingress)
 
 nocloom_verif_case(NAME verif_tilelink_uh_long LAYER rtl TIER focused TIMEOUT 300
   FEATURES tilelink ci MEMORY_MB 1024 CONTRACTS TL.ACCESS
@@ -1255,7 +1259,7 @@ nocloom_verif_case(NAME verif_tilelink_uh_long LAYER rtl TIER focused TIMEOUT 30
     --case ${NLV_CASES}/tilelink_uh.py --cli $<TARGET_FILE:nocloom_cli>
     --maximum 4096 --slots 1
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_ingress_tb.svh)
-set_tests_properties(verif_tilelink_uh_long PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_long)
 
 foreach(variant IN ITEMS sizes width64 cdc128 source0 source16)
   set(uh_args "")
@@ -1275,7 +1279,7 @@ foreach(variant IN ITEMS sizes width64 cdc128 source0 source16)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh.py
       --case ${NLV_CASES}/tilelink_uh.py --cli $<TARGET_FILE:nocloom_cli>
       --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_ingress_tb.svh ${uh_args})
-  set_tests_properties(verif_tilelink_uh_${variant} PROPERTIES RESOURCE_LOCK tilelink)
+  nocloom_test_memory(3584 verif_tilelink_uh_${variant})
 endforeach()
 
 nocloom_verif_case(NAME verif_tilelink_uh_order LAYER rtl TIER focused TIMEOUT 300
@@ -1285,7 +1289,7 @@ nocloom_verif_case(NAME verif_tilelink_uh_order LAYER rtl TIER focused TIMEOUT 3
     --maximum 4096 --slots 8
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_ingress_tb.svh
     --extra ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_stress.svh)
-set_tests_properties(verif_tilelink_uh_order PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_order)
 
 foreach(variant IN ITEMS consecutive consecutive_order oversize)
   set(uh_args --back-to-back)
@@ -1300,7 +1304,7 @@ foreach(variant IN ITEMS consecutive consecutive_order oversize)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh.py
       --case ${NLV_CASES}/tilelink_uh.py --cli $<TARGET_FILE:nocloom_cli>
       --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_ingress_tb.svh ${uh_args})
-  set_tests_properties(verif_tilelink_uh_${variant} PROPERTIES RESOURCE_LOCK tilelink)
+  nocloom_test_memory(3584 verif_tilelink_uh_${variant})
 endforeach()
 
 nocloom_verif_case(NAME verif_tilelink_uh_fairness LAYER rtl TIER focused TIMEOUT 300
@@ -1310,7 +1314,7 @@ nocloom_verif_case(NAME verif_tilelink_uh_fairness LAYER rtl TIER focused TIMEOU
     --maximum 4096 --slots 8
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_regression_tb.svh
     --extra ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_fairness.svh)
-set_tests_properties(verif_tilelink_uh_fairness PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_fairness)
 
 nocloom_verif_case(NAME verif_tilelink_uh_fairness_wrap LAYER rtl TIER focused TIMEOUT 300
   FEATURES tilelink ci MEMORY_MB 1024 CONTRACTS TL.ACCESS
@@ -1319,7 +1323,7 @@ nocloom_verif_case(NAME verif_tilelink_uh_fairness_wrap LAYER rtl TIER focused T
     --maximum 4096 --slots 3
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_regression_tb.svh
     --extra ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_fairness_wrap.svh)
-set_tests_properties(verif_tilelink_uh_fairness_wrap PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_fairness_wrap)
 
 nocloom_verif_case(NAME verif_tilelink_uh_narrow LAYER rtl TIER focused TIMEOUT 300
   FEATURES tilelink ci MEMORY_MB 1024 CONTRACTS TL.ACCESS
@@ -1361,7 +1365,7 @@ nocloom_verif_case(NAME verif_tilelink_uh_admission LAYER rtl TIER focused TIMEO
     --maximum 4096 --slots 8
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_regression_tb.svh
     --extra ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_admission.svh)
-set_tests_properties(verif_tilelink_uh_admission PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_admission)
 
 nocloom_verif_case(NAME verif_tilelink_uh_concurrent LAYER rtl TIER focused TIMEOUT 300
   FEATURES tilelink ci MEMORY_MB 1024 CONTRACTS TL.ACCESS
@@ -1370,7 +1374,7 @@ nocloom_verif_case(NAME verif_tilelink_uh_concurrent LAYER rtl TIER focused TIME
     --maximum 4096 --slots 8
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_regression_tb.svh
     --extra ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_concurrent.svh)
-set_tests_properties(verif_tilelink_uh_concurrent PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_concurrent)
 
 nocloom_verif_case(NAME verif_tilelink_uh_mask LAYER rtl TIER focused TIMEOUT 300
   FEATURES tilelink ci MEMORY_MB 1024 CONTRACTS TL.ACCESS
@@ -1379,7 +1383,7 @@ nocloom_verif_case(NAME verif_tilelink_uh_mask LAYER rtl TIER focused TIMEOUT 30
     --maximum 4096 --slots 8
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_regression_tb.svh
     --extra ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_mask.svh)
-set_tests_properties(verif_tilelink_uh_mask PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_mask)
 
 foreach(variant IN ITEMS windows tail_miss)
   set(uh_args --windows 4)
@@ -1391,7 +1395,7 @@ foreach(variant IN ITEMS windows tail_miss)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh.py
       --case ${NLV_CASES}/tilelink_uh.py --cli $<TARGET_FILE:nocloom_cli>
       --maximum 4096 --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_ingress_tb.svh ${uh_args})
-  set_tests_properties(verif_tilelink_uh_${variant} PROPERTIES RESOURCE_LOCK tilelink)
+  nocloom_test_memory(3584 verif_tilelink_uh_${variant})
 endforeach()
 
 nocloom_verif_case(NAME verif_tilelink_uh_tl_ul LAYER rtl TIER focused TIMEOUT 300
@@ -1400,17 +1404,17 @@ nocloom_verif_case(NAME verif_tilelink_uh_tl_ul LAYER rtl TIER focused TIMEOUT 3
     --case ${NLV_CASES}/tilelink_uh.py --cli $<TARGET_FILE:nocloom_cli>
     --maximum 4096 --target-protocol tl_ul
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_ingress_tb.svh)
-set_tests_properties(verif_tilelink_uh_tl_ul PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_tl_ul)
 
 nocloom_verif_case(NAME verif_wishbone_bursts LAYER rtl TIER focused TIMEOUT 600
   FEATURES wishbone ci MEMORY_MB 2048
   CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.ERR.READ_ZERO WB.BURST.SEQUENCE
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/wishbone_bursts.py --cli $<TARGET_FILE:nocloom_cli>)
-set_tests_properties(verif_wishbone_bursts PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_test_memory(2560 verif_wishbone_bursts)
 nocloom_verif_case(NAME verif_wishbone_bursts_checker LAYER unit TIER focused TIMEOUT 180
   FEATURES wishbone ci MEMORY_MB 512
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/wishbone_bursts_check.py)
-set_tests_properties(verif_wishbone_bursts_checker PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_test_memory(2560 verif_wishbone_bursts_checker)
 foreach(family IN ITEMS source width pressure banks)
   set(wb_bursts_run ${NLV_RUN})
   set(wb_bursts_param --param family=${family})
@@ -1423,7 +1427,7 @@ foreach(family IN ITEMS source width pressure banks)
     CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.ERR.READ_ZERO WB.BURST.SEQUENCE
     COMMAND ${wb_bursts_run} --case ${NLV_CASES}/wishbone_bursts.py ${wb_bursts_param}
       --cli $<TARGET_FILE:nocloom_cli>)
-  set_tests_properties(verif_wishbone_bursts_${family} PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+  nocloom_test_memory(2560 verif_wishbone_bursts_${family})
 endforeach()
 set_property(TEST verif_wishbone_bursts_source APPEND PROPERTY LABELS ci)
 nocloom_verif_case(NAME verif_wishbone_bursts_configuration LAYER config TIER focused TIMEOUT 180
@@ -1435,28 +1439,28 @@ foreach(family IN ITEMS throughput banks pressure)
     CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.ERR.READ_ZERO WB.BURST.SEQUENCE
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/wishbone_bursts_unit.py
       ${NLV_FIXTURE} --family ${family})
-  set_tests_properties(verif_wishbone_bursts_unit_${family} PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+  nocloom_test_memory(2560 verif_wishbone_bursts_unit_${family})
 endforeach()
 nocloom_verif_case(NAME verif_wishbone_bursts_negative LAYER negative TIER focused TIMEOUT 600
   FEATURES wishbone ci MEMORY_MB 2048
   CONTRACTS WB.BURST.SEQUENCE AXI.ROUTE.LOCAL_OFFSET
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/wishbone_bursts.py --cli $<TARGET_FILE:nocloom_cli> --negative)
-set_tests_properties(verif_wishbone_bursts_negative PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_test_memory(2560 verif_wishbone_bursts_negative)
 nocloom_verif_case(NAME verif_wishbone_bursts_source_negative LAYER negative TIER focused TIMEOUT 600
   FEATURES wishbone MEMORY_MB 2048
   CONTRACTS WB.BURST.SEQUENCE
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/wishbone_bursts.py --param family=source
     --cli $<TARGET_FILE:nocloom_cli> --negative)
-set_tests_properties(verif_wishbone_bursts_source_negative PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_test_memory(2560 verif_wishbone_bursts_source_negative)
 nocloom_verif_case(NAME verif_wishbone_bursts_formal LAYER formal TIER formal TIMEOUT 600
   FEATURES wishbone MEMORY_MB 4096
   CONTRACTS WB.BURST.SEQUENCE WB.BUFFER.CREDIT
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/wishbone_bursts_formal.py ${NLV_FIXTURE})
-set_tests_properties(verif_wishbone_bursts_formal PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_test_memory(2560 verif_wishbone_bursts_formal)
 nocloom_verif_case(NAME verif_wishbone_bursts_peer LAYER unit TIER focused TIMEOUT 180
   FEATURES wishbone ci MEMORY_MB 512
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/wishbone_bursts_peer.py)
-set_tests_properties(verif_wishbone_bursts_peer PROPERTIES RESOURCE_LOCK nocloom_rtl_heavy)
+nocloom_test_memory(2560 verif_wishbone_bursts_peer)
 nocloom_verif_case(NAME verif_wishbone_bursts_bytes LAYER structure TIER focused TIMEOUT 180
   FEATURES wishbone ci MEMORY_MB 1024
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/wishbone_bursts_bytes.py
@@ -1468,8 +1472,9 @@ nocloom_verif_case(NAME packet_lengths_transactions LAYER rtl TIER focused TIMEO
   COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/packet_lengths.py
     --fixture $<TARGET_FILE:nocloom_packet_lengths_fixture>
     --case ${NLV_CASES}/packet_lengths.py)
-set_tests_properties(packet_lengths_transactions PROPERTIES RESOURCE_LOCK packet_lengths_sim
+set_tests_properties(packet_lengths_transactions PROPERTIES
   ENVIRONMENT "NOCLOOM_TEST_DEPS_REQUIRED=1")
+nocloom_test_memory(1024 packet_lengths_transactions)
 
 nocloom_verif_case(NAME verif_tilelink_uh_configuration LAYER config TIER focused TIMEOUT 180
   FEATURES tilelink ci MEMORY_MB 512
@@ -1482,7 +1487,7 @@ nocloom_verif_case(NAME verif_tilelink_uh_negative LAYER negative TIER release T
     --cli $<TARGET_FILE:nocloom_cli> --fixture $<TARGET_FILE:nocloom_verif_fixture>
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_ingress_tb.svh
     --extra ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_stress.svh)
-set_tests_properties(verif_tilelink_uh_negative PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_negative)
 nocloom_verif_case(NAME verif_tilelink_uh_selected_faults LAYER negative TIER focused TIMEOUT 180
   FEATURES tilelink ci MEMORY_MB 2048 CONTRACTS TL.ACCESS
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_negative.py
@@ -1491,7 +1496,7 @@ nocloom_verif_case(NAME verif_tilelink_uh_selected_faults LAYER negative TIER fo
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_ingress_tb.svh
     --extra ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_b_independence.svh
     --maximum 8)
-set_tests_properties(verif_tilelink_uh_selected_faults PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_selected_faults)
 
 foreach(gate IN ITEMS independent combined)
   nocloom_verif_case(NAME verif_tilelink_uh_idle_${gate} LAYER rtl TIER focused TIMEOUT 300
@@ -1501,7 +1506,7 @@ foreach(gate IN ITEMS independent combined)
       --maximum 4096 --slots 8 --gating ${gate} --fixture $<TARGET_FILE:nocloom_verif_fixture>
       --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_regression_tb.svh
       --extra ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_idle.svh)
-  set_tests_properties(verif_tilelink_uh_idle_${gate} PROPERTIES RESOURCE_LOCK tilelink)
+  nocloom_test_memory(3584 verif_tilelink_uh_idle_${gate})
 endforeach()
 
 nocloom_verif_case(NAME verif_tilelink_uh_hint LAYER rtl TIER focused TIMEOUT 300
@@ -1511,7 +1516,7 @@ nocloom_verif_case(NAME verif_tilelink_uh_hint LAYER rtl TIER focused TIMEOUT 30
     --maximum 4096 --slots 8
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_regression_tb.svh
     --extra ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_hint.svh)
-set_tests_properties(verif_tilelink_uh_hint PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_hint)
 
 nocloom_verif_case(NAME verif_tilelink_uh_checker LAYER unit TIER focused TIMEOUT 180
   FEATURES tilelink ci MEMORY_MB 512
@@ -1525,7 +1530,7 @@ foreach(protocol IN ITEMS apb4 ahb_lite wishbone)
       --target-protocol ${protocol} --bus-model ${CMAKE_CURRENT_SOURCE_DIR}/tilelink_uh_buses.py
       --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_ingress_tb.svh
       --extra ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_bus_errors.svh)
-  set_tests_properties(verif_tilelink_uh_${protocol} PROPERTIES RESOURCE_LOCK tilelink)
+  nocloom_test_memory(3584 verif_tilelink_uh_${protocol})
 endforeach()
 
 nocloom_verif_case(NAME verif_tilelink_uh_target_capacity LAYER rtl TIER focused TIMEOUT 600
@@ -1534,7 +1539,7 @@ nocloom_verif_case(NAME verif_tilelink_uh_target_capacity LAYER rtl TIER focused
     --case ${CMAKE_CURRENT_SOURCE_DIR}/cases/tilelink_uh_target.py
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_capacity_tb.svh
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/uh_target_capacity)
-set_tests_properties(verif_tilelink_uh_target_capacity PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_target_capacity)
 
 nocloom_verif_case(NAME verif_tilelink_uh_target_large LAYER rtl TIER focused TIMEOUT 600
   FEATURES tilelink ci MEMORY_MB 2048 CONTRACTS TL.ACCESS
@@ -1542,7 +1547,7 @@ nocloom_verif_case(NAME verif_tilelink_uh_target_large LAYER rtl TIER focused TI
     --case ${NLV_CASES}/tilelink_uh_large.py
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_large_tb.svh
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/uh_target_large)
-set_tests_properties(verif_tilelink_uh_target_large PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_target_large)
 
 nocloom_verif_case(NAME verif_tilelink_uh_target_matrix LAYER rtl TIER focused TIMEOUT 600
   FEATURES tilelink ci MEMORY_MB 2048 CONTRACTS TL.ACCESS
@@ -1550,7 +1555,7 @@ nocloom_verif_case(NAME verif_tilelink_uh_target_matrix LAYER rtl TIER focused T
     --case ${NLV_CASES}/tilelink_uh_large.py
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_matrix_tb.svh --mode matrix
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/uh_target_matrix)
-set_tests_properties(verif_tilelink_uh_target_matrix PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_target_matrix)
 
 nocloom_verif_case(NAME verif_tilelink_uh_target_segments LAYER rtl TIER focused TIMEOUT 600
   FEATURES tilelink ci MEMORY_MB 2048 CONTRACTS TL.ACCESS
@@ -1558,7 +1563,7 @@ nocloom_verif_case(NAME verif_tilelink_uh_target_segments LAYER rtl TIER focused
     --case ${NLV_CASES}/tilelink_uh_large.py
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_segments_tb.svh --mode segments
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/uh_target_segments)
-set_tests_properties(verif_tilelink_uh_target_segments PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_target_segments)
 
 nocloom_verif_case(NAME verif_tilelink_uh_target_bridge LAYER rtl TIER focused TIMEOUT 600
   FEATURES tilelink ci MEMORY_MB 2048 CONTRACTS TL.ACCESS
@@ -1566,7 +1571,7 @@ nocloom_verif_case(NAME verif_tilelink_uh_target_bridge LAYER rtl TIER focused T
     --case ${NLV_CASES}/tilelink_uh_large.py
     --bench ${CMAKE_CURRENT_SOURCE_DIR}/sv/nlv_tl_uh_bridge_tb.svh --mode bridge
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/uh_target_bridge)
-set_tests_properties(verif_tilelink_uh_target_bridge PROPERTIES RESOURCE_LOCK tilelink)
+nocloom_test_memory(3584 verif_tilelink_uh_target_bridge)
 
 # These short fault controls cover decode, write drain and mixed-width read framing.
 set_property(TEST verif_subpage_destinations verif_axi4_timeout_write_drain
