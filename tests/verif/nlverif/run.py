@@ -6,7 +6,7 @@ sel=0 event hash equal to the baseline and every designated RTL fault.
   python3 tests/verif/nlverif/run.py --case CASE.py --work DIR
          [--param KEY=VALUE]... [--cli PATH] [--fixture PATH] [--negative]
          [--only ID,...] [--sim ENGINE] [--sim-config JSON]
-         [--register-reset asynchronous|synchronous]
+         [--register-reset asynchronous|synchronous] [--read-write shared|separate]
 
 A case module sees the --param values as the dict PARAMS when it loads (one
 case file serves several registered widths or modes). A case may list
@@ -14,6 +14,8 @@ seeds (each one a tape on the same build) and configs (companion DUTs of
 the same scenario: case overrides plus scenario_args; the negative control
 runs on the first). --register-reset generates every DUT with that register reset (the CLI's
 output.register_reset, the fixture's register_reset parameter) instead of as the case states.
+--read-write generates every DUT from its CLI configuration with that read_write (a fixture
+DUT is an infrastructure error).
 
 Exit code: 0 every variant met its expectation, 1 a judgment failed,
 2 infrastructure (generation, compile, tool) error. Only the exit code and
@@ -79,6 +81,8 @@ def validate_selection(case, only, negative):
 
 # --register-reset: the register reset every DUT is generated with, or None (as the case states).
 REGISTER_RESET = None
+# --read-write: the read_write every CLI DUT is generated with, or None (as the case states).
+READ_WRITE = None
 
 
 def fixture_args(recipe):
@@ -93,6 +97,8 @@ def cli_config(dut):
     cfg = json.loads(json.dumps(dut["config"]))
     if REGISTER_RESET:
         cfg.setdefault("output", {})["register_reset"] = REGISTER_RESET
+    if READ_WRITE:
+        cfg["read_write"] = READ_WRITE
     return cfg
 
 
@@ -202,6 +208,8 @@ def generate_dut(args, case, work):
     dut = case["dut"]
     gen = work / "generated"
     gen.mkdir(exist_ok=True)
+    if READ_WRITE and dut["source"] != "cli":
+        raise Infra("--read-write needs a CLI configuration")
     if dut["source"] == "fixture":
         r, _ = run_tool([args.fixture, dut["recipe"], gen, *fixture_args(dut),
                          *(["--probes"] if "probes" in case else [])], work / "fixture.log")
@@ -222,7 +230,14 @@ def generate_dut(args, case, work):
             cell = gen / "cells.v"
         else:
             cfg = work / "input.yaml"
-            if "path" in dut:
+            if "path" in dut and READ_WRITE:
+                # The file's text with the requested paths as one more top-level field.
+                if REGISTER_RESET:
+                    raise Infra("--register-reset needs an in-memory configuration")
+                text = Path(dut["path"]).read_text()
+                cfg.write_text(text + ("" if text.endswith("\n") else "\n")
+                               + "read_write: " + READ_WRITE + "\n")
+            elif "path" in dut:
                 if REGISTER_RESET:
                     raise Infra("--register-reset needs an in-memory configuration")
                 cfg = Path(dut["path"]).resolve()
@@ -479,10 +494,12 @@ def main():
     p.add_argument("--seed", type=int)
     p.add_argument("--param", action="append", default=[])
     p.add_argument("--register-reset", choices=("asynchronous", "synchronous"))
+    p.add_argument("--read-write", choices=("shared", "separate"))
     sim_engine.add_arguments(p)
     args = p.parse_args()
-    global REGISTER_RESET
+    global REGISTER_RESET, READ_WRITE
     REGISTER_RESET = args.register_reset
+    READ_WRITE = args.read_write
     top = Path(args.work).resolve()
     top.mkdir(parents=True, exist_ok=True)
     # Every invocation owns a fresh directory; latest.txt names it.

@@ -46,6 +46,18 @@ The positive phase of "loop" runs the same traffic with the targets taking W
 freely and must finish every wait within LOOP_WINDOW; each loop fault must
 hang there with the target premise named (LIVE.E3).
 
+With --param paths=separate the network has separate read and write paths
+(read_write: separate), s0 and s1 keep four bursts and t0 and t1 two. The
+E1 and E3 traffic, the DMA and the gated target, then runs as phases that
+must complete within LIMIT, and the "loop" configuration runs both gated
+loops within LOOP_WINDOW: a read no longer waits behind a started write,
+and the second burst entry lets it pass the write's entries. E2 stays a
+premise. An R kept from the source still keeps its target busy: the AXI4
+target t0 holds R and B in one response register, and the APB4 target t2
+serves one transfer at a time. Both E2 faults must hang as with shared
+paths. BURST_HOLD then checks the opposite order: the APB4 target serves
+the packet of the other direction before the burst's last packet.
+
 LOOP_WINDOW is the hang window: the arbitration wait bound times the switch
 hops, plus a margin. An output has at most three candidates (the response
 output to a source collects t0, t1 and t2), so a packet waits for at most
@@ -56,6 +68,11 @@ crosses one request and one response switch. 2 * 20 * 2 = 80 cycles, plus a
 """
 
 from nlverif import config as nlconfig
+
+PARAMS = globals().get("PARAMS", {})
+SEPARATE = PARAMS.get("paths", "shared") == "separate"
+if PARAMS.get("paths", "shared") not in ("shared", "separate"):
+    raise ValueError("paths is shared or separate")
 
 CONFIG = dict(
     schema_version=10, name="rw_merge", address_width=32,
@@ -70,6 +87,12 @@ CONFIG = dict(
                   attributes="amba", mappings=[dict(base="0x20000", size="0x1000")])],
     connectivity="all",
     output=dict(backend="verilog", language="verilog_2001"))
+
+if SEPARATE:
+    CONFIG = dict(CONFIG, read_write="separate",
+                  initiators=[dict(i, max_outstanding=4) for i in CONFIG["initiators"]],
+                  targets=[dict(t, max_outstanding=2) if t["protocol"] == "axi4" else t
+                           for t in CONFIG["targets"]])
 
 # The same network with a second source s1 for the endpoint loops.
 LOOP_CONFIG = dict(CONFIG, initiators=CONFIG["initiators"] + [dict(CONFIG["initiators"][0], name="s1")])
@@ -100,7 +123,7 @@ CASE = dict(
                         for n in ("s0", "s1")] + TARGET_BFMS,
                   model=dict(routes=nlconfig.routes(LOOP_CONFIG), targets=TARGET_MODELS),
                   scenario_args=dict(loop=True),
-                  faults=[dict(id="loop_self", params=dict(variant="loop_self"),
+                  faults=[] if SEPARATE else [dict(id="loop_self", params=dict(variant="loop_self"),
                                expect=["LIVE.E3", "TAPE.WAIT_TIMEOUT:LOOP_SELF"],
                                note="t0 takes W only after a read that s1 sends into t0",
                                **FAULT),
@@ -108,7 +131,7 @@ CASE = dict(
                                expect=["LIVE.E3", "TAPE.WAIT_TIMEOUT:LOOP_CROSS"],
                                note="t0 and t1 each wait for a read the other's writer sends",
                                **FAULT)])],
-    faults=[
+    faults=[fault for fault in [
         dict(id="apb_write_data", op="text", contract="APB.TARGET.ACCESS",
              subs=[(r"(assign nl_t_t2_pwdata = )[^;]+;", r"\g<1>32'd0;", 1)],
              expect=["TARGET_WRITE_BYTES"]),
@@ -130,12 +153,13 @@ CASE = dict(
              expect=["LIVE.E3", "TAPE.WAIT_TIMEOUT:E3_W_AWAITS_R"],
              note="E3: t0 takes W only after one of its reads; 16-beat write, then a read",
              **FAULT),
-    ],
+    ] if not SEPARATE or fault["id"] in ("apb_write_data", "e2_rready_awaits_b",
+                                          "e2_apb_rready_awaits_b")],
 )
 
 
 def scenario(t, seed, variant=None, loop=False):
-    s0, t0, t1 = "s0", "t0", "t1"
+    s0 = "s0"
     t.reset(4)
     t.delay(2)
 
@@ -143,10 +167,29 @@ def scenario(t, seed, variant=None, loop=False):
         return {k: t.snap(s0, k) for k in ("b", "rlast", "w", "aw")}
 
     if loop:
+        if SEPARATE:
+            # Both gated loops complete, then the free traffic of the loop phase.
+            for gated in ("loop_self", "loop_cross"):
+                loops(t, gated, end=False)
         return loops(t, variant)
     if variant is None:
         baseline(t, snaps)
-    elif variant in ("e2_t0", "e2_t2"):
+        # With separate paths the traffic that breaks E1 or E3 completes.
+        for premise in ("e1", "e3") if SEPARATE else ():
+            broken(t, snaps, premise)
+            t.drain(label="DRAIN_" + premise.upper())
+    elif variant in ("e2_t0", "e2_t2", "e1", "e3"):
+        broken(t, snaps, variant)
+    else:
+        raise ValueError("unknown scenario variant " + str(variant))
+    t.drain(label="drain")
+    t.end()
+
+
+def broken(t, snaps, variant):
+    """The traffic of one broken premise."""
+    s0, t0 = "s0", "t0"
+    if variant in ("e2_t0", "e2_t2"):
         # E2 broken: the source takes R only after a B. The read is offered at
         # the source before the write is issued, so its burst holds the
         # response route of its target (and the source response exit).
@@ -175,7 +218,7 @@ def scenario(t, seed, variant=None, loop=False):
         t.wait(s0, "rlast", "==", 1, since=m["rlast"], limit=LIMIT, label="E1_DMA_READ")
         t.wait(s0, "b", "==", 1, since=m["b"], limit=LIMIT)
         t.release_w(s0, after_r=0)
-    elif variant == "e3":
+    else:
         # E3 broken: t0 takes W only after one of its reads completed. The
         # 16-beat write is more than the request path can hold (see the
         # module estimate), so its packet keeps the route to t0.
@@ -188,10 +231,6 @@ def scenario(t, seed, variant=None, loop=False):
         t.wait(s0, "rlast", "==", 1, since=m["rlast"], limit=LIMIT, label="E3_W_AWAITS_R")
         t.wait(s0, "b", "==", 1, since=m["b"], limit=LIMIT)
         t.release_w(t0, after_r=0)
-    else:
-        raise ValueError("unknown scenario variant " + str(variant))
-    t.drain(label="drain")
-    t.end()
 
 
 def baseline(t, snaps):
@@ -262,7 +301,8 @@ def baseline(t, snaps):
     # per beat, and the source keeps the request path for the whole burst up
     # to its final packet. The APB4 target serves in arrival order, so a
     # packet of the other direction issued once the burst has started reaches
-    # it only after every packet of the burst.
+    # it only after every packet of the burst. With separate paths it reaches
+    # the target on its own path and is served before the burst's last packet.
     t.mark("phase", 6)
     m = {k: t.snap("t2", k) for k in ("write", "read")}
     b0, r0 = t.snap(s0, "b"), t.snap(s0, "rlast")
@@ -270,7 +310,8 @@ def baseline(t, snaps):
     t.wait("t2", "write", ">=", 1, since=m["write"], limit=LIMIT, label="HOLD_W_STARTED")
     t.read(s0, T2 + 0x300, beats=1, id=1)
     t.wait(s0, "rlast", "==", 1, since=r0, limit=LIMIT, label="HOLD_W_READ")
-    t.expect_now("t2", "write", "==", 8, "BURST_HOLD_WRITE", since=m["write"])
+    t.expect_now("t2", "write", "<" if SEPARATE else "==", 8, "BURST_HOLD_WRITE",
+                 since=m["write"])
     t.wait(s0, "b", "==", 1, since=b0, limit=LIMIT, label="HOLD_W_B")
     t.drain(label="DRAIN_6")
     m = {k: t.snap("t2", k) for k in ("write", "read")}
@@ -279,7 +320,8 @@ def baseline(t, snaps):
     t.wait("t2", "read", ">=", 1, since=m["read"], limit=LIMIT, label="HOLD_R_STARTED")
     t.write(s0, T2 + 0x340, beats=1, id=2)
     t.wait(s0, "b", "==", 1, since=b0, limit=LIMIT, label="HOLD_R_WRITE")
-    t.expect_now("t2", "read", "==", 8, "BURST_HOLD_READ", since=m["read"])
+    t.expect_now("t2", "read", "<" if SEPARATE else "==", 8, "BURST_HOLD_READ",
+                 since=m["read"])
     t.drain(label="DRAIN_7")
     # Read back what the phases wrote.
     t.mark("phase", 7)
@@ -289,9 +331,10 @@ def baseline(t, snaps):
     t.drain(label="DRAIN_8")
 
 
-def loops(t, variant):
+def loops(t, variant, end=True):
     """The endpoint loops; without a variant the same traffic with the
-    targets taking W freely, every wait within LOOP_WINDOW."""
+    targets taking W freely, every wait within LOOP_WINDOW. end=False leaves
+    the tape open for more phases."""
     m = {s: {k: t.snap(s, k) for k in ("b", "rlast")} for s in ("s0", "s1")}
     gated = variant is not None
     for s in ("s0", "s1"):
@@ -344,4 +387,5 @@ def loops(t, variant):
         t.read("s0", T0 + 0x200, beats=16, id=1)
         t.read("s1", T1 + 0x200, beats=16, id=1)
         t.drain(label="DRAIN_LOOP_READBACK")
-    t.end()
+    if end:
+        t.end()

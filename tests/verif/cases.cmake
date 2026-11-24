@@ -120,6 +120,86 @@ nocloom_verif_case(NAME verif_rw_merge_negative LAYER negative TIER focused TIME
   CONTRACTS AXI.LIVE.PREMISES APB.TARGET.ACCESS
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/rw_merge.py --cli $<TARGET_FILE:nocloom_cli> --negative)
 
+# The same network with separate read and write paths and two burst entries
+# per source and AXI4 target: the E1 and E3 traffic and both endpoint loops
+# complete, the E2 faults still hang with the premise named.
+nocloom_verif_case(NAME verif_rw_merge_separate_negative LAYER negative TIER focused TIMEOUT 600
+  FEATURES axi4 apb4 liveness MEMORY_MB 1024
+  CONTRACTS AXI.LIVE.PREMISES APB.TARGET.ACCESS
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/rw_merge.py --param paths=separate
+    --cli $<TARGET_FILE:nocloom_cli> --negative)
+# A read beside a longer write to the same target: no slower than alone with
+# separate read and write paths, slower with shared paths.
+nocloom_verif_case(NAME verif_rw_latency LAYER rtl TIER focused TIMEOUT 300
+  FEATURES axi4 MEMORY_MB 1024 CONTRACTS AXI.PATHS.SEPARATE AXI.ROUTE.LOCAL_OFFSET
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/rw_latency.py --cli $<TARGET_FILE:nocloom_cli>)
+# Network exclusive access at a one-entry target with shared and separate
+# paths: each exclusive write follows the R of its own exclusive read.
+nocloom_verif_case(NAME verif_rw_exclusive LAYER rtl TIER focused TIMEOUT 300
+  FEATURES axi4 exclusive ci MEMORY_MB 1024 CONTRACTS AXI.PATHS.SEPARATE AXI.EXCL.MONITOR
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/rw_exclusive.py --cli $<TARGET_FILE:nocloom_cli>)
+# Decode misses beside writes whose head the AXI4 target took in part, the
+# AxID order of misses, turns for the last entry with reads pressing, and a
+# miss that holds back the other path while it waits.
+nocloom_verif_case(NAME verif_rw_entries LAYER rtl TIER focused TIMEOUT 300
+  FEATURES axi4 MEMORY_MB 1024 CONTRACTS AXI.PATHS.SEPARATE AXI.ERR.UNMAPPED_DECERR
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/rw_entries.py --cli $<TARGET_FILE:nocloom_cli>)
+# A stream of decode misses beside a request of the other direction: the paths take turns at
+# the default target, so the request completes within a bound.
+nocloom_verif_case(NAME verif_rw_miss_turns LAYER rtl TIER focused TIMEOUT 300
+  FEATURES axi4 ci MEMORY_MB 1024 CONTRACTS AXI.PATHS.SEPARATE AXI.ERR.UNMAPPED_DECERR
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/rw_miss_turns.py --cli $<TARGET_FILE:nocloom_cli>)
+
+# Existing traffic again with separate read and write paths (--read-write
+# separate): mixed protocols and clocks, exclusive access and target timeouts,
+# AXI3, width conversion with several bursts in flight, AXI4-Lite in flight,
+# and resets during clock domain crossings. The timeout cases (as every
+# target_timeouts case) and the clocked graph case run at release, the others in
+# the CI selection.
+set(rw_separate_release verif_target_timeouts_separate_exclusive
+  verif_target_timeouts_separate_clocked verif_graph_clocked_separate_ratios_inflight)
+set(rw_separate_cases
+  "soc_mixed|examples axi4 ahb apb cdc width|AXI.ROUTE.LOCAL_OFFSET AXI.WIDTH.DOWNSIZE.PIECES APB.TARGET.ACCESS AXI.CDC.CROSSING|"
+  "target_timeouts|timeout apb ahb axi4_lite axi4 exclusive|AXI.TIMEOUT.EXACT AXI.ERR.READ_ZERO AXI.ROUTE.LOCAL_OFFSET AXI.RESET.CANCEL APB.SUBPAGE.DECODE|configuration=exclusive"
+  "target_timeouts|timeout apb ahb axi4_lite axi4 cdc|AXI.TIMEOUT.EXACT AXI.ERR.READ_ZERO AXI.ROUTE.LOCAL_OFFSET AXI.RESET.CANCEL APB.SUBPAGE.DECODE|configuration=clocked"
+  "axi3_shared_wrap_read|axi3 axi4 width timeout|AXI.OUTLET.FRAMING|"
+  "mixed_widths|axi4 width cdc|AXI.WIDTH.ENDPOINT AXI.WIDTH.FIXED_REFUSE AXI.MERGE.SEVERITY AXI.ATTR.MAP AXI.W.UNSTROBED_ZERO AXI.ERR.READ_ZERO|mode=clocked"
+  "mixed_widths|axi4 width|AXI.WIDTH.ENDPOINT AXI.WIDTH.FIXED_REFUSE AXI.MERGE.SEVERITY AXI.ATTR.MAP AXI.W.UNSTROBED_ZERO AXI.ERR.READ_ZERO|mode=outstanding"
+  "width_stress|axi4 width stress|AXI.WIDTH.DOWNSIZE.PIECES AXI.WIDTH.FIXED_REFUSE AXI.MERGE.SEVERITY AXI.RESET.CANCEL AXI.W.UNSTROBED_ZERO AXI.ERR.READ_ZERO AXI.ERR.UNMAPPED_DECERR AXI.ROUTE.LOCAL_OFFSET AXI.OUTSTANDING.REACH|mode=mo_bsplit_cut"
+  "width_stress|axi4 width stress|AXI.WIDTH.DOWNSIZE.PIECES AXI.WIDTH.FIXED_REFUSE AXI.MERGE.SEVERITY AXI.RESET.CANCEL AXI.W.UNSTROBED_ZERO AXI.ERR.READ_ZERO AXI.ERR.UNMAPPED_DECERR AXI.ROUTE.LOCAL_OFFSET AXI.OUTSTANDING.REACH|mode=mo_merge2"
+  "lite_cut|axi4_lite width cdc|AXI.LITE.WORD_ACCESS AXI.WIDTH.DOWNSIZE.PIECES AXI.OUTSTANDING.REACH AXI.W.UNSTROBED_ZERO|"
+  "lite_target64|axi4_lite exclusive|AXI.LITE.WORD_ACCESS AXI.ERR.READ_ZERO AXI.ROUTE.LOCAL_OFFSET AXI.RESET.CANCEL AXI.W.UNSTROBED_ZERO AXI.EXCL.MONITOR AXI.LITE.SOURCE_WRITE|"
+  "graph_clocked|axi4 cdc graph|AXI.ROUTE.LOCAL_OFFSET AXI.ERR.UNMAPPED_DECERR AXI.ERR.READ_ZERO AXI.RESET.CANCEL AXI.CDC.CROSSING AXI.RESET.DOMAIN AXI.CLOCK.GATE AXI.PIPE.SLOTS|mode=ratios group=inflight")
+foreach(entry IN LISTS rw_separate_cases)
+  string(REPLACE "|" ";" fields "${entry}")
+  list(GET fields 0 case)
+  list(GET fields 1 features)
+  list(GET fields 2 contracts)
+  list(GET fields 3 params)
+  separate_arguments(features)
+  separate_arguments(contracts)
+  separate_arguments(params)
+  set(name verif_${case}_separate)
+  set(param_args)
+  foreach(param IN LISTS params)
+    string(REGEX REPLACE "^.*=" "" value "${param}")
+    string(APPEND name "_${value}")
+    list(APPEND param_args --param ${param})
+  endforeach()
+  set(tier focused)
+  if(name IN_LIST rw_separate_release)
+    set(tier release)
+  else()
+    list(APPEND features ci)
+  endif()
+  nocloom_verif_case(NAME ${name} LAYER rtl TIER ${tier} TIMEOUT 600
+    FEATURES ${features} MEMORY_MB 2048 CONTRACTS ${contracts}
+    COMMAND ${NLV_RUN} --case ${NLV_CASES}/${case}.py ${param_args} --read-write separate
+      --cli $<TARGET_FILE:nocloom_cli>)
+endforeach()
+set_property(TEST verif_rw_merge_separate_negative verif_rw_latency verif_rw_entries
+  APPEND PROPERTY LABELS ci)
+
 # Configuration layer: the public CLI against data tables (accept, reject
 # with the named code, artifact set, determinism across working directories).
 set(NLV_CONFIG ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/config.py
@@ -142,7 +222,7 @@ if(UNIX)
 endif()
 
 foreach(case IN ITEMS axi4 widths arbitration connectivity mixed_widths endpoint_widths dedicated
-    outlets shorthand modes routes route_cycles target_ids)
+    outlets shorthand modes routes route_cycles target_ids read_write)
   set(config_tools)
   if(case STREQUAL "endpoint_widths")
     list(APPEND config_tools

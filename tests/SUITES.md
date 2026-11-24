@@ -21,8 +21,10 @@ Power, performance and area tests use a separate setup.
 
 The CI selection runs the AHB5 property matrix and the liveness proof driver
 self-test. It also runs asynchronous FIFO transactions with clock skew,
-jitter and one-sided resets. The release run adds the full FIFO clock ratio
-matrix and the comparison of generated files from two C++ compilers.
+jitter and one-sided resets, and the separate read and write path cases. The
+release run adds the full FIFO clock ratio matrix and the comparison of
+generated files from two C++ compilers. It also runs the separate path cases
+with timeouts or clocked graphs.
 
 ## Memory reservations
 

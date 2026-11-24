@@ -171,6 +171,10 @@ CONTRACTS = {
     "AXI.ID.RETURN": dict(
         text="Every B and R carries the AxID of its request",
         source="AMBA AXI A5.2 transaction identifiers"),
+    "AXI.PATHS.SEPARATE": dict(
+        text="With separate read and write paths a read reaches its target and returns without "
+             "waiting for a write on the network",
+        source="docs/read-write-paths.md"),
     "AXI.LIVE.PREMISES": dict(
         text="Read and write packets share each network; an endpoint that breaks premise "
              "E1, E2 or E3 can stop it, and the bench names the broken premise",

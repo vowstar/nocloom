@@ -28,6 +28,8 @@ A case reads `--param KEY=VALUE` values from `PARAMS`. Registration loads the
 case with those values.
 A `CASE` can list `seeds` for additional tapes on one build and `configs` for
 companion DUTs using the same scenario.
+`--read-write separate` generates every DUT of a case with separate read and
+write paths. It needs CLI configurations.
 
 Fault checks use the first configuration unless `negative_faults_all` selects
 each configuration. Each configuration can declare its own `faults`.

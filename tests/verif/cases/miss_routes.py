@@ -36,6 +36,9 @@ In the configuration "unconnected" flow 1 reaches only t1, so its misses return 
 flow pair. Three writes, then three reads, of AxID 1 to t1, which answers after 30 cycles, are
 followed by a miss of AxID 1 of the same direction: the source holds the miss until those
 answers return, so they arrive in order.
+
+The configurations "separate" and "separate_unconnected" run the same with separate read and
+write paths.
 """
 
 from nlverif import config as nlconfig
@@ -154,7 +157,9 @@ def variant(label, connected=True, paths=None):
     return entry
 
 
-CONFIGS = [variant(""), variant("unconnected", connected=False)]
+CONFIGS = [variant(""), variant("unconnected", connected=False),
+           variant("separate", paths="separate"),
+           variant("separate_unconnected", connected=False, paths="separate")]
 CASE = dict(
     name="miss_routes",
     contracts=["AXI.ERR.UNMAPPED_DECERR"],
