@@ -1322,7 +1322,8 @@ set_tests_properties(path_report_separate_examples PROPERTIES TIMEOUT 300 LABELS
   PROCESSORS 4)
 add_executable(nocloom_link_pipeline_unit unit/link_pipeline.cpp)
 target_include_directories(nocloom_link_pipeline_unit PRIVATE ${PROJECT_SOURCE_DIR}/src)
-target_link_libraries(nocloom_link_pipeline_unit PRIVATE nocloom_config nocloom_core Catch2::Catch2WithMain)
+target_link_libraries(nocloom_link_pipeline_unit PRIVATE nocloom_config nocloom_core
+  nlohmann_json::nlohmann_json Catch2::Catch2WithMain)
 add_test(NAME link_pipeline_structure COMMAND nocloom_link_pipeline_unit)
 set_tests_properties(link_pipeline_structure PROPERTIES TIMEOUT 120 LABELS "unit;quick")
 add_executable(nocloom_link_pipeline_fixture generate_link_pipeline.cpp)
