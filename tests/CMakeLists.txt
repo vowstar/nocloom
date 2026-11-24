@@ -580,6 +580,13 @@ if(NOCLOOM_TOOL_yosys)
       --cli $<TARGET_FILE:nocloom_cli> --yosys ${NOCLOOM_TOOL_yosys}
       --work ${CMAKE_CURRENT_BINARY_DIR}/cdc_path_coverage)
   set_tests_properties(cdc_path_coverage PROPERTIES TIMEOUT 60 LABELS "structure;ci")
+  # The area table of docs/read-write-paths.md, synthesized again (read_write_area.py).
+  add_test(NAME read_write_area
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/read_write_area.py
+      --cli $<TARGET_FILE:nocloom_cli> --yosys ${NOCLOOM_TOOL_yosys}
+      --source ${PROJECT_SOURCE_DIR} --work ${CMAKE_CURRENT_BINARY_DIR}/read_write_area)
+  set_tests_properties(read_write_area PROPERTIES
+    TIMEOUT 1200 LABELS "structure;release" PROCESSORS 2)
 endif()
 foreach(case IN ITEMS cli install install_subdirectory)
   set(check ${case})

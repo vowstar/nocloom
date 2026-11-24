@@ -201,8 +201,9 @@ struct Axi4OutletProfile {
   // found no next word, so the target valids reach the response face in the same cycle. A segment
   // ends (hint output cut, message.hpp point 17) at a word that is not its packet's last where the
   // next word belongs to another packet, or two cycles pass without one. Both response faces share
-  // the network ready, and at most one is valid. The network keeps no response merger of its own
-  // for such an outlet, and merger_hints stays off.
+  // the network ready on shared paths, and at most one is valid. On separate paths each direction
+  // has its own response storage and ready. The network keeps no response merger of its own for
+  // such an outlet, and merger_hints stays off.
   bool interleave = false;
   // With interleave: the target words a read keeps together, a power of two. Above one a counter
   // runs over the words entering the response stage from each packet's first: a word inside such a

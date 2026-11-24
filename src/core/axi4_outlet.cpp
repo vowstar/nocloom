@@ -837,6 +837,14 @@ struct EngineLowering {
   };
   Offer boffer, roffer;
   ValueId jfull{}, jwrite{}, jlast{}, b_held{}, bsilent_done{};
+  struct ResponseJoin {
+    bool hold{};
+    ValueId read, phase{}, mid{};
+    std::optional<ValueId> index;
+  };
+  ResponseJoin choose_response(const Fields &word, ValueId read_valid, ValueId write_valid);
+  void advance_response(const ResponseJoin &join, ValueId last, ValueId write_valid, ValueId taken,
+                        ValueId room);
   std::vector<ValueId> rbeat; // each read entry's beats received
   // Interleave mode with several bursts: reads take any free entry (ralloc, the lowest) and the
   // entries' ages order them, age[i][j] (i < j) set while entry i is older than entry j.
@@ -847,6 +855,7 @@ struct EngineLowering {
   void join_states();
   void read_receive_joined();
   void join_responses();
+  void bypass_write_response();
   void read_update_joined();
 
   void write_accept();
@@ -948,8 +957,8 @@ void EngineLowering::write_accept() {
   reject = l.state("w.reject", 1);
   bad = l.state("w.bad", 1);
   remaining = l.state("w.remaining", p.packet_len_bits);
-  // Interleave mode with several bursts: the B pipe is w.response_spare.
-  bf = ilv && several ? zero : l.state("w.response_full", 1);
+  // A direct or shared join only needs the spare entry when several bursts are in flight.
+  bf = ilv && several && (!p.separate || p.response_direct) ? zero : l.state("w.response_full", 1);
   ws.resize(several ? depth : 0);
   for (unsigned k = 0; k < ws.size(); ++k) {
     const auto at = "w.slot" + std::to_string(k) + ".";
@@ -1310,8 +1319,11 @@ void EngineLowering::write_respond() {
     write_respond_several(bresp, bid, face);
   else
     write_respond_single(bresp, bid, face);
-  if (ilv)
+  if (ilv) {
+    if (p.separate)
+      bypass_write_response();
     return;
+  }
   response_face("wrsp", face.fields, p.write_only ? l.either(bf, face.through) : bf, face.address,
                 face.stored, one, one, l.b.constant(p.data_bits, 0), face.exclusive, bstored_user,
                 b_groups(bstored_trace));
@@ -2181,7 +2193,7 @@ void EngineLowering::join_states() {
   }
   local_error_states();
   jfull = l.state("r.full", 1);
-  jwrite = l.state("r.out_write", 1);
+  jwrite = p.separate ? zero : l.state("r.out_write", 1);
   jlast = l.state("r.response_last", 1);
 }
 
@@ -2383,6 +2395,76 @@ void EngineLowering::read_receive_joined() {
   complete = l.both(rpush, rlast);
 }
 
+void EngineLowering::bypass_write_response() {
+  // Keep the registered ready and the two B entries of the staged join on the write path.
+  // A direct outlet passes a B through its existing one-entry pipe.
+  const auto &o = boffer;
+  const auto valid = p.response_direct ? l.either(o.full, o.through(l)) : bf;
+  bdone = l.both(active(valid), in("wrsp", "ready", 1));
+  const auto hold = p.response_direct ? Stage{} : stage(l, bf, o.full, o.push, bdone);
+  const auto load = p.response_direct ? l.both(o.push, l.inv(bdone)) : zero;
+  Fields fields = several ? Fields{} : aw;
+  for (const auto &[name, value] : o.live) {
+    const auto stem = "w.rsp." + name;
+    if (p.response_direct) {
+      const auto saved = l.latch("w.rsp_spare." + name, value, load);
+      fields[name] = l.b.select(o.full, saved, value);
+    } else {
+      fields[name] = staged(l, hold, stem, "w.rsp_spare." + name, value);
+    }
+  }
+  // A waiting answer enters the pipe although it is not offered yet.
+  if (p.response_direct)
+    l.b.update(o.full, l.both(o.wait ? l.either(o.full, o.push) : valid, l.inv(bdone)));
+  const auto get = [&](const std::string &name) -> std::optional<ValueId> {
+    const auto found = fields.find(name);
+    return found == fields.end() ? std::nullopt : std::optional{found->second};
+  };
+  const auto address = several ? l.global(fields.at("address")) : aw.at("address");
+  response_face("wrsp", fields, valid, address, fields.at("result"), one, one,
+                l.b.constant(p.data_bits, 0), get("response_exclusive").value_or(zero), get("user"),
+                b_groups(get("trace")));
+  if (!several) {
+    bdone = l.either(bdone, bsilent_done);
+    l.b.update(wb, l.b.select(head, one, l.b.select(bdone, zero, wb)));
+  }
+}
+
+EngineLowering::ResponseJoin EngineLowering::choose_response(const Fields &word, ValueId read_valid,
+                                                             ValueId write_valid) {
+  ResponseJoin join{p.response_direct || p.interleave_beats > 1, one, {}, {}, std::nullopt};
+  if (p.separate)
+    return join;
+  using enum beat_stage::ResponsePhase;
+  join.mid = l.state("r.join_mid", 1);
+  auto starts = l.inv(join.mid);
+  if (several) {
+    join.index = l.state("r.join_index", std::max(1U, index_bits));
+    starts = l.either(starts, l.inv(l.b.binary(Op::Equal, word.at("index"), *join.index)));
+  }
+  join.phase = l.state("r.merge_phase", 3);
+  const auto available = l.inv(l.both(l.eq(join.phase, ReadBoundary), l.both(write_valid, starts)));
+  join.read = l.pick(beat_stage::read_owned(l.b, join.phase), one,
+                     l.pick(l.eq(join.phase, WriteResponse), zero, l.both(read_valid, available)));
+  return join;
+}
+
+void EngineLowering::advance_response(const ResponseJoin &join, ValueId last, ValueId write_valid,
+                                      ValueId taken, ValueId room) {
+  using enum beat_stage::ResponsePhase;
+  const auto block_end = p.interleave_beats > 1 ? l.eq(block_count, p.interleave_beats - 1) : zero;
+  const auto num = [&](beat_stage::ResponsePhase p) { return l.num(3, p); };
+  const auto boundary = l.pick(taken, num(ReadBoundary), num(Available));
+  const auto reading =
+      join.hold
+          ? l.pick(taken, l.pick(l.either(last, block_end), num(ReadBoundary), num(ReadTransfer)),
+                   num(ReadPacket))
+          : boundary;
+  const auto writing = l.pick(write_valid, l.pick(room, num(Available), num(WriteResponse)),
+                              l.pick(l.eq(join.phase, WriteResponse), join.phase, num(Available)));
+  l.b.update(join.phase, l.pick(join.read, reading, writing));
+}
+
 void EngineLowering::join_responses() {
   struct Pipe {
     ValueId valid{};
@@ -2400,25 +2482,13 @@ void EngineLowering::join_responses() {
     return q;
   };
   const auto rq = piped("r.spare_", roffer);
-  const auto bq = piped("w.rsp_spare.", boffer);
-  const auto mid = l.state("r.join_mid", 1);
-  auto starts = l.inv(mid);
-  std::optional<ValueId> conn;
-  if (several) {
-    conn = l.state("r.join_index", std::max(1U, index_bits));
-    starts = l.either(starts, l.inv(l.b.binary(Op::Equal, rq.word.at("index"), *conn)));
-  }
-  using enum beat_stage::ResponsePhase;
-  const auto phase = l.state("r.merge_phase", 3);
+  const auto bq = p.separate ? Pipe{zero, {}, {}} : piped("w.rsp_spare.", boffer);
   const bool direct = p.response_direct;
-  const bool holding = direct || p.interleave_beats > 1;
-  const auto available = l.inv(l.both(l.eq(phase, ReadBoundary), l.both(bq.valid, starts)));
-  const auto choosing_read =
-      l.pick(beat_stage::read_owned(l.b, phase), one,
-             l.pick(l.eq(phase, WriteResponse), zero, l.both(rq.valid, available)));
-  const auto read = l.bind("r.join_read", l.both(rq.valid, choosing_read));
-  const auto shown =
-      holding ? l.either(read, l.both(l.inv(choosing_read), bq.valid)) : l.either(read, bq.valid);
+  const auto join = choose_response(rq.word, rq.valid, bq.valid);
+  const auto read = l.bind("r.join_read", l.both(rq.valid, join.read));
+  const auto shown = p.separate  ? read
+                     : join.hold ? l.either(read, l.both(l.inv(join.read), bq.valid))
+                                 : l.either(read, bq.valid);
   std::optional<beat_stage::ResponseSegment> window;
   if (!direct)
     window.emplace(l, l.state("r.segment_phase", 2));
@@ -2429,65 +2499,70 @@ void EngineLowering::join_responses() {
   if (cur_index)
     other = l.either(other, l.inv(l.b.binary(Op::Equal, rq.word.at("index"), *cur_index)));
   if (direct) {
-    jwrite = l.inv(read);
-    jlast = l.bind("r.response_last", l.either(jwrite, rq.word.at("last")));
+    if (p.separate) {
+      jlast = l.bind("r.response_last", rq.word.at("last"));
+    } else {
+      jwrite = l.inv(read);
+      jlast = l.bind("r.response_last", l.either(jwrite, rq.word.at("last")));
+    }
   }
   const bool blocks = p.interleave_beats > 1;
   const auto inside = inside_block();
   const auto cut = direct ? zero : window->cut(jlast, shown, other, inside);
   const auto offered = direct ? shown : window->offered(jfull, jlast, shown, inside);
-  const auto ready = l.b.select(jwrite, in("wrsp", "ready", 1), in("rrsp", "ready", 1));
+  const auto ready = p.separate
+                         ? in("rrsp", "ready", 1)
+                         : l.b.select(jwrite, in("wrsp", "ready", 1), in("rrsp", "ready", 1));
   if (direct && p.failure_classes)
     local_error_on = l.both(read, rq.word.at("local_error"));
   const auto leave = l.bind("r.join_leave", l.both(l.both(active(offered), ready), l.inv(zero)));
   const auto room = direct ? leave : l.either(l.inv(jfull), leave);
   const auto take = l.both(active(shown), room);
   const auto r_taken = l.bind("r.join_take", l.both(take, read));
-  const auto b_taken = l.bind("w.join_take", l.both(take, l.inv(read)));
-  for (const auto &[q, o, taken] : {std::tuple{&rq, &roffer, r_taken}, {&bq, &boffer, b_taken}}) {
-    const auto load = l.both(l.both(o->push, l.inv(o->full)), l.inv(taken));
-    for (const auto &[reg, v] : q->regs)
+  const auto b_taken = p.separate ? zero : l.bind("w.join_take", l.both(take, l.inv(read)));
+  const auto update_pipe = [&](const Pipe &q, const Offer &o, ValueId taken) {
+    const auto load = l.both(l.both(o.push, l.inv(o.full)), l.inv(taken));
+    for (const auto &[reg, v] : q.regs)
       l.b.update(reg, l.b.select(load, v, reg));
-    l.b.update(o->full, l.both(l.either(o->full, o->push), l.inv(taken)));
+    l.b.update(o.full, l.both(l.either(o.full, o.push), l.inv(taken)));
+  };
+  update_pipe(rq, roffer, r_taken);
+  if (!p.separate) {
+    update_pipe(bq, boffer, b_taken);
+    advance_response(join, rq.word.at("last"), bq.valid, r_taken, room);
   }
-  const auto block_end = p.interleave_beats > 1 ? l.eq(block_count, p.interleave_beats - 1) : zero;
-  const auto num = [&](beat_stage::ResponsePhase p) { return l.num(3, p); };
-  const auto boundary = l.pick(r_taken, num(ReadBoundary), num(Available));
-  const auto reading = holding ? l.pick(r_taken,
-                                        l.pick(l.either(rq.word.at("last"), block_end),
-                                               num(ReadBoundary), num(ReadTransfer)),
-                                        num(ReadPacket))
-                               : boundary;
-  const auto writing = l.pick(bq.valid, l.pick(room, num(Available), num(WriteResponse)),
-                              l.pick(l.eq(phase, WriteResponse), phase, num(Available)));
-  l.b.update(phase, l.pick(choosing_read, reading, writing));
   if (!direct) {
     l.b.update(jfull, l.b.select(take, one, l.b.select(leave, zero, jfull)));
-    l.b.update(jwrite, l.b.select(take, l.inv(read), jwrite));
+    if (!p.separate)
+      l.b.update(jwrite, l.b.select(take, l.inv(read), jwrite));
     window->advance(leave, shown, jfull, inside);
   }
   if (blocks)
     count_block_word(take, l.either(l.inv(read), rq.word.at("last")));
-  l.b.update(mid, l.b.select(r_taken, l.inv(rq.word.at("last")), mid));
-  if (conn)
-    l.b.update(*conn, l.b.select(r_taken, rq.word.at("index"), *conn));
+  if (!p.separate)
+    l.b.update(join.mid, l.b.select(r_taken, l.inv(rq.word.at("last")), join.mid));
+  if (join.index)
+    l.b.update(*join.index, l.b.select(r_taken, rq.word.at("index"), *join.index));
   const auto stage_of = [&](const std::string &name, ValueId value, ValueId enable) {
     return direct ? value : l.latch(name, value, enable);
   };
   const auto both_ways = [&](const std::string &name, const std::string &field,
                              std::optional<ValueId> b_value) {
     const auto value = rq.word.at(field);
-    return stage_of(name, l.b.select(read, value, b_value.value_or(value)), take);
+    return stage_of(name, p.separate ? value : l.b.select(read, value, b_value.value_or(value)),
+                    take);
   };
   const auto b_field = [&](const std::string &field) -> std::optional<ValueId> {
     return bq.word.contains(field) ? std::optional{bq.word.at(field)} : std::nullopt;
   };
-  const auto code = both_ways("r.response", "result", bq.word.at("result"));
-  const auto address = stage_of(
-      "r.response_address",
-      l.global(l.b.select(read, rq.word.at("address"),
-                          bq.word.contains("address") ? bq.word.at("address") : aw.at("address"))),
-      take);
+  const auto code = both_ways("r.response", "result", b_field("result"));
+  const auto address =
+      stage_of("r.response_address",
+               l.global(p.separate ? rq.word.at("address")
+                                   : l.b.select(read, rq.word.at("address"),
+                                                bq.word.contains("address") ? bq.word.at("address")
+                                                                            : aw.at("address"))),
+               take);
   const auto first = stage_of("r.response_first", l.both(read, rq.word.at("first")), take);
   if (!direct)
     l.b.update(jlast, l.b.select(take, l.either(l.inv(read), rq.word.at("last")), jlast));
@@ -2532,8 +2607,9 @@ void EngineLowering::join_responses() {
     data_groups = l.b.select(local_error_on, l.num(l.width(*data_groups), 0), *data_groups);
   response_face("rrsp", front, l.both(offered, l.inv(jwrite)), face_address, face_code, face_first,
                 jlast, face_data, exclusive, user, data_groups);
-  response_face("wrsp", wfields, l.both(offered, jwrite), address, code, one, one,
-                l.b.constant(p.data_bits, 0), exclusive, user, b_groups(btrace));
+  if (!p.separate)
+    response_face("wrsp", wfields, l.both(offered, jwrite), address, code, one, one,
+                  l.b.constant(p.data_bits, 0), exclusive, user, b_groups(btrace));
   l.b.output("nl_hint_cut", l.both(offered, cut), "hint", "cut");
   if (p.response_run_bits)
     l.b.output("nl_hint_wrap_end",
@@ -2543,10 +2619,12 @@ void EngineLowering::join_responses() {
   pop = l.bind("r.pop", l.both(rpop, jlast));
   if (report_only)
     pop = l.either(pop, l.both(complete, silent));
-  bdone = l.both(leave, jwrite);
-  if (!several) {
-    bdone = l.either(bdone, bsilent_done);
-    l.b.update(wb, l.b.select(head, one, l.b.select(bdone, zero, wb)));
+  if (!p.separate) {
+    bdone = l.both(leave, jwrite);
+    if (!several) {
+      bdone = l.either(bdone, bsilent_done);
+      l.b.update(wb, l.b.select(head, one, l.b.select(bdone, zero, wb)));
+    }
   }
 }
 
@@ -2790,6 +2868,8 @@ std::pair<unsigned, unsigned> axi4_outlet_outstanding_bits(const Axi4OutletProfi
   const unsigned groups = p.carry_groups ? p.data_bits / 8 * p.data_user_bits_per_byte : 0U;
   // BTRACE of a staged B: the response register(s), or the B pipe and the joined stage, and a
   // parked B.
+  const bool joined = p.interleave && p.max_outstanding > 1;
+  const bool separate_b = p.separate && joined && !p.response_direct;
   unsigned btrace = 0;
   if (p.carry_groups && p.byte_groups.trace && p.data_ports.trace) {
     btrace = p.interleave            ? (p.max_outstanding > 1 && !p.response_direct ? 2U : 1U)
@@ -2798,21 +2878,21 @@ std::pair<unsigned, unsigned> axi4_outlet_outstanding_bits(const Axi4OutletProfi
     if (p.max_outstanding > 1 && (p.merger_hints || p.interleave))
       btrace += 1;
   }
-  const bool joined = p.interleave && p.max_outstanding > 1;
   // An AXI3 target with several bursts keeps the W entry beat's WID; behind the response merger
   // the parked B keeps its ID, result and user field.
   const unsigned parked = p.merger_hints || joined ? axi4_outlet_id_bits(p) + 2 + user : 0U;
   // Interleave mode with several bursts: the B pipe holds one staged response, and the joined
   // stage keeps a B's size, source, ID and level (its result, address and user ride with the
   // read side's).
-  const unsigned b_staged = p.response_direct ? staging
-                            : joined          ? staging + 3 + p.source_bits + p.id_bits
-                                              : 2 * staging;
+  const unsigned b_staged = p.response_direct       ? staging
+                            : joined && !separate_b ? staging + 3 + p.source_bits + p.id_bits
+                                                    : 2 * staging;
+  const unsigned b_users = p.interleave && !separate_b ? 1 : 2;
   const unsigned write =
       btrace + (p.max_outstanding < 2
                     ? descriptor + p.data_bits + groups + p.data_bits / 8 + 2 + user
                     : descriptor + p.data_bits + groups + p.data_bits / 8 + b_staged +
-                          p.max_outstanding * write_slot + (p.interleave ? 1 : 2) * user +
+                          p.max_outstanding * write_slot + b_users * user +
                           (p.axi3 ? axi4_outlet_id_bits(p) : 0U) + parked +
                           (owned ? p.source_bits + p.id_bits + 1 : 0U));
   // Read: per queue entry the descriptor, then the beat address and the staged beats (result,

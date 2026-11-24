@@ -10,8 +10,8 @@ writes travel on separate routes or share them:
 Each scenario fault breaks one premise through the stimulus only (op
 "scenario", same RTL). Once reads and writes share each network the run
 must hang, and the stall report must name the broken premise (LIVE.E1..E3)
-together with the wait that timed out. On a network with separate read and
-write routes these faults complete and classify as SURVIVED.
+together with the wait that timed out. With separate paths, the main
+scenario checks completion where the two directions can make progress.
 
 Buffer estimate for the 32-beat reads (docs/transactions.md, single domain, no explicit
 topology, 32-bit source): while the source holds RREADY low, three source
@@ -51,12 +51,12 @@ With --param paths=separate the network has separate read and write paths
 E1 and E3 traffic, the DMA and the gated target, then runs as phases that
 must complete within LIMIT, and the "loop" configuration runs both gated
 loops within LOOP_WINDOW: a read no longer waits behind a started write,
-and the second burst entry lets it pass the write's entries. E2 stays a
-premise. An R kept from the source still keeps its target busy: the AXI4
-target t0 holds R and B in one response register, and the APB4 target t2
-serves one transfer at a time. Both E2 faults must hang as with shared
-paths. BURST_HOLD then checks the opposite order: the APB4 target serves
-the packet of the other direction before the burst's last packet.
+and the second burst entry lets it pass the write's entries. The E2 traffic
+to t0 also completes: B must reach the source while its R channel is held.
+The APB4 target t2 serves one transfer at a time, so its E2 fault
+must hang as with shared paths. BURST_HOLD checks the opposite order: the
+APB4 target serves the packet of the other direction before the burst's last
+packet.
 
 LOOP_WINDOW is the hang window: the arbitration wait bound times the switch
 hops, plus a margin. An output has at most three candidates (the response
@@ -165,8 +165,7 @@ CASE = dict(
              expect=["LIVE.E3", "TAPE.WAIT_TIMEOUT:E3_W_AWAITS_R"],
              note="E3: t0 takes W only after one of its reads; 16-beat write, then a read",
              **FAULT),
-    ] if not SEPARATE or fault["id"] in ("apb_write_data", "e2_rready_awaits_b",
-                                          "e2_apb_rready_awaits_b")],
+    ] if not SEPARATE or fault["id"] in ("apb_write_data", "e2_apb_rready_awaits_b")],
 )
 
 
@@ -186,8 +185,7 @@ def scenario(t, seed, variant=None, loop=False):
         return loops(t, variant)
     if variant is None:
         baseline(t, snaps)
-        # With separate paths the traffic that breaks E1 or E3 completes.
-        for premise in ("e1", "e3") if SEPARATE else ():
+        for premise in ("e1", "e2_t0", "e3") if SEPARATE else ():
             broken(t, snaps, premise)
             t.drain(label="DRAIN_" + premise.upper())
     elif variant in ("e2_t0", "e2_t2", "e1", "e3"):

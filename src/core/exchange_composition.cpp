@@ -5016,12 +5016,15 @@ private:
     if (plan.response_runs)
       t.wrap_end = c.wire(1);
     std::array<Channel, 2> sent;
+    const bool separate_b = joined && (tp.outstanding > 1 || joins_directly(tp));
     for (unsigned d = 0; d < 2; ++d) {
       const auto &face = d ? t.rrsp : t.wrsp;
+      const bool read_marks = d || !separate_b;
       sent[d] = c.frame_burst(true, face, std::nullopt, t.word,
                               plan.burst_path_bits ? std::optional{return_of(target, face)}
                                                    : std::nullopt,
-                              std::nullopt, 0, std::nullopt, segment, t.wrap_end);
+                              std::nullopt, 0, std::nullopt, read_marks ? segment : std::nullopt,
+                              read_marks ? t.wrap_end : std::nullopt);
     }
     if (t.miss_answer)
       close_miss_split(t, miss_offered, miss_taken, sent);

@@ -21,7 +21,7 @@ paths carries no write.
 | Endpoint | Attachment |
 | --- | --- |
 | Initiator | Writes enter the write request graph and reads the read request graph. A started write does not hold back a read of the same initiator. Responses arrive on the response graph of their direction |
-| [full AXI](protocols.md) target | Each request graph has its own request input into the target adapter. The two directions share the target capacity. B leaves on the write response graph and R on the read response graph |
+| [full AXI](protocols.md) target | Each request graph has its own request input into the target adapter. The two directions share the target capacity. B and R have separate response storage and leave on the response graph of their direction |
 | APB, AHB or AXI4-Lite target | A join at the target takes the two request graphs into one request input. The join is a packet arbiter. It takes the graphs by turns, a read first after reset, and keeps a packet from its first to its last fragment. The target then serves the packets in arrival order, as with shared paths. B and R leave on their own response graphs |
 
 ## Capacity
@@ -75,7 +75,7 @@ must still do. It changes the requirements of
 | Requirement with shared paths | With separate paths |
 | --- | --- |
 | W must not wait for the initiator's own read response | Required only when that read waits for an entry. A read waits for an entry when the initiator's `max_outstanding` or ID table is full. It also waits at a [full AXI](protocols.md) target with no free entry, and at an APB, AHB or AXI4-Lite target |
-| R acceptance must not wait for B | Required. A [full AXI](protocols.md) target that answers multi-beat reads keeps R and B in one response register. An APB, AHB or AXI4-Lite target serves one transfer at a time |
+| R acceptance must not wait for B | A [full AXI](protocols.md) target can return B while R is stalled if the write can get an entry. At an APB, AHB or AXI4-Lite target, accept R independently of B when a held read can keep the write from entering |
 | The target accepts W without waiting for its own read completion | Required only when that read waits for an entry. It waits at a [full AXI](protocols.md) target with no free entry. It also waits at an APB, AHB or AXI4-Lite target, whose join keeps a write packet until its last W fragment |
 | Supply every accepted write burst without depending on responses from other transactions | Required only for responses whose requests wait for an entry, as in the first row |
 | A DMA buffers the whole write burst before its first W beat | Required only when its read can wait for an entry, as in the first row |
@@ -171,22 +171,27 @@ output has the subject of its write arbiter with the suffix `/read`.
 
 ## Area
 
-The second copy costs area. These counts compare both settings of the same
-examples. The cost comes mostly from the second copy of each switch, width
-adapter and clock crossing. Each initiator loses its request merger and each
-target its response merger. The counts are from a Yosys 0.69 synthesis to
-generic gates with flattened hierarchy.
+Separate paths duplicate switches, width adapters and clock crossings. APB,
+AHB and AXI4-Lite targets also have a request join.
 
-| Example in `examples/` | Flip-flop bits, shared | Flip-flop bits, separate | Logic gates, shared | Logic gates, separate |
+For each example, generate RTL with `read_write: shared` and
+`read_write: separate`. From each output directory, run the same command
+with Yosys 0.69+post, build `143eb14f9`.
+
+```sh
+yosys -p 'read_verilog *.v; synth -auto-top -flatten; stat'
+```
+
+Flip-flops are the sum of the one-bit DFF and DFFE cells in `stat`.
+Mapped cells include sequential and combinational cells. Subtract
+`$scopeinfo` records from the total.
+
+| Example in `examples/` | Flip-flops, shared | Flip-flops, separate | Mapped cells, shared | Mapped cells, separate |
 | --- | ---: | ---: | ---: | ---: |
-| `axi_lite_apb.yaml` | 638 | 652 | 2186 | 2210 |
-| `axi4_apb_targets.yaml` | 1452 | 1471 | 9802 | 9717 |
-| `axi4_outstanding.yaml` | 2705 | 2736 | 15134 | 15348 |
-| `axi4_exchange.yaml` | 2943 | 3240 | 16110 | 16890 |
-| `axi4_graph.yaml` | 4296 | 4888 | 23389 | 24323 |
-| `soc_mixed.yaml` | 4742 | 5115 | 27040 | 28208 |
-| `axi4_graph_clocked.yaml` | 16482 | 19493 | 45422 | 51392 |
-
-The join of an APB, AHB or AXI4-Lite target adds logic in front of that
-target. In `axi_lite_apb.yaml` the longest path between two flip-flops grows
-from 36 to 44 gate levels.
+| `axi_lite_apb.yaml` | 638 | 650 | 2737 | 2810 |
+| `axi4_apb_targets.yaml` | 1452 | 1470 | 10894 | 10746 |
+| `axi4_outstanding.yaml` | 2713 | 2742 | 17456 | 17323 |
+| `axi4_exchange.yaml` | 2946 | 3238 | 18570 | 19706 |
+| `axi4_graph.yaml` | 4294 | 4870 | 27044 | 28795 |
+| `soc_mixed.yaml` | 4744 | 5112 | 31187 | 32574 |
+| `axi4_graph_clocked.yaml` | 16474 | 19479 | 62582 | 68546 |

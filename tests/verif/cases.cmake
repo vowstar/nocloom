@@ -120,9 +120,9 @@ nocloom_verif_case(NAME verif_rw_merge_negative LAYER negative TIER focused TIME
   CONTRACTS AXI.LIVE.PREMISES APB.TARGET.ACCESS
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/rw_merge.py --cli $<TARGET_FILE:nocloom_cli> --negative)
 
-# The same network with separate read and write paths and two burst entries
-# per source and AXI4 target: the E1 and E3 traffic and both endpoint loops
-# complete, the E2 faults still hang with the premise named.
+# The same network with separate paths, two burst entries per AXI4 target
+# and four per source. The AXI4 E2 scenario, E1 and E3 traffic,
+# and both loops complete. The APB4 E2 scenario still tests the serial target.
 nocloom_verif_case(NAME verif_rw_merge_separate_negative LAYER negative TIER focused TIMEOUT 600
   FEATURES axi4 apb4 liveness MEMORY_MB 1024
   CONTRACTS AXI.LIVE.PREMISES APB.TARGET.ACCESS

@@ -73,7 +73,7 @@ def release_at_last_only(rtl, map_):
         subs.append((rf"^assign {right} = \({last} \| {cut}\);$", f"assign {right} = {last};", 1))
 
     for store in map_["network"]["storage"]:
-        if store["resource"].startswith("graph/rsp/"):
+        if store["resource"].startswith(("graph/rsp/", "graph/rrsp/")):
             visit(binary["nl_internal_v" + store["release"].split("/")[1]][2])
     assert len(subs) == 6
     return subs

@@ -36,22 +36,23 @@ AXI4 and AXI3 accept interleaved IDs by default. Wider initiators gather each
 pending read separately. Reads sharing a target ID cannot interleave. See
 [saved WRAP words](width-conversion.md#width-transformation-details).
 
-A waiting B can precede a new R packet or a change of read.
+On a shared response path, a waiting B can precede a new R packet or a
+change of read. On separate paths, B uses its own response storage.
 
 A response word leaves when the next word is shown, it is the packet tail, or
 one cycle after no successor was found. An R gap can therefore delay a word by
-one cycle. A segment ends before a B, a different read, or after two cycles
-without a next word. Every switch releases its grant at that segment end. The
-next segment competes again.
+one cycle. A segment ends before a different read or after two cycles without
+a next word. On shared paths a segment can also end before a B. Every switch
+releases its grant at that segment end. The next segment competes again.
 
 The initiator ends a read only on its packet-final word, not on a segment
 boundary.
 
-With `read_interleaving_disabled: true`, the response join holds each read through
-completion. With a larger block, words inside the block do not wait for
-successors, and B waits for the block boundary. An unaligned read splits at the
-first block boundary. A WRAP larger than the block splits if its start lies
-inside one.
+With `read_interleaving_disabled: true`, a shared response join holds each read
+through completion. With a larger block, words inside the block do not wait for
+successors. On shared paths B waits for the block boundary. An unaligned read
+splits at the first block boundary. A WRAP larger than the block splits if its
+start lies inside one.
 
 RID matching still applies. The network does not check whether the target honors
 this promise.

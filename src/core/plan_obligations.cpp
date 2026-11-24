@@ -129,6 +129,7 @@ unsigned outlet_engine_bits(const NetworkPlan &plan, const std::string &target,
   outlet.interleave = joined_target(plan, plan.target(target));
   outlet.interleave_beats = interleave_words(plan.target(target));
   outlet.response_direct = joins_directly(plan.target(target));
+  outlet.separate = plan.exchange.split_endpoint(target, false);
   outlet.merger_hints =
       outlet.max_outstanding > 1 && !plan.target(target).write_only && !outlet.interleave;
   outlet.read_only = plan.target(target).read_only;

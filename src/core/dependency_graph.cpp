@@ -549,12 +549,16 @@ private:
   void target_order() {
     std::map<std::string, std::vector<const Pass *>> by_target;
     for (const auto &pass : passes)
-      if (pass.response)
+      if (uses_read_stage(pass))
         by_target[pass.entry].push_back(&pass);
     for (unsigned i = 0; i < plan.targets.size(); ++i)
       if (const auto &t = plan.targets[i]; facts.interleaved[i] && t.outstanding > 1)
         if (const auto it = by_target.find(t.name); it != by_target.end())
           queue_order(t, it->second);
+  }
+  bool uses_read_stage(const Pass &pass) const {
+    return pass.response &&
+           (pass.way != "/write" || !plan.exchange.split_endpoint(pass.entry, false));
   }
   // The words a target answers: each exit, with its direction on separate paths.
   std::vector<std::string> distinct_exits(const std::vector<const Pass *> &held) const {
@@ -766,8 +770,8 @@ private:
       edge(head, node("merge.single", t.name, component), DependencyRule::MergeOrder);
   }
   // Each read descriptor owns its saved word. Saved beats wait for their return path and keep
-  // their descriptor occupied. While they drain, the shared return stage blocks other words
-  // and B. No saved word waits for a new request or a second replay slot.
+  // their descriptor occupied. While they drain, the return stage blocks other read words and,
+  // on shared paths, B. No saved word waits for a new request or a second replay slot.
   void stored_words() {
     for (unsigned i = 0; i < plan.targets.size(); ++i) {
       const auto &t = plan.targets[i];
@@ -779,7 +783,7 @@ private:
     const auto component = "target/" + t.name;
     std::vector<const Pass *> first;
     for (const auto &pass : passes)
-      if (pass.response && pass.previous.empty() && pass.entry == t.name)
+      if (uses_read_stage(pass) && pass.previous.empty() && pass.entry == t.name)
         first.push_back(&pass);
     const auto destinations = distinct_exits(first);
     const auto pool = node("target.pool", t.name, component);

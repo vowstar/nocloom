@@ -41,6 +41,10 @@ reaches t1 before the AR of s1. With shared paths the requests arrive in
 order on one path and need no turn: the companion checks at most TURNS
 handshakes before the one that waits.
 
+The configuration "direct" runs the phases with read interleaving disabled at
+both targets, so their outlets pass each B and R directly. Both keep two
+bursts, so up to two handshakes of the pressing direction come first.
+
 The configuration "mixed" runs the same phases with shared paths but for t0:
 the shared switch of the sources divides the packets for t0 onto a separate
 link with a forward slice on each path, which leads to the separate switch of
@@ -87,6 +91,10 @@ def configuration(paths):
 
 
 SEPARATE, SHARED = configuration('separate'), configuration('shared')
+# Both targets keep two bursts without read interleaving: their outlets pass B and R directly.
+DIRECT = configuration('separate')
+for _target in DIRECT['targets']:
+    _target.update(max_outstanding=2, read_interleaving_disabled=True)
 
 
 def mixed_configuration():
@@ -193,6 +201,8 @@ CASE = dict(
     configs=[dict(label=""),
              dict(label="shared", dut=dict(source="cli", config=SHARED), model=model(SHARED),
                   scenario_args=dict(shared=True)),
+             dict(label="direct", dut=dict(source="cli", config=DIRECT), model=model(DIRECT),
+                  scenario_args=dict(entries=2)),
              dict(label="mixed", dut=dict(source="cli", config=MIXED), model=model(MIXED),
                   scenario_args=dict(shared=True))],
     faults=[],

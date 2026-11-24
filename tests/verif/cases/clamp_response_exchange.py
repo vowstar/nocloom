@@ -48,7 +48,7 @@ def release_at_last_only(rtl, map_):
     binary = {m[1]: (m[2], m[3], m[4]) for m in assign.finditer(rtl)}
     subs = []
     for store in map_["network"]["storage"]:
-        if not store["resource"].startswith("graph/rsp/"):
+        if not store["resource"].startswith(("graph/rsp/", "graph/rrsp/")):
             continue
         _, _, tail = binary["nl_internal_v" + store["release"].split("/")[1]]
         for selected in binary[tail][0::2]:

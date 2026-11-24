@@ -40,7 +40,7 @@ def no_segment_end(rtl, map_):
     binary = {m[1]: (m[2], m[3], m[4]) for m in assign.finditer(rtl)}
     subs = []
     for store in map_["network"]["storage"]:
-        if not store["resource"].startswith("adapter/rsp/"):
+        if not store["resource"].startswith(("adapter/rsp/", "adapter/rrsp/")):
             continue
         accepted, _, _ = binary["nl_internal_v" + store["release"].split("/")[1]]
         _, _, offered = binary[accepted]
