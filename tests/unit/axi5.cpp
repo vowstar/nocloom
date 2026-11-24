@@ -195,6 +195,90 @@ TEST_CASE("Exclusive diagnostics name AXI5 among the protocols with AxLOCK", "[a
             "No read-write AXI5, ACE5-Lite, AXI4 or AXI3 initiator"));
 }
 
+// text with its first from replaced by to.
+std::string swapped(std::string text, const std::string &from, const std::string &to) {
+  const auto at = text.find(from);
+  REQUIRE(at != std::string::npos);
+  return text.replace(at, from.size(), to);
+}
+// A diagnostic of the plan of text, located in the source map of the parsed text.
+std::optional<nocloom::Diagnostic> located(const std::string &text, const std::string &code) {
+  const auto parsed = nocloom::config::parse(text, "located.yaml");
+  REQUIRE(parsed);
+  const auto plan = nocloom::make_plan(parsed.value().definition, &parsed.value().sources);
+  REQUIRE_FALSE(plan);
+  const auto &list = plan.diagnostics();
+  const auto at = std::ranges::find(list, code, &nocloom::Diagnostic::code);
+  return at == list.end() ? std::nullopt : std::optional{*at};
+}
+
+TEST_CASE("User width and scheduling diagnostics name AXI5 and ACE5-Lite at the field", "[axi5]") {
+  using namespace nocloom;
+  for (const std::string protocol : {"axi5", "ace5_lite"}) {
+    INFO(protocol);
+    auto d =
+        located(swapped(with(protocol), "user_width: 2,", "user_width: 257,"), "NCL_USER_FLAGS");
+    REQUIRE(d);
+    CHECK(d->field == "initiators[0].user_width");
+    CHECK(d->message.starts_with(
+        "AXI5, ACE5-Lite, AXI4, AXI3 and AXI4-Lite initiator user widths are 1 to 256 bits"));
+    REQUIRE(d->location);
+    CHECK(d->location->line == 9);
+    d = located(swapped(with(protocol), "response_user_width: 3,\n", "response_user_width: 257,\n"),
+                "NCL_USER_FLAGS");
+    REQUIRE(d);
+    CHECK(d->field == "targets[0].response_user_width");
+    CHECK(d->message.starts_with("Only AXI5, ACE5-Lite, AXI4, AXI3 and AXI4-Lite targets have "
+                                 "BUSER and RUSER ports"));
+    REQUIRE(d->location);
+    CHECK(d->location->line == 13);
+    d = located(swapped(with(protocol), "protocol: apb4, data_width: 32, attributes: amba,",
+                        "protocol: apb4, data_width: 32, attributes: amba, user: [owner],"),
+                "NCL_USER_FLAGS");
+    REQUIRE(d);
+    CHECK(d->field == "targets[1].user");
+    CHECK(d->message.starts_with("Only AXI5, ACE5-Lite, AXI4, AXI3 and AXI4-Lite targets have "
+                                 "AxUSER ports"));
+    REQUIRE(d->location);
+    CHECK(d->location->line == 15);
+    // Levels with a target wider than the transport: the target's data_width, not the exchange.
+    const std::string levels = R"(schema_version: 10
+name: levels
+address_width: 32
+reset_ports: [{name: reset_n}]
+test_ports: [{name: test}]
+clock_domains: [{name: main, clock_port: clk_main, reset_port: reset_n, test_port: test}]
+transport: {data_width: 32}
+initiators:
+  - {name: s0, clock_domain: main, protocol: PORT, data_width: 32, qos: {levels: {read: 1}}}
+targets:
+  - {name: t0, clock_domain: main, protocol: PORT, data_width: 64, attributes: amba,
+     mappings: [{base: '0x0', size: '0x10000'}]}
+connectivity: all
+output: {backend: verilog, language: verilog_2001}
+)";
+    const auto wide = std::regex_replace(levels, std::regex("PORT"), protocol);
+    d = located(wide, "NCL_QOS_PROFILE");
+    REQUIRE(d);
+    CHECK(d->field == "targets[0].data_width");
+    CHECK(d->message.starts_with("Scheduling levels require AXI5, ACE5-Lite, AXI4, AXI3, AHB-Lite "
+                                 "or AHB5 sources to AXI5, ACE5-Lite, AXI4 or AXI3 targets"));
+    REQUIRE(d->location);
+    CHECK(d->location->line == 11);
+    const auto key = wide.find("64, attributes");
+    CHECK(d->location->column == key - wide.rfind('\n', key));
+    // A one-direction source and an exclusive target name their own keys.
+    const auto one_way = swapped(wide, "data_width: 64", "data_width: 32");
+    auto plain = parsed(one_way);
+    CHECK(generate(plain));
+    plain.initiators[0].access = Access::ReadOnly;
+    CHECK(has(refused(plain), "NCL_QOS_PROFILE", "initiators[0].access", "AXI5, ACE5-Lite"));
+    plain = parsed(one_way);
+    plain.targets[0].exclusive = ExclusiveAccess::Network;
+    CHECK(has(refused(plain), "NCL_QOS_PROFILE", "targets[0].exclusive", "AXI5, ACE5-Lite"));
+  }
+}
+
 TEST_CASE("AXI5 constraint properties hold for every connected pair", "[axi5]") {
   using namespace nocloom;
   const auto base = parsed(with("axi5"));

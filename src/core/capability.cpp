@@ -186,6 +186,11 @@ std::string target_field(const Definition &def, const std::string &name, const c
   const auto i = std::ranges::find(def.targets, name, &Target::name) - def.targets.begin();
   return "targets[" + std::to_string(i) + "]." + key;
 }
+// The configuration path of a key of the definition initiator named name.
+std::string initiator_field(const Definition &def, const std::string &name, const char *key) {
+  const auto i = std::ranges::find(def.initiators, name, &Initiator::name) - def.initiators.begin();
+  return "initiators[" + std::to_string(i) + "]." + key;
+}
 // The planned domains; a same-domain network has its one domain.
 std::vector<DomainPlan> domains(const NetworkPlan &plan) {
   return plan.clocked() ? plan.domains : std::vector{plan.domain};
@@ -332,36 +337,60 @@ constexpr CapabilityRule rules[] = {
     // Sources of any width and transport words of any width carry levels: link adapters pass
     // the pressure on (docs/scheduling.md#scheduling-pressure-rules). A target wider than the
     // network merges narrow bursts and is not in the profile.
+    // The first source (definition order) chooses the AXI or the APB profile. The field is the
+    // first key of an endpoint that leaves that profile.
     {"qos.endpoints", "NCL_QOS_PROFILE", Scope::Network, Stage::Plan,
      [](const RuleView &v) {
        const auto &p = v.plan;
        const unsigned bits = p.burst_data_bits;
-       const auto axi_source = [&](const SourcePlan &s) {
-         return (full_axi(s.external_protocol) || ahb_protocol(s.external_protocol)) &&
-                s.protocol == P::Axi4 && !s.read_only && !s.write_only;
+       const auto axi_source = [](const SourcePlan &s) -> const char * {
+         if (!(full_axi(s.external_protocol) || ahb_protocol(s.external_protocol)) ||
+             s.protocol != P::Axi4)
+           return "protocol";
+         return s.read_only || s.write_only ? "access" : nullptr;
        };
-       const auto axi_target = [&](const TargetPlan &t) {
-         return full_axi(t.external_protocol) && t.protocol == P::Axi4 && t.data_bits == bits &&
-                !t.read_only && !t.write_only && !t.timeout &&
-                t.exclusive.mode == ExclusiveAccess::None;
+       const auto axi_target = [&](const TargetPlan &t) -> const char * {
+         if (!full_axi(t.external_protocol) || t.protocol != P::Axi4)
+           return "protocol";
+         if (t.data_bits != bits)
+           return "data_width";
+         if (t.read_only || t.write_only)
+           return "access";
+         if (t.timeout)
+           return "timeout";
+         return t.exclusive.mode == ExclusiveAccess::None ? nullptr : "exclusive";
        };
-       const auto apb_source = [](const SourcePlan &s) { return s.apb && s.apb_bits == 32; };
-       const auto apb_target = [](const TargetPlan &t) {
-         return protocol_caps(t.external_protocol).apb && t.apb_bits == 32 && !t.timeout;
+       const auto apb_source = [](const SourcePlan &s) -> const char * {
+         return !s.apb ? "protocol" : s.apb_bits != 32 ? "data_width" : nullptr;
        };
-       const bool axi =
-           std::ranges::all_of(p.sources, axi_source) && std::ranges::all_of(p.targets, axi_target);
-       const bool apb = std::ranges::all_of(p.sources, apb_source) &&
-                        std::ranges::all_of(p.targets, apb_target) && !p.laddered;
-       const auto ahb = std::ranges::find_if(
-           p.targets, [](const TargetPlan &t) { return ahb_protocol(t.external_protocol); });
-       const auto field =
-           ahb == p.targets.end() ? "exchange" : target_field(v.def, ahb->name, "protocol");
-       return when(
-           p.levels() && !(axi || apb), field,
-           "Scheduling levels require AXI4, AXI3, AHB-Lite or AHB5 sources to full AXI4 or AXI3 "
-           "targets, or 32-bit APB endpoints, without targets wider than the transport, "
-           "exclusive access or timeout. AXI graphs also exclude one-direction endpoints");
+       const auto apb_target = [](const TargetPlan &t) -> const char * {
+         if (!protocol_caps(t.external_protocol).apb)
+           return "protocol";
+         return t.apb_bits != 32 ? "data_width" : t.timeout ? "timeout" : nullptr;
+       };
+       const auto source_of = [&](const Initiator &i) -> const SourcePlan & {
+         return *std::ranges::find(p.sources, i.name, &SourcePlan::name);
+       };
+       const auto outside = [&](const auto &source, const auto &target) -> std::string {
+         for (const auto &i : v.def.initiators)
+           if (const char *key = source(source_of(i)))
+             return initiator_field(v.def, i.name, key);
+         for (const auto &t : v.def.targets)
+           if (const char *key = target(p.target(t.name)))
+             return target_field(v.def, t.name, key);
+         return {};
+       };
+       const bool apb = source_of(v.def.initiators.front()).apb.has_value();
+       auto field = apb ? outside(apb_source, apb_target) : outside(axi_source, axi_target);
+       if (field.empty() && apb && p.laddered)
+         field = v.def.transport && v.def.transport->transport_word_bytes
+                     ? "transport.transport_word_bytes"
+                     : "topology";
+       return when(p.levels() && !field.empty(), field,
+                   "Scheduling levels require AXI5, ACE5-Lite, AXI4, AXI3, AHB-Lite or AHB5 "
+                   "sources to AXI5, ACE5-Lite, AXI4 or AXI3 targets, or 32-bit APB endpoints, "
+                   "without targets wider than the transport, exclusive access or timeout. AXI "
+                   "graphs also exclude one-direction endpoints");
      }},
     {"arbitration.single_candidate", "NCL_ARBITRATION_OUTPUT", Scope::Output, Stage::Plan,
      [](const RuleView &v) {

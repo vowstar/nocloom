@@ -606,13 +606,24 @@ output: {backend: verilog, language: verilog_2001}
   // Levels need every endpoint to be 32-bit APB without a timeout, or full AXI4.
   auto mixed = d;
   mixed.targets[1].protocol = Protocol::Axi4;
-  rejected(generate(mixed), "NCL_QOS_PROFILE", "exchange");
+  rejected(generate(mixed), "NCL_QOS_PROFILE", "targets[1].protocol");
   mixed = d;
   mixed.targets[1].data_width = 16;
-  rejected(generate(mixed), "NCL_QOS_PROFILE", "exchange");
+  rejected(generate(mixed), "NCL_QOS_PROFILE", "targets[1].data_width");
   mixed = d;
   mixed.targets[1].timeout = TargetTimeout{1024};
-  rejected(generate(mixed), "NCL_QOS_PROFILE", "exchange");
+  rejected(generate(mixed), "NCL_QOS_PROFILE", "targets[1].timeout");
+  // A wider switch word adds width adapters, which the APB profile excludes.
+  mixed = d;
+  mixed.topology->request.nodes[0].transport_word_bytes = 8;
+  rejected(generate(mixed), "NCL_QOS_PROFILE", "topology");
+  mixed = d;
+  mixed.transport = TransportOptions{};
+  mixed.transport->transport_word_bytes = 8;
+  rejected(generate(mixed), "NCL_QOS_PROFILE", "transport.transport_word_bytes");
+  mixed = d;
+  mixed.initiators[1].protocol = Protocol::Axi4;
+  rejected(generate(mixed), "NCL_QOS_PROFILE", "initiators[1].protocol");
   mixed = d;
   mixed.targets[1].protocol = Protocol::Apb3;
   mixed.targets[1].attributes.reset();
@@ -672,7 +683,7 @@ TEST_CASE("Schedulers bind 32-bit APB sources and pass link pipes", "[fixed-qos]
   alone.initiators[1].qos = {};
   REQUIRE(generate(alone));
   alone.targets[1].protocol = Protocol::Axi4;
-  rejected(generate(alone), "NCL_QOS_PROFILE", "exchange");
+  rejected(generate(alone), "NCL_QOS_PROFILE", "targets[1].protocol");
   // The YAML form parses to the same definition.
   const std::string yaml = R"(schema_version: 10
 name: hub
@@ -828,7 +839,7 @@ TEST_CASE("AxQOS maps carry per-burst levels in request packets", "[fixed-qos]")
   // The level profile applies: equal-width full AXI4 endpoints only.
   bad = d;
   bad.targets[1].protocol = Protocol::Apb4;
-  rejected(generate(bad), "NCL_QOS_PROFILE", "exchange");
+  rejected(generate(bad), "NCL_QOS_PROFILE", "targets[1].protocol");
   // The YAML form parses to the same definition.
   const std::string yaml = R"(schema_version: 10
 name: qos_map

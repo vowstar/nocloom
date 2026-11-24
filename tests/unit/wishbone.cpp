@@ -132,7 +132,7 @@ TEST_CASE("APB scheduling levels require APB target protocols", "[wishbone][fixe
     const auto rejected = generate(d);
     REQUIRE_FALSE(rejected);
     CHECK(std::ranges::any_of(rejected.diagnostics(), [](const auto &x) {
-      return x.code == "NCL_QOS_PROFILE" && x.field == "exchange";
+      return x.code == "NCL_QOS_PROFILE" && x.field == "targets[0].protocol";
     }));
     d.targets[0].protocol = Protocol::Apb4;
     d.targets[0].address_unit.reset();

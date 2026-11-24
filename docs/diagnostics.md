@@ -84,7 +84,7 @@ The codes of the C++ tree helper are in
 | `NCL_APB5_DATA_USER_WIDTH` | Invalid transport group size or data user width at an [endpoint](user-signals.md#data-user-groups) outside the AXI5 family |
 | `NCL_DATA_USER_WIDTH` | Invalid data user width at an AXI5 or ACE5-Lite endpoint |
 | `NCL_APB5_USER_WIDTH` | APB5 request user exceeds 128 bits or response user exceeds 16 bits |
-| `NCL_USER_FLAGS` | Invalid user flags |
+| `NCL_USER_FLAGS` | Invalid user flags. An AxUSER, BUSER or RUSER width outside 1 to 256 bits, or on an endpoint other than AXI5, ACE5-Lite, AXI4, AXI3 or AXI4-Lite |
 | `NCL_TARGET_EXCLUSIVE` | Invalid exclusive mode, owner flags, monitors or reaching initiators |
 | `NCL_TARGET_READ_INTERLEAVE` | Read interleaving options or their network profile are unsupported |
 | `NCL_UNSUPPORTED_TOPOLOGY` | Initiator or target count outside 1 to 256. Clock domain count outside 1 to 64 in a clocked graph, or other than 1 without one. An unsupported error-log shape or revision value |
@@ -165,7 +165,7 @@ See [address maps](address-map.md) and [definition shorthand](definition.md).
 | `NCL_QOS_LEVEL`, `NCL_QOS_MAP` | Invalid fixed level, AxQOS map or target `axqos_levels`, or incompatible initiator options |
 | `NCL_TARGET_REGION` | A mapping `region` above 15 or without `region_port`, `region_port` on a target other than `axi4`, `axi5` or `ace5_lite`, or on an initiator |
 | `NCL_QOS_SHAPER`, `NCL_QOS_SCHEDULER` | Invalid byte budgets, levels, threshold or required companion configuration |
-| `NCL_QOS_PROFILE` | Unsupported endpoint, width, whole-burst or scheduler-pipe combination. AHB sources accept fixed levels only, to full AXI targets when nonzero |
+| `NCL_QOS_PROFILE` | Unsupported endpoint, width, whole-burst or scheduler-pipe combination. AHB sources accept fixed levels only, to full AXI targets when nonzero. For an [endpoint outside the profile](scheduling.md#fixed-levels) that the first initiator selects, the field is its `protocol`, `data_width`, `access`, `timeout` or `exclusive`. Width adapters in the APB profile name `transport.transport_word_bytes` or `topology` |
 
 See [clocks and resets](clocks-and-resets.md) and [scheduling](scheduling.md).
 

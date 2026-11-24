@@ -2242,8 +2242,8 @@ void check_link_timing(Checks &c) {
   }
 }
 // Network user flags: distinct names, a driver of every flag at every source (an AxUSER bit of an
-// AXI4, AXI3 or AXI4-Lite source with a user port, an attribute flag or a constant) and AxUSER
-// bits of AXI4, AXI3 and AXI4-Lite targets that name declared flags.
+// AXI5, ACE5-Lite, AXI4, AXI3 or AXI4-Lite source with a user port, an attribute flag or a
+// constant) and AxUSER bits of targets of those protocols that name declared flags.
 void check_user_flags(Checks &c) {
   check_data_user(c);
   check_axi5_data_width(c);
@@ -2277,7 +2277,7 @@ void check_user_flags(Checks &c) {
       } else if (width && ((!axi(s.protocol) && s.protocol != Protocol::Axi3) || *width == 0 ||
                            *width > 256))
         c("NCL_USER_FLAGS", field + key,
-          "AXI4, AXI3 and AXI4-Lite initiator user widths are 1 to 256 bits. "
+          "AXI5, ACE5-Lite, AXI4, AXI3 and AXI4-Lite initiator user widths are 1 to 256 bits. "
           "APB5 request widths are 0 to 128 and response widths are 0 to 16");
     for (const auto &[name, bit] : s.user_flags)
       if (std::ranges::find(flags, name) == flags.end())
@@ -2304,11 +2304,12 @@ void check_user_flags(Checks &c) {
         "APB5 request user width is 0 to 128 and response user width is 0 to 16");
     if (!apb5 && !t.user.empty() && (!ports || t.user.size() > 256))
       c("NCL_USER_FLAGS", field,
-        "Only AXI4, AXI3 and AXI4-Lite targets have AxUSER ports, 1 to 256 bits");
+        "Only AXI5, ACE5-Lite, AXI4, AXI3 and AXI4-Lite targets have AxUSER ports, 1 to 256 bits");
     if (const auto width = t.response_user_width;
         !apb5 && width && (!ports || *width == 0 || *width > 256))
       c("NCL_USER_FLAGS", "targets[" + std::to_string(i) + "].response_user_width",
-        "Only AXI4, AXI3 and AXI4-Lite targets have BUSER and RUSER ports, 1 to 256 bits");
+        "Only AXI5, ACE5-Lite, AXI4, AXI3 and AXI4-Lite targets have BUSER and RUSER ports, 1 to "
+        "256 bits");
     for (std::size_t b = 0; b < t.user.size(); ++b)
       if (const auto &bit = t.user[b];
           !bit.flag.empty() && (bit.value || std::ranges::find(flags, bit.flag) == flags.end()))
