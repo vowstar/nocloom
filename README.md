@@ -8,9 +8,8 @@ An open-source on-chip interconnect generator.
 
 NocLoom is a command-line tool (CLI) and a C++20 library. Define AXI5,
 ACE5-Lite, AXI4, AXI3, AXI4-Lite, APB, AHB, Wishbone and TileLink networks in
-YAML or C++.
-NocLoom generates synthesizable Verilog-2001 with switches, protocol adapters,
-width converters and clock domain crossings (CDC).
+YAML or C++. NocLoom generates synthesizable Verilog-2001 with switches,
+protocol adapters, width converters and clock domain crossings (CDC).
 
 NocLoom 0.5.0 is the latest release.
 
@@ -144,7 +143,7 @@ traffic crosses its boundary.
 | [TileLink](docs/tilelink.md) | TL-UL initiators and targets: 32-bit single-beat Get, PutFullData and PutPartialData, with AccessAck and AccessAckData. TL-UL initiators can keep multiple sources in flight. TL-UH initiators and targets: multibeat Get and Put of up to 4096 bytes. Initiators complete Intent locally. Targets share 1 to 16 packet contexts between reads and writes |
 | AXI5, AHB5 and APB5 properties | An `axi5` port has the AXI4 signals, and its `axi5` object declares its [AXI5 properties](docs/axi5.md). An `ace5_lite` port adds [shareable transactions](docs/ace5-lite.md) without DVM or cache maintenance. AHB5 HPROT is 4 bits by default or 7 bits. HNONSEC is optional and defaults to absent. HMASTER is 0 to 32 bits. [APB5](docs/user-signals.md#apb5-user-ports) carries PAUSER, PBUSER and per-byte PWUSER and PRUSER groups of 1 to 4 bits |
 | Endpoint count | 1 to 256 initiators, 1 to 256 targets |
-| Topology | One generated request switch and one generated response switch, or declared request and response graphs of 1 to 128 switches each |
+| Topology | One generated request switch and one generated response switch, or declared request and response graphs of 1 to 128 switches each. Reads and writes share the graphs, or take [separate paths](docs/read-write-paths.md) |
 | Endpoint data width | AXI5, ACE5-Lite, AXI4, AXI3, AHB-Lite and AHB5: 32, 64, 128, 256, 512 or 1024 bits. AXI4-Lite: 32 or 64 bits. APB: 8, 16 or 32 bits. Wishbone and TileLink: 32 bits |
 | Network data width | 32 or 64 bits (`transport.data_width`). The default is the narrowest endpoint data width, where APB counts as 32 bits and the maximum is 64 bits. A 64-bit network accepts only 64-bit initiators, and no APB, Wishbone or TileLink endpoint or AHB target. Other definitions need a 32-bit network. Therefore, an initiator wider than 64 bits needs `transport.data_width: 32`, unless a 32-bit or APB endpoint already makes 32 bits the default |
 | Address width | 2 to 48 bits. AXI5, ACE5-Lite, AXI4, AXI3, AHB and Wishbone initiators need at least 12 bits. TL-UH initiators need at least `log2(max_transfer_bytes)` bits. APB initiators use at most 32 bits. APB, AHB, Wishbone, TileLink and AXI4-Lite targets use at most 32 bits |
@@ -172,6 +171,7 @@ See [Documentation](#documentation) for field definitions and limits.
 | Adaptive routing | A route does not change with the load |
 | Source flow admission | Within one 4 KiB page, each flow of an initiator that reaches a sub-page routing window must reach all such windows of the initiator. The flow need not reach windows of the initiator's default target. This rule applies to AXI4 and AXI3 initiators with `max_outstanding` above 1. See [Address map](docs/address-map.md#target-mappings) |
 | Scheduling | Nonzero levels exclude AHB targets, other mixed protocol networks, exclusive access, target timeouts and targets wider than the network. AXI graphs also exclude one-direction endpoints. AHB sources have no AxQOS map, shaper or scheduler |
+| Separate read and write paths | Scheduling levels, AxQOS maps, shapers and schedulers. TileLink and Wishbone endpoints and error logs. An initiator issue pipe and target arrival, dispatch and response pipes. These produce `NCL_READ_WRITE_PATHS`. See [read and write paths](docs/read-write-paths.md#unsupported-options) |
 | APB5 optional signals | PWAKEUP, parity check signals and RME PNSE are unsupported |
 | AXI3 locked writes and write data interleaving | An AXI3 target receives neither |
 | Unchanged non-modifiable narrow bursts | With the default `narrow_bursts: merge`, an AXI target that is wider than the beats of a burst merges them regardless of AxCACHE. This can change non-modifiable transactions beyond the transformations that AXI A4.3 permits. See [width transformation details](docs/width-conversion.md#width-transformation-details) |
@@ -185,7 +185,7 @@ field path, a message, the file line and column when known, and a [diagnostic co
 | --- | --- |
 | [Definition](docs/definition.md) | Top-level fields, YAML shorthand, C++ types and value limits |
 | [Clocks and resets](docs/clocks-and-resets.md) | Domains, resets, gates, cells, crossings and CDC constraints |
-| [Network](docs/network.md) | Connectivity, graphs, routes, flows, arbitration and pipes |
+| [Network](docs/network.md) | Connectivity, graphs, routes, flows, arbitration, pipes and [read and write paths](docs/read-write-paths.md) |
 | [Address map](docs/address-map.md) | Mappings, address inputs, decode misses and error responses |
 | [Protocols](docs/protocols.md) | Initiator and target protocols, width conversion and packets |
 | [TileLink](docs/tilelink.md) | Shared fields and integration, [TL-UL](docs/tilelink-ul.md), [TL-UH initiators](docs/tilelink-uh-initiators.md) and [TL-UH targets](docs/tilelink-uh-targets.md) |

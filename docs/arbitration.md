@@ -44,10 +44,12 @@ every candidate once, highest first. An output is named `node/name` or
 ## Arbitration order and bounds
 
 Candidates sort by endpoint or predecessor node name in byte order. A node sorts
-before an endpoint with the same name. Reads and writes share the output arbiter
-state. A single-candidate output has no arbiter and rejects an override. Unknown
-outputs, repeated overrides and incomplete or duplicate priority entries are
-rejected.
+before an endpoint with the same name. With shared paths, reads and writes share
+the output arbiter state. With
+[separate read and write paths](read-write-paths.md), each copy of an output
+has its own arbiter with the same policy. A single-candidate output has no
+arbiter and rejects an override. Unknown outputs, repeated overrides and
+incomplete or duplicate priority entries are rejected.
 
 Only fixed priority accepts `priority`.
 
@@ -78,6 +80,11 @@ priority order and service bounds. Bounds count completed competing packets and
 require eventual consumer acceptance. The level round robin bound applies while
 a request stays valid at one level. A packet counts at the level that received
 its grant. Interleaved response segments compete again after releasing their grants.
+
+With shared paths, each initiator merges its reads and writes before the
+network. With separate read and write paths there is no merger. The two
+directions take turns only for a
+[capacity entry](transactions.md#initiator-capacity).
 
 The full AXI request merger prefers reads after reset. Reads have no source
 data to wait for. Selecting a write first can delay a simultaneous read by tens

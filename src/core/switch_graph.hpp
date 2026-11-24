@@ -1,14 +1,27 @@
 #pragma once
 
 #include "nocloom/definition.hpp"
+#include <cstdint>
 #include <map>
 #include <optional>
 #include <set>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <vector>
 
 namespace nocloom::detail {
+// The packets a transport graph carries: both directions over shared paths, or, with separate read
+// and write paths (ReadWritePaths::Separate), the writes or the reads.
+enum class Carried : std::uint8_t { Both, Writes, Reads };
+// The scope of the switches and links of a graph: req/ and rsp/ for shared paths, wreq/ and wrsp/
+// for the write paths, rreq/ and rrsp/ for the read paths.
+std::string graph_scope(bool response, Carried carried);
+// Whether a scoped object, link or segment name lies in a response graph.
+bool response_scope(std::string_view name);
+// Whether a name starts with the scope of some graph.
+bool graph_scoped(std::string_view name);
 // Private directed exchange planning objects.
 struct SwitchEdge {
   std::string from, to;
@@ -45,6 +58,7 @@ struct DirectedSwitchGraph {
   std::vector<SwitchRoute> fixed_routes = {};
   // The response graph: its exits are the initiators.
   bool response = false;
+  Carried carried = Carried::Both;
   // The flow count of every initiator, and of every target, with more than one.
   std::map<std::string, unsigned> flows = {}, target_paths = {};
   // The flow pairs (initiator, target, initiator flow, target flow) of admitted pairs that the
@@ -61,6 +75,7 @@ struct SwitchOutputPlan {
 };
 struct SwitchGraphPlan {
   DirectedSwitchGraph graph;
+  std::string scope() const { return graph_scope(graph.response, graph.carried); }
   // Topological when the graph is acyclic; a cyclic graph keeps the sorted switches.
   std::vector<std::string> topological_order;
   std::vector<SwitchRoute> routes;
@@ -70,7 +85,40 @@ struct SwitchGraphPlan {
   bool operator==(const SwitchGraphPlan &) const = default;
 };
 struct ExchangePlan {
+  // Shared paths: both directions. Separate paths: the writes.
   SwitchGraphPlan request, response;
+  // Separate paths: the reads, on graphs of the same topology; absent with shared paths.
+  std::optional<SwitchGraphPlan> read_request = std::nullopt, read_response = std::nullopt;
+  bool separate() const { return read_request.has_value(); }
+  // Every graph: the request graphs (writes before reads), then the response graphs.
+  std::vector<const SwitchGraphPlan *> graphs() const {
+    std::vector<const SwitchGraphPlan *> all{&request};
+    if (read_request)
+      all.push_back(&*read_request);
+    all.push_back(&response);
+    if (read_response)
+      all.push_back(&*read_response);
+    return all;
+  }
+  std::vector<SwitchGraphPlan *> graphs() {
+    std::vector<SwitchGraphPlan *> all{&request};
+    if (read_request)
+      all.push_back(&*read_request);
+    all.push_back(&response);
+    if (read_response)
+      all.push_back(&*read_response);
+    return all;
+  }
+  // The graph of a scope (graph_scope).
+  const SwitchGraphPlan &graph(std::string_view scope) const {
+    for (const auto *g : {&request, &response})
+      if (g->scope() == scope)
+        return *g;
+    for (const auto *g : {&read_request, &read_response})
+      if (*g && (*g)->scope() == scope)
+        return **g;
+    throw std::out_of_range("No graph " + std::string(scope));
+  }
   bool operator==(const ExchangePlan &) const = default;
 };
 

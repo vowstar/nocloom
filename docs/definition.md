@@ -45,6 +45,7 @@ Use YAML or C++ `nocloom::Definition`. Both use the same validator.
 | `targets` | Response endpoints | 1 to 256 |
 | `connectivity` | Allowed endpoint pairs | Required |
 | `topology` | Explicit request and response graphs | One generated switch per direction |
+| `read_write` | `shared` or `separate` [read and write paths](read-write-paths.md) | `shared` |
 | `arbitration` | Object with `policy` | Round robin |
 | `transport` | Network widths, capacity and sideband fields | Defaults below |
 | `error_logging` | Register window and error logs | Absent |

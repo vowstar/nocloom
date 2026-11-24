@@ -2336,6 +2336,48 @@ void check_endpoint_gating(Checks &c) {
   check(c.d.initiators, "initiators");
   check(c.d.targets, "targets");
 }
+// Separate read and write paths: the endpoint protocols and options that keep them apart. A
+// scheduling level, shaper or scheduler would need a shared level or byte count across both
+// paths. TileLink and Wishbone endpoints, error logs and the endpoint pipes at the transport side
+// (an issue, arrival, dispatch or response pipe) have no form for two paths.
+void check_read_write(Checks &c) {
+  const auto &d = c.d;
+  if (d.read_write != ReadWritePaths::Separate)
+    return;
+  const auto reject = [&](const std::string &field, const std::string &what) {
+    c("NCL_READ_WRITE_PATHS", field, what + " does not support separate read and write paths");
+  };
+  const auto unsupported = [](std::optional<Protocol> protocol) {
+    return protocol == Protocol::TlUl || protocol == Protocol::TlUh ||
+           protocol == Protocol::Wishbone;
+  };
+  for (std::size_t i = 0; i < d.initiators.size(); ++i) {
+    const auto &s = d.initiators[i];
+    const auto at = "initiators[" + std::to_string(i) + "]";
+    if (unsupported(s.protocol))
+      reject(at + ".protocol", "A TileLink or Wishbone initiator");
+    if (s.qos != InitiatorQos{})
+      reject(at + ".qos", "Scheduling, a shaper or a scheduler");
+    if (s.pipes.issue)
+      reject(at + ".pipes.issue", "An issue pipe");
+  }
+  for (std::size_t i = 0; i < d.targets.size(); ++i) {
+    const auto &t = d.targets[i];
+    const auto at = "targets[" + std::to_string(i) + "]";
+    if (unsupported(t.protocol))
+      reject(at + ".protocol", "A TileLink or Wishbone target");
+    if (t.log_registers)
+      reject("error_logging.registers", "An error log register window");
+    if (t.pipes.arrival.slice != PipeSlice::None)
+      reject(at + ".pipes.arrival", "An arrival pipe");
+    if (t.pipes.dispatch)
+      reject(at + ".pipes.dispatch", "A dispatch pipe");
+    if (t.pipes.response.slice != PipeSlice::None)
+      reject(at + ".pipes.response", "A response pipe");
+  }
+  if (!d.error_logging.logs.empty())
+    reject("error_logging.logs", "An error log");
+}
 using PlanData = std::shared_ptr<const detail::NetworkPlan>;
 // The definition checks, then the network plan with its capability rules. Diagnostics carry
 // configuration paths; make_plan locates them.
@@ -2371,6 +2413,7 @@ Result<PlanData> plan_definition(const Definition &d, const ValidationOptions &l
   check_axi5_pairs(c);
   check_user_flags(c);
   check_link_timing(c);
+  check_read_write(c);
   if (c.errors.empty())
     check_connected_mappings(d, c);
   // Explicit routes name connected pairs before their paths are planned.

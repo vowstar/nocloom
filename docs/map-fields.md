@@ -20,11 +20,12 @@ formats. Profile-specific JSON records appear only for that profile.
 | `definition.transport` | `data_width`, `id_bits`, `len_bits`, `max_outstanding`, `transport_word_bytes` and optional `id_table_entries` |
 | `definition.transport.packet_limits` | Per-pair packet size and boundary limits in bytes |
 | `definition.transport.narrow_bursts` | Initiators with `narrow_bursts: merge_modifiable` |
-| `definition.topology` | Request and response graphs with nodes, links, endpoint attachments, word widths and pipe settings. `generated` marks automatic graphs |
+| `definition.topology` | Request and response graphs with nodes, links, endpoint attachments, word widths and pipe settings. `generated` marks automatic graphs. `read_write` marks separate read and write paths |
 | `definition.connectivity` | Connected `source` and `target` pairs. `flow_pairs` lists admitted flow pairs when needed |
 | `definition.topology.routes` | Explicit route entries with endpoint names, node names and any nonzero `source_path` and `target_path` |
 | `network.request_routes`, `network.response_routes` | Route `entry`, `exit` and `hardware_nodes`, with `source_paths` and `target_path` when needed |
-| `network.read_write`, `network.request_nodes`, `network.response_nodes` | Read and write route sharing and the generated node names by direction |
+| `network.read_write`, `network.request_nodes`, `network.response_nodes` | `merged` or `separate` read and write paths, and the generated node names by direction |
+| `network.read_request_nodes`, `network.read_response_nodes`, `network.read_request_routes`, `network.read_response_routes` | With separate read and write paths, the node names and routes of the read graphs. The other node and route fields name the write graphs |
 | `network.admission` | Per-source read and write route matches, with target and address plane signals when present |
 | `network.resources` | Resource name, role and payload width, with capacity, domain and pipe settings where recorded |
 | `network.storage` | Resource, payload and control signals, acquire and release signals, and clock where recorded |

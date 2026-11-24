@@ -170,6 +170,11 @@ struct Axi4OutletProfile {
   // (the network's arbiters hold an offered head), since with several bursts its AW may enter
   // before the word leaves.
   bool merged = false;
+  // Separate read and write paths (neither merged nor admitted): each face has its own transport,
+  // so a write head and a read head may be offered together, and a read head while a write packet
+  // is still collecting beats. Where one pool entry is left the two take it by turns: the read
+  // after a write head took one, the write after a read did (a read first after reset).
+  bool separate = false;
   // Merged with one burst and nothing stored between the merge and the outlet: the request faces
   // are steered from one transport, so a read and a write head are never offered together, and
   // pool.read_ok reads the pool alone.

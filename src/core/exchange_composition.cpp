@@ -124,7 +124,7 @@ void plan_links(NetworkPlan &plan) {
   auto edges = std::exchange(plan.links, {});
   // A placed object: its name, its word and its domain.
   auto object = [&](const std::string &kind, const std::string &name) {
-    const bool node = kind == "req/" || kind == "rsp/";
+    const bool node = graph_scoped(kind);
     return std::tuple{kind + name, node ? plan.node(name).word_bytes : endpoint_word(plan, name),
                       plan.placement ? plan.placement->objects.at(kind + name) : plan.domain.name};
   };
@@ -134,9 +134,10 @@ void plan_links(NetworkPlan &plan) {
                                 ->effective_period_ps
                           : std::nullopt;
   };
-  for (bool response : {false, true}) {
-    const auto &g = (response ? plan.exchange.response : plan.exchange.request).graph;
-    const std::string prefix = response ? "rsp/" : "req/";
+  for (const auto *graph : plan.exchange.graphs()) {
+    const auto &g = graph->graph;
+    const bool response = g.response;
+    const std::string prefix = graph->scope();
     const std::string entry = response ? "target/" : "source/";
     const std::string exit = response ? "source/" : "target/";
     auto add = [&](const std::string &from_kind, const std::string &from,
@@ -438,7 +439,7 @@ public:
       throw std::logic_error("Missing planned crossing " + name);
     if (!std::holds_alternative<AsyncClockCut>(cut->options))
       return cross_related(*cut, bytes, input, ends);
-    return cross_async(*cut, burst_fragment_widths(cut->segment.starts_with("rsp/"), bytes), input,
+    return cross_async(*cut, burst_fragment_widths(response_scope(cut->segment), bytes), input,
                        ends);
   }
   // The clock adapter of an asynchronous cut, its output of the given field widths.
@@ -553,12 +554,12 @@ public:
     }
     if (edge_aligned)
       imported.replace(f.slow_enable, selected_edge(f.slow_from_sender ? from->name : to->name));
-    auto output = channel(burst_fragment_widths(cut.segment.starts_with("rsp/"), bytes));
+    auto output = channel(burst_fragment_widths(response_scope(cut.segment), bytes));
     imported.replace(f.valid, input.valid);
     imported.replace(f.out_ready, output.ready);
     auto input_data = input.data;
     if (f.fields.size() == input_data.size() + 1) {
-      const auto head = head_pressure(input.valid, input.data, cut.segment.starts_with("rsp/"));
+      const auto head = head_pressure(input.valid, input.data, response_scope(cut.segment));
       input_data.push_back(input.level_hint ? or_(*input.level_hint, head) : head);
     }
     if (input_data.size() != f.fields.size())
@@ -634,7 +635,7 @@ public:
   ValueId cross_level_hint(const ClockCut &cut, const AsyncFifo &f, IrComponent &imported,
                            const Channel &input, const Channel &output,
                            const std::array<std::string, 2> &ends) {
-    const bool response = cut.segment.starts_with("rsp/");
+    const bool response = response_scope(cut.segment);
     const auto [sender, sender_reset] = domains.at(cut.from_domain);
     const auto [receiver, receiver_reset] = domains.at(cut.to_domain);
     const auto id = "level_hint/" + cut.name + "/";
@@ -958,6 +959,16 @@ public:
     drive(in.ready, or_(open[0], open[1]));
     return sides;
   }
+  // One side of steer for a channel that carries one direction (separate read and write paths):
+  // side k with steer's constant fields, passed while open.
+  Channel one_side(const Channel &in, unsigned k, ValueId open, unsigned unloaded, bool response,
+                   unsigned word_bytes) {
+    std::array<ValueId, 2> opens{bit(0), bit(0)};
+    opens[k] = open;
+    auto sides = steer(in, bit(k), opens, unloaded, response, word_bytes);
+    drive(sides[1 - k].ready, bit(0));
+    return sides[k];
+  }
   // Request merger of one source: a grant holds from a burst's first packet to the tail of its
   // final one (final marks it), so neither direction is granted while the other holds. AXI4
   // serves [read, write] round robin, AXI4-Lite and APB [write, read] by turns.
@@ -984,6 +995,9 @@ public:
     std::vector<ValueId> id_count, id_key;
     ValueId start_key{};
     std::optional<ValueId> pending;
+    // Separate read and write paths: the read face's burst flags and the unit turn
+    // (split_requests).
+    std::vector<ValueId> more;
     unsigned id_bits = 0;
     // A request waits this cycle: the chosen head for its ID's destination or an ID table entry
     // (head_waits), or any request for a unit or a table entry (lacks_unit).
@@ -1343,6 +1357,203 @@ public:
       const auto up =
           and_(p.incr, or_(and_(used, b.binary(Op::Equal, p.id_key[e], p.start_key)), take));
       const auto down = and_(decr, and_(used, b.binary(Op::Equal, p.id_key[e], freed_key)));
+      step_counter(p.id_count[e], up, down);
+      b.update(p.id_key[e], b.select(and_(p.incr, take), p.start_key, p.id_key[e]));
+    }
+  }
+  // Separate read and write paths: the source's two request faces leave on their own paths, the
+  // write face on sinks[0], the read face on sinks[1]. With `pool` (the source's capacity n) reads
+  // and writes still share n units in flight as in rejoin_requests: a head that takes a unit (a
+  // burst's first packet, or a later piece of a narrow-split burst) passes only with a free unit
+  // and, with an ID table, its key's entry or a free one. Such heads of the two directions take at
+  // most one unit per cycle: when both may, the direction that did not take the last unit goes
+  // first (a read after reset), and a head once offered keeps its turn until it transfers, so the
+  // count and the ID table take one burst per cycle and an offered head stays offered. Every other
+  // fragment passes without waiting for the other direction. split.held marks a burst of a
+  // direction that has taken its unit and not yet sent its final packet.
+  struct Split {
+    std::array<Channel, 2> sinks;
+    std::optional<Pool> pool;
+    std::array<ValueId, 2> held{};
+  };
+  Split split_requests(const std::string &id, const std::array<Channel, 2> &faces,
+                       const std::array<ValueId, 2> &final, unsigned last,
+                       std::optional<unsigned> pool, bool split_narrow, unsigned word,
+                       unsigned narrow_below, unsigned id_entries, unsigned id_bits,
+                       unsigned slots) {
+    Split result{{like(faces[0]), like(faces[1])}, std::nullopt, {bit(0), bit(0)}};
+    if (!pool) {
+      for (unsigned d = 0; d < 2; ++d) {
+        drive(result.sinks[d].valid, faces[d].valid);
+        drive(faces[d].ready, result.sinks[d].ready);
+        for (std::size_t f = 0; f < faces[d].data.size(); ++f)
+          drive(result.sinks[d].data[f], faces[d].data[f]);
+      }
+      return result;
+    }
+    auto &p = result.pool.emplace(Pool{});
+    const auto width = static_cast<unsigned>(std::bit_width(*pool));
+    p.count = b.state(width, clock, reset);
+    p.head_waits = p.lacks_unit = bit(0);
+    const auto room = b.binary(Op::UnsignedLess, p.count, b.constant(width, *pool));
+    // The ID table, shared by both directions, as rejoin_id_fits builds it.
+    if (id_entries) {
+      p.id_bits = id_bits;
+      const auto count_bits = static_cast<unsigned>(std::bit_width(*pool));
+      for (unsigned e = 0; e < id_entries; ++e) {
+        p.id_count.push_back(b.state(count_bits, clock, reset));
+        p.id_key.push_back(b.state(1 + id_bits, clock, reset));
+        bind(id + ".ids.e" + std::to_string(e) + ".count", p.id_count.back());
+        bind(id + ".ids.e" + std::to_string(e) + ".key", p.id_key.back());
+      }
+    }
+    const auto field = [&](unsigned d, const char *name) {
+      return faces[d].data[burst_field_index(false, word, name)];
+    };
+    std::array<ValueId, 2> held{}, narrow_held{}, piece_wait{}, takes{}, candidate{}, key{};
+    for (unsigned d = 0; d < 2; ++d) {
+      held[d] = b.state(1, clock, reset);
+      narrow_held[d] = b.state(1, clock, reset);
+      piece_wait[d] = b.state(1, clock, reset);
+      // A head takes a unit as it passes: no burst of its direction held, or the burst's next
+      // piece (single-fragment packets) after one has left.
+      takes[d] = or_(not_(held[d]), piece_wait[d]);
+      auto fits = bit(1);
+      if (id_entries) {
+        key[d] = unit_key(faces[d], word, id_bits);
+        auto known = bit(0), vacant = bit(0);
+        for (unsigned e = 0; e < id_entries; ++e) {
+          const auto used = not_(eq(p.id_count[e], 0));
+          known = or_(known, and_(used, b.binary(Op::Equal, p.id_key[e], key[d])));
+          vacant = or_(vacant, not_(used));
+        }
+        fits = or_(known, vacant);
+      }
+      candidate[d] = and_(faces[d].valid, and_(takes[d], and_(room, fits)));
+    }
+    // The unit turn: hold keeps an offered head's turn. When both ask, the direction that did not
+    // take the last unit goes first, a read after reset (last_read: a read took the last unit).
+    const auto hold = b.state(1, clock, reset), owner = b.state(1, clock, reset),
+               last_read = b.state(1, clock, reset);
+    const std::array<ValueId, 2> first{last_read, not_(last_read)};
+    std::array<ValueId, 2> grant{};
+    for (unsigned d = 0; d < 2; ++d) {
+      const auto free_turn = and_(candidate[d], or_(not_(candidate[1 - d]), first[d]));
+      grant[d] = b.select(hold, and_(eq(owner, d), faces[d].valid), free_turn);
+      const auto stop = and_(takes[d], not_(grant[d]));
+      drive(result.sinks[d].valid, and_(faces[d].valid, not_(stop)));
+      drive(faces[d].ready, and_(result.sinks[d].ready, not_(stop)));
+      for (std::size_t f = 0; f < faces[d].data.size(); ++f)
+        drive(result.sinks[d].data[f], faces[d].data[f]);
+    }
+    std::array<ValueId, 2> taken{}, sent{}, starting{}, narrow{};
+    auto incr = bit(0);
+    for (unsigned d = 0; d < 2; ++d) {
+      const auto moves = transfer(result.sinks[d]);
+      sent[d] = and_(moves, result.sinks[d].data[last]);
+      starting[d] = and_(moves, not_(held[d]));
+      taken[d] = and_(moves, takes[d]);
+      incr = or_(incr, or_(starting[d],
+                           and_(sent[d], and_(held[d], and_(narrow_held[d], piece_wait[d])))));
+      b.update(held[d], b.select(moves, not_(and_(result.sinks[d].data[last], final[d])), held[d]));
+      narrow[d] = bit(0);
+      if (split_narrow) {
+        narrow[d] =
+            and_(eq(field(d, "burst"), 1),
+                 and_(b.binary(Op::UnsignedLess, field(d, "size"), b.constant(3, narrow_below)),
+                      and_(not_(b.slice(field(d, "cache"), 1, 1)), not_(field(d, "error")))));
+        narrow[d] = and_(narrow[d], and_(eq(field(d, "length"), 0), not_(final[d])));
+        if (out.plan.exclusive)
+          narrow[d] = and_(narrow[d], not_(field(d, "lock")));
+      }
+      b.update(narrow_held[d], b.select(starting[d], narrow[d], narrow_held[d]));
+      const auto narrow_now = b.select(starting[d], narrow[d], narrow_held[d]);
+      b.update(piece_wait[d], b.select(sent[d], and_(narrow_now, not_(final[d])), piece_wait[d]));
+    }
+    const auto granted = or_(grant[0], grant[1]);
+    b.update(hold, and_(granted, not_(or_(taken[0], taken[1]))));
+    b.update(owner, b.select(granted, grant[1], owner));
+    b.update(last_read, b.select(taken[1], bit(1), b.select(taken[0], bit(0), last_read)));
+    p.incr = incr;
+    if (id_entries)
+      p.start_key = b.select(taken[1], key[1], key[0]);
+    // The units by write bit (units[1] the write face's), then tag.
+    for (unsigned u = 0; u < 2; ++u) {
+      const unsigned d = 1 - u;
+      const auto tag = out.plan.burst_tag_bits ? field(d, "tag") : bit(0);
+      for (unsigned t = 0; t < slots; ++t) {
+        const auto here = eq(tag, t);
+        const auto &unit = p.units[u].emplace_back(
+            PoolUnit{b.state(std::max(piece_count::kBits, width), clock, reset),
+                     b.state(1, clock, reset), b.state(1, clock, reset), and_(sent[d], here),
+                     and_(starting[d], here), and_(sent[d], and_(here, final[d]))});
+        b.update(unit.narrow, b.select(unit.bs, narrow[d], unit.narrow));
+      }
+    }
+    p.narrow_held = narrow_held[0];
+    p.piece_wait = piece_wait[0];
+    p.head_held = held[0];
+    p.more = {held[1], narrow_held[1], piece_wait[1], hold, owner, last_read};
+    result.held = held;
+    bind(id + ".pool", p.count);
+    bind(id + ".hold", hold);
+    bind(id + ".owner", owner);
+    bind(id + ".last_read", last_read);
+    return result;
+  }
+  // The count after up and the downs of one cycle, never below zero.
+  ValueId stepped(ValueId count, ValueId up, ValueId down) {
+    const auto width = b.ir.values.at(count.index).width;
+    down = and_(down, not_(eq(count, 0)));
+    return b.select(
+        and_(up, not_(down)), b.binary(Op::Subtract, count, b.constant(width, (1U << width) - 1)),
+        b.select(and_(down, not_(up)), b.binary(Op::Subtract, count, b.constant(width, 1)), count));
+  }
+  // pool_answers with separate read and write paths: arriving[0] carries the write responses,
+  // arriving[1] the reads; each may free a unit in one cycle, of different ID table keys.
+  void pool_answers_split(const Pool &p, const std::array<Channel, 2> &arriving, unsigned word) {
+    std::array<ValueId, 2> decr{bit(0), bit(0)}, freed_key{};
+    for (unsigned f = 0; f < 2; ++f) {
+      const auto &a = arriving[f];
+      const auto tail = and_(transfer(a), a.data[burst_field_index(true, word, "last")]);
+      const auto tag =
+          out.plan.burst_tag_bits ? a.data[burst_field_index(true, word, "tag")] : bit(0);
+      // The write face's units are units[1].
+      const unsigned u = 1 - f;
+      for (const auto &unit : p.units[u]) {
+        const auto t = static_cast<unsigned>(&unit - p.units[u].data());
+        const auto rs = and_(tail, eq(tag, t));
+        const auto done = and_(rs, and_(unit.whole, eq(unit.packets, 1)));
+        decr[f] = or_(decr[f], and_(rs, or_(unit.narrow, done)));
+        step_counter(unit.packets, unit.rq, rs);
+        b.update(unit.whole, b.select(done, bit(0), or_(unit.whole, unit.fs)));
+      }
+      if (p.id_bits) {
+        auto freed_id = a.data[burst_field_index(true, word, "id")];
+        if (b.ir.values.at(freed_id.index).width > p.id_bits)
+          freed_id = b.slice(freed_id, 0, p.id_bits);
+        freed_key[f] = b.concat(bit(1 - f), freed_id);
+      } else {
+        freed_key[f] = bit(1 - f);
+      }
+    }
+    b.update(p.count, stepped(stepped(p.count, p.incr, decr[0]), bit(0), decr[1]));
+    if (p.id_count.empty())
+      return;
+    auto known = bit(0);
+    for (std::size_t e = 0; e < p.id_count.size(); ++e)
+      known = or_(known,
+                  and_(not_(eq(p.id_count[e], 0)), b.binary(Op::Equal, p.id_key[e], p.start_key)));
+    auto earlier = bit(0);
+    for (std::size_t e = 0; e < p.id_count.size(); ++e) {
+      const auto used = not_(eq(p.id_count[e], 0));
+      const auto take = and_(not_(known), and_(not_(used), not_(earlier)));
+      earlier = or_(earlier, not_(used));
+      const auto up =
+          and_(p.incr, or_(and_(used, b.binary(Op::Equal, p.id_key[e], p.start_key)), take));
+      auto down = bit(0);
+      for (unsigned f = 0; f < 2; ++f)
+        down = or_(down, and_(decr[f], and_(used, b.binary(Op::Equal, p.id_key[e], freed_key[f]))));
       step_counter(p.id_count[e], up, down);
       b.update(p.id_key[e], b.select(and_(p.incr, take), p.start_key, p.id_key[e]));
     }
@@ -1982,8 +2193,9 @@ namespace {
 // endpoints and nodes they come from, a node before an endpoint of the same name. The capability
 // rules judge the overrides.
 void plan_arbiters(NetworkPlan &plan) {
-  for (bool response : {false, true})
-    for (auto &o : (response ? plan.exchange.response : plan.exchange.request).outputs) {
+  for (auto *graph : plan.exchange.graphs())
+    for (auto &o : graph->outputs) {
+      const bool response = graph->graph.response;
       std::ranges::sort(o.inputs, {}, [&](const std::string &key) {
         const auto name = plan.label(key);
         return std::pair{name.substr(name.find('/') + 1), key.starts_with("endpoint/")};
@@ -1991,7 +2203,7 @@ void plan_arbiters(NetworkPlan &plan) {
       if (o.inputs.size() < 2)
         continue;
       const auto output = (o.endpoint ? "endpoint/" : "node/") + o.output;
-      const auto key = std::string(response ? "rsp/" : "req/") + o.node + ">" + output;
+      const auto key = graph->scope() + o.node + ">" + output;
       const auto request = plan.output_arbitration.find(key);
       ArbiterPlan a{response, o.node, output,
                     o.inputs, {},     request != plan.output_arbitration.end()};
@@ -2020,6 +2232,15 @@ Status plan_composition(NetworkPlan &plan) {
   auto exchange = plan_exchange(plan.exchange.request.graph, plan.exchange.response.graph);
   if (!exchange)
     return Status::failure(exchange.diagnostics());
+  // Separate read and write paths: the read graphs share the topology of the write graphs.
+  if (plan.exchange.separate()) {
+    auto reads =
+        plan_exchange(plan.exchange.read_request->graph, plan.exchange.read_response->graph);
+    if (!reads)
+      return Status::failure(reads.diagnostics());
+    exchange.value().read_request = std::move(reads.value().request);
+    exchange.value().read_response = std::move(reads.value().response);
+  }
   plan.exchange = std::move(exchange.value());
   build_route_index(plan);
   plan_arbiters(plan);
@@ -2243,7 +2464,7 @@ bool axi4_outlet_control(const std::string &name) {
       "w.bad",          "w.remaining",      "w.response_full", "w.miss",       "r.count",
       "r.unissued",     "r.head",           "r.tail",          "r.issue",      "r.full",
       "r.beat",         "r.response_first", "r.response_last", "pool.count",   "w.head_pending",
-      "w.head_beat_in", "pool.read_first"};
+      "w.head_beat_in", "pool.read_first",  "pool.write_turn"};
   // The W, B and R stage flags and the read receive pointer.
   static const std::set<std::string> stage_controls{
       "w.spare",           "w.beat_last",      "w.beat_drop", "w.spare_last",  "w.spare_drop",
@@ -2298,13 +2519,31 @@ public:
     Channels entries, responses;
     for (unsigned si = 0; si < plan.sources.size(); ++si)
       entries.emplace(plan.sources[si].name, sides[si].req_tr);
-    const auto arrivals = compose_transport(false, entries);
-    // Per target: split the request lane by the write field, attach the
-    // burst service engine behind the window shim, and merge its responses.
-    for (unsigned o = 0; o < plan.targets.size(); ++o)
-      responses.emplace(plan.targets[o].name, attach_target(o, arrivals.at(plan.targets[o].name)));
-    attach_error_logs();
-    return_responses(compose_transport(true, responses));
+    const auto &x = plan.exchange;
+    const auto arrivals = compose_transport(x.request, entries);
+    if (x.separate()) {
+      // Separate read and write paths: the write graphs carry req_tr, the read graphs read_tr.
+      Channels reads, read_responses;
+      for (unsigned si = 0; si < plan.sources.size(); ++si)
+        reads.emplace(plan.sources[si].name, *sides[si].read_tr);
+      const auto read_arrivals = compose_transport(*x.read_request, reads);
+      for (unsigned o = 0; o < plan.targets.size(); ++o) {
+        const auto &name = plan.targets[o].name;
+        const auto sent = attach_target_paths(o, arrivals.at(name), read_arrivals.at(name));
+        responses.emplace(name, sent[0]);
+        read_responses.emplace(name, sent[1]);
+      }
+      const auto returns = compose_transport(x.response, responses);
+      return_responses(returns, compose_transport(*x.read_response, read_responses));
+    } else {
+      // Per target: split the request lane by the write field, attach the
+      // burst service engine behind the window shim, and merge its responses.
+      for (unsigned o = 0; o < plan.targets.size(); ++o)
+        responses.emplace(plan.targets[o].name,
+                          attach_target(o, arrivals.at(plan.targets[o].name)));
+      attach_error_logs();
+      return_responses(compose_transport(x.response, responses));
+    }
     c.gate_regions();
     c.out.ir = std::move(b.ir);
     if (auto status = order_exchange_ir(c.out); !status)
@@ -2320,8 +2559,10 @@ private:
   using Channels = std::map<std::string, Channel>;
   struct SourceSide {
     Imported ep;
-    Channel req_tr;           // both directions, transport layout at the endpoint word
-    Channel wrsp_ep, rrsp_ep; // endpoint layout, driven by the response split
+    Channel req_tr; // both directions, transport layout at the endpoint word; the writes alone
+                    // with separate read and write paths, whose reads take read_tr
+    std::optional<Channel> read_tr;
+    Channel wrsp_ep, rrsp_ep;                      // endpoint layout, driven by the response split
     std::optional<std::array<ValueId, 2>> charges; // original write and read burst charges
     // The shared pool of units in flight (rejoin_requests); pool_answers drives its response
     // side from the returning response stream.
@@ -2353,6 +2594,10 @@ private:
     // A default target's decode miss head seen and a miss being answered (attach_target), with
     // count and turn as bus control.
     std::optional<ValueId> miss_seen, miss_answer, miss_replied, empty;
+    // Separate paths: the AXI4 outlet holds part of the head word on its write face (its AW or
+    // its first beat entered, miss_gate_split), the path that has the turn (set: the read path)
+    // and whether its head has waited since the last cycle.
+    std::optional<ValueId> write_held, read_turn, miss_owed;
     // An AXI4-Lite target of several flows: the flow of the packets in flight (attach_target).
     std::optional<ValueId> flow;
     Channel wreq{}, rreq{}, wrsp{}, rrsp{};
@@ -3029,6 +3274,10 @@ private:
       c.drive(*side.read_taken,
               c.or_(c.and_(c.transfer(framed[1]), reads_by_granule ? read_taken : final[1]),
                     convert ? converter.bound.at("r.local_take") : c.bit(0)));
+    if (plan.exchange.separate()) {
+      split_source(si, side, framed, final, held_back, convert, converter, splitter);
+      return;
+    }
     auto scheduler = scheduler_source(si);
     auto &scheduler_front = scheduler.front;
     const auto packets_mode = scheduler.packets_mode, issue_mode = scheduler.issue_mode;
@@ -3082,8 +3331,15 @@ private:
     if (!sp.qos.axqos_map.empty())
       c.bind(key + "/request.packet_level",
              side.req_tr.data[c.burst_field_index(false, word, "level")]);
-    c.bind(key + "/write.source_stamp", stamp_w);
-    c.bind(key + "/read.source_stamp", stamp_r);
+    close_source_entry(si, side, {stamp_w, stamp_r}, convert, converter, splitter);
+  }
+  // The end of join_source: the source stamps, the source's storage records and the anchors of its
+  // response faces.
+  void close_source_entry(unsigned si, SourceSide &side, const std::array<ValueId, 2> &stamps,
+                          bool convert, const Imported &converter, const Imported &splitter) {
+    const auto key = "source/" + plan.sources[si].name;
+    c.bind(key + "/write.source_stamp", stamps[0]);
+    c.bind(key + "/read.source_stamp", stamps[1]);
     register_source_storage(si, side, converter, splitter);
     // The drop state counts with the write engine's controls (its B readiness reads it).
     if (side.miss_drop_state)
@@ -3096,6 +3352,68 @@ private:
     if (convert)
       bind_response_head(si, key, side);
     bind_decode_head(key, side, convert);
+  }
+
+  // join_source with separate read and write paths: the write face enters the write request
+  // graph, the read face the read request graph (split_requests). Without a scheduler, shaper or
+  // issue pipe (the definition checks reject them with separate paths).
+  void split_source(unsigned si, SourceSide &side, const std::array<Channel, 2> &framed,
+                    const std::array<ValueId, 2> &final, const std::array<ValueId, 2> &held_back,
+                    bool convert, const Imported &converter, const Imported &splitter) {
+    const auto &sp = plan.sources[si];
+    const auto word = word_at(sp.name);
+    const auto key = "source/" + sp.name;
+    auto split = c.split_requests(
+        key + "/request", framed, final, c.burst_field_index(false, word, "last"),
+        sp.pooled ? std::optional<unsigned>{sp.outstanding} : std::nullopt, sp.split_narrow, word,
+        std::countr_zero(sp.engine_bits / 8), sp.id_table < sp.id_keys ? sp.id_table : 0U,
+        sp.id_table < sp.id_keys ? sp.id_bits.value_or(0) : 0U, sp.engine_slots);
+    // The engine holds a direction's next request while every unit is taken and that direction
+    // holds no burst (as with shared paths, where the merger holds it).
+    if (side.merge_held)
+      for (unsigned d = 0; d < 2; ++d)
+        c.drive((*side.merge_held)[d],
+                split.pool ? c.and_(c.eq(split.pool->count, sp.outstanding), c.not_(split.held[d]))
+                           : c.bit(0));
+    if (side.merger_holds)
+      hold_packets_split(side, framed, split, held_back, word);
+    side.req_tr = split.sinks[0];
+    side.read_tr = split.sinks[1];
+    if (side.miss_dropping)
+      side.req_tr = drop_miss_beats(key + "/miss_drop", side.req_tr, side, word);
+    side.pool = std::move(split.pool);
+    close_source_entry(
+        si, side, {b.constant(plan.source_bits, 2 * si), b.constant(plan.source_bits, 2 * si + 1)},
+        convert, converter, splitter);
+  }
+  // hold_packets with separate read and write paths: each direction keeps the target of its own
+  // last packet head, and its burst is held from its unit to its final packet (split.held).
+  void hold_packets_split(SourceSide &side, const std::array<Channel, 2> &framed,
+                          const Compose::Split &split, const std::array<ValueId, 2> &held_back,
+                          unsigned word) {
+    if (!plan.target_bits || !split.pool)
+      throw std::logic_error("Packets into several targets need the target field and the pool");
+    const auto field = [&](const Channel &ch, const char *name) {
+      return ch.data[c.burst_field_index(false, word, name)];
+    };
+    for (unsigned d = 0; d < 2; ++d) {
+      const auto &sink = split.sinks[d];
+      const auto last = side.last_target.emplace_back(b.state(plan.target_bits, c.clock, c.reset));
+      b.update(last, b.select(c.and_(c.transfer(sink), field(sink, "first")), field(sink, "target"),
+                              last));
+      const auto &face = framed[d];
+      // The pool's units by write bit: a write's are units[1].
+      const auto &units = split.pool->units[d ? 0 : 1];
+      const auto tag = plan.burst_tag_bits ? field(face, "tag") : c.bit(0);
+      auto pending = c.bit(0);
+      for (unsigned t = 0; t < units.size(); ++t) {
+        const auto open = c.not_(c.eq(units[t].packets, 0));
+        pending = c.or_(pending, units.size() > 1 ? c.and_(c.eq(tag, t), open) : open);
+      }
+      const auto apart = c.not_(b.binary(Op::Equal, field(face, "target"), last));
+      c.drive(held_back[d],
+              c.and_(c.and_(field(face, "first"), split.held[d]), c.and_(apart, pending)));
+    }
   }
 
   // A decode packet's word (decode_packet.hpp) is marked by the fragment in front; a clamp's word
@@ -3519,6 +3837,7 @@ private:
             control.insert(control.end(), {u.packets, u.whole, u.narrow});
         control.insert(control.end(), side.pool->id_count.begin(), side.pool->id_count.end());
         control.insert(control.end(), side.pool->id_key.begin(), side.pool->id_key.end());
+        control.insert(control.end(), side.pool->more.begin(), side.pool->more.end());
       }
       c.out.storage.push_back({key + "/" + way, c.clock, payload, control, capture, consume});
       Names staging;
@@ -3812,10 +4131,11 @@ private:
   // candidate. A response route is the source flow (2i writes, 2i + 1 reads), a request route the
   // target index. carried maps each destination to the outputs its routes leave by and the entries
   // of each; a request destination split over several outputs also compares the source flow.
-  ValueId switch_select(bool response, const std::string &node, const std::string &input,
+  ValueId switch_select(const SwitchGraphPlan &g, const std::string &node, const std::string &input,
                         const SwitchOutputPlan &output, ValueId route, ValueId source,
                         std::optional<ValueId> path,
                         const std::map<std::string, Leaving> &carried) {
+    const bool response = g.graph.response;
     const auto key = (output.endpoint ? "endpoint/" : "node/") + output.output;
     // Request destinations are targets, each flow of a target of several (destination()).
     std::vector<std::string> destinations;
@@ -3895,7 +4215,7 @@ private:
     // destination self-check over this switch's own logic.
     if (!response &&
         std::ranges::any_of(plan.sources, [](const auto &s) { return s.outstanding > 1; })) {
-      const auto at = std::string("decode/graph/req/") + node + ">" +
+      const auto at = "decode/graph/" + g.scope() + node + ">" +
                       (output.endpoint ? "endpoint/" : "node/") + output.output;
       c.bind(at + ".select/" + input, selected);
       c.bind(at + ".route/" + input, route);
@@ -3921,10 +4241,10 @@ private:
   // One direction's transport graph from its entries to its exits: each switch output arbitrates
   // the packets its inputs select for it (reads and writes together), each link takes its planned
   // stages.
-  Channels compose_transport(bool response, const Channels &entries) {
+  Channels compose_transport(const SwitchGraphPlan &g, const Channels &entries) {
     Channels exits;
-    const auto &g = response ? plan.exchange.response : plan.exchange.request;
-    const std::string prefix = response ? "rsp/" : "req/";
+    const bool response = g.graph.response;
+    const std::string prefix = g.scope();
     // The destinations a switch input can carry, each with the output its routes leave by: those
     // of the admitted routes that enter the switch through it. Every packet on the input is bound
     // for one of them (the source completes every other access locally), so its decode compares
@@ -3990,7 +4310,7 @@ private:
             const bool split = std::ranges::any_of(
                 leaving, [](const auto &destination) { return destination.second.size() > 1; });
             const auto selected = switch_select(
-                response, node, key, output, routed ? in.data[route] : c.bit(0),
+                g, node, key, output, routed ? in.data[route] : c.bit(0),
                 split ? in.data[c.burst_field_index(false, word_of(node), "source")] : c.bit(0),
                 split && plan.burst_path_bits
                     ? std::optional{in.data[c.burst_field_index(response, word_of(node), "path")]}
@@ -4274,6 +4594,88 @@ private:
     }
     return pending;
   }
+  // miss_gate for an AXI4 target with separate read and write paths: a head arrives on each path.
+  // A decode miss head waits for the target to be empty, as with shared paths, and holds back the
+  // heads of the other path meanwhile, so the target drains; of two miss heads the write's goes
+  // first. The paths take turns, though (read_turn: the path that did not let the last head in,
+  // the write path after reset): a miss head yields while the other path has the turn and its
+  // head has waited since the last cycle (miss_owed). So a source that keeps several misses in
+  // flight lets one head of the other path in between its misses. The yield is registered, so
+  // that a head's valid passes as many gates as without turns. With several bursts the outlet may
+  // take the AW or the first beat of a write head word before the word leaves (w.head_pending,
+  // w.head_beat_in): that word holds a pool entry already, so the gate stays open for it; closing
+  // it would keep the target from draining. Such a word is no miss head: a miss head enters
+  // whole, as the pool is empty then. Returns the miss head offered and the miss head taken, none
+  // without misses.
+  std::optional<std::pair<ValueId, ValueId>> miss_gate_split(unsigned o, TargetSide &t,
+                                                             const std::array<Channel, 2> &offered,
+                                                             std::array<ValueId, 2> &open) {
+    if (!fallbacks) {
+      fallbacks.emplace();
+      for (const auto &s : plan.sources)
+        if (const auto d = default_target(plan, s.name))
+          fallbacks->insert(*d);
+    }
+    if (!fallbacks->contains(o))
+      return std::nullopt;
+    t.empty = c.wire(1);
+    t.miss_seen = b.state(1, c.clock, c.reset);
+    t.miss_answer = b.state(1, c.clock, c.reset);
+    t.miss_replied = b.state(1, c.clock, c.reset);
+    t.read_turn = b.state(1, c.clock, c.reset);
+    t.miss_owed = b.state(1, c.clock, c.reset);
+    const auto quiet = c.not_(*t.miss_answer), read_turn = *t.read_turn;
+    // yields[d]: a miss head of path d lets the waiting head of the other path go first.
+    const std::array<ValueId, 2> yields{c.and_(read_turn, *t.miss_owed),
+                                        c.and_(c.not_(read_turn), *t.miss_owed)};
+    std::array<ValueId, 2> head{}, miss{}, errs{}, entered{};
+    for (unsigned d = 0; d < 2; ++d) {
+      head[d] =
+          c.and_(offered[d].valid, offered[d].data[c.burst_field_index(false, t.word, "first")]);
+      errs[d] = offered[d].data[c.burst_field_index(false, t.word, "error")];
+      miss[d] = c.and_(head[d], errs[d]);
+    }
+    // holds[d]: a miss head of path d that does not yield holds back the other path. The head's
+    // valid and first bits join last, as they come the longest way.
+    std::array<ValueId, 2> holds{};
+    for (unsigned d = 0; d < 2; ++d)
+      holds[d] = c.and_(head[d], c.and_(errs[d], c.not_(yields[d])));
+    auto taken = c.bit(0);
+    for (unsigned d = 0; d < 2; ++d) {
+      const auto starts = offered[d].data[c.burst_field_index(false, t.word, "first")];
+      // A read miss is seen at once, a write miss one cycle after it arrives.
+      const auto seen = d ? c.bit(1) : *t.miss_seen;
+      const auto free = c.and_(c.and_(quiet, c.and_(seen, *t.empty)), c.not_(yields[d]));
+      const auto miss_ok = d ? c.and_(free, c.not_(holds[0])) : free;
+      const auto head_ok = c.and_(quiet, c.not_(holds[1 - d]));
+      open[d] = c.or_(c.not_(starts), b.select(errs[d], miss_ok, head_ok));
+      if (d == 0 && plan.targets[o].outstanding > 1) {
+        t.write_held = c.wire(1);
+        open[d] = c.or_(open[d], *t.write_held);
+      }
+      entered[d] = c.and_(head[d], offered[d].ready);
+      taken = c.or_(taken, c.and_(miss[d], c.and_(open[d], offered[d].ready)));
+    }
+    const auto turn = c.or_(entered[0], c.and_(read_turn, c.not_(entered[1])));
+    b.update(read_turn, turn);
+    b.update(*t.miss_owed, b.select(turn, c.and_(head[1], c.not_(entered[1])),
+                                    c.and_(head[0], c.not_(entered[0]))));
+    // A write miss may count as seen although a read head entered beside it: the target is not
+    // empty in the next cycle, as the outlet's pool counts a head from the cycle after it enters.
+    return std::pair{c.or_(miss[0], miss[1]), taken};
+  }
+  void close_miss_split(const TargetSide &t, ValueId offered, ValueId taken,
+                        const std::array<Channel, 2> &sent) {
+    const auto tail = std::accumulate(
+        sent.begin(), sent.end(), c.bit(0), [&](ValueId any, const Channel &leaving) {
+          return c.or_(any, c.and_(c.transfer(leaving),
+                                   leaving.data[c.burst_field_index(true, t.word, "last")]));
+        });
+    const auto replied = c.or_(tail, *t.miss_replied), done = c.and_(*t.empty, replied);
+    b.update(*t.miss_seen, c.and_(c.and_(offered, c.not_(taken)), c.not_(*t.miss_answer)));
+    b.update(*t.miss_replied, c.and_(c.and_(*t.miss_answer, c.not_(done)), replied));
+    b.update(*t.miss_answer, c.or_(taken, c.and_(*t.miss_answer, c.not_(done))));
+  }
   // A miss answer ends once the target is empty and the miss response's tail has left.
   void close_miss(const TargetSide &t, ValueId pending, const Channel &taken, const Channel &sent) {
     const auto tail = c.and_(c.and_(sent.valid, sent.ready),
@@ -4382,6 +4784,88 @@ private:
       c.producers[sent.valid.index] = "target/" + target;
     }
     attach_engine(o, t, sent);
+    return sent;
+  }
+  // attach_target with separate read and write paths: the write request path arrives at the
+  // outlet's write face and the read path at its read face, and each response face leaves on the
+  // response path of its direction. A target that serves one transfer at a time (APB, AHB,
+  // AXI4-Lite) takes both request paths through one packet arbiter (join_paths), then serves them
+  // in arrival order as with shared paths. Without endpoint pipes, default targets, levels or
+  // error logs (the definition checks reject them with separate paths).
+  std::array<Channel, 2> attach_target_paths(unsigned o, const Channel &write_offered,
+                                             const Channel &read_offered) {
+    const auto &tp = plan.targets[o];
+    const auto &target = tp.name;
+    c.select_object("target/" + target);
+    TargetSide t;
+    const auto first = b.ir.states.size();
+    t.key = "burst_service/" + target;
+    t.word = word_at(target);
+    t.bits_ep = plan.per_endpoint ? t.word * 8 : 0;
+    t.upsize = tp.upsize.has_value();
+    t.shared_bus = joins_paths(plan, tp);
+    if (tp.service || tp.external_protocol == Protocol::TlUh ||
+        std::ranges::any_of(tp.pipes,
+                            [](const EndpointPipe &e) { return !socket_channel(pipe_place(e)); }))
+      throw std::logic_error("Separate read and write paths reach an unsupported target " + target);
+    if (lite_target(plan, target))
+      t.count_bits = std::max(3U, static_cast<unsigned>(std::bit_width(tp.outstanding)));
+    t.count = t.shared_bus ? b.state(t.count_bits, c.clock, c.reset) : c.bit(0);
+    t.turn = t.shared_bus ? b.state(1, c.clock, c.reset) : c.bit(0);
+    std::array<Channel, 2> faces;
+    // A default target's decode miss: the head offered and the head taken.
+    ValueId miss_offered = c.bit(0), miss_taken = c.bit(0);
+    if (t.shared_bus) {
+      auto joined = c.like(write_offered);
+      // Candidate 0 is the read path: the join serves a read first after reset.
+      c.graph_merge(t.key + "/join", {read_offered, write_offered}, joined,
+                    c.burst_field_index(false, t.word, "last"), treadle::Spec{}, false);
+      auto open = bus_open(t, tp, joined);
+      if (const auto pending = miss_gate(o, t, joined, open); t.miss_answer) {
+        miss_offered = pending;
+        miss_taken = c.and_(pending, joined.ready);
+      }
+      faces = c.steer(joined, c.not_(joined.data[c.burst_field_index(false, t.word, "write")]),
+                      open, 1, false, t.word);
+    } else {
+      std::array<ValueId, 2> open{c.bit(1), c.bit(1)};
+      if (const auto miss = miss_gate_split(o, t, {write_offered, read_offered}, open)) {
+        miss_offered = miss->first;
+        miss_taken = miss->second;
+      }
+      faces = {c.one_side(write_offered, 0, open[0], 1, false, t.word),
+               c.one_side(read_offered, 1, open[1], 1, false, t.word)};
+    }
+    std::tie(t.wreq, t.rreq, t.wrsp, t.rrsp) = ep_faces(t.bits_ep);
+    const auto span = transport_span(plan, tp).base;
+    c.deframe_burst_into(false, faces[0], t.wreq, t.word, span);
+    c.deframe_burst_into(false, faces[1], t.rreq, t.word, span);
+    const bool joined = !t.shared_bus && joined_target(plan, tp);
+    // Each response face is offered whenever it is valid.
+    if (!t.shared_bus && tp.protocol == Protocol::Axi4 && tp.outstanding > 1 && !tp.write_only &&
+        !joined)
+      t.picked = std::array{c.bit(1), c.bit(1)};
+    const auto segment = joined ? response_segment(t) : std::nullopt;
+    if (plan.response_runs)
+      t.wrap_end = c.wire(1);
+    std::array<Channel, 2> sent;
+    for (unsigned d = 0; d < 2; ++d) {
+      const auto &face = d ? t.rrsp : t.wrsp;
+      sent[d] = c.frame_burst(true, face, std::nullopt, t.word,
+                              plan.burst_path_bits ? std::optional{return_of(target, face)}
+                                                   : std::nullopt,
+                              std::nullopt, 0, std::nullopt, segment, t.wrap_end);
+    }
+    if (t.miss_answer)
+      close_miss_split(t, miss_offered, miss_taken, sent);
+    if (auto *zone = c.region("target/" + target)) {
+      zone->claim(b, first);
+      for (const auto *arrival : {&write_offered, &read_offered})
+        c.consume(zone, "target/" + target, arrival->valid);
+      for (const auto &leaving : sent)
+        c.producers[leaving.valid.index] = "target/" + target;
+    }
+    attach_engine(o, t, sent[0]);
     return sent;
   }
   // The engine on a target's faces, by what the target is.
@@ -4527,6 +5011,8 @@ private:
       b.update(t.turn, b.select(in, t.acquired[1], t.turn));
     } else if (t.miss_answer && read) {
       control.insert(control.end(), {*t.miss_seen, *t.miss_answer, *t.miss_replied});
+      if (t.read_turn)
+        control.insert(control.end(), {*t.read_turn, *t.miss_owed});
     }
     for (const auto &[name, q] : t.merge.states)
       if (name.starts_with(read ? "r." : "w."))
@@ -5645,6 +6131,8 @@ private:
     }
     if (t.empty)
       c.drive(*t.empty, ep.bound.at("pool.empty"));
+    if (t.write_held)
+      c.drive(*t.write_held, c.or_(ep.states.at("w.head_pending"), ep.states.at("w.head_beat_in")));
     // The timer state of each direction (frozen address channel, held valids, count), the failed
     // flag (write side unless read-only) and the network monitor's reservations, which observe the
     // write channel, hold no transaction.
@@ -5679,18 +6167,26 @@ private:
   }
 
   // The response transport's exits split by direction into each source's response faces.
-  void return_responses(const Channels &returns) {
+  void return_responses(const Channels &returns,
+                        const std::optional<Channels> &read_returns = std::nullopt) {
     for (unsigned si = 0; si < plan.sources.size(); ++si) {
       const auto &source = plan.sources[si].name;
       const auto &side = sides[si];
       const auto word = word_at(source);
       // The source flow names the direction (2i + 1 reads): the head packet's
-      // side alone decides readiness, so an R the source does not take holds a B.
+      // side alone decides readiness, so an R the source does not take holds a B. With separate
+      // read and write paths each direction arrives on its own.
       const auto &arriving = returns.at(source);
       c.consume(c.region("source/" + source), "source/" + source, arriving.valid);
-      const auto faces = c.steer(
-          arriving, c.eq(arriving.data[c.burst_field_index(true, word, "source")], 2 * si + 1),
-          {c.bit(1), c.bit(1)}, 0, true, word);
+      if (read_returns)
+        c.consume(c.region("source/" + source), "source/" + source, read_returns->at(source).valid);
+      const auto faces =
+          read_returns
+              ? std::array{c.one_side(arriving, 0, c.bit(1), 0, true, word),
+                           c.one_side(read_returns->at(source), 1, c.bit(1), 0, true, word)}
+              : c.steer(arriving,
+                        c.eq(arriving.data[c.burst_field_index(true, word, "source")], 2 * si + 1),
+                        {c.bit(1), c.bit(1)}, 0, true, word);
       c.deframe_burst_into(true, faces[0], side.wrsp_ep, word);
       c.deframe_burst_into(true, faces[1], side.rrsp_ep, word);
       // Formal-observation anchors (emitted into the map): the response packet as it reaches
@@ -5703,7 +6199,9 @@ private:
         c.bind(at + ".return_error", ep.data[c.endpoint_field_index(true, "error")]);
       }
       // A response packet tail at the source answers its burst's unit of the pool.
-      if (side.pool)
+      if (side.pool && read_returns)
+        c.pool_answers_split(*side.pool, {arriving, read_returns->at(source)}, word);
+      else if (side.pool)
         c.pool_answers("source/" + source + "/request", *side.pool, arriving, word);
     }
   }

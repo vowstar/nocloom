@@ -22,6 +22,9 @@ Violations can stop the network until reset.
 Completed read beats forward without waiting for the whole burst. A stopped R
 consumer can block shared response paths.
 
+Separate read and write paths keep fewer of these requirements. See
+[progress requirements](read-write-paths.md#progress-requirements).
+
 ## Endpoint progress duties
 
 Analyze dependencies through components that have both target and initiator

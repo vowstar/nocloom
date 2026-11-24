@@ -1271,6 +1271,12 @@ add_test(NAME path_report_cli
     --cli $<TARGET_FILE:nocloom_cli> --examples ${PROJECT_SOURCE_DIR}/examples
     --work ${CMAKE_CURRENT_BINARY_DIR}/path_report_cli)
 set_tests_properties(path_report_cli PROPERTIES TIMEOUT 120 LABELS "config;quick;ci")
+add_test(NAME path_report_separate_examples
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/path_report_cli.py
+    --cli $<TARGET_FILE:nocloom_cli> --examples ${PROJECT_SOURCE_DIR}/examples
+    --work ${CMAKE_CURRENT_BINARY_DIR}/path_report_separate_examples --separate-examples --jobs 4)
+set_tests_properties(path_report_separate_examples PROPERTIES TIMEOUT 300 LABELS "config;ci"
+  PROCESSORS 4)
 add_executable(nocloom_link_pipeline_unit unit/link_pipeline.cpp)
 target_include_directories(nocloom_link_pipeline_unit PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(nocloom_link_pipeline_unit PRIVATE nocloom_config nocloom_core Catch2::Catch2WithMain)

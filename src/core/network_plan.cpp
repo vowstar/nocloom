@@ -150,8 +150,10 @@ unsigned source_data_width(const Definition &d, unsigned network_bits) {
       });
   return uniform ? source_engine_width(d.initiators.front(), network_bits) : network_bits;
 }
-std::map<std::string, std::string> switch_identities(const Definition &d,
-                                                     const ExchangeGraph &graph, bool response) {
+std::map<std::string, std::string>
+switch_identities(const Definition &d, const ExchangeGraph &graph, bool response, Carried carried) {
+  auto stem = graph_scope(response, carried);
+  stem.back() = '_';
   std::set<std::string> endpoints;
   std::ranges::transform(d.initiators, std::inserter(endpoints, endpoints.end()), &Initiator::name);
   std::ranges::transform(d.targets, std::inserter(endpoints, endpoints.end()), &Target::name);
@@ -163,7 +165,7 @@ std::map<std::string, std::string> switch_identities(const Definition &d,
   for (const auto &name : ordered) {
     std::string id;
     do {
-      id = (response ? "rsp_node" : "req_node") + std::to_string(index++);
+      id = stem + "node" + std::to_string(index++);
     } while (endpoints.contains(id));
     identities.emplace(name, id);
   }
@@ -702,6 +704,51 @@ void plan_endpoints(NetworkPlan &plan, const Definition &d) {
 // explicit topology the network is one switch per direction with every endpoint attached: each
 // switch output takes only the sources connected to it, a sparse crossbar. The definition checks
 // guarantee every switch name and every switch a link or attachment names.
+// The record of a pipe with a slice.
+nlohmann::json pipe_record(const LinkPipeline &mode) {
+  static constexpr std::array slices{"", "forward", "backward", "full", "half"};
+  nlohmann::json row = {{"slice", slices[static_cast<unsigned>(mode.slice)]}};
+  if (!mode.bypass_port.empty())
+    row["bypass_port"] = mode.bypass_port;
+  if (mode.ungated)
+    row["ungated"] = true;
+  return row;
+}
+// A configured pipe: kept on the link draft and recorded under key.
+void record_pipe(const LinkPipeline &mode, LinkPipeline &planned, nlohmann::json &record,
+                 const char *key) {
+  if (mode.slice == PipeSlice::None)
+    return;
+  planned = mode;
+  record[key] = pipe_record(mode);
+}
+void admit_graph_pairs(NetworkPlan &plan, const Definition &d) {
+  // The connectivity matrix is the admission list of both directions.
+  auto &request = plan.exchange.request.graph, &response = plan.exchange.response.graph;
+  request.admitted_pairs.emplace();
+  response.admitted_pairs.emplace();
+  const auto limits = d.transport.value_or(TransportOptions{}).packet_limits;
+  for (unsigned si = 0; si < plan.sources.size(); ++si)
+    for (unsigned ti = 0; ti < plan.targets.size(); ++ti)
+      if (const auto &s = plan.sources[si].name, &t = plan.targets[ti].name; connects(d, s, t)) {
+        request.admitted_pairs->push_back({s, t});
+        response.admitted_pairs->push_back({t, s});
+        const auto limit = std::ranges::find(limits, std::pair{s, t}, [](const PacketLimit &l) {
+          return std::pair{l.source, l.target};
+        });
+        plan.pairs.push_back(limit == limits.end()
+                                 ? PairPlan{si, ti}
+                                 : PairPlan{si, ti, limit->max_bytes.value_or(0),
+                                            limit->boundary_bytes.value_or(0),
+                                            "transport.packet_limits[" +
+                                                std::to_string(limit - limits.begin()) + "]"});
+      }
+  if (plan.exchange.separate()) {
+    plan.exchange.read_request->graph.admitted_pairs = request.admitted_pairs;
+    plan.exchange.read_response->graph.admitted_pairs = response.admitted_pairs;
+  }
+}
+
 void plan_graphs(NetworkPlan &plan, const Definition &d) {
   const auto topology = d.topology ? *d.topology : [&] {
     ExchangeTopology generated;
@@ -719,11 +766,17 @@ void plan_graphs(NetworkPlan &plan, const Definition &d) {
   nlohmann::json topology_record;
   if (!d.topology)
     topology_record["generated"] = "one_switch_per_direction";
-  auto convert = [&](ExchangeGraph graph, const std::string &direction,
+  // Separate read and write paths take the topology twice: the write graphs keep the record, the
+  // read graphs add their hardware node to it.
+  const auto carried = d.read_write == ReadWritePaths::Separate
+                           ? std::vector{Carried::Writes, Carried::Reads}
+                           : std::vector{Carried::Both};
+  auto convert = [&](ExchangeGraph graph, const std::string &direction, Carried carries,
                      DirectedSwitchGraph &result) {
     const bool response = direction == "response";
-    const auto scope = response ? "rsp/" : "req/";
-    const auto identities = switch_identities(d, graph, response);
+    const auto scope = graph_scope(response, carries);
+    const bool recorded = carries != Carried::Reads;
+    const auto identities = switch_identities(d, graph, response, carries);
     std::ranges::sort(graph.nodes, {}, &ExchangeNode::name);
     std::ranges::sort(graph.links, [](const auto &x, const auto &y) {
       return std::tie(x.from, x.to) < std::tie(y.from, y.to);
@@ -732,14 +785,19 @@ void plan_graphs(NetworkPlan &plan, const Definition &d) {
       std::ranges::sort(*attachments, [](const auto &x, const auto &y) {
         return std::tie(x.endpoint, x.node) < std::tie(y.endpoint, y.node);
       });
-    auto &record = topology_record[direction];
+    // The read graphs fill a record of their own, then lend it their hardware nodes.
+    nlohmann::json read_record;
+    auto &record = recorded ? topology_record[direction] : read_record;
     for (const auto *key : {"nodes", "links", "entries", "exits"})
       record[key] = nlohmann::json::array();
-    for (const auto &node : graph.nodes) {
+    for (std::size_t n = 0; n < graph.nodes.size(); ++n) {
+      const auto &node = graph.nodes[n];
       const auto &id = identities.at(node.name);
       result.nodes.push_back(id);
       const auto word = node.transport_word_bytes.value_or(plan.transport_word_bytes);
       plan.nodes.push_back({id, node.name, word});
+      if (!recorded)
+        topology_record[direction]["nodes"][n]["read_hardware_node"] = id;
       record["nodes"].push_back(
           {{"name", node.name}, {"hardware_node", id}, {"transport_word_bytes", word}});
       if (plan.placement) {
@@ -764,24 +822,7 @@ void plan_graphs(NetworkPlan &plan, const Definition &d) {
         plan.output_arbitration[scope + id + ">" + key(o.output)] = std::move(r);
       }
     }
-    // The record of a pipe with a slice.
-    auto pipe_record = [](const LinkPipeline &mode) {
-      static constexpr std::array names{"", "forward", "backward", "full", "half"};
-      nlohmann::json row = {{"slice", names[static_cast<unsigned>(mode.slice)]}};
-      if (!mode.bypass_port.empty())
-        row["bypass_port"] = mode.bypass_port;
-      if (mode.ungated)
-        row["ungated"] = true;
-      return row;
-    };
-    // A configured pipe: kept on the link draft and recorded under key.
-    auto pipe = [&](const LinkPipeline &mode, LinkPipeline &planned, nlohmann::json &record,
-                    const char *key) {
-      if (mode.slice != PipeSlice::None) {
-        planned = mode;
-        record[key] = pipe_record(mode);
-      }
-    };
+    const auto pipe = record_pipe;
     for (const auto &edge : graph.links) {
       const auto &from = identities.at(edge.from), &to = identities.at(edge.to);
       result.edges.push_back({from, to});
@@ -827,6 +868,7 @@ void plan_graphs(NetworkPlan &plan, const Definition &d) {
     // The flows of every initiator with several, and the explicit routes of this direction in
     // generated node identities, each of its flow.
     result.response = response;
+    result.carried = carries;
     for (const auto &i : d.initiators)
       if (i.route_classes.size() > 1)
         result.flows[i.name] = static_cast<unsigned>(i.route_classes.size());
@@ -847,9 +889,18 @@ void plan_graphs(NetworkPlan &plan, const Definition &d) {
           fixed.target_path = route.target_path;
       }
   };
-  auto &request = plan.exchange.request.graph, &response = plan.exchange.response.graph;
-  convert(topology.request, "request", request);
-  convert(topology.response, "response", response);
+  if (carried.size() > 1) {
+    plan.exchange.read_request.emplace();
+    plan.exchange.read_response.emplace();
+    topology_record["read_write"] = "separate";
+  }
+  for (const auto carries : carried) {
+    const bool reads = carries == Carried::Reads;
+    convert(topology.request, "request", carries,
+            (reads ? *plan.exchange.read_request : plan.exchange.request).graph);
+    convert(topology.response, "response", carries,
+            (reads ? *plan.exchange.read_response : plan.exchange.response).graph);
+  }
   std::ranges::sort(plan.nodes, {}, &NodePlan::id);
   // The explicit routes as written, by pair and flow pair.
   auto routes = topology.routes;
@@ -869,25 +920,7 @@ void plan_graphs(NetworkPlan &plan, const Definition &d) {
     topology_record["routes"].push_back(std::move(row));
   }
   plan.topology_record = topology_record.dump();
-  // The connectivity matrix is the admission list of both directions.
-  request.admitted_pairs.emplace();
-  response.admitted_pairs.emplace();
-  const auto limits = d.transport.value_or(TransportOptions{}).packet_limits;
-  for (unsigned si = 0; si < plan.sources.size(); ++si)
-    for (unsigned ti = 0; ti < plan.targets.size(); ++ti)
-      if (const auto &s = plan.sources[si].name, &t = plan.targets[ti].name; connects(d, s, t)) {
-        request.admitted_pairs->push_back({s, t});
-        response.admitted_pairs->push_back({t, s});
-        const auto limit = std::ranges::find(limits, std::pair{s, t}, [](const PacketLimit &l) {
-          return std::pair{l.source, l.target};
-        });
-        plan.pairs.push_back(limit == limits.end()
-                                 ? PairPlan{si, ti}
-                                 : PairPlan{si, ti, limit->max_bytes.value_or(0),
-                                            limit->boundary_bytes.value_or(0),
-                                            "transport.packet_limits[" +
-                                                std::to_string(limit - limits.begin()) + "]"});
-      }
+  admit_graph_pairs(plan, d);
 }
 } // namespace
 

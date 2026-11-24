@@ -7,6 +7,19 @@
 #include <tuple>
 
 namespace nocloom::detail {
+std::string graph_scope(bool response, Carried carried) {
+  const auto *base = response ? "rsp/" : "req/";
+  return carried == Carried::Both     ? base
+         : carried == Carried::Writes ? std::string("w") + base
+                                      : std::string("r") + base;
+}
+bool response_scope(std::string_view name) {
+  return name.starts_with("rsp/") || name.starts_with("wrsp/") || name.starts_with("rrsp/");
+}
+bool graph_scoped(std::string_view name) {
+  return response_scope(name) || name.starts_with("req/") || name.starts_with("wreq/") ||
+         name.starts_with("rreq/");
+}
 namespace {
 Diagnostic invalid(std::string code, std::string field, std::string message) {
   return error(std::move(code), std::move(field), std::move(message));

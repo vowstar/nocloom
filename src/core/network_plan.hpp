@@ -807,10 +807,12 @@ unsigned source_data_width(const Definition &d, unsigned network_bits);
 // access can arrive.
 unsigned exclusive_keys(const Definition &d, const Target &t);
 unsigned exclusive_reservation_limit(const Definition &d, const Target &t);
-// The hardware identity of each switch of one direction, by configured name: req_node<k> or
-// rsp_node<k> in name order, skipping endpoint names.
+// The hardware identity of each switch of one graph, by configured name: req_node<k> or
+// rsp_node<k> in name order, skipping endpoint names (wreq_, wrsp_, rreq_ and rrsp_node<k> for
+// separate read and write paths).
 std::map<std::string, std::string> switch_identities(const Definition &d,
-                                                     const ExchangeGraph &graph, bool response);
+                                                     const ExchangeGraph &graph, bool response,
+                                                     Carried carried = Carried::Both);
 // Whether the definition is an explicitly clocked graph.
 bool clocked_graph(const Definition &d);
 // The mappings of every target cut into aligned power-of-two blocks, where blocks overlap the

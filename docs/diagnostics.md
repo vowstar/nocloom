@@ -111,6 +111,7 @@ See [protocols](protocols.md), [transactions](transactions.md),
 | `NCL_SWITCH_IDENTITY` | A topology direction attaches an endpoint more than once in `entries` or in `exits`, or an attachment has an invalid endpoint name |
 | `NCL_SWITCH_EDGE_DUPLICATE` | Two links of one topology direction have the same `from` and `to` |
 | `NCL_SWITCH_PAIR` | A connected endpoint has no attachment in a topology direction, or no connected pair uses an attachment |
+| `NCL_READ_WRITE_PATHS` | `read_write: separate` with an option that has no form for [separate paths](read-write-paths.md) |
 | `NCL_AXI4_TOPOLOGY` | A topology direction has no node or more than 128 nodes. A node name is invalid or repeated. A node of a clocked graph has no `clock_domain`. A link or attachment names an absent node. A pipe selects an unknown `slice`, sets `ungated: true` without a slot or sets `bypass_port` without a forward slot |
 | `NCL_AXI4_EXCHANGE_PROFILE` | `transport_word_bytes` of a node or link is not 4, 8, 16 or 32 |
 | `NCL_LINK_STAGE_POSITION` | A C++ stage list has an unknown `LinkSide`. A stage list has a `word_bytes` other than 4, 8, 16 or 32, or no position of its side has that word width. Two stage lists of a link use one position |

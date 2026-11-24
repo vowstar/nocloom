@@ -51,14 +51,16 @@ std::optional<unsigned> owning(const std::vector<unsigned> &owner,
 // The network's decision for one address of a source's flow, from the target index its entry
 // decodes (message.hpp point 16) and the switches' own logic on that index.
 std::optional<unsigned> decision(const ExchangeHardware &h, ConeEvaluator &evaluate,
-                                 const std::string &source, std::uint64_t address, unsigned flow) {
-  const auto &g = h.plan.exchange.request;
+                                 const SwitchGraphPlan &g, const std::string &source,
+                                 std::uint64_t address, unsigned flow) {
   const auto entry = std::ranges::find(g.graph.entries, source, &SwitchAttachment::endpoint);
   if (entry == g.graph.entries.end())
     return std::nullopt;
   std::uint64_t route = 0;
   if (h.plan.target_bits) {
-    const auto at = "source/" + source + "/write.route_";
+    // The write face's decode, the read face's on the read paths.
+    const auto at =
+        "source/" + source + (g.graph.carried == Carried::Reads ? "/read.route_" : "/write.route_");
     const auto t = h.bindings.find(at + "target"), a = h.bindings.find(at + "address");
     if (t == h.bindings.end() || a == h.bindings.end())
       return std::nullopt;
@@ -74,8 +76,8 @@ std::optional<unsigned> decision(const ExchangeHardware &h, ConeEvaluator &evalu
     for (const auto &o : g.outputs) {
       if (o.node != node || std::ranges::find(o.inputs, key) == o.inputs.end())
         continue;
-      const auto at =
-          "decode/graph/req/" + node + ">" + (o.endpoint ? "endpoint/" : "node/") + o.output;
+      const auto at = "decode/graph/" + g.scope() + node + ">" +
+                      (o.endpoint ? "endpoint/" : "node/") + o.output;
       const auto s = h.bindings.find(at + ".select/" + key),
                  r = h.bindings.find(at + ".route/" + key),
                  from = h.bindings.find(at + ".source/" + key),
@@ -122,11 +124,14 @@ struct Decisions {
     if (!fresh)
       return it->second;
     std::optional<std::optional<unsigned>> out;
-    for (unsigned flow = 0; flow < std::max<std::size_t>(1, sp.flows.size()); ++flow)
-      if (flows >> flow & 1) {
-        const auto here = decision(h, select, sp.name, address, flow);
-        out = !out || *out == here ? here : std::nullopt;
-      }
+    // Separate read and write paths decide alike on both request graphs.
+    for (const auto *g : h.plan.exchange.graphs())
+      for (unsigned flow = 0;
+           !g->graph.response && flow < std::max<std::size_t>(1, sp.flows.size()); ++flow)
+        if (flows >> flow & 1) {
+          const auto here = decision(h, select, *g, sp.name, address, flow);
+          out = !out || *out == here ? here : std::nullopt;
+        }
     return it->second = out.value_or(std::nullopt);
   }
 };

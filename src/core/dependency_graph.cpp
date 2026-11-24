@@ -98,6 +98,14 @@ std::vector<DependencyPremise> unmet_premises(const NetworkPlan &plan) {
     if (t.timeout && !t.timeout->completion && t.protocol != Protocol::TlUh)
       for (const char *clause : {"answer", "pool_fair"})
         out.push_back({clause, "target/" + t.name, "timeout_without_completion_never_answers"});
+  // With separate read and write paths an output has a write arbiter and a read arbiter. The rows
+  // of the arbiters come first in arbiter order; the read one names its output with /read.
+  if (plan.exchange.separate()) {
+    auto row = out.begin();
+    for (const auto &[key, a] : plan.arbiters)
+      if (!treadle::service(a.spec.policy, static_cast<unsigned>(a.candidates.size())).structural)
+        (row++)->subject += key.starts_with(graph_scope(a.response, Carried::Reads)) ? "/read" : "";
+  }
   std::ranges::sort(
       out, {}, [](const DependencyPremise &p) { return std::tie(p.clause, p.subject, p.reason); });
   return out;
@@ -114,9 +122,9 @@ public:
       : plan(plan), facts(facts) {
     for (const auto &link : plan.links)
       links.emplace(link.name, &link);
-    for (const auto *g : {&plan.exchange.request, &plan.exchange.response})
+    for (const auto *g : plan.exchange.graphs())
       for (const auto &o : g->outputs)
-        outputs.emplace(direction(g == &plan.exchange.response) + o.node + ">" + o.output, &o);
+        outputs.emplace(g->scope() + o.node + ">" + o.output, &o);
     for (unsigned si = 0; si < plan.sources.size(); ++si)
       sources.emplace(plan.sources[si].name, si);
     answering.resize(plan.sources.size());
@@ -129,10 +137,10 @@ public:
   }
   DependencyGraph run() {
     endpoint_level();
-    for (bool response : {false, true})
-      for (const auto &route :
-           response ? plan.exchange.response.routes : plan.exchange.request.routes)
-        walk(route, response);
+    for (const auto *g : plan.exchange.graphs())
+      for (const auto &route : g->routes)
+        walk(route, *g);
+    joins();
     target_order();
     stored_words();
     endpoint_sides();
@@ -159,7 +167,16 @@ private:
   std::vector<DependencyExclusion> excluded;
   std::uint32_t groups = 0;
 
-  static std::string direction(bool response) { return response ? "rsp/" : "req/"; }
+  // With separate read and write paths a graph carries one direction: its words have their own
+  // source entry, target word and source staging, keyed by the direction after the endpoint.
+  bool separate() const { return plan.exchange.separate(); }
+  static std::string carried(const SwitchGraphPlan &g) {
+    return g.graph.carried == Carried::Writes  ? "/write"
+           : g.graph.carried == Carried::Reads ? "/read"
+                                               : "";
+  }
+  // The scope at the start of a scoped output or link key.
+  static std::string scope_of(const std::string &key) { return key.substr(0, key.find('/') + 1); }
   unsigned source_index(const std::string &name) const { return sources.at(name); }
   std::uint32_t node(const std::string &kind, const std::string &key, std::string component = {},
                      std::string binding = {}) {
@@ -203,15 +220,15 @@ private:
       edge(trsp, treq, DependencyRule::ResponseBlocksAccept);
       edge(srsp, trsp, DependencyRule::TargetBlocksReturn);
     }
-    for (bool response : {false, true})
-      for (const auto &route :
-           response ? plan.exchange.response.routes : plan.exchange.request.routes)
-        endpoint_path(route, response);
+    for (const auto *g : plan.exchange.graphs())
+      for (const auto &route : g->routes)
+        endpoint_path(route, *g);
   }
   // Each step of a route blocks the step before it.
-  void endpoint_path(const SwitchRoute &route, bool response) {
+  void endpoint_path(const SwitchRoute &route, const SwitchGraphPlan &g) {
+    const bool response = g.graph.response;
     const auto rule = response ? DependencyRule::ResponsePath : DependencyRule::RequestPath;
-    const auto scope = direction(response);
+    const auto scope = g.scope();
     auto previous = response ? node("endpoint.target.rsp", route.entry, "target/" + route.entry)
                              : node("endpoint.source.req", route.entry, "source/" + route.entry);
     auto from = route.entry;
@@ -241,7 +258,7 @@ private:
       const auto kind = stage.kind == StageKind::Pipe      ? "occupancy.pipe"
                         : stage.kind == StageKind::Adapter ? "occupancy.adapter"
                                                            : "occupancy.crossing";
-      const auto next = node(kind, stage.name, link.name.substr(0, 4) + stage.domain, stage.name);
+      const auto next = node(kind, stage.name, scope_of(link.name) + stage.domain, stage.name);
       nodes[next].domain = stage.domain;
       edge(next, at, DependencyRule::Occupancy);
       at = next;
@@ -262,28 +279,29 @@ private:
     const auto component = key.substr(0, key.find('>'));
     if (o.inputs.size() < 2)
       return node("output.wire", key + "/" + input, component);
-    const auto response = key.starts_with("rsp/");
     return node("grant.held", key + "/" + input, component,
-                std::string("graph/") + direction(response) + o.node + ">" +
-                    (o.endpoint ? "endpoint/" : "node/") + o.output);
+                "graph/" + scope_of(key) + o.node + ">" + (o.endpoint ? "endpoint/" : "node/") +
+                    o.output);
   }
   // One route's stream through its stages and outputs, once per distinct path. A word stands in a
   // slot: the endpoint's stream, then the word of each link between outputs (link.word). A stall
   // of the next slot reaches both the word behind it and the grant it passed.
-  void walk(const SwitchRoute &route, bool response) {
-    auto path = direction(response) + route.entry + ">" + route.exit;
+  void walk(const SwitchRoute &route, const SwitchGraphPlan &g) {
+    const bool response = g.graph.response;
+    auto path = g.scope() + route.entry + ">" + route.exit;
     for (const auto &n : route.nodes)
       path += "/" + n;
     if (response && plan.target(route.entry).flows > 1)
       path += "#" + std::to_string(route.target_path.value_or(0));
     if (!walked.insert(path).second)
       return;
-    const auto scope = direction(response);
-    auto slot = response ? response_start(route) : request_start(route);
+    const auto scope = g.scope();
+    const auto way = carried(g);
+    auto slot = response ? response_start(route, way) : request_start(route, way);
     auto stall = response ? response_pipe(route, slot) : slot;
     auto input = "endpoint/" + route.entry;
     auto from = route.entry;
-    auto slot_name = entry_slot(route, response);
+    auto slot_name = entry_slot(route, response) + way;
     std::string previous;
     for (std::size_t i = 0; i <= route.nodes.size(); ++i) {
       const auto &to = i < route.nodes.size() ? route.nodes[i] : route.exit;
@@ -293,7 +311,7 @@ private:
         slot_links.try_emplace(slot_name, name);
       }
       if (i == route.nodes.size()) {
-        const auto end = response ? response_end(route) : request_end(route);
+        const auto end = response ? response_end(route, way) : request_end(route, way);
         const auto &last = passes.back();
         edge(end, link_stages(link_named(name), last.held), DependencyRule::Downstream);
         edge(end, last.slot, DependencyRule::Downstream);
@@ -317,7 +335,8 @@ private:
                         path,
                         !response && per_flow_target(plan.target(route.exit))
                             ? "/flow" + std::to_string(route.target_path.value_or(0))
-                            : std::string()});
+                            : std::string(),
+                        way});
       previous = slot_name;
       if (i + 1 < route.nodes.size()) {
         const auto linkname = scope + to + ">" + route.nodes[i + 1];
@@ -336,7 +355,7 @@ private:
   // answering it at a time (exclusion X1) while some grant may be held across a read.
   void contend(const std::string &key, const std::string &input, std::uint32_t slot,
                std::uint32_t stall, std::optional<unsigned> single) {
-    if (single && holds_anywhere && !answered_by_two(*single)) {
+    if (single && holds_anywhere && !separate() && !answered_by_two(*single)) {
       ++suppressed[*single];
       return;
     }
@@ -352,6 +371,7 @@ private:
     bool response = false;
     std::string path;
     std::string flow; // Of a per-flow target: which of its slave interfaces.
+    std::string way;  // With separate read and write paths: /write or /read.
   };
   std::map<std::string, std::string> next_slots;
   // The link whose stages hold a slot's words before its head: the first link of an endpoint's
@@ -390,18 +410,51 @@ private:
   std::map<const Pass *, std::uint32_t> pass_dest;
   bool holds_anywhere = false;
 
-  std::uint32_t request_start(const SwitchRoute &route) {
-    return node("source.merge", route.entry, "source/" + route.entry);
+  // A source's merged requests, or with separate paths the requests of one direction.
+  std::uint32_t request_start(const SwitchRoute &route, const std::string &way) {
+    return node(way.empty() ? "source.merge" : "source.entry", route.entry + way,
+                "source/" + route.entry);
   }
-  std::uint32_t request_end(const SwitchRoute &route) {
+  // The target's pool, or the word of one direction at the packet arbiter joining both paths
+  // (joins()).
+  std::uint32_t request_end(const SwitchRoute &route, const std::string &way) {
+    if (joins_paths(plan, plan.target(route.exit)))
+      return node("target.join", route.exit + way, "target/" + route.exit);
     return node("target.pool", route.exit, "target/" + route.exit);
   }
-  // The target's own word for this source.
-  std::uint32_t response_start(const SwitchRoute &route) {
+  // The target's own word for this source, of one direction with separate paths.
+  std::uint32_t response_start(const SwitchRoute &route, const std::string &way) {
     const auto &t = plan.target(route.entry);
-    const auto head = node("target.head", head_key(route, per_flow_target(t)), "target/" + t.name);
+    const auto head =
+        node("target.head", head_key(route, per_flow_target(t)) + way, "target/" + t.name);
     answer_of(t, head, route.exit);
     return head;
+  }
+  // Separate paths into a target of one transfer at a time: a word at the join and the packet
+  // holding the join wait while the target pool is full. The packet of one direction holding the
+  // join keeps the other direction's word out (M1). A write packet holds it to its last fragment
+  // and so waits for its own next word (M3): the last slot of its path, its grant there and the
+  // source's data. A read request is one fragment and holds the join for that fragment only.
+  void joins() {
+    for (const auto &pass : passes) {
+      if (pass.response || pass.way.empty() || !joins_paths(plan, plan.target(pass.exit)) ||
+          next_slots.contains(pass.key))
+        continue;
+      const auto component = "target/" + pass.exit;
+      const auto pool = node("target.pool", pass.exit, component);
+      const auto word = node("target.join", pass.exit + pass.way, component);
+      const auto holder = node("join.held", pass.exit + pass.way, component);
+      const auto other = pass.way == "/write" ? "/read" : "/write";
+      edge(pool, word, DependencyRule::Downstream);
+      edge(pool, holder, DependencyRule::Downstream);
+      edge(holder, node("target.join", pass.exit + other, component), DependencyRule::Contention);
+      if (pass.way != "/write")
+        continue;
+      edge(pass.slot, holder, DependencyRule::Continuation);
+      edge(pass.held, holder, DependencyRule::Continuation);
+      edge(node("env.source_data", pass.entry, "source/" + pass.entry), holder,
+           DependencyRule::SourceData);
+    }
   }
   // A word in the target's response pipe blocks the words behind it.
   std::uint32_t response_pipe(const SwitchRoute &route, std::uint32_t head) {
@@ -414,16 +467,17 @@ private:
     edge(at, head, DependencyRule::Occupancy);
     return at;
   }
-  // The stage a response ends at: the width clamp's gather, then the source's staging.
-  std::uint32_t response_end(const SwitchRoute &route) {
+  // The stage a response ends at: the width clamp's gather, then the source's staging; of one
+  // direction with separate paths.
+  std::uint32_t response_end(const SwitchRoute &route, const std::string &way) {
     const auto si = source_index(route.exit);
     const auto &s = plan.sources[si];
     const auto component = "source/" + s.name;
-    const auto staging = node("source.staging", s.name, component);
+    const auto staging = node("source.staging", s.name + way, component);
     if (!s.clamp)
       return staging;
     const auto kind = facts.reassembles[si] ? "gather.tag" : "gather.single";
-    const auto gather = node(kind, s.name, component);
+    const auto gather = node(kind, s.name + way, component);
     edge(staging, gather, DependencyRule::ReturnStage);
     return gather;
   }
@@ -441,10 +495,11 @@ private:
         if (const auto it = by_target.find(t.name); it != by_target.end())
           queue_order(t, it->second);
   }
+  // The words a target answers: each exit, with its direction on separate paths.
   static std::vector<std::string> distinct_exits(const std::vector<const Pass *> &held) {
     std::set<std::string> exits;
     for (const auto *h : held)
-      exits.insert(h->exit);
+      exits.insert(h->exit + h->way);
     return {exits.begin(), exits.end()};
   }
   void queue_order(const TargetPlan &t, const std::vector<const Pass *> &held) {
@@ -466,8 +521,8 @@ private:
     }
     for (const auto *h : held)
       if (holds_across(h->exit)) {
-        const auto at = static_cast<std::size_t>(std::ranges::lower_bound(destinations, h->exit) -
-                                                 destinations.begin());
+        const auto at = static_cast<std::size_t>(
+            std::ranges::lower_bound(destinations, h->exit + h->way) - destinations.begin());
         if (at > 0)
           edge(before[at - 1], h->held, DependencyRule::Continuation);
         if (at + 1 < destinations.size())
@@ -509,6 +564,10 @@ private:
   void source_side(unsigned si) {
     const auto &s = plan.sources[si];
     const auto component = "source/" + s.name;
+    if (separate()) {
+      split_side(s);
+      return;
+    }
     const auto merge = node("source.merge", s.name, component);
     const auto pool = node("source.pool", s.name, component);
     const auto returns = node("source.return", s.name, component);
@@ -527,6 +586,35 @@ private:
     for (const auto &pipe : s.pipes)
       edge(merge, node("occupancy.endpoint_pipe", pipe.name, component, pipe.name),
            DependencyRule::Occupancy);
+  }
+  // source_side with separate read and write paths: each direction's entry waits for the shared
+  // unit pool and ID table, the write entry for the source's data, each staging for its consumer,
+  // and each entry stalls the pipes of its own channels.
+  void split_side(const SourcePlan &s) {
+    const auto component = "source/" + s.name;
+    const auto pool = node("source.pool", s.name, component);
+    const auto returns = node("source.return", s.name, component);
+    edge(returns, pool, DependencyRule::SourceUnit);
+    const bool table = s.id_table != 0 && s.id_table < s.id_keys;
+    if (table)
+      edge(returns, node("source.id_table", s.name, component), DependencyRule::SourceUnit);
+    for (const std::string way : {"/write", "/read"}) {
+      const auto entry = node("source.entry", s.name + way, component);
+      edge(pool, entry, DependencyRule::SourceUnit);
+      if (table)
+        edge(node("source.id_table", s.name, component), entry, DependencyRule::SourceUnit);
+      if (way == "/write")
+        edge(node("env.source_data", s.name, component), entry, DependencyRule::Environment);
+      edge(node("env.consumer", s.name + way, component),
+           node("source.staging", s.name + way, component), DependencyRule::Environment);
+      for (const auto &pipe : s.pipes) {
+        const auto place = pipe.name.substr(pipe.name.rfind("/pipe/") + 6);
+        const bool reads = place == "ar" || place == "r" || place == "packets/read";
+        if (reads == (way == "/read"))
+          edge(entry, node("occupancy.endpoint_pipe", pipe.name, component, pipe.name),
+               DependencyRule::Occupancy);
+      }
+    }
   }
   void scheduler_waits(const SourcePlan &s, std::uint32_t merge) {
     const auto component = "source/" + s.name;
@@ -661,7 +749,9 @@ private:
     const auto next = next_slots.find(pass.key);
     if (next != next_slots.end()) {
       edge(node("link.word", next->second,
-                direction(true) + pass.key.substr(4, pass.key.find('>') - 4)),
+                scope_of(pass.key) +
+                    pass.key.substr(scope_of(pass.key).size(),
+                                    pass.key.find('>') - scope_of(pass.key).size())),
            stored, DependencyRule::Downstream);
       return;
     }
@@ -713,34 +803,39 @@ private:
         pending_contention.emplace(key, o);
     for (const auto &[key, o] : pending_contention)
       contention(key, *o);
+    // A held grant waits for the source's write data; with separate paths only a write's.
     for (const auto &pass : passes)
-      if (!pass.response)
+      if (!pass.response && pass.way != "/read")
         edge(node("env.source_data", pass.entry, "source/" + pass.entry), pass.held,
              DependencyRule::SourceData);
   }
   std::map<std::string, const SwitchOutputPlan *> pending_contention;
 
   // Each exclusion names the liveness shape that checks it.
+  // The liveness shapes run on networks of shared paths: with separate read and write paths an
+  // exclusion names none.
   void exclusions() {
+    const auto shape = [&](const char *name) { return separate() ? "" : name; };
     for (const auto &[si, count] : suppressed)
-      excluded.push_back({"X1", "source/" + plan.sources[si].name, count, "L7_single_answer"});
+      excluded.push_back(
+          {"X1", "source/" + plan.sources[si].name, count, shape("L7_single_answer")});
     for (unsigned i = 0; i < plan.targets.size(); ++i) {
       const auto &t = plan.targets[i];
       const auto subject = "target/" + t.name;
       if (t.protocol != Protocol::Axi4)
-        excluded.push_back({"X6", subject, 0, "L1_plain"});
+        excluded.push_back({"X6", subject, 0, shape("L1_plain")});
       else if (t.outstanding == 1)
-        excluded.push_back({"X5", subject, 0, "L3_one_burst"});
+        excluded.push_back({"X5", subject, 0, shape("L3_one_burst")});
       else if (!facts.interleaved[i])
-        excluded.push_back({"X4", subject, 0, "L8_merged_contexts"});
+        excluded.push_back({"X4", subject, 0, shape("L8_merged_contexts")});
       if (!t.read_only && !t.write_only)
-        excluded.push_back({"X2", subject, 0, "L2_read_write"});
+        excluded.push_back({"X2", subject, 0, shape("L2_read_write")});
     }
-    std::ranges::transform(plan.sources, std::back_inserter(excluded), [](const auto &s) {
-      return DependencyExclusion{"X3", "source/" + s.name, 0, "L2_read_write"};
+    std::ranges::transform(plan.sources, std::back_inserter(excluded), [&](const auto &s) {
+      return DependencyExclusion{"X3", "source/" + s.name, 0, shape("L2_read_write")};
     });
     if (plan.clock_gating)
-      excluded.push_back({"X7", "network", 0, "L4_gated_merge"});
+      excluded.push_back({"X7", "network", 0, shape("L4_gated_merge")});
   }
 
   // The transport tables of formal/lean's model: slots, outputs and destinations by number, with
@@ -774,6 +869,9 @@ private:
       model_pass(b, pass);
     held_at_links(b);
     bound_sources(b);
+    // The model's slots carry both directions of a source and a target (formal/lean).
+    if (separate())
+      b.omitted = "separate read and write paths";
     // Direct context edges per destination grow with sources squared times targets: too many.
     if (plan.sources.size() * plan.targets.size() > model_endpoint_pairs)
       b.omitted = "more endpoint pairs than the direct context edges carry";

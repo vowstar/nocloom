@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <bit>
 #include <iterator>
+#include <numeric>
 #include <set>
 #include <tuple>
 
@@ -146,10 +147,9 @@ std::string labels(const NetworkPlan &plan, const std::vector<std::string> &keys
     out += (out.empty() ? "" : ", ") + plan.label(key);
   return out;
 }
-// The arbitration key of a switch output: "<req|rsp>/<node>><node|endpoint>/<output>".
-std::string output_key(bool response, const SwitchOutputPlan &o) {
-  return std::string(response ? "rsp/" : "req/") + o.node + ">" +
-         (o.endpoint ? "endpoint/" : "node/") + o.output;
+// The arbitration key of a switch output: "<graph scope><node>><node|endpoint>/<output>".
+std::string output_key(const SwitchGraphPlan &g, const SwitchOutputPlan &o) {
+  return g.scope() + o.node + ">" + (o.endpoint ? "endpoint/" : "node/") + o.output;
 }
 // The switch output at v.at (request outputs, then response ones) with its arbitration entry.
 struct Overridden {
@@ -159,11 +159,17 @@ struct Overridden {
   bool fixed() const { return request && request->policy == treadle::Policy::FixedPriority; }
 };
 Overridden overridden(const RuleView &v) {
-  const auto &request = v.plan.exchange.request.outputs;
-  const bool response = v.at >= request.size();
-  const auto &o =
-      response ? v.plan.exchange.response.outputs[v.at - request.size()] : request[v.at];
-  const auto it = v.plan.output_arbitration.find(output_key(response, o));
+  auto at = v.at;
+  const SwitchGraphPlan *graph = nullptr;
+  for (const auto *g : v.plan.exchange.graphs()) {
+    if (at < g->outputs.size()) {
+      graph = g;
+      break;
+    }
+    at -= g->outputs.size();
+  }
+  const auto &o = graph->outputs.at(at);
+  const auto it = v.plan.output_arbitration.find(output_key(*graph, o));
   return {(o.endpoint ? "endpoint/" : "node/") + o.output,
           it == v.plan.output_arbitration.end() ? nullptr : &it->second, &o};
 }
@@ -381,13 +387,10 @@ constexpr CapabilityRule rules[] = {
      [](const RuleView &v) {
        const auto &[key, request] =
            *std::next(v.plan.output_arbitration.begin(), static_cast<std::ptrdiff_t>(v.at));
-       const bool response = key.starts_with("rsp/");
-       const auto &outputs =
-           (response ? v.plan.exchange.response : v.plan.exchange.request).outputs;
-       return when(
-           std::ranges::none_of(
-               outputs, [&, &k = key](const auto &o) { return k == output_key(response, o); }),
-           request.field + ".output", "The node has no such output");
+       const auto &g = v.plan.exchange.graph(key.substr(0, key.find('/') + 1));
+       return when(std::ranges::none_of(
+                       g.outputs, [&, &k = key](const auto &o) { return k == output_key(g, o); }),
+                   request.field + ".output", "The node has no such output");
      }},
     {"word.switch_ladder", "NCL_AXI4_EXCHANGE_PROFILE", Scope::Node, Stage::Plan,
      [](const RuleView &v) {
@@ -528,13 +531,16 @@ std::size_t elements(Scope scope, const Definition &def, const NetworkPlan &p, S
   if (stage == Stage::Definition && scope == Scope::Target)
     return def.targets.size();
   const auto *placed = p.placement ? &*p.placement : nullptr;
+  const auto graphs = p.exchange.graphs();
+  const auto outputs = std::accumulate(
+      graphs.begin(), graphs.end(), std::size_t{0},
+      [](std::size_t n, const SwitchGraphPlan *g) { return n + g->outputs.size(); });
   const std::size_t counts[] = {1,
                                 placed ? placed->domains.size() : 0,
                                 placed ? placed->crossings.size() : 0,
                                 p.targets.size(),
                                 p.pairs.size(),
-                                p.exchange.request.outputs.size() +
-                                    p.exchange.response.outputs.size(),
+                                outputs,
                                 p.output_arbitration.size(),
                                 p.nodes.size(),
                                 p.links.size()};

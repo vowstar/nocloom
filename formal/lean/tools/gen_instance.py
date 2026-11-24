@@ -124,6 +124,8 @@ def read_completion(graph):
                            and "\\" not in row[k] for k in row)):
             fail("NCL_CERTIFICATE_SCOPE: an unmet premise needs clause, subject and reason text")
         rows.append((row["clause"], row["subject"], row["reason"]))
+    if len(set(rows)) != len(rows):
+        fail("NCL_CERTIFICATE_SCOPE: an unmet premise is listed twice")
     if applies and rows:
         fail("NCL_CERTIFICATE_SCOPE: the completion scope applies with unmet premises")
     if not applies and not rows and graph.get("model") is not None:

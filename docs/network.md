@@ -7,7 +7,7 @@ Requests and responses travel through separate directed graphs. Without
 The C++ [mesh helper](library.md#mesh-topology-helper) builds these graphs and
 explicit X-then-Y routes from grid dimensions and endpoint coordinates.
 
-Related manuals: [Arbitration](arbitration.md), [Pipes](pipes.md).
+See [read and write paths](read-write-paths.md) for separate graphs.
 
 ## Connectivity
 

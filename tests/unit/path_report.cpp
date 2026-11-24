@@ -4,6 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <fstream>
 #include <functional>
+#include <iterator>
 #include <map>
 #include <nlohmann/json.hpp>
 #include <nocloom/config.hpp>
@@ -164,6 +165,120 @@ TEST_CASE("A route of several flows is one path with each flow", "[path-report]"
     ++count[p["links"].get<std::vector<std::string>>()];
   for (const auto &[links, n] : count)
     CHECK(n == 1);
+}
+
+TEST_CASE("Separate paths report the write and the read copy of every link and path",
+          "[path-report]") {
+  const auto shared = report_of(graph());
+  auto d = graph();
+  d.read_write = ReadWritePaths::Separate;
+  const auto report = report_of(d);
+  for (const auto &l : shared["links"])
+    CHECK(l["carries"] == "both");
+  for (const auto &p : shared["paths"])
+    CHECK(p["carries"] == "both");
+  // Each link and each path once per direction, with the stages of the shared one.
+  REQUIRE(report["links"].size() == 2 * shared["links"].size());
+  REQUIRE(report["paths"].size() == 2 * shared["paths"].size());
+  std::map<std::string, std::string> carries;
+  for (const auto &l : report["links"]) {
+    const auto name = l["link"].get<std::string>();
+    const bool write = name.starts_with("wreq/") || name.starts_with("wrsp/");
+    CHECK((write || name.starts_with("rreq/") || name.starts_with("rrsp/")));
+    CHECK(l["carries"] == (write ? "writes" : "reads"));
+    CHECK(carries.emplace(name, l["carries"].get<std::string>()).second);
+  }
+  for (const char *direction : {"writes", "reads"}) {
+    std::multiset<std::tuple<std::string, std::string, std::string, std::size_t>> ends, base;
+    for (const auto &l : report["links"])
+      if (l["carries"] == direction)
+        ends.emplace(l["graph"].get<std::string>(), l["from"].get<std::string>(),
+                     l["to"].get<std::string>(), l["stages"].size());
+    for (const auto &l : shared["links"])
+      base.emplace(l["graph"].get<std::string>(), l["from"].get<std::string>(),
+                   l["to"].get<std::string>(), l["stages"].size());
+    CHECK(ends == base);
+  }
+  // A path stays on the links of its direction and keeps the flows of the shared path.
+  std::multiset<std::pair<std::string, Json>> flows, base_flows;
+  for (const auto &p : report["paths"]) {
+    for (const auto &l : p["links"])
+      CHECK(carries.at(l.get<std::string>()) == p["carries"].get<std::string>());
+    if (p["carries"] == "reads")
+      flows.emplace(p["graph"].get<std::string>(), p["flows"]);
+  }
+  for (const auto &p : shared["paths"])
+    base_flows.emplace(p["graph"].get<std::string>(), p["flows"]);
+  CHECK(flows == base_flows);
+}
+
+TEST_CASE("One link_timing entry plans the write and the read link of separate paths",
+          "[path-report]") {
+  auto base = graph();
+  base.link_timing = timing({uniform(300, 500)});
+  auto d = base;
+  d.read_write = ReadWritePaths::Separate;
+  const auto shared = report_of(base), report = report_of(d);
+  // Both links take the entry: the same status and the same number of paths.
+  std::vector<Json> timed;
+  std::copy_if(report["links"].begin(), report["links"].end(), std::back_inserter(timed),
+               [](const Json &l) { return l.contains("timing"); });
+  REQUIRE(timed.size() == 2);
+  CHECK(timed[0]["link"].get<std::string>().starts_with("wreq/"));
+  CHECK(timed[1]["link"].get<std::string>().starts_with("rreq/"));
+  CHECK(timed[0]["timing"]["status"] == timed[1]["timing"]["status"]);
+  CHECK(timed[0]["timing"]["paths"].size() == timed[1]["timing"]["paths"].size());
+  // The plan is the plan of the shared network, added to both links.
+  REQUIRE(shared["plan"]["links"].size() == 1);
+  REQUIRE(report["plan"]["links"].size() == 1);
+  const auto &one = shared["plan"]["links"][0], &both = report["plan"]["links"][0];
+  CHECK(report["plan"]["status"] == "met");
+  CHECK(both["stages"] == one["stages"]);
+  CHECK(both["pipe_cycles_added"] == one["pipe_cycles_added"]);
+  CHECK(both["slack_ps"] == one["slack_ps"]);
+  CHECK(both["bits_added"].get<std::uint64_t>() == 2 * one["bits_added"].get<std::uint64_t>());
+  REQUIRE(both["added"].size() == 2 * one["added"].size());
+  const auto half = one["added"].size();
+  for (std::size_t i = 0; i < half; ++i) {
+    CHECK(both["added"][i]["name"].get<std::string>().starts_with("pipeline/wreq/"));
+    CHECK(both["added"][half + i]["name"].get<std::string>().starts_with("pipeline/rreq/"));
+    CHECK(both["added"][i]["slice"] == one["added"][i]["slice"]);
+    CHECK(both["added"][half + i]["slice"] == one["added"][i]["slice"]);
+  }
+  // The planned definition is the shared plan with separate paths, and both links then meet.
+  auto plan = make_plan(d);
+  REQUIRE(plan);
+  auto planned = plan_link_stages(plan.value());
+  REQUIRE(planned);
+  auto shared_plan = make_plan(base);
+  REQUIRE(shared_plan);
+  auto expected = plan_link_stages(shared_plan.value());
+  REQUIRE(expected);
+  expected.value().read_write = ReadWritePaths::Separate;
+  CHECK(planned.value() == expected.value());
+  const auto again = report_of(planned.value());
+  unsigned met = 0;
+  for (const auto &l : again["links"])
+    if (l.contains("timing")) {
+      CHECK(l["timing"]["status"] == "met");
+      ++met;
+    }
+  CHECK(met == 2);
+  CHECK(again["plan"]["links"].empty());
+  // A latency limit names the direction of the path that exceeds it.
+  auto t = timing({uniform(300, 500)});
+  t.latency_limits = {{"s0", "t0", 0U, std::nullopt}};
+  d.link_timing = t;
+  const auto ds = plan_failure(d);
+  const auto message = [&](const std::string &start) {
+    return std::ranges::any_of(ds, [&](const Diagnostic &x) {
+      return x.code == "NCL_STAGE_PLAN_UNMET" &&
+             x.field == "link_timing.latency_limits[0].request_cycles" &&
+             x.message.starts_with(start);
+    });
+  };
+  CHECK(message("The write request path of s0 and t0 takes "));
+  CHECK(message("The read request path of s0 and t0 takes "));
 }
 
 TEST_CASE("Missing delays are unknown and named", "[path-report]") {

@@ -694,7 +694,8 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
                         "clock_crossings", "initiators",     "targets",
                         "arbitration",     "transport",      "topology",
                         "connectivity",    "output",         "templates",
-                        "groups",          "error_logging",  "link_timing"});
+                        "groups",          "error_logging",  "link_timing",
+                        "read_write"});
     detail::expand_templates(r, root);
     if (root["arbitration"]) {
       auto arbitration = r.field(root, "arbitration", "arbitration");
@@ -971,6 +972,13 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
       if (kind != "all" && kind != "minimal")
         r.fail("NCL_SCHEMA_TYPE", "reset_coverage", "Expected all or minimal", registers.Mark());
       d.reset_coverage = kind == "all" ? ResetCoverage::All : ResetCoverage::Minimal;
+    }
+    if (root["read_write"]) {
+      auto paths = r.field(root, "read_write", "read_write");
+      const auto kind = r.string(paths, "read_write");
+      if (kind != "shared" && kind != "separate")
+        r.fail("NCL_SCHEMA_TYPE", "read_write", "Expected shared or separate", paths.Mark());
+      d.read_write = kind == "separate" ? ReadWritePaths::Separate : ReadWritePaths::Shared;
     }
     if (root["cells"]) {
       // Each cell: module and role pin names, and tie for its other input pins.

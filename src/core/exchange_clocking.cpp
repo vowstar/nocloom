@@ -90,11 +90,15 @@ void route_through_crossings(const NetworkPlan &p, CrossGraph &graph) {
                              "reset handshake before read", CrossWaitKind::Startup});
     }
   }
-  for (bool response : {false, true}) {
-    const auto &routes = response ? p.exchange.response.routes : p.exchange.request.routes;
-    const std::string prefix = response ? "rsp/" : "req/";
-    for (const auto &route : routes)
+  for (const auto *g : p.exchange.graphs()) {
+    const bool response = g->graph.response;
+    const std::string prefix = g->scope();
+    for (const auto &route : g->routes)
       for (const std::string operation : {"write", "read"}) {
+        // A graph of separate paths carries one direction.
+        if ((g->graph.carried == Carried::Writes && operation == "read") ||
+            (g->graph.carried == Carried::Reads && operation == "write"))
+          continue;
         auto previous = response ? "burst_service/" + route.entry + "/" + operation
                                  : flow_id(route.entry, operation);
         std::vector<std::string> nodes{route.entry};
@@ -213,6 +217,8 @@ template <class Owner> void endpoint_resource_domains(NetworkPlan &p, const Owne
     if (dedicated_protocol(p.target(target).protocol) &&
         p.target(target).external_protocol != Protocol::TlUh)
       p.resource_domains.emplace(id + "/bus", owner("target/" + target));
+    if (joins_paths(p, p.target(target)))
+      p.resource_domains.emplace(id + "/join", owner("target/" + target));
   }
 }
 void plan_clocking(NetworkPlan &p) {
@@ -323,12 +329,12 @@ void plan_clocking(NetworkPlan &p) {
       p.cuts.push_back(std::move(cut));
     }
   plan_serial_cuts(p, domains);
-  for (bool response : {false, true})
-    for (const auto &o : (response ? p.exchange.response : p.exchange.request).outputs)
+  for (const auto *g : p.exchange.graphs())
+    for (const auto &o : g->outputs)
       if (o.inputs.size() > 1)
-        p.resource_domains.emplace(std::string(response ? "graph/rsp/" : "graph/req/") + o.node +
-                                       ">" + (o.endpoint ? "endpoint/" : "node/") + o.output,
-                                   owner((response ? "rsp/" : "req/") + o.node));
+        p.resource_domains.emplace("graph/" + g->scope() + o.node + ">" +
+                                       (o.endpoint ? "endpoint/" : "node/") + o.output,
+                                   owner(g->scope() + o.node));
   endpoint_resource_domains(p, owner);
   // Each endpoint pipe (<endpoint>/pipe/<place>) in its endpoint's domain.
   auto pipes_in = [&](const std::vector<EndpointPipe> &pipes) {

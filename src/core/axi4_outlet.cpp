@@ -177,9 +177,12 @@ struct EngineLowering {
   // enters while the pool is below K. Behind a target merge the two request faces may both offer
   // a head; the older takes the last free entry (the network delivers one packet at a time): a
   // read that waited while no write head did (read_first), else an offered write head.
+  // With separate read and write paths both faces may offer a head at any time: with one entry
+  // free they take it by turns (write_turn: the write's turn, set as a read enters, cleared as a
+  // write head enters; a read first after reset).
   const unsigned pool_bits, ahead_bits;
-  const ValueId pool, cap, pool_free, read_first, pool_w;
-  ValueId pool_r{};
+  const ValueId pool, cap, pool_free, read_first;
+  ValueId pool_w, write_turn = zero, pool_r{};
   // With several bursts an entry returns to the pool in the cycle after its last response word
   // left (a read's, a write's); empty counts those releases as done.
   const ValueId read_release, write_release, pool_empty;
@@ -914,10 +917,12 @@ EngineLowering::EngineLowering(const Axi4OutletProfile &p, unsigned address_bits
       ahead_bits(std::max(1U, index_bits)), pool(l.state("pool.count", pool_bits)),
       cap(l.b.constant(pool_bits, depth)), pool_free(l.below(pool, cap)),
       read_first(p.merged ? l.state("pool.read_first", 1) : zero),
-      pool_w(l.bind("pool.write_ok", p.merged ? l.below(l.plus(l.fit(pool, pool_bits + 1),
-                                                               l.fit(read_first, pool_bits + 1)),
-                                                        l.b.constant(pool_bits + 1, depth))
-                                              : pool_free)),
+      pool_w(p.separate ? zero
+                        : l.bind("pool.write_ok",
+                                 p.merged ? l.below(l.plus(l.fit(pool, pool_bits + 1),
+                                                           l.fit(read_first, pool_bits + 1)),
+                                                    l.b.constant(pool_bits + 1, depth))
+                                          : pool_free)),
       read_release(several ? l.state("pool.read_release", 1) : zero),
       write_release(several ? l.state("pool.write_release", 1) : zero),
       pool_empty(
@@ -1634,7 +1639,8 @@ void EngineLowering::write_respond_single(ValueId bresp, ValueId bid, WriteFace 
 
 void EngineLowering::read_accept() {
   // ---------------- reads ----------------
-  r = request("rreq");
+  if (!p.separate)
+    r = request("rreq");
   if (target_id_bits && !several)
     r["target_id"] = descriptor_id(r, 1);
   axi5_field(r, 1);
@@ -1668,7 +1674,9 @@ void EngineLowering::read_accept() {
     claim = l.both(claim, l.inv(head_in));
   read_claim = claim;
   const auto bits = pool_bits + 1;
-  const auto claimed = p.one_head ? zero : l.both(claim, l.inv(read_first));
+  const auto claimed = p.one_head   ? zero
+                       : p.separate ? l.both(claim, write_turn)
+                                    : l.both(claim, l.inv(read_first));
   pool_r = l.below(l.plus(l.fit(pool, bits), l.fit(claimed, bits)), l.b.constant(bits, depth));
   pool_r = l.bind("pool.read_ok", pool_r);
   // Heads admitted ahead of the outlet are counted already.
@@ -1724,6 +1732,8 @@ void EngineLowering::read_accept() {
   rr_ready = l.bind("r.ready", rr_ready);
   out("rreq", "ready", rr_ready);
   take_r = l.bind("r.accept", l.both(r.at("valid"), rr_ready));
+  if (p.separate)
+    l.b.update(write_turn, l.b.select(admit, zero, l.b.select(take_r, one, write_turn)));
   if (p.merged)
     l.b.update(read_first,
                l.b.select(take_r, zero,
@@ -2608,6 +2618,15 @@ void EngineLowering::read_update_joined() {
 }
 
 void EngineLowering::build() {
+  if (p.separate) {
+    // The read face exists before the write side reads its offer.
+    r = request("rreq");
+    write_turn = l.state("pool.write_turn", 1);
+    pool_w = l.bind("pool.write_ok",
+                    l.below(l.plus(l.fit(pool, pool_bits + 1),
+                                   l.fit(l.both(l.inv(write_turn), r.at("valid")), pool_bits + 1)),
+                            l.b.constant(pool_bits + 1, depth)));
+  }
   write_accept();
   write_reject();
   write_data();

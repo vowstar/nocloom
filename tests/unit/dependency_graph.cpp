@@ -982,6 +982,32 @@ TEST_CASE("The completion scope names each clause of Fair the generated logic br
         std::string::npos);
 }
 
+TEST_CASE("Separate paths name the write and the read arbiter of an unmet output", "[dependency]") {
+  auto text = shape_text({32, 2, 4, 2, false, true});
+  const auto swap = [&](const std::string &from, const std::string &to) {
+    const auto at = text.find(from);
+    REQUIRE(at != std::string::npos);
+    text.replace(at, from.size(), to);
+  };
+  swap("nodes: [{name: q}]", "nodes: [{name: q, arbitration: [{output: endpoint/t0, policy: "
+                             "fixed_priority, priority: [endpoint/s1, endpoint/s0]}]}]");
+  swap("connectivity: all,", "connectivity: all, read_write: separate,");
+  const auto plan = plan_of(text);
+  REQUIRE(plan.exchange.separate());
+  auto graph = build_dependency_graph(plan, dependency_facts(plan));
+  CHECK_FALSE(graph.model.present);
+  const std::string reason = "fixed_priority_has_no_wait_bound";
+  CHECK(rows(graph.unmet) == Premises{{"arb_fair", "request/q>endpoint/t0", reason},
+                                      {"arb_fair", "request/q>endpoint/t0/read", reason}});
+  // The file lists two different rows.
+  const auto file = dependency_graph_json(graph, check_dependency_graph(graph), "m", "", "", "");
+  for (const auto *subject : {"request/q>endpoint/t0\"", "request/q>endpoint/t0/read\""}) {
+    const auto first = file.find(std::string("\"subject\": \"") + subject);
+    REQUIRE(first != std::string::npos);
+    CHECK(file.find(std::string("\"subject\": \"") + subject, first + 1) == std::string::npos);
+  }
+}
+
 TEST_CASE("Model capacities count the pipes in front of a slot and each target's contexts",
           "[dependency]") {
   const auto capacity = [](const DependencyModel &m, const std::string &slot,

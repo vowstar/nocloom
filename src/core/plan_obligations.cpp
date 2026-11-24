@@ -485,6 +485,16 @@ struct Obligations {
         wait(service + "/bus", init, CrossWaitKind::Startup,
              "local reset release before bus issue");
       }
+      // Separate read and write paths into a target of one transfer at a time: one packet
+      // arbiter joins them at its attachment.
+      if (joins_paths(plan, tp)) {
+        resource(service + "/join", "packet_grant", 0, "selected request path packet",
+                 "tail fragment accepted");
+        wait(service + "/join", init, CrossWaitKind::Startup, "common reset release");
+        for (const auto *operation : {"write", "read"})
+          wait(service + "/join", service + "/" + operation, CrossWaitKind::Capacity,
+               "packet ownership releases after the target engine accepts its tail");
+      }
       resource(target_env, "environment", 0, "target",
                tp.wishbone_burst_tags ? "ACK, ERR or enabled RTY while STB is high"
                : tilelink_uh          ? "TileLink A and D message completion"
@@ -496,17 +506,23 @@ struct Obligations {
     }
   }
   void grants() {
-    // A grant holds a read or a write packet; its destinations take both.
-    for (bool response : {false, true}) {
-      const auto &g = response ? plan.exchange.response : plan.exchange.request;
-      for (const auto &o : g.outputs)
+    // A grant holds a read or a write packet; its destinations take both. A graph of separate
+    // paths holds the packets of its own direction only.
+    for (const auto *g : plan.exchange.graphs()) {
+      const bool response = g->graph.response;
+      std::vector<const char *> operations;
+      if (g->graph.carried != Carried::Reads)
+        operations.push_back("write");
+      if (g->graph.carried != Carried::Writes)
+        operations.push_back("read");
+      for (const auto &o : g->outputs)
         if (o.inputs.size() > 1) {
-          const auto id = std::string(response ? "graph/rsp/" : "graph/req/") + o.node + ">" +
+          const auto id = "graph/" + g->scope() + o.node + ">" +
                           (o.endpoint ? "endpoint/" : "node/") + o.output;
           resource(id, "packet_grant", 0, "selected input packet", "tail fragment accepted");
           wait(id, init, CrossWaitKind::Startup, "common reset release");
           for (const auto &destination : o.destinations)
-            for (const auto *operation : {"write", "read"})
+            for (const auto *operation : operations)
               wait(id,
                    response ? flow_id(destination, operation) + "/return"
                             : "burst_service/" + destination + "/" + operation,

@@ -593,13 +593,30 @@ std::pair<std::vector<ExchangeLink> *, std::size_t> definition_link(Definition &
     throw std::logic_error("No definition link for " + link.name);
   return {&links, static_cast<std::size_t>(at - links.begin())};
 }
-const LinkPlan *planned_link(const NetworkPlan &plan, const LinkDelays &delays) {
-  const bool response = delays.graph == LinkGraph::Response;
-  const auto it = std::ranges::find_if(plan.links, [&](const LinkPlan &link) {
-    return link.response == response && !link.from_name.empty() && link.from_name == delays.from &&
-           link.to_name == delays.to;
-  });
-  return it == plan.links.end() ? nullptr : &*it;
+// Whether a link_timing entry names the configured link of a switch edge plan.
+bool timed_by(const LinkPlan &link, const LinkDelays &delays) {
+  return link.response == (delays.graph == LinkGraph::Response) && !link.from_name.empty() &&
+         link.from_name == delays.from && link.to_name == delays.to;
+}
+// The hardware links of a link_timing entry in plan order: one with shared paths, the write link
+// and then the read link where the configured link has separate read and write paths.
+std::vector<const LinkPlan *> timed_links(const NetworkPlan &plan, const LinkDelays &delays) {
+  std::vector<const LinkPlan *> out;
+  for (const auto &link : plan.links)
+    if (timed_by(link, delays))
+      out.push_back(&link);
+  return out;
+}
+// The packets a link carries: both directions, or the writes or the reads of separate paths.
+Carried carried_by(const LinkPlan &link) {
+  for (const auto carried : {Carried::Writes, Carried::Reads})
+    if (link.name.starts_with(graph_scope(link.response, carried)))
+      return carried;
+  return Carried::Both;
+}
+const char *carried_name(Carried carried) {
+  static constexpr std::array table{"both", "writes", "reads"};
+  return table.at(static_cast<std::size_t>(carried));
 }
 // The stage lists of a link with the chosen pipes appended at their positions.
 std::vector<LinkStages> with_added(const Chain &c, const LinkPlan &link,
@@ -682,16 +699,18 @@ struct Flow {
 };
 struct RoutePath {
   bool response = false;
+  Carried carried = Carried::Both;
   std::vector<std::string> links;
   std::vector<Flow> flows;
 };
-// Every route's links, each distinct sequence once with the flows that take it.
+// Every route's links, each distinct sequence once with the flows that take it. A graph of
+// separate paths gives the paths of its direction.
 std::vector<RoutePath> route_paths(const NetworkPlan &plan) {
-  std::map<std::pair<bool, std::vector<std::string>>, std::set<Flow>> grouped;
-  for (bool response : {false, true}) {
-    const auto &graph = response ? plan.exchange.response : plan.exchange.request;
-    const std::string prefix = response ? "rsp/" : "req/";
-    for (const auto &r : graph.routes) {
+  std::map<std::tuple<bool, Carried, std::vector<std::string>>, std::set<Flow>> grouped;
+  for (const auto *graph : plan.exchange.graphs()) {
+    const bool response = graph->graph.response;
+    const std::string prefix = graph->scope();
+    for (const auto &r : graph->routes) {
       std::vector<std::string> links{prefix + r.entry + ">" + r.nodes.front()};
       for (std::size_t i = 0; i + 1 < r.nodes.size(); ++i)
         links.push_back(prefix + r.nodes[i] + ">" + r.nodes[i + 1]);
@@ -703,13 +722,14 @@ std::vector<RoutePath> route_paths(const NetworkPlan &plan) {
               });
           unplanned != links.end())
         throw std::logic_error("A route passes an unplanned link " + *unplanned);
-      grouped[{response, links}].insert(
+      grouped[{response, graph->graph.carried, links}].insert(
           {response ? r.exit : r.entry, response ? r.entry : r.exit, r.flows, r.target_path});
     }
   }
   std::vector<RoutePath> out;
   for (auto &[key, flows] : grouped)
-    out.push_back({key.first, key.second, {flows.begin(), flows.end()}});
+    out.push_back(
+        {std::get<0>(key), std::get<1>(key), std::get<2>(key), {flows.begin(), flows.end()}});
   return out;
 }
 // The forward registering pipes of a link by domain, with those a bypass can open.
@@ -723,12 +743,19 @@ std::map<std::string, unsigned> link_cycles(const LinkPlan &link, unsigned *bypa
     }
   return out;
 }
-struct PlannedLink {
+// One hardware link of a planned entry, with its chain and the paths the plan claims for it.
+struct PlannedLane {
   const LinkPlan *link = nullptr;
-  std::size_t entry = 0;
   Chain chain;
-  SlotChoice added;
   ChainResult result;
+};
+// A planned link_timing entry: the pipes added to its configured link and each hardware link
+// that takes them (timed_links).
+struct PlannedLink {
+  std::size_t entry = 0;
+  SlotChoice added;
+  std::vector<PlannedLane> lanes;
+  const LinkPlan &link() const { return *lanes.front().link; }
 };
 struct PlanOutcome {
   std::vector<PlannedLink> planned;
@@ -736,8 +763,32 @@ struct PlanOutcome {
   Definition applied;
   bool requested = false;
 };
+// The name of a path in a message: request or response, with the direction of separate paths.
+std::string path_label(const RoutePath &path) {
+  const auto graph = graph_name(path.response);
+  return path.carried == Carried::Both     ? graph
+         : path.carried == Carried::Writes ? "write " + graph
+                                           : "read " + graph;
+}
 std::string link_label(const LinkDelays &d) {
   return "Link " + d.from + " -> " + d.to + " (" + graph_name(d.graph == LinkGraph::Response) + ")";
+}
+// Each hardware link of a planned entry gives the claimed paths in the planned definition.
+void check_planned(const NetworkPlan &rebuilt, const Definition &applied, const LinkDelays &delays,
+                   const PlannedLink &p) {
+  const auto links = timed_links(rebuilt, delays);
+  if (links.size() != p.lanes.size())
+    throw std::logic_error("A planned link is missing after planning");
+  const auto field = "link_timing.links[" + std::to_string(p.entry) + "]";
+  for (std::size_t i = 0; i < links.size(); ++i) {
+    const auto &claimed = p.lanes[i].result;
+    const auto chain = link_chain(rebuilt, applied, *links[i], &delays, field);
+    const auto result = evaluate_chain(chain, SlotChoice(chain.positions.size()));
+    if (links[i]->name != p.lanes[i].link->name || !result.met || result.paths != claimed.paths ||
+        result.cycles != claimed.cycles || result.slack != claimed.slack)
+      throw std::logic_error("The planned stage lists of " + p.lanes[i].link->name +
+                             " do not give the claimed paths");
+  }
 }
 PlanOutcome plan_outcome(const NetworkPlan &plan, const Definition &definition) {
   PlanOutcome out;
@@ -749,9 +800,12 @@ PlanOutcome plan_outcome(const NetworkPlan &plan, const Definition &definition) 
   for (std::size_t k = 0; k < timing.links.size(); ++k) {
     const auto &delays = timing.links[k];
     const auto field = "link_timing.links[" + std::to_string(k) + "]";
-    const auto *link = planned_link(plan, delays);
-    if (!link)
+    const auto lanes = timed_links(plan, delays);
+    if (lanes.empty())
       throw std::logic_error("A checked link_timing entry names no switch link");
+    // The lanes of one configured link have the same words, pipes, crossing and delays, so the
+    // first one plans them all.
+    const auto *link = lanes.front();
     auto chain = link_chain(plan, definition, *link, &delays, field);
     if (chain.unmodeled) {
       out.problems.push_back(error("NCL_STAGE_PLAN_UNKNOWN", field,
@@ -797,9 +851,14 @@ PlanOutcome plan_outcome(const NetworkPlan &plan, const Definition &definition) 
                                      " allowance")));
       continue;
     }
-    PlannedLink planned{link, k, chain, *choice, evaluate_chain(chain, *choice)};
-    if (!planned.result.met)
-      throw std::logic_error("The plan of " + link->name + " misses a bound");
+    PlannedLink planned{k, *choice, {}};
+    for (const auto *lane : lanes) {
+      auto lane_chain = link_chain(plan, definition, *lane, &delays, field);
+      auto result = evaluate_chain(lane_chain, *choice);
+      if (!result.met)
+        throw std::logic_error("The plan of " + lane->name + " misses a bound");
+      planned.lanes.push_back({lane, std::move(lane_chain), std::move(result)});
+    }
     if (std::ranges::any_of(*choice, [](PipeSlice s) { return s != PipeSlice::None; })) {
       const auto [links, at] = definition_link(out.applied, *link);
       (*links)[at].stages = with_added(chain, *link, (*links)[at].stages, *choice);
@@ -809,8 +868,9 @@ PlanOutcome plan_outcome(const NetworkPlan &plan, const Definition &definition) 
   // Latency limits over every path with the planned pipes.
   std::map<std::string, unsigned> added;
   for (const auto &p : out.planned)
-    added[p.link->name] = static_cast<unsigned>(
-        std::ranges::count_if(p.added, [](PipeSlice s) { return added_pipe(s).forward_stage(); }));
+    for (const auto &lane : p.lanes)
+      added[lane.link->name] = static_cast<unsigned>(std::ranges::count_if(
+          p.added, [](PipeSlice s) { return added_pipe(s).forward_stage(); }));
   const auto paths = route_paths(plan);
   for (std::size_t i = 0; i < timing.latency_limits.size(); ++i) {
     const auto &limit = timing.latency_limits[i];
@@ -838,8 +898,8 @@ PlanOutcome plan_outcome(const NetworkPlan &plan, const Definition &definition) 
           out.problems.push_back(error("NCL_STAGE_PLAN_UNMET",
                                        "link_timing.latency_limits[" + std::to_string(i) + "]." +
                                            (response ? "response_cycles" : "request_cycles"),
-                                       "The " + graph_name(response) + " path of " +
-                                           limit.initiator + " and " + limit.target + " takes " +
+                                       "The " + path_label(path) + " path of " + limit.initiator +
+                                           " and " + limit.target + " takes " +
                                            std::to_string(cycles) + " pipe cycles (" + adding +
                                            "), over its limit of " + std::to_string(*bound)));
       }
@@ -856,19 +916,8 @@ PlanOutcome plan_outcome(const NetworkPlan &plan, const Definition &definition) 
     auto rebuilt = build_network_plan(out.applied);
     if (!rebuilt)
       throw std::logic_error("The planned definition fails to build");
-    for (const auto &p : out.planned) {
-      const auto *link = planned_link(rebuilt.value(), timing.links[p.entry]);
-      if (!link)
-        throw std::logic_error("A planned link is missing after planning");
-      const auto field = "link_timing.links[" + std::to_string(p.entry) + "]";
-      const auto chain =
-          link_chain(rebuilt.value(), out.applied, *link, &timing.links[p.entry], field);
-      const auto result = evaluate_chain(chain, SlotChoice(chain.positions.size()));
-      if (!result.met || result.paths != p.result.paths || result.cycles != p.result.cycles ||
-          result.slack != p.result.slack)
-        throw std::logic_error("The planned stage lists of " + p.link->name +
-                               " do not give the claimed paths");
-    }
+    for (const auto &p : out.planned)
+      check_planned(rebuilt.value(), out.applied, timing.links[p.entry], p);
   }
   return out;
 }
@@ -886,6 +935,7 @@ std::string report_text(const NetworkPlan &plan, const Definition &definition) {
     const auto [to, to_kind] = end_name(plan, link.to);
     Json row{{"link", link.name},
              {"graph", graph_name(link.response)},
+             {"carries", carried_name(carried_by(link))},
              {"from", from},
              {"from_kind", from_kind},
              {"to", to},
@@ -925,7 +975,7 @@ std::string report_text(const NetworkPlan &plan, const Definition &definition) {
     row["pipe_cycles"] = std::move(cycles);
     row["bypass_cycles"] = bypassed;
     for (std::size_t k = 0; k < timing.links.size(); ++k) {
-      if (planned_link(plan, timing.links[k]) != &link)
+      if (!timed_by(link, timing.links[k]))
         continue;
       const auto field = "link_timing.links[" + std::to_string(k) + "]";
       const auto chain = link_chain(plan, definition, link, &timing.links[k], field);
@@ -951,7 +1001,9 @@ std::string report_text(const NetworkPlan &plan, const Definition &definition) {
   report["links"] = std::move(links);
   Json paths = Json::array();
   for (const auto &path : route_paths(plan)) {
-    Json row{{"graph", graph_name(path.response)}, {"links", path.links}};
+    Json row{{"graph", graph_name(path.response)},
+             {"carries", carried_name(path.carried)},
+             {"links", path.links}};
     Json flows = Json::array();
     for (const auto &f : path.flows) {
       Json flow{{"initiator", f.initiator}, {"target", f.target}};
@@ -986,20 +1038,26 @@ std::string report_text(const NetworkPlan &plan, const Definition &definition) {
     if (std::ranges::all_of(p.added, [](PipeSlice s) { return s == PipeSlice::None; }))
       continue;
     auto copy = outcome.applied;
-    const auto [list, at] = definition_link(copy, *p.link);
-    Json row{{"graph", graph_name(p.link->response)},
-             {"from", p.link->from_name},
-             {"to", p.link->to_name},
+    const auto [list, at] = definition_link(copy, p.link());
+    Json row{{"graph", graph_name(p.link().response)},
+             {"from", p.link().from_name},
+             {"to", p.link().to_name},
              {"stages", lists_json((*list)[at].stages)},
              {"added", Json::array()}};
-    for (unsigned i = 0; i < p.added.size(); ++i)
-      if (p.added[i] != PipeSlice::None)
-        row["added"].push_back(
-            {{"name", added_name(p.chain, i)}, {"slice", slice_name(p.added[i])}});
+    // Each hardware link of the configured link takes the added pipes.
+    std::uint64_t bits = 0;
+    for (const auto &lane : p.lanes) {
+      for (unsigned i = 0; i < p.added.size(); ++i)
+        if (p.added[i] != PipeSlice::None)
+          row["added"].push_back(
+              {{"name", added_name(lane.chain, i)}, {"slice", slice_name(p.added[i])}});
+      bits += lane.result.added_bits;
+    }
+    const auto &first = p.lanes.front().result;
     row["pipe_cycles_added"] = static_cast<unsigned>(
         std::ranges::count_if(p.added, [](PipeSlice s) { return added_pipe(s).forward_stage(); }));
-    row["bits_added"] = p.result.added_bits;
-    row["slack_ps"] = p.result.slack ? Json(*p.result.slack) : Json(nullptr);
+    row["bits_added"] = bits;
+    row["slack_ps"] = first.slack ? Json(*first.slack) : Json(nullptr);
     proposal["links"].push_back(std::move(row));
   }
   for (const auto &d : outcome.problems)

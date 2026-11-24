@@ -21,6 +21,8 @@ For the other initiators, a burst takes one capacity entry when its first
 packet leaves and releases it when its final response packet returns. A burst
 completed locally takes no capacity entry. Each single-beat piece of a
 narrow-split burst uses its own entry.
+With [separate read and write paths](read-write-paths.md#capacity) the
+two directions take entries by turns.
 
 An ordering key is direction plus AxID, or just direction for AXI4-Lite. It can
 have several bursts at one destination but drains them before changing
@@ -34,15 +36,17 @@ An entry frees when its last response reaches the initiator.
 
 ## Target capacity
 
-AXI4 and AXI3 targets accept `max_outstanding` from 1 to 16. Reads and writes
-share that packet capacity. AXI4-Lite targets accept `max_outstanding` from 1 to
+[Full AXI](protocols.md) targets accept `max_outstanding` from 1 to 16.
+Reads and writes share that packet capacity, and with
+[separate read and write paths](read-write-paths.md#capacity) they take a last
+free entry by turns. AXI4-Lite targets accept `max_outstanding` from 1 to
 256 packets per direction.
 
 APB, AHB-Lite, AHB5 and Wishbone targets accept only `max_outstanding: 1`. An
 AHB target can accept another packet before the previous packet's final response
 leaves. The default is 1. Targets do not inherit `transport.max_outstanding`.
 
-AXI4 and AXI3 requests hold their entry until their final response leaves the
+Full AXI requests hold their entry until their final response leaves the
 target adapter. Their writes can overlap across target IDs. Read overlap follows
 target interleaving and width conversion constraints. AXI4-Lite changes
 direction only after all earlier packets have answered.
@@ -151,10 +155,11 @@ active request.
 AWREADY and ARREADY depend on local state, without a combinational path from
 network ready.
 
-The full AXI request merger selects a direction before waiting for an ordering
-key or destination change. A selected waiting request blocks the other
-direction. A waiting write can also keep WREADY low. AXI4-Lite selects eligible
-offers and excludes directions without free capacity. In a burst spanning
+With shared paths, the full AXI request merger selects a direction before
+waiting for an ordering key or destination change. A selected waiting request
+blocks the other direction. A waiting write can also keep WREADY low.
+AXI4-Lite selects eligible offers and excludes directions without free
+capacity. In a burst spanning
 several targets, its ID binds to its last beat's destination. A following burst
 of that ID starts immediately only when it starts there.
 

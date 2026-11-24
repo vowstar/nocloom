@@ -1230,6 +1230,11 @@ unsigned least_target_id_bits(const TargetPlan &target) {
 bool lite_target(const NetworkPlan &plan, const std::string &target) {
   return plan.target(target).protocol == Protocol::Axi4Lite;
 }
+bool joins_paths(const NetworkPlan &plan, const TargetPlan &target) {
+  return plan.exchange.separate() &&
+         (ahb_target(plan, target.name) || apb_target(plan, target.name) ||
+          lite_target(plan, target.name));
+}
 // Targets served by the shared dedicated outlet engine rather than an AXI4 burst outlet.
 bool dedicated_protocol(Protocol protocol) {
   return protocol_caps(protocol).egress && protocol != Protocol::Axi4;
@@ -1598,8 +1603,10 @@ Axi4OutletProfile axi4_outlet_profile(const NetworkPlan &plan, unsigned index) {
   profile.interleave_beats = interleave_words(tp);
   profile.response_direct = joins_directly(tp);
   profile.response_run_bits = plan.response_run_bits();
+  // Separate read and write paths offer both heads at once.
+  profile.separate = plan.exchange.separate();
   profile.one_head = profile.merged && profile.interleave && tp.outstanding == 1 &&
-                     std::ranges::none_of(tp.pipes, [](const EndpointPipe &e) {
+                     !profile.separate && std::ranges::none_of(tp.pipes, [](const EndpointPipe &e) {
                        return e.name.ends_with("/pipe/dispatch");
                      });
   profile.merger_hints = tp.outstanding > 1 && !tp.write_only && !profile.interleave;

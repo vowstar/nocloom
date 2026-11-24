@@ -155,7 +155,7 @@ bool dangling(const Json &node, std::size_t emitted) {
 // The arbitration contract: the default, the effective table when the default
 // goes by candidate count, and every arbitrated physical output with its
 // candidates in hardware index order, its policy and its service premise.
-Json arbitration_output(const NetworkPlan &p, const ArbiterPlan &a) {
+Json arbitration_output(const NetworkPlan &p, const std::string &key, const ArbiterPlan &a) {
   const auto n = static_cast<unsigned>(a.candidates.size());
   const auto service = treadle::service(a.spec.policy, n);
   const auto label = [&](const std::string &key) { return p.label(key); };
@@ -167,6 +167,9 @@ Json arbitration_output(const NetworkPlan &p, const ArbiterPlan &a) {
                 {"candidates", candidates},
                 {"policy", treadle::policy_name(a.spec.policy)},
                 {"set_by", a.overridden ? "output" : "default"}};
+  // Separate read and write paths: the graph of the output carries one direction.
+  if (p.exchange.separate())
+    entry["carries"] = key.starts_with("r") ? "reads" : "writes";
   if (a.spec.policy == treadle::Policy::FixedPriority) {
     Json order = Json::array();
     for (unsigned r = 0; r < n; ++r)
@@ -185,14 +188,16 @@ Json arbitration_output(const NetworkPlan &p, const ArbiterPlan &a) {
 }
 Json arbitration_contract(const NetworkPlan &p) {
   Json contract = {{"granularity", "packet_grant_held_from_head_to_tail_transfer"},
-                   {"channels", "read_and_write_packets_share_each_output_arbiter"}};
+                   {"channels", p.exchange.separate()
+                                    ? "read_and_write_packets_take_separate_graphs_and_arbiters"
+                                    : "read_and_write_packets_share_each_output_arbiter"}};
   contract["default"] = treadle::policy_name(p.arbitration.choose(0));
   Json outputs = Json::array();
   bool environment = false;
   for (const auto &[key, a] : p.arbiters) {
     const auto n = static_cast<unsigned>(a.candidates.size());
     environment = environment || !treadle::service(a.spec.policy, n).structural;
-    outputs.push_back(arbitration_output(p, a));
+    outputs.push_back(arbitration_output(p, key, a));
   }
   environment = environment || (p.levels() && !p.arbiters.empty());
   contract["outputs"] = std::move(outputs);
@@ -475,7 +480,9 @@ private:
                         ? "explicit_independent_unique_route_graphs"
                         : "generated_one_switch_per_direction_connected_inputs_only"},
         {"arbitration", arbitration_contract(h.plan)},
-        {"progress", "shared_read_write_routes_need_endpoint_premises_E1_E2_E3"},
+        {"progress", p.exchange.separate()
+                         ? "separate_read_write_routes_need_endpoint_premises_at_shared_entries"
+                         : "shared_read_write_routes_need_endpoint_premises_E1_E2_E3"},
         {"address_transform", "target_local_byte_offset_once"},
         {"start_address", "raw_AxADDR_page_offset_beside_aligned_occupancy"},
         {"transport_address",
@@ -1555,12 +1562,22 @@ private:
       ordering = {
           {"destination", "every_burst_of_one_AXI_ID_in_flight_on_a_source_direction_goes_to_one_"
                           "target_or_to_local_completion_different_IDs_to_any_targets"},
-          {"new_destination", "a_burst_whose_ID_is_bound_to_another_destination_waits_after_its_"
-                              "address_handshake_until_the_last_response_of_that_ID_has_"
-                              "reached_the_source_holding_the_request_merger_once_chosen"},
-          {"id_table", "initiator_id_tables_entries_of_direction_and_AXI_ID_shared_by_reads_and_"
-                       "writes_a_burst_with_a_new_key_waits_at_the_request_merger_holding_it_"
-                       "while_every_entry_is_busy"},
+          {"new_destination",
+           p.exchange.separate()
+               ? "a_burst_whose_ID_is_bound_to_another_destination_waits_after_its_address_"
+                 "handshake_until_the_last_response_of_that_ID_has_reached_the_source_holding_"
+                 "only_its_own_direction"
+               : "a_burst_whose_ID_is_bound_to_another_destination_waits_after_its_"
+                 "address_handshake_until_the_last_response_of_that_ID_has_"
+                 "reached_the_source_holding_the_request_merger_once_chosen"},
+          {"id_table",
+           p.exchange.separate()
+               ? "initiator_id_tables_entries_of_direction_and_AXI_ID_shared_by_reads_and_writes_"
+                 "a_burst_with_a_new_key_waits_at_the_source_entry_of_its_direction_while_every_"
+                 "entry_is_busy"
+               : "initiator_id_tables_entries_of_direction_and_AXI_ID_shared_by_reads_and_"
+                 "writes_a_burst_with_a_new_key_waits_at_the_request_merger_holding_it_"
+                 "while_every_entry_is_busy"},
           {"responses", "same_ID_in_issue_order_different_IDs_in_any_order_with_the_original_"
                         "AxID_steered_by_the_Weft_tag_no_reorder_storage"},
           {"decode_miss", "DECERR_from_the_default_target_without_target_access"},
@@ -1737,10 +1754,10 @@ private:
     return std::ranges::find(h.plan.domains, object, &DomainPlan::name)->clock_port;
   }
   Json map_record() const {
-    const auto hardware_nodes = [&](const char *direction) {
+    const auto hardware_nodes = [&](const char *direction, const char *field = "hardware_node") {
       Json ids = Json::array();
       std::ranges::transform(topology[direction]["nodes"], std::back_inserter(ids),
-                             [](const Json &node) { return node["hardware_node"]; });
+                             [&](const Json &node) { return node[field]; });
       return ids;
     };
     Json map = {{"format_version", 1},
@@ -1749,7 +1766,7 @@ private:
                 {"definition", definition},
                 {"ports", Json::array()},
                 {"network",
-                 {{"read_write", "merged"},
+                 {{"read_write", p.exchange.separate() ? "separate" : "merged"},
                   {"request_nodes", hardware_nodes("request")},
                   {"response_nodes", hardware_nodes("response")},
                   {"adapters", Json::array()},
@@ -1762,6 +1779,10 @@ private:
                               {"signal", port.signal},
                               {"clock", port_clock(port)}});
     auto &network = map["network"];
+    if (p.exchange.separate()) {
+      network["read_request_nodes"] = hardware_nodes("request", "read_hardware_node");
+      network["read_response_nodes"] = hardware_nodes("response", "read_hardware_node");
+    }
     for (const auto &adapter : h.plan.adapters())
       network["adapters"].push_back({{"name", adapter.name},
                                      {"segment", adapter.segment},
@@ -1793,10 +1814,11 @@ private:
       }
       network["resources"].push_back(std::move(row));
     }
-    for (bool response : {false, true}) {
-      auto &routes = network[response ? "response_routes" : "request_routes"] = Json::array();
-      const auto &graph = response ? h.plan.exchange.response : h.plan.exchange.request;
-      std::ranges::transform(graph.routes, std::back_inserter(routes), [](const auto &r) {
+    for (const auto *graph : h.plan.exchange.graphs()) {
+      const auto field = std::string(graph->graph.carried == Carried::Reads ? "read_" : "") +
+                         (graph->graph.response ? "response_routes" : "request_routes");
+      auto &routes = network[field] = Json::array();
+      std::ranges::transform(graph->routes, std::back_inserter(routes), [](const auto &r) {
         Json row{{"entry", r.entry}, {"exit", r.exit}, {"hardware_nodes", r.nodes}};
         if (!r.flows.empty())
           row["source_paths"] = r.flows;
@@ -1921,9 +1943,10 @@ private:
           {"registers", std::ranges::count_if(h.ir.states, [&](const State &s) {
              return s.clock.index == it->second.index;
            })}};
-      if (owner.starts_with("req/") || owner.starts_with("rsp/"))
-        record["switch"] = owner.substr(0, 4) + h.plan.node(owner.substr(4)).name;
-      else {
+      if (graph_scoped(owner)) {
+        const auto scope = owner.substr(0, owner.find('/') + 1);
+        record["switch"] = scope + h.plan.node(owner.substr(scope.size())).name;
+      } else {
         record[owner.starts_with("source/") ? "initiator" : "target"] =
             owner.substr(owner.find('/') + 1);
         record["zone"] = owner == object ? "transport" : "protocol";

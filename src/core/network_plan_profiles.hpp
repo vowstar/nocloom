@@ -43,6 +43,9 @@ std::vector<ExclusiveWindow> exclusive_windows(const NetworkPlan &plan, const st
 bool ahb_target(const NetworkPlan &plan, const std::string &target);
 bool apb_target(const NetworkPlan &plan, const std::string &target);
 bool lite_target(const NetworkPlan &plan, const std::string &target);
+// With separate read and write paths, whether a target serves one transfer at a time (APB, AHB,
+// AXI4-Lite) and so takes both request paths through one packet arbiter at its attachment.
+bool joins_paths(const NetworkPlan &plan, const TargetPlan &target);
 bool dedicated_protocol(Protocol protocol);
 // Whether this source's clamp gathers each read apart (Axi4WidthClampProfile::reassembly).
 bool clamp_reassembles(const NetworkPlan &plan, unsigned source);

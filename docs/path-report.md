@@ -143,12 +143,24 @@ and checks that each planned link gives the claimed paths.
 | --- | --- |
 | `format`, `format_version` | `nocloom.path_report` and 1 |
 | `module` | The network name |
-| `links` | Every link of both graphs once. Each has its end names and kinds, its sender and receiver domains, its stages, its `pipe_cycles` per domain and its `bypass_cycles` |
+| `links` | Every link of every graph once. Each has its end names and kinds, what it `carries`, its sender and receiver domains, its stages, its `pipe_cycles` per domain and its `bypass_cycles` |
 | `links[].timing` | For a link with estimates: `delays` (its `link_timing` entry), `status` (`met`, `unmet` or `unknown`), the `missing` estimate fields and every path in `paths`. A link with a crossing out of the model has `unmodeled_crossing` instead of `missing` and `paths` |
-| `paths` | Each route path once, by graph and link names, with the flows that take it, its `pipe_cycles` per domain, its `bypass_cycles` and its `crossings` |
+| `paths` | Each route path once, by graph, `carries` and link names, with the flows that take it, its `pipe_cycles` per domain, its `bypass_cycles` and its `crossings` |
 | `plan` | `status` (`none`, `met` or `unmet`), the planned `links` and each `unmet` diagnostic. A planned link has its complete `stages`, the `added` pipes, `pipe_cycles_added`, `bits_added` and its least `slack_ps` |
 
 A `paths` entry of a link has `signal` (`forward`, `ready` or `turn`), `from`,
 `to`, `via` for a turn, `delay_ps`, `limit`, `bound_ps` and `slack_ps`. An
 unknown value is `null`. `bypass_cycles` counts the pipe cycles that a bypass
 port can remove.
+
+## Separate read and write paths
+
+`carries` is `both` for a link or path of shared paths. With
+[separate paths](read-write-paths.md) it is `writes` or `reads` for a link or
+path of one direction. A configured link with separate paths is a write link
+and a read link in the report.
+
+One `link_timing` entry gives the estimates of both links, and the planner
+adds the same pipes to both. `added` lists the pipes of each link, and
+`bits_added` counts both. A latency limit applies to the write paths and to
+the read paths of its pair.

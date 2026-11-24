@@ -136,6 +136,9 @@ def check_scope(source, work, graphs):
     silent = copy.deepcopy(withdrawn)
     silent['completion']['unmet'] = []
     rejects(source, work, 'ScopeSilent', silent, 'withdraws the theorems without a reason')
+    repeated = copy.deepcopy(withdrawn)
+    repeated['completion']['unmet'].append(copy.deepcopy(unmet[0]))
+    rejects(source, work, 'ScopeRepeated', repeated, 'an unmet premise is listed twice')
     missing = copy.deepcopy(ordinary)
     del missing['completion']
     rejects(source, work, 'ScopeMissing', missing, 'no completion scope')

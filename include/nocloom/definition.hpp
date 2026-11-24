@@ -77,6 +77,11 @@ struct EndpointClockGates {
 // mode: they clear synchronously while their side's handshake enable is low, so they never change
 // asynchronously with the announce the other side samples (see "Clocks and resets").
 enum class ResetCoverage { All, Minimal };
+// The paths of reads and writes through the network. Shared (the default): one request graph and
+// one response graph carry both. Separate: reads and writes each take their own request and
+// response graphs, with their own switches, arbiters, links, pipes and crossings, built from the
+// one configured topology (see "Separate read and write paths" in the network manual).
+enum class ReadWritePaths { Shared, Separate };
 enum class Backend { Verilog2001 };
 // How a register with a reset pin clears. Asynchronous (the default): at once while its reset is
 // low. Synchronous: on a rising edge of its clock while its reset is low, synchronizer and reset
@@ -1059,6 +1064,7 @@ struct Definition {
   std::optional<TransportOptions> transport;
   // Absent generates one switch per direction from connectivity.
   std::optional<ExchangeTopology> topology;
+  ReadWritePaths read_write = ReadWritePaths::Shared;
   // Required; Connectivity::all admits every pair.
   std::optional<Connectivity> connectivity;
   // Error logs on the one target with log_registers.
