@@ -208,15 +208,16 @@ below its initiator's address limit. Every aligned mapping block must be
 reachable by at least one connected initiator.
 
 Flow indices must fit their endpoint. An explicit route for an unconnected flow
-pair is rejected. Connectivity entry order does not affect generation.
+pair is rejected. Connectivity entry order does not affect generation. The map
+lists admitted flow pairs and each route's flow indices.
 
 A miss request uses one flow pair, regardless of its initiator flow. Without a
 named [default target](address-map.md#decode-misses), it takes the mapping that
 owns the selected aligned block. With a named default, it takes that target's
 smallest reached mapping. Both cases use that mapping's target flow and the
 lowest initiator flow reaching it. The answer returns over its AxID's flow and
-that target flow, or over the miss's pair if that pair is unconnected. The map
-lists admitted flow pairs and each route's flow indices.
+that target flow. If the matrix leaves out that pair, the answer returns over
+the miss's pair.
 
 ## Route and word behavior
 
@@ -244,6 +245,5 @@ beats per transfer word. See
 
 ## Related topics
 
-See [Link pipes](pipes.md#link-pipes) and [stage lists](pipes.md#stage-lists).
-
-See [Arbitration](arbitration.md#arbitration).
+See [Link pipes](pipes.md#link-pipes), [stage lists](pipes.md#stage-lists) and
+[Arbitration](arbitration.md#arbitration).
