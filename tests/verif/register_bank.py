@@ -74,6 +74,9 @@ FAULTS = [
          **{"with": dict(op="BitAnd", args=[
              {"select": {"state_next": {"binding": "access.word_index"}}},
              {"const": 7}])}),
+    # Bytes 2 to 0 of a read follow the register after byte 3 has left.
+    dict(id="read_bytes_unsampled", expect=("read_word_sampled",),
+         **replace("logger", "response.remainder", select={"binding": "access.read_value"})),
 ]
 
 

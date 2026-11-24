@@ -585,6 +585,29 @@ module tb;
     check(v === at(1, `LOGGER_record_target_path_lsb), "record_path");
     read(`LOGGER_record_region_index, v); check(v === 0, "record_origin");
     read(`LOGGER_record_address_low, v); check(v === 32'h12345678, "record_address");
+    // A read answers the word of the cycle that loads its byte 3. The answer stalls with that
+    // byte in its register and again behind each later byte, the address changes in every
+    // stall, and bytes 2 to 0 still come from the first word.
+    fresh;
+    s_ready = 0;
+    word(header(`LOGGER_record_address_low), 1);
+    idle;
+    repeat (2) @(negedge clk);
+    for (s = 0; s < 4; s = s + 1) begin
+      s_ready = 1;
+      @(negedge clk);
+      s_ready = 0;
+      if (s == 0)
+        check(got_n == 1 && rs_valid[1] === 1'b1 && rs_data[1] === {1'b0, 8'h12},
+              "read_word_first_byte");
+      record_address = 32'h9abcdef0 ^ {4{s[7:0]}};
+      repeat (2) @(negedge clk);
+    end
+    s_ready = 1;
+    settle;
+    v = {got_data[1][7:0], got_data[2][7:0], got_data[3][7:0], got_data[4][7:0]};
+    check(got_n == 5 && got_tail[4] === 1'b1 && v === 32'h12345678, "read_word_sampled");
+    record_address = 32'h12345678;
     // This record has no audit flags and no user flags: their words read zero.
     read(4'h6, v); check(v === 0, "absent_reads_zero");
     read(4'h8, v); check(v === 0, "absent_reads_zero");
