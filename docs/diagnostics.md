@@ -116,6 +116,9 @@ See [protocols](protocols.md), [transactions](transactions.md),
 | `NCL_LINK_STAGE_POSITION` | A C++ stage list has an unknown `LinkSide`. A stage list has a `word_bytes` other than 4, 8, 16 or 32, or no position of its side has that word width. Two stage lists of a link use one position |
 | `NCL_LINK_STAGE_CLOCK` | A stage list names a clock domain other than the domain of its position |
 | `NCL_LINK_STAGE_LIST` | A stage list has no pipes or more than 64 pipes, or a listed pipe has no `slice` |
+| `NCL_LINK_TIMING` | A `link_timing` value is out of range, names an absent domain, link, position, initiator or target, or repeats an entry. It can also set `turn_ps` on the link wire or `crossing` on a link without a crossing, or a period other than its domain's `period_ps`. In C++ it can also set an unknown `LinkGraph`, or `return_ps` on a receiver or through allowance. YAML reports those two with `NCL_SCHEMA_TYPE` and `NCL_SCHEMA_UNKNOWN_FIELD` |
+| `NCL_STAGE_PLAN_UNKNOWN` | The stage plan needs an estimate that `link_timing` lacks, or a planned link has a clock crossing other than an asynchronous FIFO |
+| `NCL_STAGE_PLAN_UNMET` | No stage placement meets a period, allowance or latency limit of `link_timing` |
 | `NCL_ENDPOINT_PIPE` | Unsupported endpoint pipe configuration |
 | `NCL_NODE_PIPE_CONFLICT`, `NCL_NODE_PIPE_UNUSED` | Ambiguous or unused node pipe defaults |
 

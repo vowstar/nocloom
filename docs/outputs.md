@@ -25,6 +25,7 @@ Related manuals: [CDC timing constraints](timing-constraints.md).
 | `nocloom_<name>.error_logs.h` | Error log register macros | `--c-header` with error logs |
 | `nocloom_<name>.cdc.sdc` and `.cdc_preserve.txt` | Timing exceptions and preserve list | `--cdc-constraints` |
 | `nocloom_<name>.netlist.txt` | [Netlist](netlist.md) that the top module prints | `--netlist` |
+| `nocloom_<name>.path_report.json` | Link stages, path cycles, path delays and a stage plan, see [path report](path-report.md) | `--path-report` |
 
 The bundle records the generator version. Without `error_logging.revision`,
 the revision register of [error logging](error-logging.md#configuration) also

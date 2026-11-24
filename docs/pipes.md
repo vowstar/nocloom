@@ -107,6 +107,9 @@ list every element in data flow order.
 | `origin` | Pipe | `sender_pipeline`, `pipeline` or `stages` |
 | `list`, `index` | Listed pipe | Place of the stage list in `stages` and of the pipe in its list |
 
+The [path report](path-report.md) lists the stages and cycles of every path
+and proposes stage lists from delay estimates.
+
 ## Endpoint pipes
 
 | Initiator field | Position | Values | Default |

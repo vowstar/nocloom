@@ -31,6 +31,7 @@ private:
   friend Result<Plan> make_plan(const Definition &, const SourceMap *, const ValidationOptions &);
   friend Result<ArtifactSet> emit(const Plan &, const GenerationOptions &);
   friend Status validate(const Definition &, const GenerationOptions &, const SourceMap *);
+  friend Result<Definition> plan_link_stages(const Plan &, const SourceMap *);
 };
 
 std::string_view version() noexcept;
@@ -50,4 +51,12 @@ Result<ArtifactSet> generate(const Definition &definition, const GenerationOptio
 // files with role address_table; every other artifact keeps its bytes. Fails without exactly one
 // map and bundle, or when the set already has an address table.
 Result<ArtifactSet> add_address_table(ArtifactSet artifacts);
+// The stage lists that meet the limits of the plan's Definition::link_timing
+// (docs/path-report.md): the definition with them added to its switch links. Each link with
+// delays takes the fewest pipe cycles, then the fewest pipe bits, then the largest slack; the
+// added pipes follow the pipes a position already has. The result has been planned again and
+// checked to give the claimed paths. Fails with a diagnostic at each limit that no stage
+// placement meets (NCL_STAGE_PLAN_UNMET) and at each estimate a planned link lacks
+// (NCL_STAGE_PLAN_UNKNOWN).
+Result<Definition> plan_link_stages(const Plan &plan, const SourceMap *sources = nullptr);
 } // namespace nocloom

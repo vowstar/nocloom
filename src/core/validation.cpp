@@ -6,6 +6,7 @@
 #include "hardware.hpp"
 #include "message.hpp"
 #include "nocloom/generation.hpp"
+#include "path_report.hpp"
 #include "switch_graph.hpp"
 #include "tilelink.hpp"
 #include <algorithm>
@@ -2143,6 +2144,103 @@ void check_axi5_data_width(Checks &c) {
   check(c.d.initiators, "initiators");
   check(c.d.targets, "targets");
 }
+// The estimates and limits of link_timing: ranges, names and duplicates. Span positions
+// and adapters are checked on the plan (capability.cpp).
+void check_link_timing(Checks &c) {
+  if (!c.d.link_timing)
+    return;
+  const auto &t = *c.d.link_timing;
+  constexpr std::uint64_t most = 1000000000;
+  const auto time = [&](const std::optional<std::uint64_t> &value, const std::string &field) {
+    if (value && *value > most)
+      c("NCL_LINK_TIMING", field, "A time is 0 to 1000000000 ps");
+  };
+  for (std::size_t i = 0; i < t.periods.size(); ++i) {
+    const auto &p = t.periods[i];
+    const auto at = "link_timing.periods[" + std::to_string(i) + "]";
+    const auto domain = std::ranges::find(c.d.clock_domains, p.clock_domain, &ClockDomain::name);
+    if (domain == c.d.clock_domains.end())
+      c("NCL_LINK_TIMING", at + ".clock_domain", "No clock domain " + p.clock_domain);
+    else if (domain->period_ps && *domain->period_ps != p.period_ps)
+      c("NCL_LINK_TIMING", at + ".period_ps",
+        "The period differs from clock_domains[" +
+            std::to_string(domain - c.d.clock_domains.begin()) + "].period_ps");
+    if (p.period_ps == 0 || p.period_ps > most)
+      c("NCL_LINK_TIMING", at + ".period_ps", "A period is 1 to 1000000000 ps");
+    for (std::size_t j = 0; j < i; ++j)
+      if (t.periods[j].clock_domain == p.clock_domain)
+        c("NCL_LINK_TIMING", at + ".clock_domain",
+          "Clock domain " + p.clock_domain + " has a period twice");
+  }
+  time(t.stage.launch_ps, "link_timing.stage.launch_ps");
+  time(t.stage.capture_ps, "link_timing.stage.capture_ps");
+  time(t.stage.forward_pass_ps, "link_timing.stage.forward_pass_ps");
+  time(t.stage.ready_pass_ps, "link_timing.stage.ready_pass_ps");
+  for (std::size_t k = 0; k < t.links.size(); ++k) {
+    const auto &l = t.links[k];
+    const auto at = "link_timing.links[" + std::to_string(k) + "]";
+    if (l.graph != LinkGraph::Request && l.graph != LinkGraph::Response) {
+      c("NCL_LINK_TIMING", at + ".graph", "Expected request or response");
+      continue;
+    }
+    const bool response = l.graph == LinkGraph::Response;
+    const auto *graph =
+        c.d.topology ? &(response ? c.d.topology->response : c.d.topology->request) : nullptr;
+    if (!graph || std::ranges::none_of(graph->links, [&](const ExchangeLink &e) {
+          return e.from == l.from && e.to == l.to;
+        }))
+      c("NCL_LINK_TIMING", at,
+        "The " + std::string(response ? "response" : "request") + " graph has no link " + l.from +
+            " -> " + l.to);
+    for (std::size_t j = 0; j < k; ++j)
+      if (t.links[j].graph == l.graph && t.links[j].from == l.from && t.links[j].to == l.to)
+        c("NCL_LINK_TIMING", at, "Link " + l.from + " -> " + l.to + " has delays twice");
+    for (std::size_t j = 0; j < l.spans.size(); ++j) {
+      const auto &s = l.spans[j];
+      const auto span = at + ".spans[" + std::to_string(j) + "]";
+      if (s.side != LinkSide::Sender && s.side != LinkSide::Receiver)
+        c("NCL_LINK_TIMING", span + ".side", "Expected sender or receiver");
+      if (const auto w = s.word_bytes; w && *w != 4 && *w != 8 && *w != 16 && *w != 32)
+        c("NCL_LINK_TIMING", span + ".word_bytes",
+          "A link position passes a word of 4, 8, 16 or 32 bytes");
+      time(s.forward_ps, span + ".forward_ps");
+      time(s.ready_ps, span + ".ready_ps");
+      time(s.turn_ps, span + ".turn_ps");
+    }
+    if (l.crossing) {
+      time(l.crossing->forward_ps, at + ".crossing.forward_ps");
+      time(l.crossing->ready_ps, at + ".crossing.ready_ps");
+    }
+    for (const auto &[end, allowance] :
+         {std::pair{"sender", &l.allowances.sender}, std::pair{"receiver", &l.allowances.receiver},
+          std::pair{"through", &l.allowances.through}}) {
+      const auto b = at + ".allowances." + end;
+      time(allowance->forward_ps, b + ".forward_ps");
+      time(allowance->ready_ps, b + ".ready_ps");
+      time(allowance->return_ps, b + ".return_ps");
+      if (allowance->return_ps && std::string(end) != "sender")
+        c("NCL_LINK_TIMING", b + ".return_ps", "Only the sender end has a return allowance");
+    }
+  }
+  for (std::size_t i = 0; i < t.latency_limits.size(); ++i) {
+    const auto &l = t.latency_limits[i];
+    const auto at = "link_timing.latency_limits[" + std::to_string(i) + "]";
+    if (std::ranges::find(c.d.initiators, l.initiator, &Initiator::name) == c.d.initiators.end())
+      c("NCL_LINK_TIMING", at + ".initiator", "No initiator " + l.initiator);
+    if (std::ranges::find(c.d.targets, l.target, &Target::name) == c.d.targets.end())
+      c("NCL_LINK_TIMING", at + ".target", "No target " + l.target);
+    if (!l.request_cycles && !l.response_cycles)
+      c("NCL_LINK_TIMING", at, "A latency limit sets request_cycles or response_cycles");
+    for (const auto &[value, key] : {std::pair{l.request_cycles, ".request_cycles"},
+                                     std::pair{l.response_cycles, ".response_cycles"}})
+      if (value && *value > 4096)
+        c("NCL_LINK_TIMING", at + key, "A latency limit is 0 to 4096 cycles");
+    for (std::size_t j = 0; j < i; ++j)
+      if (t.latency_limits[j].initiator == l.initiator && t.latency_limits[j].target == l.target)
+        c("NCL_LINK_TIMING", at,
+          "The pair " + l.initiator + ", " + l.target + " has a latency limit twice");
+  }
+}
 // Network user flags: distinct names, a driver of every flag at every source (an AxUSER bit of an
 // AXI4, AXI3 or AXI4-Lite source with a user port, an attribute flag or a constant) and AxUSER
 // bits of AXI4, AXI3 and AXI4-Lite targets that name declared flags.
@@ -2272,6 +2370,7 @@ Result<PlanData> plan_definition(const Definition &d, const ValidationOptions &l
   check_targets(c);
   check_axi5_pairs(c);
   check_user_flags(c);
+  check_link_timing(c);
   if (c.errors.empty())
     check_connected_mappings(d, c);
   // Explicit routes name connected pairs before their paths are planned.
@@ -2345,6 +2444,11 @@ Status validate(const Definition &definition, const GenerationOptions &options,
   auto checked = detail::check_axi4_network(*plan.value().data_, definition, options);
   if (!checked && checked.diagnostics().front().code == "NCL_NAME_OUTPUT_COLLISION")
     return Status::failure(detail::locate(checked.diagnostics(), sources));
+  if (!checked || !options.path_report)
+    return checked;
+  auto report = detail::path_report(*plan.value().data_, definition);
+  if (!report)
+    return Status::failure(report.diagnostics());
   return checked;
 }
 } // namespace nocloom

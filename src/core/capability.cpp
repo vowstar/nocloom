@@ -78,6 +78,61 @@ std::optional<Finding> misclocked_stages(const Definition &def, const LinkPlan &
   }
   return std::nullopt;
 }
+// The first span or crossing delay of link_timing that names no span of its link: a position the
+// side does not pass, the last receiver position (no span follows it), a second entry of a
+// position, a turn on the link wire, or crossing delays on a link without a crossing.
+std::optional<Finding> misplaced_delays(const Definition &def, const NetworkPlan &plan) {
+  if (!def.link_timing)
+    return std::nullopt;
+  const auto &timing = *def.link_timing;
+  for (std::size_t k = 0; k < timing.links.size(); ++k) {
+    const auto &l = timing.links[k];
+    const bool response = l.graph == LinkGraph::Response;
+    const auto link = std::ranges::find_if(plan.links, [&](const LinkPlan &p) {
+      return p.response == response && !p.from_name.empty() && p.from_name == l.from &&
+             p.to_name == l.to;
+    });
+    if (link == plan.links.end())
+      continue;
+    const auto at = "link_timing.links[" + std::to_string(k) + "]";
+    for (std::size_t j = 0; j < l.spans.size(); ++j) {
+      const auto &s = l.spans[j];
+      const bool sender = s.side == LinkSide::Sender;
+      const auto &words = sender ? link->sender_words : link->receiver_words;
+      const auto word = s.word_bytes.value_or(sender ? link->from_bytes : link->to_bytes);
+      const auto span = at + ".spans[" + std::to_string(j) + "]";
+      const auto side = std::string(sender ? "sender" : "receiver");
+      const auto found = std::ranges::find(words, word);
+      if (found == words.end()) {
+        std::string legal;
+        for (const auto w : words)
+          legal += (legal.empty() ? "" : ", ") + std::to_string(w);
+        return Finding{span + ".word_bytes",
+                       "The " + side + " side of this link has no position of " +
+                           std::to_string(word) + "-byte words. Its positions pass " + legal +
+                           " bytes"};
+      }
+      if (!sender && found + 1 == words.end())
+        return Finding{span, "No span follows the last receiver position: the link ends there"};
+      for (std::size_t i = 0; i < j; ++i) {
+        const auto &o = l.spans[i];
+        if (o.side == s.side &&
+            o.word_bytes.value_or(sender ? link->from_bytes : link->to_bytes) == word)
+          return Finding{span, "Another entry has the delays of the span after the " + side +
+                                   " position of " + std::to_string(word) + "-byte words"};
+      }
+      if (s.turn_ps && sender && found + 1 == words.end())
+        return Finding{span + ".turn_ps",
+                       "The span after the last sender position is the link wire, which has no "
+                       "width adapter and no turn"};
+    }
+    const bool crossing = std::ranges::any_of(
+        link->stages, [](const StagePlan &s) { return s.kind == StageKind::Crossing; });
+    if (l.crossing && !crossing)
+      return Finding{at + ".crossing", "The link has no clock crossing"};
+  }
+  return std::nullopt;
+}
 // Whether a crossing FIFO leaves domain from (any when empty) for domain to (any when empty).
 bool crosses(const NetworkPlan &plan, const std::string &from, const std::string &to) {
   return std::ranges::any_of(plan.cuts, [&](const ClockCut &cut) {
@@ -350,6 +405,8 @@ constexpr CapabilityRule rules[] = {
      [](const RuleView &v) { return unplaced_stages(v.def, v.plan.links[v.at]); }},
     {"link.stage_clock", "NCL_LINK_STAGE_CLOCK", Scope::Link, Stage::Plan,
      [](const RuleView &v) { return misclocked_stages(v.def, v.plan.links[v.at]); }},
+    {"network.link_timing_spans", "NCL_LINK_TIMING", Scope::Network, Stage::Plan,
+     [](const RuleView &v) { return misplaced_delays(v.def, v.plan); }},
     {"target.whole_id", "NCL_AXI4_EXCHANGE_ID_WIDTH", Scope::Target, Stage::Plan,
      [](const RuleView &v) {
        const auto &p = v.plan;

@@ -104,6 +104,7 @@ both. A parent CMake project can use `add_subdirectory` and link
 | `emit` | Plan and generation options. Returns artifacts |
 | `generate` | Definition and generation options. Validates, plans and emits artifacts |
 | `add_address_table` | Artifact set with one map and bundle. Adds address table files |
+| `plan_link_stages` | Plan and an optional source location map. Returns the definition with the [planned stage lists](path-report.md#plan) |
 | `add_ipxact` | Definition, artifact set and IP-XACT options. Adds a component XML file |
 | `version` | Returns the generator version |
 | `io::load_definition` | Path to a `.yaml` or `.yml` file. Returns `ParsedDefinition` |
@@ -124,6 +125,7 @@ the bundle.
 | `address_table` | [Address tables](outputs.md#address-table) in JSON and CSV |
 | `ipxact` | [IP-XACT component](outputs.md#ip-xact) with the default component identifier |
 | `netlist` | [Netlist](netlist.md) that the top module prints |
+| `path_report` | [Path report](path-report.md) |
 
 C headers need no address table output. A macro name conflict produces
 `NCL_C_HEADER_NAME`. Use `add_ipxact` with `IpxactOptions` to set the component

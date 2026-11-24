@@ -153,7 +153,7 @@ traffic crosses its boundary.
 | Transactions | Several AXI transactions in flight, exclusive access, target timeouts and an error response on a decode miss |
 | Scheduling | Fixed levels from 0 to 7 on [full AXI](docs/protocols.md), AHB-Lite and AHB5 sources to full AXI targets, or on 32-bit APB networks. Full AXI sources support AxQOS maps. AXI5, ACE5-Lite and AXI4 targets can drive AxQOS from the level. Full AXI and 32-bit APB sources support bandwidth limits |
 | Routing | NocLoom fixes each route at generation. It rejects routes that form a cycle of waits and [reports](docs/network.md#route-cycle-report) the routes of each wait |
-| Output files | Always: Verilog-2001 RTL and three JSON files, which are the map, the bundle and the dependency graph. Optional: IP-XACT (`--ipxact`), address table (`--address-table`), CDC constraints (`--cdc-constraints`), C headers (`--c-header`) and netlist (`--netlist`) |
+| Output files | Always: Verilog-2001 RTL and three JSON files, which are the map, the bundle and the dependency graph. Optional: IP-XACT (`--ipxact`), address table (`--address-table`), CDC constraints (`--cdc-constraints`), C headers (`--c-header`), netlist (`--netlist`) and path report (`--path-report`) |
 | C++ library | In-memory generation, tree and mesh topology helpers, and a CMake package. The core library does no file I/O and prints nothing |
 
 See [Documentation](#documentation) for field definitions and limits.
@@ -192,7 +192,7 @@ field path, a message, the file line and column when known, and a [diagnostic co
 | [Wishbone](docs/wishbone.md) | Shared fields and signals, [classic cycles](docs/wishbone-classic.md), [pipelined cycles](docs/wishbone-pipelined.md) and [registered feedback bursts](docs/wishbone-registered-feedback.md) |
 | [Transactions](docs/transactions.md) | Bursts in flight, target IDs, read interleaving, exclusive access and timeouts |
 | [Scheduling](docs/scheduling.md) | Levels, AxQOS maps, bandwidth shapers and bandwidth schedulers |
-| [Output files](docs/outputs.md) | Map, bundle, dependency graph, IP-XACT, address table, CDC constraints and C headers |
+| [Output files](docs/outputs.md) | Map, bundle, dependency graph, IP-XACT, address table, CDC constraints, C headers and [path report](docs/path-report.md) |
 | [C headers](docs/c-headers.md) | Address and error log register macros |
 | [Error logging](docs/error-logging.md) | Register windows, capture, filters and alarms |
 | [Library](docs/library.md) | Build requirements, CMake packages, C++ API, tree and mesh topology helpers |

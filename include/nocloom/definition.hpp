@@ -952,6 +952,75 @@ struct ErrorLogging {
   bool capture_class = true;
   bool operator==(const ErrorLogging &) const = default;
 };
+// Delay estimates and limits for the path report and the stage planner (docs/path-report.md).
+// They describe the physical design and never change the generated hardware. Every time is in
+// ps, 0 to 1000000000; an absent value is unknown.
+enum class LinkGraph { Request, Response };
+// A pipe's own delays: from its register to its output (launch), from its input into its
+// registers (capture), and through it in a direction it does not register (pass).
+struct StageDelays {
+  std::optional<std::uint64_t> launch_ps = std::nullopt, capture_ps = std::nullopt;
+  std::optional<std::uint64_t> forward_pass_ps = std::nullopt, ready_pass_ps = std::nullopt;
+  bool operator==(const StageDelays &) const = default;
+};
+// The span of a link from the position named as in LinkStages to the next point (the next
+// position, the crossing or the receiving switch). A span through a width adapter also has a
+// turn: from the forward signals at its start, through the adapter, to its ready at its start.
+struct SpanDelays {
+  LinkSide side = LinkSide::Sender;
+  std::optional<unsigned> word_bytes = std::nullopt;
+  std::optional<std::uint64_t> forward_ps = std::nullopt, ready_ps = std::nullopt,
+                               turn_ps = std::nullopt;
+  bool operator==(const SpanDelays &) const = default;
+};
+// The span from a clock crossing to the first receiver position.
+struct CrossingDelays {
+  std::optional<std::uint64_t> forward_ps = std::nullopt, ready_ps = std::nullopt;
+  bool operator==(const CrossingDelays &) const = default;
+};
+// The time a link may spend on a path that leaves or enters it at a switch end. forward: a
+// forward path between the switch end and a register of the link; ready: a ready path between a
+// register of the link and the switch end; return_ps (sender end only): a path that enters forward
+// at the sending switch and returns to it as ready. The through allowance is for a path that
+// crosses the whole link. An absent allowance allows no such path.
+struct EndAllowance {
+  std::optional<std::uint64_t> forward_ps = std::nullopt, ready_ps = std::nullopt,
+                               return_ps = std::nullopt;
+  bool operator==(const EndAllowance &) const = default;
+};
+struct LinkAllowances {
+  EndAllowance sender = {}, receiver = {}, through = {};
+  bool operator==(const LinkAllowances &) const = default;
+};
+// The estimates of one switch link, named by its graph and switch names.
+struct LinkDelays {
+  LinkGraph graph = LinkGraph::Request;
+  std::string from, to;
+  std::vector<SpanDelays> spans = {};
+  std::optional<CrossingDelays> crossing = std::nullopt;
+  LinkAllowances allowances = {};
+  bool operator==(const LinkDelays &) const = default;
+};
+// The most link pipe cycles every path of a connected pair may take, per direction.
+struct LatencyLimit {
+  std::string initiator, target;
+  std::optional<unsigned> request_cycles = std::nullopt, response_cycles = std::nullopt;
+  bool operator==(const LatencyLimit &) const = default;
+};
+// The clock period that paths of a domain must fit. A domain without one takes the period of its
+// clock_domains entry in an explicitly clocked graph, and is unknown otherwise.
+struct DomainPeriod {
+  std::string clock_domain;
+  std::uint64_t period_ps = 0;
+  bool operator==(const DomainPeriod &) const = default;
+};
+struct LinkTiming {
+  std::vector<DomainPeriod> periods = {};
+  StageDelays stage = {};
+  std::vector<LinkDelays> links = {};
+  std::vector<LatencyLimit> latency_limits = {};
+  bool operator==(const LinkTiming &) const = default;
+};
 // Definitions name each endpoint's protocol and data width. A network has 1..256
 // initiators and targets. Without topology, it has one same-domain switch per direction.
 // With a topology, each connected pair needs an explicit or unique directed route.
@@ -994,6 +1063,8 @@ struct Definition {
   std::optional<Connectivity> connectivity;
   // Error logs on the one target with log_registers.
   ErrorLogging error_logging = {};
+  // Estimates and limits for the path report and plan; no effect on the hardware.
+  std::optional<LinkTiming> link_timing = std::nullopt;
   // Field by field, in order: equal definitions generate the same bytes.
   bool operator==(const Definition &) const = default;
 };
@@ -1023,6 +1094,10 @@ struct GenerationOptions {
   // Adds <top>.netlist.txt: the hardware that <top>.v prints, as text records. Off leaves every
   // artifact unchanged.
   bool netlist = false;
+  // Adds <top>.path_report.json: link stages, clock domains and pipe cycles of every path, the
+  // delays of Definition::link_timing and the proposed stage lists. Every other artifact but the
+  // bundle keeps its bytes.
+  bool path_report = false;
 };
 using SourceMap = std::map<std::string, SourceLocation>;
 struct ParsedDefinition {

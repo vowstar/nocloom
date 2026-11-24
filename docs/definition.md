@@ -48,6 +48,7 @@ Use YAML or C++ `nocloom::Definition`. Both use the same validator.
 | `arbitration` | Object with `policy` | Round robin |
 | `transport` | Network widths, capacity and sideband fields | Defaults below |
 | `error_logging` | Register window and error logs | Absent |
+| `link_timing` | Delay estimates and limits for the [path report](path-report.md) | Absent |
 | `output` | Backend, language and register reset style | Required in YAML, with `backend` and `language` |
 | `templates` | YAML endpoint templates | Empty |
 | `groups` | YAML connectivity groups | Empty |
@@ -95,10 +96,9 @@ zero. The C++ fields have the same names, defaults and limits.
 
 ## Initiator error responses
 
-`initiators[].slverr_only` accepts `true` or `false` and defaults to `false`.
-It applies to full AXI and AXI4-Lite initiators.
-The C++ field is `Initiator::slverr_only`. See
-[error responses](address-map.md#error-responses).
+`initiators[].slverr_only` accepts `true` or `false` and defaults to `false`. It
+applies to full AXI and AXI4-Lite initiators. The C++ field is
+`Initiator::slverr_only`. See [error responses](address-map.md#error-responses).
 
 ## Output configuration
 

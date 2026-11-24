@@ -4,6 +4,7 @@
 #include <exception>
 #include <iostream>
 #include <new>
+#include <nlohmann/json.hpp>
 
 namespace {
 int report(const std::vector<nocloom::Diagnostic> &diagnostics) {
@@ -33,6 +34,7 @@ int run(int argc, char **argv) {
   bool cdc_constraints = false;
   bool c_header = false;
   bool netlist = false;
+  bool path_report = false;
   nocloom::ValidationOptions limits;
   auto *validate = app.add_subcommand("validate", "Validate an interconnect definition");
   validate->add_option("input", input, "YAML definition")->required();
@@ -50,6 +52,8 @@ int run(int argc, char **argv) {
                       "Request C headers for address windows and error log registers");
     command->add_flag("--netlist", netlist,
                       "Request the hardware that the Verilog prints as text records");
+    command->add_flag("--path-report", path_report,
+                      "Request the link path report with its proposed stage lists");
     command->add_option("--cycle-limit", limits.cycle_limit,
                         "Route cycles reported per direction, 1 to 1024 (default 4)");
     command->add_option("--contributor-limit", limits.contributor_limit,
@@ -102,11 +106,17 @@ int run(int argc, char **argv) {
   options.address_table = address_table;
   options.ipxact = ipxact;
   options.netlist = netlist;
+  options.path_report = path_report;
   if (*validate) {
     auto status = nocloom::validate(definition.definition, options, &definition.sources);
     if (!status)
       return report(status.diagnostics());
     std::cout << "Definition is valid\n";
+    // As generate does: the limits that the stage plan does not meet (docs/path-report.md).
+    if (path_report)
+      if (auto plan = nocloom::make_plan(definition.definition, &definition.sources, limits))
+        if (auto staged = nocloom::plan_link_stages(plan.value(), &definition.sources); !staged)
+          std::cout << "Stage plan limits unmet: " << staged.diagnostics().size() << "\n";
     return 0;
   }
   auto artifacts = nocloom::generate(definition.definition, options, &definition.sources);
@@ -121,6 +131,14 @@ int run(int argc, char **argv) {
     if (artifact.path.ends_with(".dependency.json") &&
         artifact.text.find("\"status\": \"cycle\"") != std::string::npos)
       std::cout << "Dependency cycle reported in " << artifact.path << "\n";
+  // The path report lists the limits its plan does not meet (docs/path-report.md).
+  for (const auto &artifact : artifacts.value())
+    if (artifact.path.ends_with(".path_report.json")) {
+      const auto plan = nlohmann::json::parse(artifact.text).at("plan");
+      if (plan.at("status") == "unmet")
+        std::cout << "Stage plan limits unmet: " << plan.at("unmet").size() << ", see "
+                  << artifact.path << "\n";
+    }
   return 0;
 }
 } // namespace

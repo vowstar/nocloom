@@ -452,6 +452,128 @@ Protocol endpoint_protocol(Reader &r, const YAML::Node &node, const std::string 
 } // namespace
 
 // error_logging: the window of the registers, a target of its own, and the logs.
+// link_timing: delay estimates and limits for the pipe report and plan.
+void link_timing(Reader &r, const YAML::Node &node, Definition &d) {
+  const std::string at = "link_timing";
+  r.object(node, at, {"periods", "stage", "links", "latency_limits"});
+  auto &t = d.link_timing.emplace();
+  const auto time = [&](const YAML::Node &object, const std::string &path, const char *key,
+                        std::optional<std::uint64_t> &out) {
+    if (object[key])
+      out = r.integer<std::uint64_t>(r.field(object, key, path + "." + key), path + "." + key);
+  };
+  if (node["periods"]) {
+    const auto periods = r.field(node, "periods", at + ".periods");
+    r.sequence(periods, at + ".periods");
+    for (std::size_t i = 0; i < periods.size(); ++i) {
+      const auto path = at + ".periods[" + std::to_string(i) + "]";
+      const auto &item = periods[i];
+      r.note(path, item.Mark());
+      r.object(item, path, {"clock_domain", "period_ps"});
+      t.periods.push_back(
+          {r.string(r.field(item, "clock_domain", path + ".clock_domain"), path + ".clock_domain"),
+           r.integer<std::uint64_t>(r.field(item, "period_ps", path + ".period_ps"),
+                                    path + ".period_ps")});
+    }
+  }
+  if (node["stage"]) {
+    const auto stage = r.field(node, "stage", at + ".stage");
+    const auto path = at + ".stage";
+    r.object(stage, path, {"launch_ps", "capture_ps", "forward_pass_ps", "ready_pass_ps"});
+    time(stage, path, "launch_ps", t.stage.launch_ps);
+    time(stage, path, "capture_ps", t.stage.capture_ps);
+    time(stage, path, "forward_pass_ps", t.stage.forward_pass_ps);
+    time(stage, path, "ready_pass_ps", t.stage.ready_pass_ps);
+  }
+  if (node["links"]) {
+    const auto links = r.field(node, "links", at + ".links");
+    r.sequence(links, at + ".links");
+    for (std::size_t k = 0; k < links.size(); ++k) {
+      const auto path = at + ".links[" + std::to_string(k) + "]";
+      const auto &item = links[k];
+      r.note(path, item.Mark());
+      r.object(item, path, {"graph", "from", "to", "spans", "crossing", "allowances"});
+      auto &l = t.links.emplace_back();
+      const auto graph = r.field(item, "graph", path + ".graph");
+      if (const auto name = r.string(graph, path + ".graph"); name == "request")
+        l.graph = LinkGraph::Request;
+      else if (name == "response")
+        l.graph = LinkGraph::Response;
+      else
+        r.fail("NCL_SCHEMA_TYPE", path + ".graph", "Expected request or response", graph.Mark());
+      l.from = r.string(r.field(item, "from", path + ".from"), path + ".from");
+      l.to = r.string(r.field(item, "to", path + ".to"), path + ".to");
+      if (item["spans"]) {
+        const auto spans = r.field(item, "spans", path + ".spans");
+        r.sequence(spans, path + ".spans");
+        for (std::size_t j = 0; j < spans.size(); ++j) {
+          const auto sp = path + ".spans[" + std::to_string(j) + "]";
+          const auto &entry = spans[j];
+          r.note(sp, entry.Mark());
+          r.object(entry, sp, {"side", "word_bytes", "forward_ps", "ready_ps", "turn_ps"});
+          auto &span = l.spans.emplace_back();
+          const auto side = r.field(entry, "side", sp + ".side");
+          if (const auto name = r.string(side, sp + ".side"); name == "sender")
+            span.side = LinkSide::Sender;
+          else if (name == "receiver")
+            span.side = LinkSide::Receiver;
+          else
+            r.fail("NCL_SCHEMA_TYPE", sp + ".side", "Expected sender or receiver", side.Mark());
+          if (entry["word_bytes"])
+            span.word_bytes =
+                r.integer(r.field(entry, "word_bytes", sp + ".word_bytes"), sp + ".word_bytes");
+          time(entry, sp, "forward_ps", span.forward_ps);
+          time(entry, sp, "ready_ps", span.ready_ps);
+          time(entry, sp, "turn_ps", span.turn_ps);
+        }
+      }
+      if (item["crossing"]) {
+        const auto crossing = r.field(item, "crossing", path + ".crossing");
+        r.object(crossing, path + ".crossing", {"forward_ps", "ready_ps"});
+        auto &c = l.crossing.emplace();
+        time(crossing, path + ".crossing", "forward_ps", c.forward_ps);
+        time(crossing, path + ".crossing", "ready_ps", c.ready_ps);
+      }
+      if (item["allowances"]) {
+        const auto allowances = r.field(item, "allowances", path + ".allowances");
+        const auto bp = path + ".allowances";
+        r.object(allowances, bp, {"sender", "receiver", "through"});
+        for (const auto &[key, out] : {std::pair{"sender", &l.allowances.sender},
+                                       std::pair{"receiver", &l.allowances.receiver},
+                                       std::pair{"through", &l.allowances.through}}) {
+          if (!allowances[key])
+            continue;
+          const auto end = r.field(allowances, key, bp + "." + key);
+          const auto ep = bp + "." + key;
+          if (std::string(key) == "sender")
+            r.object(end, ep, {"forward_ps", "ready_ps", "return_ps"});
+          else
+            r.object(end, ep, {"forward_ps", "ready_ps"});
+          time(end, ep, "forward_ps", out->forward_ps);
+          time(end, ep, "ready_ps", out->ready_ps);
+          time(end, ep, "return_ps", out->return_ps);
+        }
+      }
+    }
+  }
+  if (node["latency_limits"]) {
+    const auto limits = r.field(node, "latency_limits", at + ".latency_limits");
+    r.sequence(limits, at + ".latency_limits");
+    for (std::size_t i = 0; i < limits.size(); ++i) {
+      const auto path = at + ".latency_limits[" + std::to_string(i) + "]";
+      const auto &item = limits[i];
+      r.note(path, item.Mark());
+      r.object(item, path, {"initiator", "target", "request_cycles", "response_cycles"});
+      auto &l = t.latency_limits.emplace_back();
+      l.initiator = r.string(r.field(item, "initiator", path + ".initiator"), path + ".initiator");
+      l.target = r.string(r.field(item, "target", path + ".target"), path + ".target");
+      for (const auto &[key, out] : {std::pair{"request_cycles", &l.request_cycles},
+                                     std::pair{"response_cycles", &l.response_cycles}})
+        if (item[key])
+          *out = r.integer(r.field(item, key, path + "." + key), path + "." + key);
+    }
+  }
+}
 void error_logging(Reader &r, const YAML::Node &node, Definition &d) {
   const std::string at = "error_logging";
   r.object(node, at, {"registers", "audit_flags", "logs", "revision", "capture_class"});
@@ -572,7 +694,7 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
                         "clock_crossings", "initiators",     "targets",
                         "arbitration",     "transport",      "topology",
                         "connectivity",    "output",         "templates",
-                        "groups",          "error_logging"});
+                        "groups",          "error_logging",  "link_timing"});
     detail::expand_templates(r, root);
     if (root["arbitration"]) {
       auto arbitration = r.field(root, "arbitration", "arbitration");
@@ -1392,6 +1514,8 @@ Result<ParsedDefinition> parse(std::string_view text, std::string_view source_la
     }
     if (root["error_logging"])
       error_logging(r, root["error_logging"], d);
+    if (root["link_timing"])
+      link_timing(r, r.field(root, "link_timing", "link_timing"), d);
     auto output = r.field(root, "output", "output");
     r.object(output, "output", {"backend", "language", "register_reset"});
     for (auto [key, expected] :

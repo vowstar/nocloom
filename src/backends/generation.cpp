@@ -3,8 +3,10 @@
 #include "backends/c_header.hpp"
 #include "backends/constraints/cdc_sdc.hpp"
 #include "backends/optional_outputs.hpp"
+#include "backends/output_license.hpp"
 #include "core/axi4_output.hpp"
 #include "core/diagnostic.hpp"
+#include "core/path_report.hpp"
 #include <algorithm>
 #include <nlohmann/json.hpp>
 
@@ -46,8 +48,8 @@ Result<ArtifactSet> emit(const Plan &plan, const GenerationOptions &options) {
   if (!plan.data_)
     return Result<ArtifactSet>::failure(
         detail::error("NCL_INTERNAL_PLAN", "plan", "Plan has been moved from"));
-  const bool extra =
-      options.cdc_constraints || options.c_header || options.address_table || options.ipxact;
+  const bool extra = options.cdc_constraints || options.c_header || options.address_table ||
+                     options.ipxact || options.path_report;
   nlohmann::json map;
   auto emitted = detail::emit_axi4_network(*plan.data_, options.register_reset,
                                            extra ? &map : nullptr, options.netlist);
@@ -61,9 +63,26 @@ Result<ArtifactSet> emit(const Plan &plan, const GenerationOptions &options) {
   auto status = detail::process_optional_outputs(*plan.definition_, options, map, &output);
   if (!status)
     return Result<ArtifactSet>::failure(status.diagnostics());
+  if (options.path_report) {
+    auto report = detail::path_report(*plan.data_, *plan.definition_);
+    if (!report)
+      return Result<ArtifactSet>::failure(report.diagnostics());
+    output.add(map.at("module").get<std::string>() + ".path_report.json", "path_report",
+               detail::output_license_json(report.value()));
+  }
   std::ranges::find(artifacts, bundle_path, &Artifact::path)->text = bundle.dump(2) + "\n";
   std::ranges::sort(artifacts, {}, &Artifact::path);
   return emitted;
+}
+
+Result<Definition> plan_link_stages(const Plan &plan, const SourceMap *sources) {
+  if (!plan.data_)
+    return Result<Definition>::failure(
+        detail::error("NCL_INTERNAL_PLAN", "plan", "Plan has been moved from"));
+  auto planned = detail::link_stage_plan(*plan.data_, *plan.definition_);
+  if (!planned)
+    return Result<Definition>::failure(detail::locate(planned.diagnostics(), sources));
+  return planned;
 }
 
 Result<ArtifactSet> generate(const Definition &definition, const GenerationOptions &options,

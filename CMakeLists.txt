@@ -144,7 +144,7 @@ target_sources(nocloom_core PRIVATE src/core/switch_graph.cpp src/core/route_cyc
 
 target_sources(nocloom_core PRIVATE src/core/exchange_composition.cpp src/core/exchange_clocking.cpp
   src/core/dependency_graph.cpp src/core/network_plan.cpp src/core/network_plan_profiles.cpp src/core/plan_obligations.cpp
-  src/core/compose_checks.cpp src/core/capability.cpp)
+  src/core/compose_checks.cpp src/core/capability.cpp src/core/path_report.cpp)
 target_sources(nocloom_core PRIVATE src/core/treadle.cpp)
 target_sources(nocloom_core PRIVATE src/core/register_bank.cpp src/core/service_outlet.cpp
                                      src/core/error_logger.cpp)

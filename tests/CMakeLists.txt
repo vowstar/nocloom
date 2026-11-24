@@ -1259,6 +1259,18 @@ target_link_libraries(nocloom_tree_topology_unit PRIVATE nocloom_core Catch2::Ca
 add_test(NAME tree_topology_structure COMMAND nocloom_tree_topology_unit)
 set_tests_properties(tree_topology_structure PROPERTIES TIMEOUT 60 LABELS "unit;topology")
 
+add_executable(nocloom_path_report_unit unit/path_report.cpp)
+target_include_directories(nocloom_path_report_unit PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(nocloom_path_report_unit PRIVATE nocloom_config nocloom_core
+  nlohmann_json::nlohmann_json Catch2::Catch2WithMain)
+target_compile_definitions(nocloom_path_report_unit PRIVATE NOCLOOM_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+add_test(NAME path_report_structure COMMAND nocloom_path_report_unit)
+set_tests_properties(path_report_structure PROPERTIES TIMEOUT 120 LABELS "unit;quick;ci")
+add_test(NAME path_report_cli
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/path_report_cli.py
+    --cli $<TARGET_FILE:nocloom_cli> --examples ${PROJECT_SOURCE_DIR}/examples
+    --work ${CMAKE_CURRENT_BINARY_DIR}/path_report_cli)
+set_tests_properties(path_report_cli PROPERTIES TIMEOUT 120 LABELS "config;quick;ci")
 add_executable(nocloom_link_pipeline_unit unit/link_pipeline.cpp)
 target_include_directories(nocloom_link_pipeline_unit PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(nocloom_link_pipeline_unit PRIVATE nocloom_config nocloom_core Catch2::Catch2WithMain)
