@@ -1005,16 +1005,17 @@ nocloom_verif_case(NAME verif_wishbone_pipelined LAYER rtl TIER focused TIMEOUT 
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/wishbone_pipelined.py --cli $<TARGET_FILE:nocloom_cli>)
 nocloom_test_memory(2560 verif_wishbone_pipelined)
 nocloom_verif_case(NAME verif_wishbone_pipelined_negative LAYER negative TIER release TIMEOUT 600
-  FEATURES wishbone MEMORY_MB 2048
-  CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.W.UNSTROBED_ZERO
-  COMMAND ${NLV_RUN} --case ${NLV_CASES}/wishbone_pipelined.py --cli $<TARGET_FILE:nocloom_cli> --negative)
-nocloom_test_memory(2560 verif_wishbone_pipelined_negative)
-nocloom_verif_case(NAME verif_wishbone_pipelined_short_faults LAYER negative TIER focused TIMEOUT 180
-  FEATURES wishbone ci MEMORY_MB 2048
+  FEATURES wishbone PROCESSORS 3 MEMORY_MB 6144
   CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.W.UNSTROBED_ZERO
   COMMAND ${NLV_RUN} --case ${NLV_CASES}/wishbone_pipelined.py --cli $<TARGET_FILE:nocloom_cli>
-    --negative --param short=true)
-nocloom_test_memory(2560 verif_wishbone_pipelined_short_faults)
+    --negative --jobs 3 --processors 3)
+nocloom_test_memory(7680 verif_wishbone_pipelined_negative)
+nocloom_verif_case(NAME verif_wishbone_pipelined_short_faults LAYER negative TIER focused TIMEOUT 180
+  FEATURES wishbone ci PROCESSORS 3 MEMORY_MB 6144
+  CONTRACTS AXI.ROUTE.LOCAL_OFFSET AXI.W.UNSTROBED_ZERO
+  COMMAND ${NLV_RUN} --case ${NLV_CASES}/wishbone_pipelined.py --cli $<TARGET_FILE:nocloom_cli>
+    --negative --jobs 3 --processors 3 --param short=true)
+nocloom_test_memory(7680 verif_wishbone_pipelined_short_faults)
 nocloom_verif_case(NAME verif_wishbone_pipelined_checker LAYER unit TIER focused TIMEOUT 180
   FEATURES wishbone ci MEMORY_MB 512
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/wishbone_pipelined_check.py)

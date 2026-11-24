@@ -858,6 +858,51 @@ def test_throughput_selection(fixture, work):
                "an empty throughput selection fails before generation")
 
 
+def test_parallel_negative_report(work):
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    from nlverif import run
+
+    target = Path(work) / "parallel-negative"
+    case = dict(name="parallel", contracts=[], negative_faults_all=True,
+                configs=[dict(label="first"), dict(label="second")])
+
+    def baseline(args, module, config, directory, label, seeds, results):
+        results["timings"][label] = {}
+        return dict(failed=False, infra=False)
+
+    def negative(args, module, config, state, directory, label, seeds, results, failed):
+        results["variants"].append(dict(variant=f"{label}/completed"))
+        if label == "second":
+            raise run.Infra("fault compile failed")
+        return failed
+
+    argv = ["run.py", "--case", "parallel", "--work", str(target), "--negative", "--jobs", "2"]
+    with (patch.object(sys, "argv", argv),
+          patch.object(run, "load_case", return_value=SimpleNamespace(CASE=case)),
+          patch.object(run, "run_baseline", baseline),
+          patch.object(run, "run_negative", negative)):
+        code = run.main()
+    report = json.loads((target / "results.json").read_text())
+    expect(code == report["exit"] == 2 and report.get("error") == "fault compile failed",
+           "parallel fault compile failure is reported")
+    expect([row["variant"] for row in report["variants"]] == ["first/completed", "second/completed"],
+           "parallel compile failure retains completed fault results in case order")
+
+
+def test_build_jobs():
+    from types import SimpleNamespace
+    from nlverif import run
+
+    def threads(**kw):
+        return run.build_jobs(SimpleNamespace(**kw))
+
+    expect(threads(jobs=3, processors=3) == 1, "three builds on three processors take one thread each")
+    expect(threads(jobs=3, processors=None) == 1, "the reservation defaults to one processor per build")
+    expect(threads(jobs=3, processors=12) == 4, "builds share a larger reservation")
+    expect(threads(jobs=4, processors=2) == 1, "each build keeps at least one thread")
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--fixture", required=True)
@@ -879,6 +924,8 @@ def main():
     test_parallel_install_report(work)
     test_rule_selection(work)
     test_throughput_selection(a.fixture, work)
+    test_parallel_negative_report(work)
+    test_build_jobs()
     print("SELFTEST", "FAIL" if FAILS else "PASS", len(FAILS))
     return 1 if FAILS else 0
 

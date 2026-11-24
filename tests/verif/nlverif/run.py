@@ -7,6 +7,7 @@ sel=0 event hash equal to the baseline and every designated RTL fault.
          [--param KEY=VALUE]... [--cli PATH] [--fixture PATH] [--negative]
          [--only ID,...] [--sim ENGINE] [--sim-config JSON]
          [--register-reset asynchronous|synchronous] [--read-write shared|separate] [--jobs N]
+         [--processors N]
 
 A case module sees the --param values as the dict PARAMS when it loads (one
 case file serves several registered widths or modes). A case may list
@@ -16,7 +17,9 @@ runs on the first). --register-reset generates every DUT with that register rese
 output.register_reset, the fixture's register_reset parameter) instead of as the case states.
 --read-write generates every DUT from its CLI configuration with that read_write (a fixture
 DUT is an infrastructure error).
---jobs runs that many baseline configurations at once and reports them in their listed order.
+--jobs runs configurations concurrently and reports results in their listed order.
+--processors is the processor count the test reserves (default: --jobs). Concurrent Verilator
+builds share it.
 
 Exit code: 0 every variant met its expectation, 1 a judgment failed,
 2 infrastructure (generation, compile, tool) error. Only the exit code and
@@ -112,6 +115,13 @@ def run_tool(argv, log, timeout=300):
     return r, time.monotonic() - started
 
 
+def build_jobs(args):
+    """Verilator build threads of one of --jobs concurrent builds within --processors."""
+    jobs = getattr(args, "jobs", 1)
+    processors = getattr(args, "processors", None) or jobs
+    return max(1, processors // jobs)
+
+
 class Build:
     """One compiled simulation (tb.sv + one DUT file with its cell models), run many times."""
 
@@ -122,8 +132,13 @@ class Build:
         (self.root / "dut.v").write_text(dut_text + cells)
         started = time.monotonic()
         try:
+            jobs = getattr(args, "jobs", 1)
+            compile_argv = None
+            if jobs > 2 and sim_engine.selection(args.sim) == "verilator":
+                compile_argv = sim_engine.verilator_command("dut.v", build_jobs=build_jobs(args))
             self.sim = sim_engine.Simulation(
                 self.root, "dut.v", engine=args.sim, config=args.sim_config,
+                compile_argv=compile_argv,
                 compile_timeout=case.get("compile_timeout", 600),
                 run_timeout=case.get("run_timeout", 300), success=("NLV_DONE",))
         except Exception as error:  # compilation or simulation failure
@@ -499,11 +514,15 @@ def main():
     p.add_argument("--register-reset", choices=("asynchronous", "synchronous"))
     p.add_argument("--read-write", choices=("shared", "separate"))
     p.add_argument("--jobs", type=int, default=1,
-                   help="configurations whose baselines run at once")
+                   help="configurations run at once")
+    p.add_argument("--processors", type=int,
+                   help="processors the test reserves, shared by concurrent builds")
     sim_engine.add_arguments(p)
     args = p.parse_args()
     if args.jobs < 1:
         p.error("--jobs must be positive")
+    if args.processors is not None and args.processors < 1:
+        p.error("--processors must be positive")
     global REGISTER_RESET, READ_WRITE
     REGISTER_RESET = args.register_reset
     READ_WRITE = args.read_write
@@ -580,8 +599,31 @@ def main():
             return save(1 if failed else 0)
         # The negative control runs on the main configuration, or on every one
         # with negative_faults_all (a fault each configuration must catch).
-        for st, merged, label in states[:None if case.get("negative_faults_all") else 1]:
-            failed = run_negative(args, module, merged, st, work, label, seeds, results, failed)
+        controls = states[:None if case.get("negative_faults_all") else 1]
+        if args.jobs == 1:
+            for st, merged, label in controls:
+                failed = run_negative(args, module, merged, st, work, label, seeds, results, failed)
+            return save(1 if failed else 0)
+
+        def negative(item):
+            st, merged, label = item
+            part = dict(timings={}, variants=[])
+            try:
+                bad = run_negative(args, module, merged, st, work, label, seeds, part, False)
+                return part, bad, None
+            except Exception as error:
+                return part, False, error
+
+        with ThreadPoolExecutor(max_workers=args.jobs) as pool:
+            for part, bad, error in pool.map(negative, controls):
+                for label, timings in part["timings"].items():
+                    results["timings"][label].update(timings)
+                results["variants"].extend(part["variants"])
+                if "fault_build" in part:
+                    results["fault_build"] = part["fault_build"]
+                if error is not None:
+                    raise error
+                failed = failed or bad
         return save(1 if failed else 0)
     except Infra as error:
         results["error"] = str(error)

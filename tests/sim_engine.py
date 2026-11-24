@@ -63,9 +63,9 @@ def selection(engine=None):
     return value
 
 
-def verilator_command(rtl="network.v", tb="tb.sv"):
+def verilator_command(rtl="network.v", tb="tb.sv", *, build_jobs=8):
     return ["verilator", "--binary", "--timing", "--top-module", "tb",
-            "-Wno-fatal", "--build-jobs", "8", "--output-split", "10000",
+            "-Wno-fatal", "--build-jobs", str(build_jobs), "--output-split", "10000",
             "-o", "sim", str(tb), str(rtl)]
 
 
