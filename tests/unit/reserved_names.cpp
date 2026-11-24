@@ -593,3 +593,48 @@ output: {backend: verilog, language: verilog_2001}
   CHECK(only(remap).code == "NCL_IPXACT_NAME");
   CHECK(only(remap).field == "targets[0].mappings[1].when");
 }
+
+TEST_CASE("Output diagnostics use definition locations", "[reserved-names]") {
+  GenerationOptions options;
+  std::string text, code, field;
+  unsigned line = 0, column = 0;
+  SECTION("C header collision at the output block") {
+    options.c_header = true;
+    text = replaced(base, "targets:\n",
+                    "  - {name: Control, clock_domain: main, protocol: apb4, data_width: 32}\n"
+                    "targets:\n");
+    code = "NCL_C_HEADER_NAME";
+    field = "output.c_header";
+    line = 15;
+    column = 9;
+  }
+  SECTION("IP-XACT collision at the target name") {
+    options.ipxact = true;
+    text = replaced(base, "name: ram", "name: control");
+    code = "NCL_IPXACT_NAME";
+    field = "targets[0].name";
+    line = 11;
+    column = 12;
+  }
+  const auto loaded = config::parse(text, "outputs.yaml");
+  REQUIRE(loaded);
+  const auto &input = loaded.value();
+  REQUIRE(nocloom::generate(input.definition));
+  const auto check = [&](const auto &result, bool located) {
+    REQUIRE_FALSE(result);
+    REQUIRE(result.diagnostics().size() == 1);
+    const auto &diagnostic = result.diagnostics().front();
+    CHECK(diagnostic.code == code);
+    CHECK(diagnostic.field == field);
+    REQUIRE(diagnostic.location.has_value() == located);
+    if (located) {
+      CHECK(diagnostic.location->label == "outputs.yaml");
+      CHECK(diagnostic.location->line == line);
+      CHECK(diagnostic.location->column == column);
+    }
+  };
+  check(nocloom::validate(input.definition, options, &input.sources), true);
+  check(nocloom::generate(input.definition, options, &input.sources), true);
+  check(nocloom::validate(input.definition, options), false);
+  check(nocloom::generate(input.definition, options), false);
+}

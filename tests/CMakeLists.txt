@@ -39,7 +39,7 @@ add_test(NAME large_address_map_scaling
     --count 16384 65536)
 set_tests_properties(large_address_map_scaling PROPERTIES TIMEOUT 600 LABELS "config;release")
 foreach(case IN ITEMS clock_domains no_crossing two_bit_selector two_port_selector
-    case_collision reserved_macro crossing crossing_two_bit crossing_reserved)
+    case_collision shared_endpoint_name reserved_macro crossing crossing_two_bit crossing_reserved)
   add_test(NAME command_agreement_${case}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/command_agreement.py
       --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/command_agreement_${case}

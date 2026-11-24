@@ -93,7 +93,7 @@ Result<ArtifactSet> generate(const Definition &definition, const GenerationOptio
   if (!plan)
     return Result<ArtifactSet>::failure(plan.diagnostics());
   auto emitted = emit(plan.value(), options);
-  if (!emitted && emitted.diagnostics().front().code == "NCL_NAME_OUTPUT_COLLISION")
+  if (!emitted)
     return Result<ArtifactSet>::failure(detail::locate(emitted.diagnostics(), sources));
   return emitted;
 }

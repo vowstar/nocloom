@@ -2485,13 +2485,11 @@ Status validate(const Definition &definition, const GenerationOptions &options,
   if (!plan)
     return Status::failure(plan.diagnostics());
   auto checked = detail::check_axi4_network(*plan.value().data_, definition, options);
-  if (!checked && checked.diagnostics().front().code == "NCL_NAME_OUTPUT_COLLISION")
+  if (!checked)
     return Status::failure(detail::locate(checked.diagnostics(), sources));
-  if (!checked || !options.path_report)
-    return checked;
-  auto report = detail::path_report(*plan.value().data_, definition);
-  if (!report)
-    return Status::failure(report.diagnostics());
+  if (options.path_report)
+    if (auto report = detail::path_report(*plan.value().data_, definition); !report)
+      return Status::failure(detail::locate(report.diagnostics(), sources));
   return checked;
 }
 } // namespace nocloom

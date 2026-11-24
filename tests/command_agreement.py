@@ -4,6 +4,7 @@ import argparse
 from itertools import combinations
 import json
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 
@@ -72,6 +73,11 @@ def check(cli, work, name, config, diagnostic=None, flags=()):
     if diagnostic:
         if diagnostic not in validated.stderr:
             raise AssertionError(f"{name}: expected {diagnostic}, got {validated.stderr}")
+        if (diagnostic.startswith(("NCL_C_HEADER_", "NCL_IPXACT_"))
+                or diagnostic == "NCL_ADDRESS_CONDITION"):
+            location = rf"{re.escape(str(input_path))}:1:[1-9][0-9]*: {diagnostic} "
+            if not re.match(location, validated.stderr):
+                raise AssertionError(f"{name}: missing diagnostic location in {validated.stderr}")
         if output_path.exists():
             raise AssertionError(f"{name}: rejected definition produced artifacts")
         return
@@ -129,12 +135,14 @@ def output_cases():
     cdc = {"--cdc-constraints": "NCL_UNSUPPORTED_BACKEND"}
     ipxact = {"--ipxact": "NCL_ADDRESS_CONDITION"}
     collision = {"--c-header": "NCL_C_HEADER_NAME"}
+    ipxact_collision = {"--ipxact": "NCL_IPXACT_NAME"}
     reserved = {"--c-header": "NCL_C_HEADER_RESERVED"}
     return [
         ("no_crossing", output_definition(), cdc),
         ("two_bit_selector", output_definition(widths=(2,)), cdc | ipxact),
         ("two_port_selector", output_definition(widths=(1, 1)), cdc | ipxact),
         ("case_collision", output_definition(sources=("s", "S")), cdc | collision),
+        ("shared_endpoint_name", output_definition(sources=("t",)), cdc | ipxact_collision),
         ("reserved_macro", output_definition(target="t_"), cdc | reserved),
         ("crossing", output_definition(crossing=True, widths=(1,)), {}),
         ("crossing_two_bit", output_definition(crossing=True, widths=(2,)), ipxact),
