@@ -370,6 +370,11 @@ add_test(NAME read_refinement
     --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/read_refinement)
 set_tests_properties(read_refinement PROPERTIES TIMEOUT 900 LABELS "formal;release"
   PROCESSORS 1)
+add_test(NAME transaction_refinement
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_transaction_refinement.py
+    --cli $<TARGET_FILE:nocloom_cli> --work ${CMAKE_CURRENT_BINARY_DIR}/transaction_refinement)
+set_tests_properties(transaction_refinement PROPERTIES TIMEOUT 900 LABELS "formal;release"
+  PROCESSORS 1)
 add_executable(nocloom_certificate_graphs generate_certificate_graphs.cpp)
 target_link_libraries(nocloom_certificate_graphs PRIVATE nocloom_config)
 target_include_directories(nocloom_certificate_graphs PRIVATE ${PROJECT_SOURCE_DIR}/src)

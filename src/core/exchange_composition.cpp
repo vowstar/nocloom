@@ -2595,6 +2595,12 @@ private:
     c.bind(id + "ready", ch.ready);
     for (const auto *field : {"last", response ? "source" : "write"})
       c.bind(id + field, ch.data[c.burst_field_index(response, word, field)]);
+    const auto fields = fragment_fields(response, word, plan.source_bits, c.burst_profile());
+    for (std::size_t i = 0; i < fields.size(); ++i) {
+      const auto &field = fields[i].first;
+      if ((field.starts_with("data") && !field.starts_with("data_user")) || field.starts_with("be"))
+        c.bind(id + field, ch.data[i]);
+    }
   }
 
   struct PathChannels {
@@ -6318,8 +6324,11 @@ private:
     std::map<std::string, unsigned> target_ports;
     remove_one_way_ports(outlet, target_ports, profile.read_only, profile.write_only);
     const auto ep = import_outlet(o, t, outlet, target_ports);
-    if (refinement)
+    if (refinement) {
       c.bind("refinement/context", ep.states.at("r.count"));
+      if (const auto write = ep.states.find("w.busy"); write != ep.states.end())
+        c.bind("refinement/write_context", write->second);
+    }
     if (const auto seen = observed_reads.find(o); seen != observed_reads.end()) {
       c.drive(seen->second.first, ep.axi.at("rvalid"));
       c.drive(seen->second.second, ep.axi.at("rready"));

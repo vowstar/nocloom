@@ -109,13 +109,15 @@ def main (args : List String) : IO UInt32 := do
   IO.println ("GUARD " ++ observation.guard.render
     (fun s => match s with
       | .before i => "$past(nl_internal_v" ++ toString i ++ ")"
+      | .after i => "nl_internal_v" ++ toString i
       | .nextCount => "nl_internal_v" ++ toString observation.count))
   return 0
 """
 
 
-def check_axioms(output):
-    expected = {"checkedReadEdge", "NetlistCheck.ReadRefinement.reset_sound"}
+def check_axioms(output, expected=None):
+    if expected is None:
+        expected = {"checkedReadEdge", "NetlistCheck.ReadRefinement.reset_sound"}
     seen = set()
     for name, dependencies in re.findall(r"'([^']+)' depends on axioms: \[([^\]]*)\]", output):
         if name in expected:
@@ -252,7 +254,7 @@ def instrument(rtl, monitor):
     marker = "\nendmodule\n"
     if rtl.count(marker) != 1:
         raise RuntimeError("Expected one top module")
-    return rtl.replace(marker, monitor + marker)
+    return rtl.replace(marker, "\n" + monitor + marker)
 
 
 def fixture(cli, work, lean, width, synchronous):

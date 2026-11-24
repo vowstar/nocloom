@@ -26,10 +26,13 @@ structure Map where
 inductive Signal where
   | before (index : Nat)
   | nextCount
+  | after (index : Nat)
 
 /-- The Boolean checker as a circuit, shared by evaluation and RTL emission. -/
 inductive Guard where
+  | accept
   | eq (signal : Signal) (value : Nat)
+  | sameValue (left right : Signal)
   | leOne (signal : Signal)
   | neg (arg : Guard)
   | both (left right : Guard)
@@ -37,7 +40,9 @@ inductive Guard where
   | same (left right : Guard)
 
 def Guard.eval (value : Signal → Nat) : Guard → Bool
+  | .accept => true
   | .eq s k => value s == k
+  | .sameValue a b => value a == value b
   | .leOne s => value s ≤ 1
   | .neg a => !a.eval value
   | .both a b => a.eval value && b.eval value
@@ -46,7 +51,9 @@ def Guard.eval (value : Signal → Nat) : Guard → Bool
 
 /-- Render the guard with the caller's names for its signal inputs. -/
 def Guard.render (name : Signal → String) : Guard → String
+  | .accept => "1'b1"
   | .eq s k => s!"({name s} == {k})"
+  | .sameValue a b => s!"({name a} == {name b})"
   | .leOne s => s!"({name s} <= 1)"
   | .neg a => s!"(!{a.render name})"
   | .both a b => s!"({a.render name} && {b.render name})"
@@ -67,12 +74,12 @@ def Map.boundaries (m : Map) : Guard :=
       .both (.either (.neg req) (.both (m.requestIn.single 0) (m.requestOut.single 0)))
         (.either (.neg rsp) (.both (m.responseIn.single 1) (m.responseOut.single 1)))
 
-private def patterns (before req rsp after : Guard) : Guard :=
+def patterns (before req rsp after : Guard) : Guard :=
   .either (.both (.both (.neg req) (.neg rsp)) (.same before after)) <|
     .either (.both (.both (.neg before) req) (.both (.neg rsp) after))
       (.both (.both before (.neg req)) (.both rsp (.neg after)))
 
-private theorem patterns_sound (value : Signal → Nat) (before req rsp after : Guard) :
+theorem patterns_sound (value : Signal → Nat) (before req rsp after : Guard) :
     (patterns before req rsp after).eval value =
       stepOK ⟨before.eval value, req.eval value, rsp.eval value, after.eval value⟩ := by
   simp only [patterns, Guard.eval]
@@ -105,6 +112,7 @@ def rising (n : Netlist) (inputs current : Nat → Nat) (i : Nat) : Nat :=
 def Map.valuation (m : Map) (n : Netlist) (inputs current : Nat → Nat) : Signal → Nat
   | .before i => n.eval inputs current i
   | .nextCount => rising n inputs current m.count
+  | .after i => rising n inputs current i
 
 /-- Check a rising edge outside reset. The driver checks reset separately. -/
 def edgeOK (n : Netlist) (m : Map) (inputs current : Nat → Nat) : Bool :=

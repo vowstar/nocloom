@@ -55,6 +55,56 @@ Result<Json> face(const ExchangeHardware &h, const std::string &name,
   }
   return Result<Json>::success(std::move(row));
 }
+
+std::optional<std::size_t> observed(const ExchangeHardware &h, const std::string &key) {
+  const auto at = h.bindings.find("refinement/" + key);
+  if (at == h.bindings.end())
+    return {};
+  const auto emitted = h.ir.emitted.value_or(h.ir.values.size());
+  const auto index = emitted_value(h.ir, at->second.index, emitted);
+  return index < emitted ? std::optional{index} : std::nullopt;
+}
+
+bool payload_pairs(const ExchangeHardware &h, const std::string &path,
+                   std::initializer_list<std::string_view> fields, unsigned lanes, Json &pairs) {
+  for (unsigned lane = 0; lane < lanes; ++lane)
+    for (auto name : fields) {
+      const auto field = "." + std::string(name) + std::to_string(lane);
+      const auto in = observed(h, path + "entry" + field);
+      const auto out = observed(h, path + "exit" + field);
+      if (!in || !out || h.ir.values[*in].width != h.ir.values[*out].width)
+        return false;
+      pairs.push_back({*in, *out});
+    }
+  return true;
+}
+
+// The extended observations are optional so read-only maps stay available.
+void add_transaction_observations(const ExchangeHardware &h, const State &read, Json &map) {
+  const auto &p = h.plan;
+  if (p.sources.front().read_only || p.targets.front().read_only)
+    return;
+  const auto write = observed(h, "write_context");
+  if (!write || h.ir.values[*write].op != Op::State)
+    return;
+  const auto &reg = h.ir.states.at(h.ir.values[*write].state.index);
+  if (reg.clock.index != read.clock.index || !reg.reset || reg.reset->value != 0 ||
+      reg.reset->signal.index != read.reset->signal.index)
+    return;
+  Json request = Json::array(), response = Json::array();
+  const auto bytes = p.sources.front().engine_bits / 8;
+  if (std::ranges::any_of(p.links, [bytes](const auto &link) {
+        return link.from_bytes != bytes || link.to_bytes != bytes;
+      }))
+    return;
+  const auto lanes = bytes / 4;
+  if (!lanes || !payload_pairs(h, "req/", {"data", "be"}, lanes, request) ||
+      !payload_pairs(h, "rsp/", {"data"}, lanes, response))
+    return;
+  map["transactions"] = {{"write_count", *write},
+                         {"request_payload", std::move(request)},
+                         {"response_payload", std::move(response)}};
+}
 } // namespace
 
 Status check_read_refinement_scope(const NetworkPlan &p) {
@@ -114,6 +164,7 @@ Result<Json> read_refinement_map(const ExchangeHardware &h) {
       return mapped;
     map["boundaries"][name] = std::move(mapped).value();
   }
+  add_transaction_observations(h, reg, map);
   return Result<Json>::success(std::move(map));
 }
 } // namespace nocloom::detail
