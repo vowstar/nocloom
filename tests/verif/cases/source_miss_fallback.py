@@ -17,7 +17,7 @@ CASE = dict(contracts=["QOS.SHAPER.DECODE_MISS"])
 RTL_DIGESTS = {
     "multiple": "ec3ff955667e65766482fd9eec18d51724b27f822d9bad4ab96b24901530e621",
     "named": "df7d52fea5fb7474373f79e0c49f435a81618887af0551102c75e62fd50f85de",
-    "log": "8ca3ffbd7add276933c8ae3b24955c8c220e3793b6f30db2ca04f18ac78f528f",
+    "log": "3e5fb24b4762297df23a636d3739fd61bcd7cd67e04559bd91c97f433971e4c9",
     "selector": "fa4cc78ad289f1d09cf68dd0ab440b5cd78c8e6693acd635dc7e2dfb0682abd3",
     "subpage": "5ec928a95ec750092b640661fe72a585ed659ca83c2104268118ed2fa752f323",
     "tl_uh": "32526131498917b32c81f85046fa00a9d655d1318eadcf0b990422431f3f6855",

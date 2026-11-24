@@ -6,9 +6,9 @@
 #include <vector>
 
 // Each target probe holds one failed packet's snapshot until delivery completes.
-// Errors arriving while it is occupied are dropped. Related-clock probes and the senders of
-// crossed probes report that loss with their waiting records. Logging never blocks data
-// responses. Same-domain probes deliver whole records. Crossed probes send fixed-width words,
+// Errors arriving while it is occupied are dropped, and the waiting record reports that loss to
+// the first logger. Logging never blocks data responses.
+// Same-domain probes deliver whole records. Crossed probes send fixed-width words,
 // lowest bits first, and a separate last flag through a backpressured FIFO.
 // The snapshot is released only when the final word enters the FIFO.
 // The receiver assembles the prefix and captures on the final word handshake.

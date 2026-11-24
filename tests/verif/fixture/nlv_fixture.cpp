@@ -1465,6 +1465,20 @@ std::vector<Component> service_network(const Params &p) {
                                             {"done", sender + "sender.done"},
                                             {"probe_lost", "observe/errors/logger.probe_lost"}})}});
   }
+  // The first target's probe of a log in its domain: its failure events, take, drop and drop flag,
+  // and the logger's take of the waiting record.
+  if (h.bindings.contains("observe/errors/probe0.overflow")) {
+    const std::string log = "observe/errors/";
+    probes.push_back({{"name", "probe"},
+                      {"kind", "record"},
+                      {"nets", Json::array({{"event", log + "event0.event"},
+                                            {"accepted", log + "event0.accepted"},
+                                            {"dropped", log + "event0.dropped"},
+                                            {"flag", log + "probe0.overflow"},
+                                            {"pending", log + "probe0.pending"},
+                                            {"taken", log + "logger.taken"},
+                                            {"probe_lost", log + "logger.probe_lost"}})}});
+  }
   // The second logger of a chain.
   if (h.bindings.contains("observe/errors/logger1.valid"))
     probes.push_back({{"name", "record1"},

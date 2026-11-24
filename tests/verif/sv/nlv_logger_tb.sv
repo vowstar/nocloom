@@ -138,9 +138,15 @@ module tb;
   // arrives takes the logger when it is empty and in the cycle of a clear of record_held. At a
   // held record without that clear it is lost and sets record_overflow. A set and a clear of
   // record_overflow in one cycle leave it set.
+  // The probe's model, from its failure events and the logger's take: a failure while the probe
+  // holds a record that does not leave in that cycle is dropped and marks the record. The mark
+  // leaves with the record and sets record_overflow, even in the cycle of its clear.
   reg previous_held = 0;
-  reg check_alarm = 0, expected_held = 0, expected_overflow = 0;
+  reg check_alarm = 0, expected_held = 0, expected_overflow = 0, expected_flag = 0;
   wire arrival_takes = `LOG_OFFERED && (!expected_held || `LOG_CLEAR);
+  wire probe_drop = `PROBE_EVENT && `PROBE_PENDING && !`PROBE_TAKEN;
+  integer probe_drops = 0;
+  reg took_at_leave = 0, probe_clear_tie = 0;
   // What a window saw: the record arrive before the clear of record_held, in its cycle or after
   // it, a record lost before the clear of record_overflow, in its cycle or after it, and the alarm
   // fall.
@@ -151,12 +157,19 @@ module tb;
     if (!rst_n) begin
       expected_held <= 0;
       expected_overflow <= 0;
+      expected_flag <= 0;
     end else begin
       check(`LOG_VALID === expected_held, "clear_capture");
       check(`LOG_OVERFLOW === expected_overflow, "overflow_model");
+      check(`PROBE_DROPPED === probe_drop, "probe_drop_model");
+      check(`PROBE_FLAG === expected_flag, "probe_flag_model");
       expected_held <= arrival_takes || (expected_held && !`LOG_CLEAR);
-      expected_overflow <= (`LOG_OFFERED && !arrival_takes)
+      expected_overflow <= (`LOG_OFFERED && !arrival_takes) || (`PROBE_TAKEN && expected_flag)
                            || (expected_overflow && !`LOG_OVERFLOW_CLEAR);
+      expected_flag <= probe_drop || (expected_flag && !`PROBE_TAKEN);
+      if (probe_drop) probe_drops = probe_drops + 1;
+      if (`PROBE_ACCEPTED && `PROBE_TAKEN) took_at_leave = 1;
+      if (`PROBE_PROBE_LOST && `LOG_OVERFLOW_CLEAR) probe_clear_tie = 1;
     end
     if (!watching) begin
       cleared <= 0; arrived_early <= 0; arrived_tied <= 0; arrived_late <= 0;
@@ -181,6 +194,115 @@ module tb;
       watching = 0;
       @(negedge clk);
       watching = 1;
+    end
+  endtask
+  // The logger holds a record of base and waits while full. The probe holds base + 4.
+  task probe_fill(input [31:0] base);
+    begin
+      reset_network;
+      probe_drops = 0;
+      control(ALARM | WAIT);
+      data(0, base);
+      settle;
+      data(0, base + 4);
+      settle;
+      check(`PROBE_PENDING && probe_drops == 0, "probe_fill");
+    end
+  endtask
+  integer gap, meets, dropped_at, taken_at;
+  // A target error's record keeps the low byte of its address.
+  localparam [31:0] LOW = 32'hff;
+  reg [31:0] word, next_word;
+  reg next_held, next_overflow;
+  // Drops at a probe in the log's domain: the waiting record carries them to the logger.
+  task probe_drops_check;
+    begin
+      probe_fill(32'h300);
+      data(0, 32'h308);
+      data(1, 32'h30c);
+      settle;
+      check(probe_drops == 2, "probe_drop_counted");
+      state(held, overflow);
+      check(held == 1 && overflow == 0, "probe_drop_late");
+      clear;
+      settle;
+      state(held, overflow);
+      csr(0, `OFFSET_ADDRESS, 0, word);
+      check(held == 1 && overflow == 1, "probe_drop_reported");
+      check(word == (32'h304 & LOW), "probe_drop_record");
+      // The mark left with its record: the next record carries none.
+      control(ALARM);
+      clear_bits(HELD | OVERFLOW);
+      data(0, 32'h310);
+      settle;
+      state(held, overflow);
+      csr(0, `OFFSET_ADDRESS, 0, word);
+      check(held == 1 && overflow == 0 && word == (32'h310 & LOW), "probe_drop_once");
+      // A clear of record_held lets the waiting record go, and an error comes at a distance from
+      // the clear. Before the cycle the record leaves the probe drops the error and marks the
+      // record. From that cycle on the probe takes the error, which waits in its turn. Exactly one
+      // distance puts the error in the cycle the record leaves.
+      meets = 0; dropped_at = 0; taken_at = 0;
+      for (gap = 0; gap < 16; gap = gap + 1) begin
+        probe_fill(32'h400);
+        took_at_leave = 0;
+        lanes = 4'h1;
+        fork
+          csr(1, `OFFSET_STATE, HELD, v);
+          begin
+            repeat (gap) @(negedge clk);
+            data(0, 32'h440 + 4 * gap);
+          end
+        join
+        lanes = 4'hf;
+        settle;
+        state(held, overflow);
+        csr(0, `OFFSET_ADDRESS, 0, word);
+        check(held == 1 && word == (32'h404 & LOW), "probe_race_record");
+        check(overflow == (probe_drops == 1) && probe_drops <= 1, "probe_race_trace");
+        clear_bits(HELD | OVERFLOW);
+        settle;
+        state(next_held, next_overflow);
+        csr(0, `OFFSET_ADDRESS, 0, next_word);
+        // No error goes without a trace, and no record is marked without a drop.
+        check(probe_drops == 1 ? !next_held && !next_overflow
+                               : next_held && !next_overflow && next_word == ((32'h440 + 4 * gap) & LOW),
+              "probe_race_trace");
+        if (took_at_leave) meets = meets + 1;
+        if (probe_drops == 1) dropped_at = dropped_at + 1;
+        else taken_at = taken_at + 1;
+      end
+      check(meets == 1, "probe_race_meet");
+      check(dropped_at > 0 && taken_at > meets, "probe_race_span");
+      // A marked record waits behind the held one. One write turns wait_when_full off in byte 1
+      // and clears both status bits in byte 0, a cycle later. The marked record finds room in the
+      // cycle of the clear, and its drop outlives the clear of record_overflow.
+      probe_fill(32'h600);
+      data(0, 32'h6f0);
+      settle;
+      probe_clear_tie = 0;
+      lanes = 4'h3;
+      csr(1, `OFFSET_STATE, HELD | OVERFLOW | ALARM, v);
+      lanes = 4'hf;
+      settle;
+      state(held, overflow);
+      csr(0, `OFFSET_ADDRESS, 0, word);
+      check(probe_clear_tie, "probe_clear_tied");
+      check(held == 1 && overflow == 1, "probe_clear_race");
+      check(word == (32'h604 & LOW), "probe_clear_record");
+      // A reset while the probe holds a marked record: nothing of the record or its mark is left.
+      probe_fill(32'h700);
+      data(0, 32'h7f0);
+      settle;
+      reset_network;
+      csr(0, `OFFSET_STATE, 0, v);
+      check(v == 0, "probe_reset_clean");
+      check(!`PROBE_PENDING && !`PROBE_FLAG, "probe_reset_clean");
+      data(0, 32'h7f4);
+      settle;
+      state(held, overflow);
+      csr(0, `OFFSET_ADDRESS, 0, word);
+      check(held == 1 && overflow == 0 && word == (32'h7f4 & LOW), "probe_reset_fresh");
     end
   endtask
 `endif
@@ -282,8 +404,8 @@ module tb;
     csr(0, `OFFSET_STATE, 0, v);
     check(v == (HELD | ALARM), "miss_whole");
     clear;
-    // Wait: the second error waits on the path and enters after the clear; the third is gone.
-    // No record is dropped at the logger, so the overflow bit stays clear.
+    // Wait: the second error waits on the path and enters after the clear. The third is dropped at
+    // the probe, and the second record carries that drop to the logger.
     control(ALARM | WAIT);
     data(0, 32'h200);
     settle;
@@ -302,14 +424,15 @@ module tb;
     check(arrived_late && !arrived_tied && !arrived_early, "wait_enters_later");
     state(held, overflow);
     check(held == 1, "wait_kept");
-    check(overflow == 0, "wait_no_overflow");
+    check(overflow == 1, "probe_drop_reported");
     csr(0, `OFFSET_ADDRESS, 0, v);
     check(v == 32'h4, "wait_kept");
     clear;
     settle;
     csr(0, `OFFSET_STATE, 0, v);
     check(!v[`RECORD_HELD_lsb], "third_lost");
-    check(v == (ALARM | WAIT | PARTIAL), "wait_no_overflow");
+    check(v == (OVERFLOW | ALARM | WAIT | PARTIAL), "probe_drop_reported");
+    clear_bits(OVERFLOW);
     control(ALARM);
     // A record that arrives in the cycle of a clear of record_held takes the logger: nothing is
     // dropped, so record_overflow keeps its value. The clear and a read error come at every
@@ -378,6 +501,7 @@ module tb;
       end
       check(ties == 1, "clear_capture_overlap");
     end
+    probe_drops_check;
     // A set and a clear of record_overflow in one cycle leave it set. The logger holds a record
     // and a write clears record_overflow alone while a second error comes at every distance:
     // exactly one distance puts the loss in the cycle of the clear. Before that distance the
@@ -465,7 +589,7 @@ module tb;
     settle;
     state(held, overflow);
     check(held == 0, "filter_waits");
-    check(overflow == 0, "wait_no_overflow");
+    check(overflow == 1, "probe_drop_filtered");
 `else
     // The decode class is skipped: its records wait like any error and are dropped as the logger
     // takes them.
@@ -496,7 +620,7 @@ module tb;
     settle;
     state(held, overflow);
     check(held == 0, "skipped_waits");
-    check(overflow == 0, "wait_no_overflow");
+    check(overflow == 1, "probe_drop_filtered");
 `endif
     if (failures == 0) $display("CHECK_PASS checks=%0d", checks);
     $finish;

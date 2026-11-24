@@ -1352,6 +1352,32 @@ TEST_CASE("Record words cover exact field boundaries", "[error-log]") {
   }
 }
 
+TEST_CASE("Every probe in its log's domain marks the record that waits through a drop",
+          "[error-log]") {
+  ErrorLoggerPlan plan;
+  plan.name = "near";
+  plan.shape = {2, 12, 0, 0, 2, 0};
+  plan.fixed_length = 3;
+  for (const unsigned targets : {1U, 3U}) {
+    plan.targets = targets;
+    const auto lowered = lower_error_logger(plan);
+    REQUIRE(lowered);
+    const auto &[ir, bindings] = lowered.value();
+    // The mark is no field of the record a same-domain probe delivers.
+    CHECK(std::ranges::none_of(error_record_layout(plan).fields,
+                               [](const auto &f) { return f.name == "probe_overflow"; }));
+    REQUIRE(bindings.contains("logger.probe_lost"));
+    const auto lost = cone_states(ir, bindings.at("logger.probe_lost"));
+    for (unsigned k = 0; k < targets; ++k) {
+      const auto index = std::to_string(k);
+      REQUIRE(bindings.contains("probe" + index + ".overflow"));
+      CHECK(bindings.contains("event" + index + ".dropped"));
+      CHECK(bindings.contains("probe" + index + ".tracking"));
+      CHECK(lost.contains(bindings.at("probe" + index + ".overflow").index));
+    }
+  }
+}
+
 TEST_CASE("Stored record fields omit only static or absent values", "[error-log]") {
   ErrorLoggerPlan plan;
   plan.shape = {5, 32, 7, 2, 8, 2};

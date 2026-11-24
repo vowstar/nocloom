@@ -79,8 +79,7 @@ public:
   Probe(logic::Logic &logic, const ErrorLoggerPlan &plan) : l(logic), p(plan) {}
   ValueId tracking{}, wanting{};
   Record held{};
-  void declare(const std::string &probe, ValueId clock, ValueId reset, ValueId target_reset,
-               bool related = false) {
+  void declare(const std::string &probe, ValueId clock, ValueId reset, ValueId target_reset) {
     target_live = target_reset;
     const auto &shape = p.shape;
     const auto state = [&](const std::string &name, unsigned width) {
@@ -101,39 +100,16 @@ public:
             state(probe + "address", shape.address_bits),
             shape.class_bits != 0 ? state(probe + "class", shape.class_bits) : ValueId{},
             shape.user_bits != 0 ? state(probe + "user_flags", shape.user_bits) : ValueId{},
-            shape.audit_bits != 0 ? state(probe + "audit_flags", shape.audit_bits) : ValueId{}};
-    if (related)
-      held.probe_overflow = state(probe + "overflow", 1);
-  }
-  // The probe's next state: done says the record has left.
-  void update(const std::string &face, ValueId done) {
-    const auto moved = l.in(face, "moved", 1);
-    const auto head = l.in(face, "head", 1);
-    const auto tail = l.in(face, "tail", 1), failed = l.in(face, "failed", 1);
-    const auto at_head = l.both(moved, head);
-    const auto bad_head = l.both(at_head, failed);
-    const auto good_head = l.every(std::array{at_head, l.inv(failed), l.inv(tail)});
-    const auto word = tracking, hold = wanting;
-    const auto idle = l.inv(l.either(tracking, wanting));
-    // A head while a packet is tracked starts a packet of its own, such as a write response
-    // between the words of a read. The tracked packet ends there.
-    const auto available = l.any(std::array{idle, l.both(hold, done), l.both(word, at_head)});
-    const auto new_fault =
-        l.bind(face + ".accepted",
-               l.either(l.both(available, bad_head), l.every(std::array{word, moved, failed})));
-    l.bind(face + ".dropped", l.both(bad_head, l.inv(available)));
-    l.b.update(wanting, l.either(new_fault, l.both(hold, l.inv(done))));
-    l.b.update(tracking, l.either(l.both(available, good_head),
-                                  l.both(word, l.inv(l.both(moved, l.either(failed, tail))))));
-    const auto sample = l.both(at_head, available);
-    store(face, sample, l.either(sample, new_fault));
+            shape.audit_bits != 0 ? state(probe + "audit_flags", shape.audit_bits) : ValueId{},
+            state(probe + "overflow", 1)};
   }
   void update_related(const std::string &face, ValueId done, ValueId released, ValueId open) {
     take_or_drop(face, l.both(l.in(face, "moved", 1), target_live), done, released, open);
   }
-  // A sender's probe: every first failure of a packet is taken or dropped, as at a related probe
-  // whose log is always open. A drop rides on the waiting record to the first logger.
-  void update_sender(const std::string &face, ValueId done) {
+  // A probe in its log's domain, or a sender's: every first failure of a packet is taken or
+  // dropped, as at a related probe whose log is always open. A drop rides on the waiting record to
+  // the first logger.
+  void update(const std::string &face, ValueId done) {
     take_or_drop(face, l.in(face, "moved", 1), done, std::nullopt, std::nullopt);
   }
 
@@ -252,8 +228,6 @@ private:
   Record selected{};
 
   bool chained() const { return !p.chain.empty(); }
-  // The records carry their probe's drop flag: related probes and senders across a crossing.
-  bool probe_drops() const { return p.crossed || !related_probes.empty(); }
 
   void control(Slot &s) {
     const auto face = "control" + s.suffix;
@@ -308,11 +282,9 @@ private:
       const bool related = std::ranges::binary_search(related_probes, k);
       const auto target_reset = related ? l.in("event" + index, "target_live", 1) : l.reset;
       probe.declare("probe" + index + ".", related ? root : l.clock, related ? reset_port : l.reset,
-                    target_reset, related);
+                    target_reset);
       wanting.push_back(related ? l.both(probe.wanting, l.reset) : probe.wanting);
       held.push_back(probe.held);
-      if (!related && !related_probes.empty())
-        held.back().probe_overflow = l.bit(0);
     }
   }
   // The record of a target past a crossing: the words before the last in the gather registers, and
@@ -413,9 +385,8 @@ private:
                   zero(selected.address),
                   with_class ? zero(selected.error_class) : ValueId{},
                   with_user ? zero(selected.user) : ValueId{},
-                  with_audit ? zero(selected.audit) : ValueId{}};
-    if (probe_drops())
-      joined.probe_overflow = l.bit(0);
+                  with_audit ? zero(selected.audit) : ValueId{},
+                  l.bit(0)};
     treadle::Spec spec;
     spec.policy = treadle::Policy::RotatingPriority;
     const auto arbiter =
@@ -439,8 +410,7 @@ private:
                                     add(joined.user, held[k].user);
                                   if (with_audit)
                                     add(joined.audit, held[k].audit);
-                                  if (probe_drops())
-                                    add(joined.probe_overflow, held[k].probe_overflow);
+                                  add(joined.probe_overflow, held[k].probe_overflow);
                                 },
                                 [&](ValueId any_valid) {
                                   moving = any_valid;
@@ -484,7 +454,7 @@ private:
     // A record that passed the filter of a logger that holds one is lost there.
     const auto overflow = l.state(s.scope() + "overflow", 1);
     auto lost = l.both(s.offered, l.inv(room(s)));
-    if (s.suffix.empty() && probe_drops())
+    if (s.suffix.empty())
       lost = l.either(lost, l.bind("logger.probe_lost", l.both(taken, selected.probe_overflow)));
     l.bind(s.scope() + "lost", lost);
     b.update(overflow, l.either(lost, l.both(overflow, l.inv(s.clear_overflow))));
@@ -544,7 +514,7 @@ Result<NodeHardware> lower_error_sender(const ErrorLoggerPlan &p, unsigned targe
   logic::Logic l;
   auto &b = l.b;
   Probe probe(l, p);
-  probe.declare("probe.", l.clock, l.reset, l.reset, true);
+  probe.declare("probe.", l.clock, l.reset, l.reset);
   l.bindings.erase("probe.pending");
   const auto words = p.serial_words;
   const auto ready = l.in("word", "ready", 1);
@@ -589,7 +559,7 @@ Result<NodeHardware> lower_error_sender(const ErrorLoggerPlan &p, unsigned targe
   l.out("word", "valid", l.bind("sender.valid", probe.wanting));
   l.out("word", "data", l.bind("sender.word", word));
   l.out("word", "last", last);
-  probe.update_sender("event", l.bind("sender.done", l.both(moved, last)));
+  probe.update("event", l.bind("sender.done", l.both(moved, last)));
   return l.finish("nocloom_error_sender_" + p.name + "_" + std::to_string(target));
 }
 

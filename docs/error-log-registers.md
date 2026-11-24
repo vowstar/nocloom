@@ -43,7 +43,7 @@ record field is a field with a name that starts with `record_`, except
 | `0x04` | 9 | `wait_when_full` | `rw` | When set, a record that reaches this logger while it is full waits until software clears the logger |
 | `0x04` | 8 | `alarm_enable` | `rw` | When set, the alarm output follows `record_held` one cycle later |
 | `0x04` | 7:4 | `record_class` | `ro` | One bit per [error class](#error-classes) |
-| `0x04` | 1 | `record_overflow` | `rw1c` | Reports a loss at this logger, or at a probe in another clock domain when this logger is the first in its chain |
+| `0x04` | 1 | `record_overflow` | `rw1c` | Reports a loss at this logger, or at a probe of its log when this logger is the first in its chain |
 | `0x04` | 0 | `record_held` | `rw1c` | The logger holds a record. Writing one does not erase the record fields |
 | `0x08` | 31:0 | `record_address_low` | `ro` | Address bits 31:0 |
 | `0x0c` | 31:16 | `record_bytes` | `ro` | Byte count of the access, 1 to 32768 |
@@ -120,12 +120,11 @@ When records reach the log through an asynchronous FIFO, `record_fields` also
 lists `probe_overflow` as the highest stored bit. It is 1 when the sender
 dropped a failure while the record waited. No register field contains it.
 
-A probe in another clock domain than its log reports a drop when the first
-logger in its chain takes the waiting record. If that logger's filters reject
-the record while it is empty, `record_overflow` can be set with `record_held`
-clear. Clearing `record_held` alone also leaves a pending overflow set.
-Software cannot use the overflow bit to distinguish a probe drop from a drop
-at a full logger.
+A probe reports a drop when the first logger in its chain takes the waiting
+record. If that logger's filters reject the record while it is empty,
+`record_overflow` can be set with `record_held` clear. Clearing `record_held`
+alone also leaves a pending overflow set. Software cannot use the overflow bit
+to distinguish a probe drop from a drop at a full logger.
 
 ## Error classes
 
