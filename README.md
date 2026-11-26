@@ -11,7 +11,7 @@ ACE5-Lite, AXI4, AXI3, AXI4-Lite, APB, AHB, Wishbone and TileLink networks in
 YAML or C++. NocLoom generates synthesizable Verilog-2001 with switches,
 protocol adapters, width converters and clock domain crossings (CDC).
 
-NocLoom 0.5.0 is the latest release.
+NocLoom 0.6.0 is the latest release.
 
 ![A mixed-protocol SoC network with two clock domains.][soc]
 
