@@ -39,7 +39,8 @@ def wait_for_process_exit(pid, timeout=60.0):
     while True:
         try:
             state = status.read_text().rsplit(")", 1)[1].split()[0]
-        except FileNotFoundError:
+        except (FileNotFoundError, ProcessLookupError):
+            # The process can be reaped between the open and the read.
             state = "GONE"
         elapsed = time.monotonic() - start
         if state in ("GONE", "Z") or elapsed >= timeout:
@@ -446,6 +447,14 @@ class ProcessContract(unittest.TestCase):
         pid = int(caught.exception.output.strip())
         observed = wait_for_process_exit(pid)
         self.assertTrue(observed["exited"], observed)
+
+    @unittest.skipUnless((Path("/proc") / "self/stat").is_file(),
+                         "Linux /proc required for descendant state observation")
+    def test_exit_wait_accepts_process_reaped_during_read(self):
+        with patch.object(Path, "read_text", side_effect=ProcessLookupError(3, "No such process")):
+            observed = wait_for_process_exit(os.getpid(), timeout=0.1)
+        self.assertTrue(observed["exited"], observed)
+        self.assertEqual(observed["state"], "GONE")
 
     @unittest.skipUnless((Path("/proc") / "self/stat").is_file(),
                          "Linux /proc required for descendant state observation")
